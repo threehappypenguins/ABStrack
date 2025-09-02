@@ -1,50 +1,16 @@
-# Welcome to your Expo app 👋
+# ABStrack
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+## About ABStrack
 
-## Get started
+This application is under heavy development. It is intended to be a tool to track the symptoms of a patient with [Autobrewery Syndrome](https://www.autobrewery.org/). There is a patient sign-in on the web to build a symptoms tracker, and a mobile phone app for the patient to track symptoms and BAC readings. There is a healthcare practitioner sign in to view reports.
 
-1. Install dependencies
+The app will support the [BACtrack SDK](https://developer.bactrack.com/breathalyzer_sdk/documentation) so that the patient can connect to the [BACtrack Mobile](https://www.bactrack.ca/products/bactrack-mobile-smartphone-breathalyzer), [Mobile V2](https://www.bactrack.ca/products/bactrack-mobile-smartphone-breathalyzer), [C6](https://www.bactrack.ca/products/bactrack-c6-smartphone-keychain-breathalyzer), or [C8](https://www.bactrack.ca/products/bactrack-c8-breathalyzer)
 
-   ```bash
-   npm install
-   ```
+## Application Screenshots
 
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
-```
-
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+<img src="./docs/screenshots/web-settings.png" alt="Web App Settings Page">
+<img src="./docs/screenshots/web-symptoms_builder.png" alt="Web App Symptoms Builder Page">
+<img src="./docs/screenshots/mobile-dashboard.jpg" alt="Mobile App Dashboard" height="800">
+<img src="./docs/screenshots/mobile-symptoms-q.jpg" alt="Mobile App Symptoms Question" height="800">
+<img src="./docs/screenshots/mobile-symptoms-severity.jpg" alt="Mobile App Symptoms Severity" height="800">
+<img src="./docs/screenshots/mobile-report.jpg" alt="Mobile App Report" height="800">
