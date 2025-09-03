@@ -1,4 +1,5 @@
 // app/index.tsx
+import '../global.css';
 import { useAuth } from '@/context/AuthContext';
 import { Href, router } from 'expo-router';
 import { useEffect } from 'react';
@@ -18,17 +19,8 @@ export default function IndexScreen() {
   }, [user, loading]);
 
   return (
-    <View style={styles.container}>
+    <View className="flex-1 justify-center items-center bg-gray-50">
       <ActivityIndicator size="large" color="#2563EB" />
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F9FAFB',
-  },
-});
