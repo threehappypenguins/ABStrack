@@ -18,7 +18,9 @@ export default function WelcomeScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <MaterialIcons name="monitor-heart" size={64} color="#2563EB" />
-        <Text style={styles.title}>ABStrack</Text>
+        <Text style={styles.title}>
+          ABStrack
+        </Text>
         <Text style={styles.subtitle}>
           Track symptoms and monitor your health with professional-grade tools
         </Text>
@@ -36,14 +38,12 @@ export default function WelcomeScreen() {
           title="Sign In"
           onPress={handleSignIn}
           variant="primary"
-          style={styles.button}
         />
         
         <AccessibleButton
           title="Create Account"
           onPress={handleCreateAccount}
           variant="secondary"
-          style={styles.button}
         />
       </View>
     </View>
@@ -88,8 +88,5 @@ const styles = StyleSheet.create({
   actions: {
     gap: 16,
     marginBottom: 40,
-  },
-  button: {
-    minHeight: 56,
   },
 });

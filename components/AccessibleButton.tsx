@@ -2,7 +2,7 @@
 import { useSettings } from '@/context/SettingsContext';
 import { SpeechService } from '@/lib/speech';
 import React from 'react';
-import { StyleSheet, Text, TextStyle, TouchableOpacity, ViewStyle } from 'react-native';
+import { Text, TouchableOpacity, StyleSheet, ViewStyle, TextStyle } from 'react-native';
 
 interface AccessibleButtonProps {
   title: string;
@@ -32,51 +32,61 @@ export function AccessibleButton({
     onPress();
   };
 
-  const getButtonStyle = () => {
-    const baseStyle = [styles.button];
-    
-    if (variant === 'primary') {
-      baseStyle.push(highContrastMode ? styles.primaryHighContrast : styles.primary);
-    } else if (variant === 'secondary') {
-      baseStyle.push(highContrastMode ? styles.secondaryHighContrast : styles.secondary);
-    } else if (variant === 'danger') {
-      baseStyle.push(styles.danger);
-    } else if (variant === 'success') {
-      baseStyle.push(styles.success);
-    }
-
+  const getButtonStyle = (): ViewStyle => {
     if (disabled) {
-      baseStyle.push(styles.disabled);
+      return { backgroundColor: '#9CA3AF', opacity: 0.6 };
     }
 
-    return baseStyle;
+    if (variant === 'primary') {
+      return highContrastMode 
+        ? { backgroundColor: '#000000', borderWidth: 2, borderColor: '#FFFFFF' }
+        : { backgroundColor: '#2563EB' };
+    }
+    
+    if (variant === 'secondary') {
+      return highContrastMode 
+        ? { backgroundColor: '#FFFFFF', borderWidth: 3, borderColor: '#000000' }
+        : { backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#D1D5DB' };
+    }
+    
+    if (variant === 'danger') {
+      return { backgroundColor: '#DC2626' };
+    }
+    
+    if (variant === 'success') {
+      return { backgroundColor: '#059669' };
+    }
+
+    return { backgroundColor: '#2563EB' };
   };
 
-  const getTextStyle = () => {
-    const baseStyle = [styles.text];
-    
-    if (textSize === 'small') {
-      baseStyle.push(styles.textSmall);
-    } else if (textSize === 'large') {
-      baseStyle.push(styles.textLarge);
-    }
+  const getTextStyle = (): TextStyle => {
+    let fontSize = 16;
+    if (textSize === 'small') fontSize = 14;
+    if (textSize === 'large') fontSize = 20;
 
-    if (variant === 'secondary' && !highContrastMode) {
-      baseStyle.push(styles.secondaryText);
-    }
+    const color = (variant === 'secondary' && !highContrastMode && !disabled) 
+      ? '#374151' 
+      : '#FFFFFF';
 
-    return baseStyle;
+    return {
+      fontSize,
+      fontWeight: '600',
+      color,
+    };
   };
 
   return (
     <TouchableOpacity
-      style={[...getButtonStyle(), style]}
+      style={[styles.button, getButtonStyle(), style]}
       onPress={handlePress}
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={title}
     >
-      <Text style={[...getTextStyle(), textStyle]}>{title}</Text>
+      <Text style={[getTextStyle(), textStyle]}>
+        {title}
+      </Text>
     </TouchableOpacity>
   );
 }
@@ -89,47 +99,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 56,
-  },
-  primary: {
-    backgroundColor: '#2563EB',
-  },
-  primaryHighContrast: {
-    backgroundColor: '#000000',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-  },
-  secondary: {
-    backgroundColor: '#F3F4F6',
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-  },
-  secondaryHighContrast: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 3,
-    borderColor: '#000000',
-  },
-  danger: {
-    backgroundColor: '#DC2626',
-  },
-  success: {
-    backgroundColor: '#059669',
-  },
-  disabled: {
-    backgroundColor: '#9CA3AF',
-    opacity: 0.6,
-  },
-  text: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  textSmall: {
-    fontSize: 14,
-  },
-  textLarge: {
-    fontSize: 20,
-  },
-  secondaryText: {
-    color: '#374151',
   },
 });
