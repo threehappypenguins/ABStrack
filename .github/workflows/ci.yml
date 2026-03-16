@@ -43,6 +43,3 @@ jobs:
       # - run: pnpm exec nx record -- echo Hello World
       - run: pnpm exec nx run-many -t lint test typecheck
       - run: pnpm exec nx run-many -t build --exclude=@abstrack/mobile
-      # Nx Cloud recommends fixes for failures to help you get CI green faster. Learn more: https://nx.dev/ci/features/self-healing-ci
-      - run: pnpm exec nx fix-ci
-        if: always()
