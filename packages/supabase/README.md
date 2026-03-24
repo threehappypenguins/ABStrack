@@ -1,6 +1,8 @@
 # supabase
 
-Shared Supabase client factory, auth helpers, and typed query wrappers (see [docs/ROADMAP.md](../../docs/ROADMAP.md)).
+**Status:** Scaffold only. The exported API is still the Nx-generated placeholder (`supabase()` in `src/lib/supabase.ts`). Planned work — Supabase client factory, auth helpers, and typed query wrappers — is tracked under **Week 2** in [docs/ROADMAP.md](../../docs/ROADMAP.md).
+
+The sections below document **environment variables** the apps will use once that implementation exists; they are accurate for setup today.
 
 ## Environment variables
 
@@ -36,4 +38,4 @@ Run `nx build supabase` to build the library.
 
 ## Running unit tests
 
-Run `nx test supabase` to execute the unit tests via [Vitest](https://vitest.dev/).
+Run `nx test supabase` to execute the unit tests via [Vitest](https://vitest.dev/) from the **workspace root**. This package does **not** list `vitest` in its own `package.json` — it is not a runtime dependency of the library, and duplicating it here would widen the dependency graph for no benefit. The same pattern applies to the other Nx Vitest libraries in `packages/*` (`ui`, `crypto`, `types`, `powersync`).
