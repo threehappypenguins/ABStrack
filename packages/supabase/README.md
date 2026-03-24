@@ -38,4 +38,6 @@ Run `nx build supabase` to build the library.
 
 ## Running unit tests
 
-Run `nx test supabase` to execute the unit tests via [Vitest](https://vitest.dev/) from the **workspace root**. This package does **not** list `vitest` in its own `package.json` — it is not a runtime dependency of the library, and duplicating it here would widen the dependency graph for no benefit. The same pattern applies to the other Nx Vitest libraries in `packages/*` (`ui`, `crypto`, `types`, `powersync`).
+Run `nx test supabase` to execute the unit tests via [Vitest](https://vitest.dev/) from the **workspace root**. This package does **not** list `vitest` in its own `package.json` — it is not a runtime dependency of the library, and duplicating it here would widen the dependency graph for no benefit.
+
+`@nx/dependency-checks` would otherwise disagree with that layout (missing vs obsolete `vitest` depending on how the build graph sees `vitest.config.*`). Each Vitest library therefore sets `ignoredDependencies: ['vitest']` on that rule in its **`eslint.config.mjs`**. The same pattern applies to `ui`, `crypto`, `types`, and `powersync` under `packages/*`.

@@ -198,7 +198,30 @@ Useful references:
 
 ---
 
-## 6. Optional tooling
+## 6. Upgrading React (e.g. to 19.2+)
+
+The workspace pins **React 19.1.x** to match **Expo SDK 54** and to stay aligned with **`react-dom`**, **`react-test-renderer`**, and **`@types/react` / `@types/react-dom`**. If you move to a newer React minor (for example **19.2+**), update **everything below in one commit** so you do not get peer warnings or type/runtime skew.
+
+1. **Runtime (exact pins today — bump together)**  
+   In the root [`package.json`](../package.json) `dependencies`: `react`, `react-dom`.  
+   In [`apps/web/package.json`](../apps/web/package.json) and [`apps/practitioner/package.json`](../apps/practitioner/package.json): same `react` / `react-dom` versions as the root (or whatever range you standardize on).  
+   In [`apps/mobile/package.json`](../apps/mobile/package.json): `react`, `react-dom` (Expo’s [supported versions](https://docs.expo.dev/versions/latest/) still apply — prefer `npx expo install react react-dom` from `apps/mobile` when upgrading the mobile stack).
+
+2. **Tests**  
+   Root `devDependencies`: `react-test-renderer` must match the same React minor as `react` (same patch is ideal).
+
+3. **TypeScript types**  
+   Root `devDependencies`: `@types/react` and `@types/react-dom` — keep them on the **same minor** as `react` (today the repo uses `~19.1.0`).
+
+4. **pnpm overrides**  
+   The root `package.json` includes `pnpm.overrides` for `@types/react` and `@types/react-dom` so transitive packages (e.g. React Native) cannot pull a newer types minor. When you upgrade React typings to **19.2.x**, update those override ranges (or remove overrides if you no longer need them).
+
+5. **Lockfile**  
+   Run `pnpm install`, fix any peer warnings, run `pnpm exec nx run-many -t lint test typecheck` (and mobile as needed), then commit **`package.json`** files and **`pnpm-lock.yaml`** together.
+
+---
+
+## 7. Optional tooling
 
 | Area | Notes |
 |------|--------|
@@ -208,7 +231,7 @@ Useful references:
 
 ---
 
-## 7. Troubleshooting
+## 8. Troubleshooting
 
 | Symptom | Things to try |
 |---------|----------------|
@@ -221,7 +244,7 @@ Useful references:
 
 ---
 
-## 8. Checklist
+## 9. Checklist
 
 - [ ] Node.js 20 and pnpm 10.29.2 installed
 - [ ] Repository cloned

@@ -30,8 +30,8 @@
     "@testing-library/react-native": "~13.2.0",
     "@types/jest": "^30.0.0",
     "@types/node": "20.19.9",
-    "@types/react": "^19.1.0",
-    "@types/react-dom": "^19.0.0",
+    "@types/react": "~19.1.0",
+    "@types/react-dom": "~19.1.0",
     "@vitest/coverage-v8": "^4.0.0",
     "autoprefixer": "10.4.13",
     "babel-jest": "^30.0.2",
@@ -79,5 +79,11 @@
     "react-native-svg": "15.12.1",
     "react-native-svg-transformer": "~1.5.1",
     "react-native-web": "~0.21.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "@types/react": "~19.1.0",
+      "@types/react-dom": "~19.1.0"
+    }
   }
 }
