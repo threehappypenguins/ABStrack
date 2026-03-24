@@ -24,7 +24,7 @@
 
 **Tasks:**
 
-- [ ] Create Supabase project and configure environment variables
+- [x] Create Supabase project and configure environment variables (project + Email provider in [Supabase dashboard](https://supabase.com/dashboard); vars documented in [`.env.example`](../.env.example))
 - [ ] Design and apply database migrations for all tables: `profiles`, `episodes`, `episode_symptoms`, `health_markers`, `food_diary_entries`, `preset_symptoms`, `preset_health_markers`, `practitioner_access`, `caretaker_access`, `episode_media`
 - [ ] Write RLS policies for all tables (user-only, caretaker, practitioner read)
 - [ ] Create the private `episode-media` storage bucket with RLS
