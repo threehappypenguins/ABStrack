@@ -30,12 +30,13 @@
     "@testing-library/react-native": "~13.2.0",
     "@types/jest": "^30.0.0",
     "@types/node": "20.19.9",
-    "@types/react": "^19.1.0",
-    "@types/react-dom": "^19.0.0",
+    "@types/react": "~19.1.0",
+    "@types/react-dom": "~19.1.0",
     "@vitest/coverage-v8": "^4.0.0",
     "autoprefixer": "10.4.13",
     "babel-jest": "^30.0.2",
     "babel-preset-expo": "~54.0.7",
+    "baseline-browser-mapping": "^2.10.10",
     "eslint": "^9.8.0",
     "eslint-config-next": "^16.0.1",
     "eslint-config-prettier": "^10.0.0",
@@ -54,7 +55,7 @@
     "nx": "22.5.4",
     "postcss": "8.4.38",
     "prettier": "~3.6.2",
-    "react-test-renderer": "19.2.4",
+    "react-test-renderer": "19.1.0",
     "tailwindcss": "3.4.3",
     "ts-jest": "^29.4.0",
     "ts-node": "10.9.1",
@@ -72,11 +73,17 @@
     "expo-status-bar": "~3.0.8",
     "expo-system-ui": "~6.0.8",
     "next": "~16.0.1",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
     "react-native": "0.81.5",
     "react-native-svg": "15.12.1",
     "react-native-svg-transformer": "~1.5.1",
     "react-native-web": "~0.21.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "@types/react": "~19.1.0",
+      "@types/react-dom": "~19.1.0"
+    }
   }
 }
