@@ -86,6 +86,8 @@ pnpm install --frozen-lockfile
 
 Use `pnpm install` without `--frozen-lockfile` only when you intentionally change dependencies.
 
+To add a **dev dependency to the workspace root** (shared tooling), run from the repo root with pnpm’s explicit root flag, e.g. `pnpm add -D <package>@latest -w`. Without `-w` / `--workspace-root`, pnpm refuses root installs so you do not add packages to the root by mistake.
+
 ### Windows (PowerShell)
 
 ```powershell
