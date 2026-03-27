@@ -33,7 +33,7 @@ CREATE TABLE public.preset_symptoms (
   user_id uuid NOT NULL REFERENCES auth.users (id) ON DELETE CASCADE,
   preset_id uuid NOT NULL,
   preset_name text NOT NULL,
-  sort_order integer NOT NULL DEFAULT 0,
+  sort_order integer NOT NULL,
   symptom_name text NOT NULL,
   response_type text NOT NULL
     CHECK (
@@ -55,6 +55,7 @@ CREATE INDEX preset_symptoms_user_preset_idx ON public.preset_symptoms (user_id,
 CREATE INDEX preset_symptoms_user_idx ON public.preset_symptoms (user_id);
 
 COMMENT ON COLUMN public.preset_symptoms.preset_id IS 'Stable id for one named preset; groups rows without a separate preset header table.';
+COMMENT ON COLUMN public.preset_symptoms.sort_order IS 'Explicit per-row order within a preset; no default so UNIQUE (user_id, preset_id, sort_order) cannot collide on 0.';
 COMMENT ON COLUMN public.preset_symptoms.response_type IS 'Symptom capture UI: yes/no, 1–5 scale, text, or media per PRD §2.';
 
 -- ---------------------------------------------------------------------------
@@ -65,7 +66,7 @@ CREATE TABLE public.preset_health_markers (
   user_id uuid NOT NULL REFERENCES auth.users (id) ON DELETE CASCADE,
   preset_id uuid NOT NULL,
   preset_name text NOT NULL,
-  sort_order integer NOT NULL DEFAULT 0,
+  sort_order integer NOT NULL,
   marker_kind text NOT NULL
     CHECK (
       marker_kind IN (
@@ -86,6 +87,8 @@ CREATE TABLE public.preset_health_markers (
 
 CREATE INDEX preset_health_markers_user_preset_idx ON public.preset_health_markers (user_id, preset_id);
 CREATE INDEX preset_health_markers_user_idx ON public.preset_health_markers (user_id);
+
+COMMENT ON COLUMN public.preset_health_markers.sort_order IS 'Explicit per-row order within a preset; no default so UNIQUE (user_id, preset_id, sort_order) cannot collide on 0.';
 
 -- ---------------------------------------------------------------------------
 -- episodes — discrete ABS / other flare events
@@ -299,8 +302,3 @@ CREATE INDEX access_log_resource_idx ON public.access_log (resource_type, resour
 COMMENT ON TABLE public.access_log IS 'Append-only audit trail; no PHI or clinical free text. Privileges and triggers in issue #8.';
 COMMENT ON COLUMN public.access_log.action IS 'e.g. read, write, auth_failure per PRD § Access logging.';
 COMMENT ON COLUMN public.access_log.resource_type IS 'e.g. episode, storage_object; resource_id is opaque UUID.';
-</think>
-Removing an incorrect CHECK constraint and fixing the episode_symptoms design.
-
-<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>
-StrReplace
