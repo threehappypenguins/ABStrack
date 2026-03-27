@@ -1,0 +1,2 @@
+-- Optional seed data for local development (`supabase db reset`).
+-- Add INSERTs here when you need fixtures; keep empty for a clean reset.

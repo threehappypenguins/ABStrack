@@ -163,7 +163,74 @@ Get URLs and keys from the [Supabase dashboard](https://supabase.com/dashboard):
 
 ---
 
-## 4. Verify the workspace
+## 4. Supabase database migrations (cloud CLI and CI)
+
+App environment variables (`NEXT_PUBLIC_SUPABASE_URL`, keys) let clients call the **Data API**; they do **not** apply SQL from the repo. Schema changes live in [`supabase/migrations/`](../supabase/migrations/) and must be applied to your hosted Postgres with the **Supabase CLI** (or an equivalent process).
+
+Official reference: [Managing Environments](https://supabase.com/docs/guides/cli/managing-environments) (CLI + GitHub Actions).
+
+### Install and sign in to the CLI
+
+From the repo root (or install the CLI globally per [Supabase CLI docs](https://supabase.com/docs/guides/cli)):
+
+```bash
+pnpm dlx supabase --version
+pnpm dlx supabase login
+```
+
+`supabase login` opens a browser or accepts a **personal access token** from the dashboard: [Account → Access Tokens](https://supabase.com/dashboard/account/tokens). The CLI stores credentials for local use; it is not the same key as your app’s publishable/anon key.
+
+### Link this repo to your Supabase project
+
+You need your **project ref** (the id in the dashboard URL: `https://supabase.com/dashboard/project/<project-ref>`).
+
+```bash
+pnpm dlx supabase link --project-ref <project-ref>
+```
+
+The CLI will prompt for the **database password** unless you set it in the environment (useful for scripts and CI):
+
+```bash
+export SUPABASE_DB_PASSWORD='<database-password>'
+pnpm dlx supabase link --project-ref <project-ref>
+```
+
+Find or reset the database password under **Project Settings → Database** in the [Supabase dashboard](https://supabase.com/dashboard) (not the API keys screen).
+
+Linking writes local metadata (under `supabase/`, gitignored where appropriate) so commands like `db push` know which remote database to target.
+
+### Push pending migrations to Supabase Cloud
+
+After new files exist in `supabase/migrations/`, apply them to the linked project:
+
+```bash
+pnpm dlx supabase db push
+```
+
+Useful variants:
+
+- **`pnpm dlx supabase db push --dry-run`** — prints which migrations would run without applying them (good for checks before merge).
+- **`pnpm dlx supabase migration list`** — compare local and remote migration history.
+
+`supabase db reset` (recreate local DB + run migrations + `seed.sql`) is for **local** development with Docker and the Supabase stack; it does not run against your online project. **`seed.sql`** is not applied to production unless you intentionally use a seeding path (the default cloud workflow is migrations only).
+
+### GitHub Actions (this repository)
+
+The workflow [`.github/workflows/supabase-migrations.yml`](../.github/workflows/supabase-migrations.yml) uses the same non-interactive variables as the [Supabase managing environments](https://supabase.com/docs/guides/cli/managing-environments) guide:
+
+| Secret | Purpose |
+|--------|--------|
+| `SUPABASE_ACCESS_TOKEN` | Personal access token for the CLI (`supabase login` equivalent). |
+| `SUPABASE_PROJECT_ID` | Project ref string (same as `supabase link --project-ref`). |
+| `SUPABASE_DB_PASSWORD` | Postgres password from **Project Settings → Database**. |
+
+Add these under **Repository → Settings → Secrets and variables → Actions**. The workflow runs **`supabase db push --dry-run`** on pull requests that change migration files (same-repo branches only; **fork PRs do not receive secrets**, so migrate checks are skipped there), and **`supabase db push`** on pushes to `main` when migration paths change. You can also run the workflow manually (**Actions → Supabase migrations → Run workflow**).
+
+If you later use **separate staging and production** projects, duplicate the pattern with different secrets (for example `STAGING_PROJECT_ID` / `PRODUCTION_PROJECT_ID`) as in the [demo workflow](https://supabase.com/docs/guides/cli/managing-environments#configure-github-actions).
+
+---
+
+## 5. Verify the workspace
 
 From the repo root, align with CI:
 
@@ -178,7 +245,7 @@ Env vars are **not** required for these tasks unless code reads them at import t
 
 ---
 
-## 5. Run applications locally
+## 6. Run applications locally
 
 Run from the **repository root** unless noted.
 
@@ -198,7 +265,7 @@ Useful references:
 
 ---
 
-## 6. Upgrading React (e.g. to 19.2+)
+## 7. Upgrading React (e.g. to 19.2+)
 
 The workspace pins **React 19.1.x** to match **Expo SDK 54** and to stay aligned with **`react-dom`**, **`react-test-renderer`**, and **`@types/react` / `@types/react-dom`**. If you move to a newer React minor (for example **19.2+**), update **everything below in one commit** so you do not get peer warnings or type/runtime skew.
 
@@ -221,7 +288,7 @@ The workspace pins **React 19.1.x** to match **Expo SDK 54** and to stay aligned
 
 ---
 
-## 7. Optional tooling
+## 8. Optional tooling
 
 | Area | Notes |
 |------|--------|
@@ -231,7 +298,7 @@ The workspace pins **React 19.1.x** to match **Expo SDK 54** and to stay aligned
 
 ---
 
-## 8. Troubleshooting
+## 9. Troubleshooting
 
 | Symptom | Things to try |
 |---------|----------------|
@@ -239,18 +306,22 @@ The workspace pins **React 19.1.x** to match **Expo SDK 54** and to stay aligned
 | Wrong Node version | Switch to Node 20 with your version manager; confirm with `node -v`. |
 | Next.js cannot see Supabase env | Confirm variables are in **`apps/<app>/.env.local`**, not only the repo root. Restart the dev server after changes. |
 | Expo cannot see variables | Use `EXPO_PUBLIC_*` names in **`apps/mobile/.env`**; restart Metro / clear cache if needed (`pnpm exec nx start mobile` with Expo’s cache clear options if documented for your setup). |
+| `supabase link` / `db push` fails in CI | Confirm **Actions secrets** match [§4](#4-supabase-database-migrations-cloud-cli-and-ci) (`SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_ID`, `SUPABASE_DB_PASSWORD`). The database password is from **Project Settings → Database**, not the API key screen. |
+| Fork PR: migration workflow skipped | Expected: GitHub does not expose repository secrets to workflows from forks. Run checks on a branch in the main repo or apply migrations manually after merge. |
 | `pnpm install` fails on Windows | Run shell as admin once if permission errors; check antivirus locking `node_modules`; try deleting `node_modules` and reinstalling. |
 | Path errors on Windows | Use forward slashes in copied commands where supported, or use the `copy` / `Copy-Item` examples above with backslashes in `cmd`. |
 
 ---
 
-## 9. Checklist
+## 10. Checklist
 
 - [ ] Node.js 20 and pnpm 10.29.2 installed
 - [ ] Repository cloned
 - [ ] `pnpm install --frozen-lockfile` succeeded
 - [ ] `apps/web/.env.local` and `apps/practitioner/.env.local` created from `.env.example` and filled with project credentials
 - [ ] `apps/mobile/.env` created from `.env.example`, **trimmed** to `EXPO_PUBLIC_*` only, and filled with real values
+- [ ] Supabase CLI can talk to your cloud project: `pnpm dlx supabase login`, `pnpm dlx supabase link --project-ref <ref>`, then `pnpm dlx supabase db push` when you have pending migrations ([§4](#4-supabase-database-migrations-cloud-cli-and-ci))
+- [ ] If using GitHub Actions for migrations: repository secrets set (`SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_ID`, `SUPABASE_DB_PASSWORD`) per [§4](#4-supabase-database-migrations-cloud-cli-and-ci)
 - [ ] `pnpm exec nx run-many -t lint test typecheck` (and build excluding mobile if you match CI) passes
 - [ ] `pnpm exec nx dev web` (and/or other apps) runs as expected
 
