@@ -1,6 +1,6 @@
 # ABStrack — Product Requirements Document
 
-**Version:** 1.1  
+**Version:** 1.1
 **Author:** Sarah (NSCC SPRINT Scholar)  
 **Status:** Draft  
 **Last Updated:** March 2026
@@ -55,7 +55,7 @@ Documenting these episodes is critical for diagnosis, treatment, and ongoing car
 - **ABS-specific health markers.** Blood alcohol content (BAC) readings, glucose levels, blood pressure, and other markers are uniquely relevant to ABS management.
 - **Evidence capture.** Neurological symptoms or slurred speech are best documented with short video or photo captures.
 - **Practitioner visibility.** The ABS community is small and many practitioners are unfamiliar with the condition. Giving practitioners access to longitudinal data with pattern visualization is essential for effective care.
-- **Privacy.** Health data of this nature is extremely sensitive. ABStrack is a **consumer-directed** health application: patients control their data; practitioners access it only after **patient-initiated** authorization. The product is designed to meet the **technical safeguard** expectations of the **HIPAA Security Rule** and the information-protection duties under **Nova Scotia PHIA** (and, for Ontario users, **PHIPA**), as stated in [Security, Privacy and Compliance](#security-privacy-and-compliance). Operational access is least-privilege, auditable, and documented in deployment/operations materials.
+- **Privacy.** Health data of this nature is extremely sensitive. ABStrack is a **consumer-directed** health application: patients control their data; practitioners access it only after **patient-initiated** authorization. The product is **intended to align with** the **technical safeguard** expectations of the **HIPAA Security Rule** and the information-protection duties under **Nova Scotia PHIA** (and, for Ontario users, **PHIPA**), as stated in [Security, Privacy and Compliance](#security-privacy-and-compliance). Operational access is least-privilege, auditable, and documented in deployment/operations materials.
 
 ---
 
@@ -89,7 +89,7 @@ An individual diagnosed with or suspected of having ABS. May be cognitively impa
 A trusted person (family member, partner, etc.) who assists the patient during episodes. Has a secondary account linked to the patient's account. Sees everything the patient sees and can complete episode logging on the patient's behalf from their own device. Receives push notifications when the patient logs an episode (post-MVP).
 
 ### Healthcare Practitioner
-A doctor, specialist, or other clinician chosen by the patient. Receives a credential invitation from the patient. Can view the patient's health data when authorized by RLS, leave observation notes, and review media. Accesses the practitioner web app only.
+A doctor, specialist, or other clinician chosen by the patient. Receives a credential invitation from the patient. Can view the patient’s health data only when the patient has **granted access**—i.e. there is an **active row** in **`practitioner_access`** for that patient–practitioner pair. **Authorization** is that explicit grant; **row-level security (RLS)** and practitioner MFA rules **enforce** it on every query. Can leave observation notes and review media. Accesses the practitioner web app only.
 
 ---
 
@@ -132,30 +132,34 @@ All three apps share types, the Supabase client, UI components, and PowerSync co
 
 **Data access differs by platform:**
 
-- **Mobile app:** PowerSync syncs **plaintext PHI rows** (subject to RLS) from Supabase into a **SQLCipher-encrypted** local SQLite database. The app reads from local SQLite and queries in TypeScript. This enables full offline support; protection at rest on the device is primarily **SQLCipher** (and optional OS keystore binding for the SQLCipher passphrase—see Security section).
+- **Mobile app:** PowerSync replicates **plaintext PHI rows** from Postgres into a **SQLCipher-encrypted** local SQLite database. The app reads from local SQLite and queries in TypeScript for offline-first use; protection at rest on the device is primarily **SQLCipher** (and optional OS keystore binding for the SQLCipher passphrase—see Security section).
 - **Web apps (user + practitioner):** Query the Supabase API over **TLS**. Data is returned after **RLS** checks. No offline support on web.
+
+**PowerSync replication vs Postgres RLS (important):** PowerSync connects to Postgres with a **dedicated replication role** (e.g. `powersync_role`). That role is typically created with **`BYPASSRLS`** so **logical replication is not filtered by row-level security**—otherwise replication of RLS-protected tables can fail or require special handling ([PowerSync + Supabase setup](https://docs.powersync.com/intro/setup-guide), [error PSYNC_S1145 / BYPASSRLS](https://docs.powersync.com/debugging/error-codes)). **Therefore “subject to RLS” is misleading for the sync path:** what each **device** is allowed to **download** is **not** enforced by Postgres RLS on the replication connection, but by **PowerSync Sync Rules** (or Sync Streams)—declarative queries parameterized by the **end-user JWT** (e.g. `request.user_id()` and predicates matching `caretaker_access` / `practitioner_access`). Those rules must **mirror** the same authorization intent as RLS so reads via sync and reads/writes via Supabase stay consistent ([RLS and Sync Streams](https://docs.powersync.com/integrations/supabase/rls-and-sync-streams)). **Writes** from the mobile app still go through Supabase with the user’s session and **RLS applies** there.
 
 ---
 
 ## Security, Privacy and Compliance
 
-### Compliance statement (authoritative)
+### Compliance statement (design intent)
 
-ABStrack is **designed and, when built to this PRD, implemented to satisfy the technical safeguard requirements** of the HIPAA Security Rule ([45 CFR §164.312](https://www.ecfr.gov/current/title-45/section-164.312)) and the **information-protection duties** described under Nova Scotia’s [Personal Health Information Act (PHIA)](https://www.novascotia.ca/dhw/phia/) and Ontario’s [*Personal Health Information Protection Act*, 2004 (PHIPA)](https://www.ontario.ca/laws/statute/04p03), **when deployed and operated according to this PRD and the separate deployment/operations documentation** (policies, training, breach response, risk analysis, vendor agreements).
+ABStrack is **designed and intended to align with and support** the technical safeguard expectations in the HIPAA Security Rule ([45 CFR §164.312](https://www.ecfr.gov/current/title-45/section-164.312)) and the **information-protection duties** described under Nova Scotia’s [Personal Health Information Act (PHIA)](https://www.novascotia.ca/dhw/phia/) and Ontario’s [*Personal Health Information Protection Act*, 2004 (PHIPA)](https://www.ontario.ca/laws/statute/04p03), **when implemented according to this PRD** and **when deployed and operated** per separate deployment/operations documentation (policies, training, breach response, risk analysis, vendor agreements). An implementation that follows this PRD should **support** those requirements; it does not, by itself, replace organizational compliance programs.
 
-**Regulators do not certify consumer software as “compliant” in the abstract.** This statement means the **system architecture and controls described here** are intended to meet those **technical and operational-process** expectations—consistent with how cloud and health-IT vendors describe their products. HIPAA requires safeguards to be **reasonable and appropriate** to the entity’s context ([45 CFR §164.306](https://www.ecfr.gov/current/title-45/section-164.306)); this design follows that model.
+**Regulators do not certify consumer software as “compliant” in the abstract.** The **architecture and controls described here** are **intended** to align with those **technical and operational-process** expectations—similar to how cloud and health-IT vendors describe product capabilities. HIPAA requires safeguards to be **reasonable and appropriate** to the entity’s context ([45 CFR §164.306](https://www.ecfr.gov/current/title-45/section-164.306)); this design is intended to follow that model.
+
+**Note:** This PRD is **not legal advice**—it documents **technical design intent** for a **consumer-facing**, open-source ABS symptom-tracking app. Privacy and health-data rules depend on where you and your users live and how you host the software; anyone deploying a copy (including self-hosting) should apply **common sense** and check **local requirements** if unsure. Nothing here assumes enterprise contracts, BAAs, or formal compliance programs.
 
 The system provides:
 
 - **Encryption in transit and at rest** for server-side and mobile-stored personal health information (TLS; managed database and object-storage encryption; SQLCipher and OS keystore on device as specified).
-- **Role-based access control** enforced by **database-level row-level security (RLS)** and application routing.
+- **Role-based access control** enforced by **database-level row-level security (RLS)** and application routing for Supabase API access; **PowerSync Sync Rules** mirroring the same grants for offline replication (see Architecture).
 - **Mandatory multi-factor authentication** for practitioner access, with **fail-closed** enforcement.
 - **Append-only audit logging** of access events (no clinical content in log rows).
 - **Least-privileged operational access** and **private** object storage with signed URLs.
 
 **Default legal posture:** ABStrack operates as a **consumer-directed health application** and **technical service provider** processing information **at the direction of the individual user**, not as a HIPAA **covered entity** (it does not provide clinical care, bill payers, or perform covered transactions in that role) and **not** as a Nova Scotia **custodian** or Ontario **health information custodian** in that default posture. It is **not** an “agent” of a custodian by default (no operation under a hospital’s or clinic’s authority). **HIPAA Business Associate** status applies **only when** ABStrack is used under a **Business Associate Agreement (BAA)** with a covered entity (e.g. a clinic procuring hosted access). Under PHIA/PHIPA, **service-provider** obligations apply when contracted by a custodian; otherwise the product supports **individual-directed** collection and sharing consistent with the apps’ consent and grant flows.
 
-**Administrative and organizational safeguards** (policies, workforce training, breach notification playbooks, risk analysis, BAAs where required) are **required for regulated production use** and are **documented outside this PRD** in deployment and operations documentation.
+**Administrative and organizational safeguards** (policies, training, breach playbooks, risk analysis) become more important as a deployment scales or serves many users; for **small-scale, consumer, or self-hosted** use, the **technical controls** in this PRD are the main focus. Teams **may** capture additional ops practices in deployment documentation as needed—nothing here mandates a formal compliance program for a niche open-source project.
 
 **Primary reference links (cite in security documentation and audits):**
 
@@ -188,11 +192,11 @@ PHIA and PHIPA do not prescribe a specific cryptography stack; they require **re
 
 ### Security controls summary (technical safeguards)
 
-The rows below mirror the **HIPAA Security Rule** technical safeguards ([45 CFR §164.312](https://www.ecfr.gov/current/title-45/section-164.312)). **PHIA** (NS) and **PHIPA** (ON) are satisfied in this product by the same **reasonable technical measures**—access control, auditing, authentication, integrity, and encryption in transit and at rest—not by a separate checklist in statute.
+The rows below mirror the **HIPAA Security Rule** technical safeguards ([45 CFR §164.312](https://www.ecfr.gov/current/title-45/section-164.312)). **PHIA** (NS) and **PHIPA** (ON) obligations are **intended to be supported** by the same **reasonable technical measures**—access control, auditing, authentication, integrity, and encryption in transit and at rest—not by a separate checklist in statute.
 
 | Requirement | ABStrack design | Status |
 |---------------|-----------------|--------|
-| Access control | RLS on all PHI tables; Supabase Auth unique identities; `practitioner_access` / `caretaker_access` grants | ✅ |
+| Access control | RLS on all PHI tables (Supabase API); Sync Rules mirroring grants for PowerSync; Supabase Auth; `practitioner_access` / `caretaker_access` | ✅ |
 | Audit controls | Append-only `access_log` written via trusted server path (Edge Function or triggers) | ✅ |
 | Authentication | Passwords; mandatory MFA (TOTP) for practitioners (fail-closed) | ✅ |
 | Integrity | Authenticated APIs; database constraints; TLS | ✅ |
@@ -202,7 +206,7 @@ The rows below mirror the **HIPAA Security Rule** technical safeguards ([45 CFR 
 
 ### Technical safeguard baseline (HIPAA §164.312–oriented)
 
-- **Access control:** Unique user IDs (Supabase Auth), role-based authorization in application logic, and **RLS** on all PHI tables so only authorized identities read or write each row.
+- **Access control:** Unique user IDs (Supabase Auth), role-based authorization in application logic, **RLS** on all PHI tables for API traffic, and **PowerSync Sync Rules** aligned with those policies for replicated reads on mobile.
 - **Audit controls:** Append-only **`access_log`** (see below) plus platform logging; periodic review procedures are an organizational responsibility.
 - **Integrity:** TLS for data in transit; database constraints and authenticated APIs; optional row integrity patterns (e.g. updated_at, soft delete) as implemented in schema migrations.
 - **Authentication:** Strong passwords; **mandatory MFA (TOTP) for practitioners** with **fail-closed** enforcement (see Authentication section).
@@ -211,7 +215,7 @@ The rows below mirror the **HIPAA Security Rule** technical safeguards ([45 CFR 
 
 ### Data model: plaintext PHI in Supabase under RLS
 
-Sensitive health fields are stored as **normal columns** in PostgreSQL (plaintext at the application layer). Protection is **authorization** (RLS + least-privileged roles), **transport security** (TLS), **infrastructure encryption at rest**, and **audit logging**—not end-to-end client-side encryption of each field.
+Sensitive health fields are stored as **normal columns** in PostgreSQL (plaintext at the application layer). Protection is **explicit grants** (e.g. `practitioner_access`, `caretaker_access`) **enforced by RLS**, plus least-privileged database roles, **transport security** (TLS), **infrastructure encryption at rest**, and **audit logging**—not end-to-end client-side encryption of each field.
 
 > **Database design note:** Symptoms, health markers, and food diary entries remain **rows, not columns**—each symptom is a row in `episode_symptoms` with a `symptom_name` field, for scalability and clear data modeling.
 
@@ -220,7 +224,7 @@ Sensitive health fields are stored as **normal columns** in PostgreSQL (plaintex
 Access is modeled with **grant tables** and RLS. There is **no** per-user data encryption key (DEK) shared between patient and caretaker or patient and practitioner.
 
 - **`practitioner_access`:** One row per (patient, practitioner) grant. Columns include at least `patient_user_id`, `practitioner_user_id`, `created_at`, `revoked_at` (nullable). The patient inserts and deletes (or revokes) rows; the practitioner can **read** rows where they are the granted party.
-- **`caretaker_access`:** One row per (patient, caretaker) link for MVP. The patient creates the link; the caretaker reads/writes the patient’s data per RLS. **Revocation** removes or invalidates the link row.
+- **`caretaker_access`:** One row per (patient, caretaker) link for MVP. The patient creates the link; the caretaker reads/writes the patient’s data **as authorized by that grant**, **enforced by RLS**. **Revocation** removes or invalidates the link row.
 
 **RLS requirements (explicit):**
 
@@ -239,13 +243,18 @@ To support **HIPAA audit controls** ([45 CFR §164.312(b)](https://www.ecfr.gov/
 
 **Logged fields (no PHI content, no free-text clinical details):** e.g. `id`, `occurred_at`, `actor_user_id`, `actor_role`, `patient_user_id` (subject of access), `action` (e.g. `read`, `write`, `auth_failure`), `resource_type` (e.g. `episode`, `storage_object`), `resource_id` (opaque UUID), optional `request_id`, `ip_hash` or similar **non-identifying** metadata as approved in implementation.
 
-**Writes:** Clients **do not** insert directly. Inserts are performed by a **trusted server path** (e.g. Supabase **Edge Function** using the service role, or database triggers on approved operations) so entries cannot be forged or suppressed from the client.
+**Writes (inserts):** End-user clients **do not** insert directly. Inserts use a **trusted server path** (e.g. Supabase **Edge Function** with the **service role**, or **`SECURITY DEFINER`** RPC / triggers invoked only from that path) so rows cannot be forged or suppressed from untrusted clients.
 
-**RLS:**
+**Append-only immutability (PostgreSQL — implementers):** RLS alone does **not** make a table immutable. Use a **layered** approach so `UPDATE`/`DELETE` cannot succeed for application roles:
+
+1. **Privileges:** `REVOKE UPDATE, DELETE ON public.access_log FROM PUBLIC` and from every role that should never mutate rows (including `authenticated` / `anon` as appropriate). Grant **INSERT** only to the role used by the trusted insert path (e.g. service role via Edge Function, or a dedicated role used only by a `SECURITY DEFINER` function).
+2. **RLS policies by command:** Enable RLS on `access_log`. Define **`SELECT`** policies matching the read rules below. For **`UPDATE`** and **`DELETE`**, either **omit** policies for those commands (deny by default when RLS is on and no policy applies) or add explicit **deny-all** policies, e.g. `FOR UPDATE USING (false)` / `FOR DELETE USING (false)` for `authenticated` (verify behavior with your Postgres version—policies must match how Supabase maps roles).
+3. **Optional defense in depth:** `BEFORE UPDATE OR DELETE` trigger that **`RAISE EXCEPTION`** (blocks even privileged mistakes), or allow only the table owner / superuser for rare maintenance.
+
+**RLS (read access)** — illustrative; tune to your schema:
 
 - Patients can **read** all log rows where `patient_user_id` is their account.
 - Practitioners and caretakers can **read** rows where `actor_user_id` is themselves (optional narrow read policy).
-- **No** `UPDATE` or `DELETE` for any role via RLS (`USING (false)` on update/delete), or equivalent append-only enforcement.
 
 ### Local device protection (mobile / offline)
 
@@ -275,8 +284,9 @@ flowchart TD
 ### Compliance-oriented engineering checklist (non-exhaustive)
 
 - RLS on every PHI table and on `storage.objects` for the media bucket; periodic policy review in migrations.
+- **PowerSync:** Sync Rules (or Sync Streams) **must** encode the same grant logic as RLS (patient / caretaker / practitioner); treat RLS as authoritative for API access and **keep rules in sync** when policies change; validate per-role buckets in tests ([RLS and Sync Streams](https://docs.powersync.com/integrations/supabase/rls-and-sync-streams)).
 - Practitioner MFA **fail-closed** path (Edge Function or equivalent) for patient-data reads if JWT claims are unreliable.
-- `access_log` append-only semantics; inserts only via service role or triggers; no client direct writes.
+- `access_log` append-only: **privilege revocation + per-command RLS** (and optional `BEFORE UPDATE/DELETE` triggers); inserts only via trusted path; no client direct writes (see **Access logging** above).
 - TLS everywhere; no mixed content; secure cookie/session settings for web apps.
 - Document Supabase (or self-hosted) **encryption at rest** and backup posture in deployment runbooks.
 - Incident response procedure (breach assessment, notification triggers per jurisdiction); assign data roles (owner, operators).
@@ -468,7 +478,7 @@ Accessibility is the primary design concern for the food diary. Users may be unw
 **MVP**
 
 - A patient can create a caretaker account from their settings.
-- The caretaker logs in with their own credentials on their own device. Access is authorized by a **`caretaker_access`** grant and **RLS** (see Security section)—there is no shared encryption key between patient and caretaker.
+- The caretaker logs in with their own credentials on their own device. **Authorization** is an **active `caretaker_access` grant** from the patient; **RLS enforces** it on queries (see Security section)—there is no shared encryption key between patient and caretaker.
 - The caretaker has full read and write access to the patient's data — they can complete episode logging on the patient's behalf.
 - The caretaker sees the same home screen and prompt flows as the patient.
 - One patient can have one caretaker account for MVP (multiple caretakers post-MVP).
@@ -488,7 +498,7 @@ The practitioner app is a separate web application accessible only via invitatio
 - The patient initiates practitioner access from their settings by entering the practitioner's email address.
 - The practitioner receives an email invitation to create an account.
 - The practitioner can only see data for patients who have invited them.
-- The patient can revoke practitioner access at any time. Revocation immediately removes the practitioner's **authorization** to read the patient's data via the API (RLS); it does not retroactively erase what was already viewed.
+- The patient can revoke practitioner access at any time. Revocation removes or invalidates the **`practitioner_access` grant**, so the practitioner is **no longer authorized**; **RLS** then **denies** further reads. It does not retroactively erase what was already viewed.
 
 #### Practitioner Features
 - View a patient's full episode history, symptom logs, health markers, and food diary.
@@ -508,7 +518,11 @@ The practitioner app is a separate web application accessible only via invitatio
 
 **MVP**
 
-Both the user app and the practitioner app display data visualizations to help identify patterns. Charts are computed in the client from **authorized** query results (TLS + RLS). Server-side aggregation may be added later for performance; it is not required for MVP.
+Both the user app and the practitioner app display data visualizations to help identify patterns. **Aggregations for charts are computed server-side** (PostgreSQL), not by scanning large row sets in the browser or on the device. The client **renders** pre-aggregated series or summaries returned over TLS (small payloads: e.g. bucketed counts, time series points, top-N symptom frequencies).
+
+**Rationale:** Client-side aggregation would require downloading potentially **large** episode/symptom histories and running heavy CPU work on every chart render—**poor on older phones** and **unnecessary** now that PHI lives as queryable columns. Server-side aggregation scales with the database, minimizes data transfer, and matches the long-term architecture (same pattern as any serious analytics on Postgres).
+
+**Implementation expectations (non-prescriptive):** Use **RLS-respecting** queries—e.g. Supabase **RPCs** (`SECURITY INVOKER`) or **SQL views** evaluated under the caller’s JWT so **`practitioner_access` / patient ownership** is enforced on underlying tables—or an **Edge Function** that runs validated SQL with the user’s context. **Do not** ship MVP charts that `SELECT *` all rows into the client to aggregate in JavaScript. Optional **materialized views** or scheduled rollups may be added later for very heavy dashboards.
 
 #### Available Charts
 - **Episode frequency** over time (daily/weekly/monthly)
@@ -589,7 +603,7 @@ The following features are in scope for the two-month internship MVP:
 | Video & photo capture (private Storage + TLS + RLS; device at-rest protection offline) | MVP |
 | Caretaker account | MVP |
 | Healthcare practitioner app (view data, notes, media) | MVP |
-| Charts & graphs (client-side from authorized queries) | MVP |
+| Charts & graphs (server-side aggregation; client renders only) | MVP |
 | Offline support via PowerSync + SQLCipher (mobile) | MVP |
 
 ---
