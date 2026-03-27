@@ -1,6 +1,6 @@
 # ABStrack — Product Requirements Document
 
-**Version:** 1.0  
+**Version:** 1.1  
 **Author:** Sarah (NSCC SPRINT Scholar)  
 **Status:** Draft  
 **Last Updated:** March 2026
@@ -15,7 +15,7 @@
 4. [Users & Roles](#users--roles)
 5. [Technical Stack](#technical-stack)
 6. [Architecture Overview](#architecture-overview)
-7. [Security & Encryption](#security--encryption)
+7. [Security, Privacy and Compliance](#security-privacy-and-compliance)
 8. [Feature Requirements](#feature-requirements)
    - [Authentication](#1-authentication)
    - [Symptom Presets](#2-symptom-presets)
@@ -55,7 +55,7 @@ Documenting these episodes is critical for diagnosis, treatment, and ongoing car
 - **ABS-specific health markers.** Blood alcohol content (BAC) readings, glucose levels, blood pressure, and other markers are uniquely relevant to ABS management.
 - **Evidence capture.** Neurological symptoms or slurred speech are best documented with short video or photo captures.
 - **Practitioner visibility.** The ABS community is small and many practitioners are unfamiliar with the condition. Giving practitioners access to longitudinal data with pattern visualization is essential for effective care.
-- **Privacy.** Health data of this nature is extremely sensitive. Even the developer should not have access to user health data.
+- **Privacy.** Health data of this nature is extremely sensitive. ABStrack is a **consumer-directed** health application: patients control their data; practitioners access it only after **patient-initiated** authorization. The product is designed to meet the **technical safeguard** expectations of the **HIPAA Security Rule** and the information-protection duties under **Nova Scotia PHIA** (and, for Ontario users, **PHIPA**), as stated in [Security, Privacy and Compliance](#security-privacy-and-compliance). Operational access is least-privilege, auditable, and documented in deployment/operations materials.
 
 ---
 
@@ -66,7 +66,7 @@ Documenting these episodes is critical for diagnosis, treatment, and ongoing car
 - Provide a fast, accessible interface for logging ABS episodes, even while cognitively impaired.
 - Allow users to define symptom and health marker presets tailored to their individual ABS presentation.
 - Support video and photo capture for neurological symptom documentation.
-- Enable secure, encrypted data sharing between a user and their chosen healthcare practitioner.
+- Enable secure data sharing between a user and their chosen healthcare practitioner (authorization, TLS, access controls, and audit logging).
 - Provide charts and graphs to help practitioners and users identify patterns over time.
 - Support offline use on mobile, with automatic sync when connectivity is restored.
 - Be fully open source and self-hostable.
@@ -89,7 +89,7 @@ An individual diagnosed with or suspected of having ABS. May be cognitively impa
 A trusted person (family member, partner, etc.) who assists the patient during episodes. Has a secondary account linked to the patient's account. Sees everything the patient sees and can complete episode logging on the patient's behalf from their own device. Receives push notifications when the patient logs an episode (post-MVP).
 
 ### Healthcare Practitioner
-A doctor, specialist, or other clinician chosen by the patient. Receives a credential invitation from the patient. Can view the patient's encrypted health data, leave observation notes, and review media. Accesses the practitioner web app only.
+A doctor, specialist, or other clinician chosen by the patient. Receives a credential invitation from the patient. Can view the patient's health data when authorized by RLS, leave observation notes, and review media. Accesses the practitioner web app only.
 
 ---
 
@@ -104,7 +104,7 @@ A doctor, specialist, or other clinician chosen by the patient. Receives a crede
 | Offline Sync | PowerSync |
 | Monorepo Tooling | Nx |
 | Package Manager | pnpm |
-| Shared Packages | `@abstrack/types`, `@abstrack/supabase`, `@abstrack/ui`, `@abstrack/powersync`, `@abstrack/crypto` |
+| Shared Packages | `@abstrack/types`, `@abstrack/supabase`, `@abstrack/ui`, `@abstrack/powersync` (optional `@abstrack/crypto` for non-PHI utilities only—not used for application-layer PHI encryption in this model) |
 | Media Storage | Supabase Storage |
 | CI/CD | GitHub Actions |
 
@@ -125,160 +125,166 @@ ABStrack/
     ├── supabase/        # Shared Supabase client & helpers
     ├── ui/              # Shared UI components
     ├── powersync/       # PowerSync schema & sync configuration
-    └── crypto/          # Client-side AES-256-GCM encrypt/decrypt utilities
+    └── crypto/          # Optional; not used for PHI encryption in the server-side safeguard model
 ```
 
-All three apps share types, the Supabase client, UI components, and encryption utilities from the shared packages.
+All three apps share types, the Supabase client, UI components, and PowerSync configuration from the shared packages.
 
 **Data access differs by platform:**
 
-- **Mobile app:** PowerSync syncs ciphertext from Supabase to a local SQLite database. The app reads from local SQLite, decrypts in memory using the session DEK, and queries in TypeScript. This enables full offline support.
-- **Web apps (user + practitioner):** Query the Supabase API directly. Ciphertext is fetched over the network, decrypted in the browser using the session DEK, and queried in TypeScript. No offline support on web.
-
-The `@abstrack/crypto` package is used identically in all three apps — only the data fetch layer differs.
+- **Mobile app:** PowerSync syncs **plaintext PHI rows** (subject to RLS) from Supabase into a **SQLCipher-encrypted** local SQLite database. The app reads from local SQLite and queries in TypeScript. This enables full offline support; protection at rest on the device is primarily **SQLCipher** (and optional OS keystore binding for the SQLCipher passphrase—see Security section).
+- **Web apps (user + practitioner):** Query the Supabase API over **TLS**. Data is returned after **RLS** checks. No offline support on web.
 
 ---
 
-## Security & Encryption
+## Security, Privacy and Compliance
 
-Privacy is a first-class requirement. The developer cannot read user health data without the user's password.
+### Compliance statement (authoritative)
 
-### Encryption Approach: Client-Side AES-256-GCM
+ABStrack is **designed and, when built to this PRD, implemented to satisfy the technical safeguard requirements** of the HIPAA Security Rule ([45 CFR §164.312](https://www.ecfr.gov/current/title-45/section-164.312)) and the **information-protection duties** described under Nova Scotia’s [Personal Health Information Act (PHIA)](https://www.novascotia.ca/dhw/phia/) and Ontario’s [*Personal Health Information Protection Act*, 2004 (PHIPA)](https://www.ontario.ca/laws/statute/04p03), **when deployed and operated according to this PRD and the separate deployment/operations documentation** (policies, training, breach response, risk analysis, vendor agreements).
 
-ABStrack uses **client-side encryption** — all sensitive data is encrypted on the user's device before it is ever sent to the server. The server stores only ciphertext.
+**Regulators do not certify consumer software as “compliant” in the abstract.** This statement means the **system architecture and controls described here** are intended to meet those **technical and operational-process** expectations—consistent with how cloud and health-IT vendors describe their products. HIPAA requires safeguards to be **reasonable and appropriate** to the entity’s context ([45 CFR §164.306](https://www.ecfr.gov/current/title-45/section-164.306)); this design follows that model.
 
-This approach is chosen over server-side alternatives (Supabase Vault, pgcrypto, CipherStash) because:
+The system provides:
 
-- All queries in ABStrack are **per-user** — there is no need to search or filter encrypted data across multiple users at the database level.
-- The client holds the decryption key in memory during the session.
-- Per-user datasets are small enough that decrypting in memory and querying in JavaScript/TypeScript is trivially fast (AES is hardware-accelerated on all modern phones and browsers).
-- Server-side encryption approaches either give the developer access to keys (Supabase Vault) or add significant architectural complexity (CipherStash proxy) without benefit for this use case.
+- **Encryption in transit and at rest** for server-side and mobile-stored personal health information (TLS; managed database and object-storage encryption; SQLCipher and OS keystore on device as specified).
+- **Role-based access control** enforced by **database-level row-level security (RLS)** and application routing.
+- **Mandatory multi-factor authentication** for practitioner access, with **fail-closed** enforcement.
+- **Append-only audit logging** of access events (no clinical content in log rows).
+- **Least-privileged operational access** and **private** object storage with signed URLs.
 
-### Key Management: Key Wrapping
+**Default legal posture:** ABStrack operates as a **consumer-directed health application** and **technical service provider** processing information **at the direction of the individual user**, not as a HIPAA **covered entity** (it does not provide clinical care, bill payers, or perform covered transactions in that role) and **not** as a Nova Scotia **custodian** or Ontario **health information custodian** in that default posture. It is **not** an “agent” of a custodian by default (no operation under a hospital’s or clinic’s authority). **HIPAA Business Associate** status applies **only when** ABStrack is used under a **Business Associate Agreement (BAA)** with a covered entity (e.g. a clinic procuring hosted access). Under PHIA/PHIPA, **service-provider** obligations apply when contracted by a custodian; otherwise the product supports **individual-directed** collection and sharing consistent with the apps’ consent and grant flows.
 
-1. At signup, a random 256-bit **Data Encryption Key (DEK)** is generated for the user.
-2. A **Key Encryption Key (KEK)** is derived from the user's password using **Argon2id**. (Argon2id is not available in the browser Web Crypto API — it requires the `argon2id` npm package in the browser and `@sphereon/react-native-argon2` on React Native.)
-3. The DEK is encrypted ("wrapped") with the KEK and stored in Supabase.
-4. On login, the user's password re-derives the KEK, unwraps the DEK, and holds it in memory for the session.
-5. All sensitive fields are encrypted/decrypted using the DEK via **AES-256-GCM** with a fresh random IV per encryption operation.
+**Administrative and organizational safeguards** (policies, workforce training, breach notification playbooks, risk analysis, BAAs where required) are **required for regulated production use** and are **documented outside this PRD** in deployment and operations documentation.
 
-**Password reset:** When a user resets their password via email link, a new KEK is derived from the new password and the DEK is re-wrapped. The underlying data never needs to be re-encrypted.
+**Primary reference links (cite in security documentation and audits):**
 
-**Lost access:** If a user loses both their password and access to their reset email, their data is unrecoverable. This must be clearly communicated during onboarding.
+| Topic | Link |
+|------|------|
+| HIPAA — overview (HHS) | [HIPAA (HHS)](https://www.hhs.gov/hipaa/index.html) |
+| HIPAA Security Rule — general requirements | [45 CFR §164.306 (eCFR)](https://www.ecfr.gov/current/title-45/section-164.306) |
+| HIPAA Security Rule — Technical safeguards | [45 CFR §164.312 (eCFR)](https://www.ecfr.gov/current/title-45/section-164.312) |
+| NS — PHIA overview | [Personal Health Information Act: overview](https://www.novascotia.ca/dhw/phia/) |
+| NS — PHIA statute (PDF) | [Personal Health Information Act (PDF)](https://nslegislature.ca/sites/default/files/legc/statutes/personal%20health%20information.pdf) |
+| NS — PHIA Regulations | [Personal Health Information Regulations](https://novascotia.ca/just/regulations/regs/phipershealth.htm) |
+| NS — OIPC legislation index | [Legislation — OIPC Nova Scotia](https://oipc.novascotia.ca/legislation) |
+| NS — Record of User Activity (custodian audit expectations) | [Fact Sheet — Record of User Activity (PDF)](https://novascotia.ca/dhw/phia/documents/Fact-Sheet-Record-of-User-Activity.pdf) |
+| ON — PHIPA statute | [*Personal Health Information Protection Act*, 2004 (Ontario)](https://www.ontario.ca/laws/statute/04p03) |
 
-### Client-Side Querying
+**Secondary references (interpretive, not law):** [Compliancy Group — PHIPA vs HIPAA](https://compliancy-group.com/the-differences-between-canadas-phipa-and-hipaa/) · [Digital Health Canada — HIPAA-oriented software development practices](https://digitalhealthcanada.com/comprehensive-guide-to-achieving-hipaa-compliance-in-healthcare-software-development/)
 
-Because the DEK is held in memory during the session, all querying happens client-side:
+### Statutory mapping (technical safeguards)
 
-1. PowerSync syncs **ciphertext** from Supabase to local SQLite on the device.
-2. The app fetches rows from local SQLite.
-3. The app decrypts sensitive fields in memory using the session DEK.
-4. Filtering, grouping, and aggregation for charts and queries happens in TypeScript after decryption.
+| Requirement (HIPAA Security Rule — technical) | ABStrack design | Intended satisfaction |
+|------------------------------------------------|-----------------|------------------------|
+| Access control ([§164.312(a)](https://www.ecfr.gov/current/title-45/section-164.312)) | Unique user IDs (Supabase Auth), RLS on PHI tables, grant tables | Yes |
+| Audit controls ([§164.312(b)](https://www.ecfr.gov/current/title-45/section-164.312)) | Append-only `access_log`, trusted insert path | Yes |
+| Integrity ([§164.312(c)](https://www.ecfr.gov/current/title-45/section-164.312)) | TLS, authenticated APIs, DB constraints | Yes |
+| Person/entity authentication ([§164.312(d)](https://www.ecfr.gov/current/title-45/section-164.312)) | Passwords; mandatory MFA for practitioners | Yes |
+| Transmission security ([§164.312(e)](https://www.ecfr.gov/current/title-45/section-164.312)) | TLS for API and Storage | Yes |
+| Encryption (addressable specs under [§164.312](https://www.ecfr.gov/current/title-45/section-164.312)) | TLS + platform at-rest encryption + SQLCipher/keystore on mobile | Implemented (reasonable and appropriate); client-side end-to-end field encryption is **not** required by HIPAA for this architecture |
 
-**Example — symptom frequency chart:**
-```typescript
-const rows = await powersync.getAll(
-  'SELECT symptom_name FROM episode_symptoms WHERE user_id = ?', [userId]
-);
-const counts = new Map<string, number>();
-for (const row of rows) {
-  const name = await decryptField(row.symptom_name, dek);
-  counts.set(name, (counts.get(name) ?? 0) + 1);
-}
+PHIA and PHIPA do not prescribe a specific cryptography stack; they require **reasonable safeguards** against unauthorized access, use, and disclosure. This architecture is **consistent with** those duties for a consumer-directed application and supports **custodian/service-provider** scenarios when contracted.
+
+### Security controls summary (technical safeguards)
+
+The rows below mirror the **HIPAA Security Rule** technical safeguards ([45 CFR §164.312](https://www.ecfr.gov/current/title-45/section-164.312)). **PHIA** (NS) and **PHIPA** (ON) are satisfied in this product by the same **reasonable technical measures**—access control, auditing, authentication, integrity, and encryption in transit and at rest—not by a separate checklist in statute.
+
+| Requirement | ABStrack design | Status |
+|---------------|-----------------|--------|
+| Access control | RLS on all PHI tables; Supabase Auth unique identities; `practitioner_access` / `caretaker_access` grants | ✅ |
+| Audit controls | Append-only `access_log` written via trusted server path (Edge Function or triggers) | ✅ |
+| Authentication | Passwords; mandatory MFA (TOTP) for practitioners (fail-closed) | ✅ |
+| Integrity | Authenticated APIs; database constraints; TLS | ✅ |
+| Encryption in transit | TLS for all client–server and Storage access | ✅ |
+| Encryption at rest (server) | Managed PostgreSQL + object storage encryption (platform / self-hosted equivalent) | ✅ |
+| Encryption at rest (mobile) | SQLCipher-encrypted local SQLite; OS secure storage for secrets / optional keystore-bound keys | ✅ |
+
+### Technical safeguard baseline (HIPAA §164.312–oriented)
+
+- **Access control:** Unique user IDs (Supabase Auth), role-based authorization in application logic, and **RLS** on all PHI tables so only authorized identities read or write each row.
+- **Audit controls:** Append-only **`access_log`** (see below) plus platform logging; periodic review procedures are an organizational responsibility.
+- **Integrity:** TLS for data in transit; database constraints and authenticated APIs; optional row integrity patterns (e.g. updated_at, soft delete) as implemented in schema migrations.
+- **Authentication:** Strong passwords; **mandatory MFA (TOTP) for practitioners** with **fail-closed** enforcement (see Authentication section).
+- **Transmission security:** HTTPS/TLS for all client–Supabase and app–Storage traffic.
+- **Encryption:** TLS in transit; **platform encryption at rest** (managed PostgreSQL, object storage, backups) via Supabase or self-hosted equivalent; SQLCipher/keystore on mobile. See [Statutory mapping](#statutory-mapping-technical-safeguards)—HIPAA treats many encryption items as **addressable**; this stack implements them rather than relying on a documented alternative.
+
+### Data model: plaintext PHI in Supabase under RLS
+
+Sensitive health fields are stored as **normal columns** in PostgreSQL (plaintext at the application layer). Protection is **authorization** (RLS + least-privileged roles), **transport security** (TLS), **infrastructure encryption at rest**, and **audit logging**—not end-to-end client-side encryption of each field.
+
+> **Database design note:** Symptoms, health markers, and food diary entries remain **rows, not columns**—each symptom is a row in `episode_symptoms` with a `symptom_name` field, for scalability and clear data modeling.
+
+### Authorized access: practitioners and caretakers (no DEK sharing)
+
+Access is modeled with **grant tables** and RLS. There is **no** per-user data encryption key (DEK) shared between patient and caretaker or patient and practitioner.
+
+- **`practitioner_access`:** One row per (patient, practitioner) grant. Columns include at least `patient_user_id`, `practitioner_user_id`, `created_at`, `revoked_at` (nullable). The patient inserts and deletes (or revokes) rows; the practitioner can **read** rows where they are the granted party.
+- **`caretaker_access`:** One row per (patient, caretaker) link for MVP. The patient creates the link; the caretaker reads/writes the patient’s data per RLS. **Revocation** removes or invalidates the link row.
+
+**RLS requirements (explicit):**
+
+| Table / object | Patient | Caretaker | Practitioner |
+|----------------|---------|-----------|--------------|
+| PHI tables (`episodes`, `episode_symptoms`, etc.) | Full read/write own `user_id` | Read/write where `caretaker_access` links to patient’s `user_id` | Read-only where `practitioner_access` grant exists and not revoked; **only after** practitioner MFA is verified per the **fail-closed** rules in Authentication |
+| `practitioner_access` | Insert/delete (grant/revoke) own patient id | No access | Select rows where `practitioner_user_id` = self |
+| `caretaker_access` | Insert/delete own grants | Select row where self is caretaker | No access |
+| Practitioner observation notes | N/A | N/A | Insert/update own notes; read per patient grant |
+
+**Revocation:** Deleting or revoking a grant **stops future** reads via the API. It does **not** erase data the party already saw or exported; that limitation is stated in-product where relevant.
+
+### Access logging (`access_log`)
+
+To support **HIPAA audit controls** ([45 CFR §164.312(b)](https://www.ecfr.gov/current/title-45/section-164.312)) and NS expectations around **records of user activity** where applicable ([Record of User Activity factsheet](https://novascotia.ca/dhw/phia/documents/Fact-Sheet-Record-of-User-Activity.pdf)), ABStrack maintains an **append-only** `access_log` table.
+
+**Logged fields (no PHI content, no free-text clinical details):** e.g. `id`, `occurred_at`, `actor_user_id`, `actor_role`, `patient_user_id` (subject of access), `action` (e.g. `read`, `write`, `auth_failure`), `resource_type` (e.g. `episode`, `storage_object`), `resource_id` (opaque UUID), optional `request_id`, `ip_hash` or similar **non-identifying** metadata as approved in implementation.
+
+**Writes:** Clients **do not** insert directly. Inserts are performed by a **trusted server path** (e.g. Supabase **Edge Function** using the service role, or database triggers on approved operations) so entries cannot be forged or suppressed from the client.
+
+**RLS:**
+
+- Patients can **read** all log rows where `patient_user_id` is their account.
+- Practitioners and caretakers can **read** rows where `actor_user_id` is themselves (optional narrow read policy).
+- **No** `UPDATE` or `DELETE` for any role via RLS (`USING (false)` on update/delete), or equivalent append-only enforcement.
+
+### Local device protection (mobile / offline)
+
+- **SQLCipher** encrypts the PowerSync SQLite file at rest.
+- The SQLCipher **passphrase** must be stored using **OS secure storage** (e.g. iOS Keychain / Android Keystore) where feasible; optional **biometric re-unlock** may gate access to the passphrase without prompting full password on every cold start (product decision).
+- **Offline media** pending upload: files reside in app sandbox storage; recommend **encrypting queued blobs with a device-bound key** (or storing only inside SQLCipher BLOB columns) so raw video is not left unencrypted on disk if the device is compromised.
+
+### High-level data flow
+
+```mermaid
+flowchart TD
+  PatientApp -->|TLS| Supabase
+  CaretakerApp -->|TLS| Supabase
+  PractitionerApp -->|TLS| Supabase
+
+  Supabase -->|RLS| Tables
+  Supabase -->|RLS| Storage
+
+  PractitionerApp -->|readsAuthorized| Tables
+  CaretakerApp -->|readsWritesLinkedPatient| Tables
+  PatientApp -->|ownsData| Tables
+
+  EdgeFn[EdgeFunction_or_triggers] -->|appendOnlyInsert| AccessLog[access_log]
+  Supabase --> EdgeFn
 ```
 
-### Local Database Encryption (Mobile)
+### Compliance-oriented engineering checklist (non-exhaustive)
 
-On mobile, PowerSync uses **SQLCipher** via `@powersync/op-sqlite` to encrypt the local SQLite database at rest. This provides two layers of encryption on the device:
+- RLS on every PHI table and on `storage.objects` for the media bucket; periodic policy review in migrations.
+- Practitioner MFA **fail-closed** path (Edge Function or equivalent) for patient-data reads if JWT claims are unreliable.
+- `access_log` append-only semantics; inserts only via service role or triggers; no client direct writes.
+- TLS everywhere; no mixed content; secure cookie/session settings for web apps.
+- Document Supabase (or self-hosted) **encryption at rest** and backup posture in deployment runbooks.
+- Incident response procedure (breach assessment, notification triggers per jurisdiction); assign data roles (owner, operators).
+- Privacy policy and in-app disclosures aligned with actual data flows (including offline SQLCipher and optional operator access).
 
-1. The local SQLite database file is encrypted by SQLCipher.
-2. Individual sensitive field values within the database are encrypted with the user's DEK.
+### Media storage security
 
-### Practitioner Access: Asymmetric Key Exchange
-
-1. At account creation, each practitioner generates an **X25519 key pair**. The private key is wrapped with the practitioner's password (same KEK/DEK pattern as patients). (X25519 is supported in Chrome 133+, Firefox 130+, Safari 17+. On React Native, `react-native-quick-crypto` provides X25519 via native bindings.)
-2. When a patient invites a practitioner, the patient's app encrypts the patient's DEK with the **practitioner's public key** and stores this in a `practitioner_access` table.
-3. When the practitioner views patient data, their app unwraps their private key, decrypts the patient's DEK, and uses it to decrypt the patient's data in the browser.
-4. **Revoking access** is as simple as deleting the row in `practitioner_access` — the practitioner immediately loses the ability to decrypt the patient's data.
-
-### Caretaker Access: Shared DEK
-
-The caretaker has full read and write access to the patient's data, so the caretaker needs the patient's DEK. The key-sharing mechanism mirrors the practitioner pattern:
-
-1. When the patient creates a caretaker account, the patient's app wraps the patient's DEK with a key derived from the caretaker's password (using Argon2id, the same as the patient's own KEK derivation) and stores this in a `caretaker_access` table.
-2. On caretaker login, the caretaker's password re-derives the key, unwraps the patient's DEK, and holds it in memory for the session.
-3. Because the caretaker shares the same DEK, any data the caretaker encrypts (e.g., logging an episode on the patient's behalf) is readable by the patient and vice versa.
-4. **Revoking access** is done by deleting the row in `caretaker_access`. The patient must then re-wrap their DEK for any remaining authorized users (or generate a new DEK and re-encrypt all data if the revocation is adversarial — this is an edge case for post-MVP consideration).
-
-### The `@abstrack/crypto` Package
-
-All encryption and decryption logic lives in the shared `@abstrack/crypto` package, ensuring identical implementation across all three apps. The package abstracts over platform-specific crypto providers:
-
-- **Browser / Next.js:** native `crypto.subtle` (Web Crypto API)
-- **React Native:** `react-native-quick-crypto` (provides a native SubtleCrypto implementation — `crypto.subtle` is not available in React Native by default)
-
-```typescript
-// packages/crypto/src/encrypt.ts
-export async function encryptField(plaintext: string, dek: CryptoKey): Promise<Uint8Array> {
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const encoded = new TextEncoder().encode(plaintext);
-  const ciphertext = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
-    dek,
-    encoded
-  );
-  const result = new Uint8Array(iv.length + ciphertext.byteLength);
-  result.set(iv);
-  result.set(new Uint8Array(ciphertext), iv.length);
-  return result;
-}
-
-export async function decryptField(blob: Uint8Array, dek: CryptoKey): Promise<string> {
-  const iv = blob.slice(0, 12);
-  const ciphertext = blob.slice(12);
-  const plaintext = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv },
-    dek,
-    ciphertext
-  );
-  return new TextDecoder().decode(plaintext);
-}
-```
-
-### Columns to Encrypt
-
-| Table | Columns to Encrypt |
-|---|---|
-| `episodes` | `episode_label` |
-| `episode_symptoms` | `symptom_name`, `notes` |
-| `health_markers` | `marker_name`, `value`, `notes` |
-| `food_diary_entries` | `food_note` |
-| `preset_symptoms` | `symptom_name` |
-| `preset_health_markers` | `marker_name` |
-| `practitioner_access` | `wrapped_patient_dek` |
-
-### Columns to Leave Unencrypted (for PowerSync sync and sorting)
-
-| Table | Unencrypted Columns | Reason |
-|---|---|---|
-| `episodes` | `id`, `user_id`, `timestamp`, `episode_type` (enum: `ABS` \| `Other`), `ended_at` | Needed for sorting, filtering, sync. Custom episode names are stored in the encrypted `episode_label` column. |
-| `episode_symptoms` | `id`, `episode_id`, `user_id`, `created_at` | Needed for joins and sync |
-| `health_markers` | `id`, `episode_id`, `user_id`, `recorded_at` | Needed for sorting and sync |
-| `food_diary_entries` | `id`, `episode_id`, `user_id`, `meal_tag`, `consumed_at` | Needed for timeline correlation |
-
-> **Database Design Note:** Symptoms, health markers, and food diary entries must be stored as **rows, not columns**. Each symptom is a row in `episode_symptoms` with an encrypted `symptom_name` field — not a dedicated column per symptom. This is critical for both privacy and scalability.
-
-### Row Level Security (RLS)
-
-Supabase RLS policies must be enabled on all tables. Policies enforce:
-
-- A user can only read and write their own rows.
-- A caretaker can read and write rows belonging to their linked patient.
-- A healthcare practitioner can only read rows for patients who have explicitly granted access via `practitioner_access`.
-
-### Media Storage Security
-
-Videos and images are stored in a **private Supabase Storage bucket** (`episode-media`). See Section 10 for full media encryption details.
+Videos and images are stored in a **private** Supabase Storage bucket (`episode-media`). Access uses **RLS on `storage.objects`** and **short-lived signed URLs**. Objects are **not** application-encrypted with a patient DEK; confidentiality relies on **private bucket + RLS + TLS**, plus **platform encryption at rest** on the storage backend. See Section 10 for capture, upload, playback, and offline queue details.
 
 ---
 
@@ -292,7 +298,7 @@ Videos and images are stored in a **private Supabase Storage bucket** (`episode-
 - Email/password sign-up and login for patients, caretakers, and practitioners.
 - Patients can create a linked caretaker account during onboarding or from settings.
 - Practitioner accounts are created via invitation only (patient-initiated).
-- Password reset via email link. On reset, the DEK is re-wrapped with a KEK derived from the new password — no data is lost.
+- Password reset via email link. Password change does not require re-encrypting PHI in this model (data remains in PostgreSQL; the new password applies to Auth only).
 
 #### Session Persistence
 
@@ -304,7 +310,7 @@ ABStrack is an accessibility-first application. Users may need to log symptoms w
 | Caretaker | Persistent session — same as patient | Can enable "Require re-authentication on app open" in security settings |
 | Practitioner | Standard session with expiry | N/A |
 
-Persistent sessions are implemented via Supabase Auth refresh tokens stored in device/browser storage.
+Persistent sessions are implemented via Supabase Auth refresh tokens stored in device/browser storage. **No DEK** is persisted for decryption: the server stores plaintext PHI; the mobile app holds **plaintext inside SQLCipher** after sync, protected by the device encryption key/passphrase strategy in the Security section.
 
 #### Two-Factor Authentication (TOTP)
 
@@ -316,11 +322,15 @@ TOTP is implemented via Supabase Auth's built-in MFA API. Compatible with any TO
 | Caretaker | Optional — can be enabled in security settings | Not enforced |
 | Practitioner | **Mandatory** — must enrol before first login is granted | Enforced via three layers (see below) |
 
-**Practitioner TOTP enforcement** uses three layers working together:
+**Practitioner TOTP enforcement (fail-closed):** If MFA status cannot be verified, the practitioner **must not** receive access to patient data. A custom JWT hook that errors and causes Supabase to issue a token **without** the expected `aal` claim would **bypass** RLS that relies only on that claim—therefore enforcement **must not** depend on a hook that can fail open.
 
-1. **Custom access token hook** (PL/pgSQL function): runs before each token is issued and injects the user's role (e.g., `practitioner`) into the JWT claims.
-2. **RLS policies**: practitioner-accessible tables include a policy that checks `auth.jwt() ->> 'aal' = 'aal2'`, meaning the practitioner must have completed MFA verification to access any patient data.
-3. **Frontend gating**: the practitioner app checks the user's MFA enrolment status on login and redirects unenrolled practitioners to the TOTP setup flow before granting access to the app.
+**Required approach (PRD):**
+
+1. **RLS:** Practitioner policies require `auth.jwt() ->> 'aal' = 'aal2'` (or equivalent Supabase AAL claim) **and** a stable role claim (e.g. `app_role = practitioner`) **only if** those claims are guaranteed present; otherwise use a **server-mediated** path for practitioner reads (Edge Function validates MFA server-side) or deny by default.
+2. **Backend / Edge gate (recommended):** Sensitive practitioner reads (or all practitioner patient-data APIs) go through an Edge Function that verifies the session’s MFA level via Supabase Auth APIs **before** returning data; on any verification failure, return **403** and log `auth_failure` to `access_log`.
+3. **Frontend gating:** The practitioner app checks MFA enrolment and AAL on login; **no** navigation to patient routes until verified.
+
+Hooks may still set JWT claims for convenience, but **must not** be the sole control if their failure mode can omit claims.
 
 **For patients and caretakers with TOTP enabled:** TOTP is prompted at initial login only. With persistent sessions (the default), re-opening the app does not prompt for TOTP again unless the session has fully expired or the user has enabled "Require re-authentication on app open."
 
@@ -410,7 +420,7 @@ An "episode" or "flare" is a discrete event where the user experiences ABS-relat
 5. The user can flag the episode type:
    - **ABS** (manually, or automatically suggested if BAC reading is above 0.00)
    - **Other** (default)
-   - Optionally, the user can add a custom episode label (e.g., "Non-ABS Vomiting Episode"), which is stored in an encrypted `episode_label` column. The `episode_type` itself is a simple unencrypted enum (`ABS` | `Other`) to allow sorting and filtering without decryption.
+   - Optionally, the user can add a custom episode label (e.g., "Non-ABS Vomiting Episode"), stored in plaintext column `episode_label` (protected by RLS like other PHI). The `episode_type` itself is a simple enum (`ABS` | `Other`) for sorting and filtering.
 6. The user can optionally add a note to the episode.
 7. The episode is saved with a timestamp.
 
@@ -446,7 +456,7 @@ Accessibility is the primary design concern for the food diary. Users may be unw
   - A **meal tag** (single tap): Breakfast / Lunch / Dinner / Snack / Other
   - Time of entry (defaults to now, editable)
 - Food diary entries are associated with an episode if logged during one, or stored as standalone entries otherwise.
-- The free text note is encrypted using the user's DEK via `@abstrack/crypto`.
+- The free text note is stored as plaintext in `food_diary_entries.food_note`, protected by RLS and TLS.
 
 **Post-MVP**
 - AI-assisted parsing of food diary notes into structured nutritional data (foods, quantities, carbohydrate content) for improved pattern analysis in charts and graphs. The AI parsing happens after the fact — the user never has to do careful per-item logging.
@@ -458,7 +468,7 @@ Accessibility is the primary design concern for the food diary. Users may be unw
 **MVP**
 
 - A patient can create a caretaker account from their settings.
-- The caretaker logs in with their own credentials on their own device.
+- The caretaker logs in with their own credentials on their own device. Access is authorized by a **`caretaker_access`** grant and **RLS** (see Security section)—there is no shared encryption key between patient and caretaker.
 - The caretaker has full read and write access to the patient's data — they can complete episode logging on the patient's behalf.
 - The caretaker sees the same home screen and prompt flows as the patient.
 - One patient can have one caretaker account for MVP (multiple caretakers post-MVP).
@@ -478,7 +488,7 @@ The practitioner app is a separate web application accessible only via invitatio
 - The patient initiates practitioner access from their settings by entering the practitioner's email address.
 - The practitioner receives an email invitation to create an account.
 - The practitioner can only see data for patients who have invited them.
-- The patient can revoke practitioner access at any time. Revocation immediately invalidates the practitioner's ability to decrypt the patient's data.
+- The patient can revoke practitioner access at any time. Revocation immediately removes the practitioner's **authorization** to read the patient's data via the API (RLS); it does not retroactively erase what was already viewed.
 
 #### Practitioner Features
 - View a patient's full episode history, symptom logs, health markers, and food diary.
@@ -488,7 +498,7 @@ The practitioner app is a separate web application accessible only via invitatio
 - Receive an in-app notification when the patient shares a specific chart with notes (see section 9).
 
 #### Practitioner Permissions
-- Read access to all patient health data (decrypted client-side via X25519 key exchange — see Security section).
+- Read access to all patient health data returned over TLS when `practitioner_access` is active and MFA requirements are satisfied (see Security and Authentication sections).
 - Write access to observation notes only.
 - No ability to modify or delete patient data.
 
@@ -498,7 +508,7 @@ The practitioner app is a separate web application accessible only via invitatio
 
 **MVP**
 
-Both the user app and the practitioner app display data visualizations to help identify patterns. All charts are built from client-side decrypted data — no server-side aggregation of encrypted fields.
+Both the user app and the practitioner app display data visualizations to help identify patterns. Charts are computed in the client from **authorized** query results (TLS + RLS). Server-side aggregation may be added later for performance; it is not required for MVP.
 
 #### Available Charts
 - **Episode frequency** over time (daily/weekly/monthly)
@@ -524,16 +534,14 @@ Both the user app and the practitioner app display data visualizations to help i
 - After recording, the user is shown an **immediate playback preview** and given the option to **re-record** before saving.
 - Photos are captured as single frames.
 
-#### Encryption
-- All media is encrypted client-side using the user's DEK via `@abstrack/crypto` before upload — the same AES-256-GCM approach used for text fields.
-- Even with full storage admin access, media files are unreadable without the user's key.
-- A small encrypted **thumbnail** is generated and encrypted client-side alongside the full media, for display in episode grids without downloading the full file.
-- The `.enc` file extension is used for all encrypted media files in storage.
+#### Server-side confidentiality (not client DEK encryption)
+- Media objects are stored **without** an application-layer DEK or per-file AES from `@abstrack/crypto`. Confidentiality is provided by a **private bucket**, **RLS on `storage.objects`**, **TLS** in transit, and **platform encryption at rest** on the storage backend (Supabase or self-hosted S3-compatible).
+- A **thumbnail** object may be stored alongside the full media (same bucket, separate object key) for grids; thumbnails are subject to the same access controls as the primary file.
 
 #### Storage
 - Media is stored in a **private Supabase Storage bucket** (`episode-media`).
-- Access is controlled via RLS policies on `storage.objects` — only the owning user, their caretaker, and their authorized practitioner can request files.
-- **Time-limited signed URLs** (60 seconds) authorize downloading the encrypted blob, which is then decrypted client-side for viewing.
+- Access is controlled via RLS policies on `storage.objects` — only the owning user, their caretaker, and their authorized practitioner (with valid grant + MFA) can create signed URLs or read objects per policy design.
+- **Time-limited signed URLs** (e.g. 60 seconds) authorize downloading the **object** for playback or display in the client.
 - The Supabase Storage SDK is the only storage interface the app talks to — the underlying backend is swappable via environment variables with no app code changes.
 
 | Phase | Storage Backend | Notes |
@@ -544,21 +552,22 @@ Both the user app and the practitioner app display data visualizations to help i
 > **Note:** MinIO Community was archived in February 2026. RustFS (Rust-based, ~2GB RAM) and SeaweedFS (Go-based, ~512MB RAM) are the recommended self-hosted S3-compatible replacements. SeaweedFS is preferred for Oracle VM free tier due to its lower memory footprint.
 
 #### Playback
-- To view media: download encrypted blob → decrypt in app using session DEK → create object URL → display in `<video>` or `<img>` tag.
-- For 15-second compressed videos (~2-5MB), the download-decrypt-display cycle is under one second on any modern device. No streaming required.
+- To view media: obtain a signed URL → download blob over TLS → display in `<video>` or `<img>` (or equivalent React Native component). No client-side decryption step for application-layer crypto.
+- For 15-second compressed videos (~2-5MB), download-and-display is typically under one second on modern devices. No streaming required for MVP.
 - The user sees a brief loading indicator, then the media plays.
 
 #### Offline Media Capture
 PowerSync syncs database rows only — not files. A separate offline upload queue handles media:
 
-1. User captures video while offline.
-2. App encrypts the video immediately with the session DEK (happens locally on device).
-3. The encrypted blob is saved to local device storage (app cache directory).
-4. A metadata row is written to local SQLite via PowerSync: `{ episode_id, file_path, media_type, encryption_iv, uploaded: false }`.
-5. PowerSync syncs the metadata row to Supabase when connectivity is restored.
-6. A background upload queue detects `uploaded: false` rows, uploads the encrypted blobs to Supabase Storage, then sets `uploaded: true`.
+1. User captures video or photo while offline.
+2. The file is written to **local app storage**. To avoid leaving raw PHI on disk, the blob should be **encrypted at rest with a device-bound key** (OS keystore / SQLCipher BLOB / app-specific encryption)—**not** with a shared patient–caretaker DEK.
+3. A metadata row is written to local SQLite (PowerSync): e.g. `{ episode_id, local_file_path_or_blob_id, media_type, uploaded: false }`. **Do not** require a separate `encryption_iv` column unless the chosen at-rest format stores IVs out-of-band; if IV+nonce are prefixed to the file blob, a single path field is sufficient.
+4. PowerSync syncs the metadata row to Supabase when connectivity is restored (row contains no raw media bytes).
+5. A background worker uploads the file to Storage, then sets `uploaded: true` and stores the remote object key on the row.
 
-Practitioner access to media uses the same X25519 key exchange described in the Security section — once the practitioner has the patient's DEK, they can decrypt both health data and media. No separate mechanism is needed.
+If **application-level encryption** is applied to queued media blobs, the **initialization vector (IV) and nonce** are stored **inline with the ciphertext** within the encrypted file or BLOB, and **no separate IV column** (e.g. `encryption_iv`) is required in the queue metadata row.
+
+Practitioner access to media uses the same **RLS + signed URL** model as other patient data once `practitioner_access` is granted; no separate key-exchange mechanism.
 
 **Post-MVP**
 - Multiple media captures per symptom prompt.
@@ -577,10 +586,10 @@ The following features are in scope for the two-month internship MVP:
 | Episode logging with prompt flow | MVP |
 | General wellness logging | MVP |
 | Food diary (free text + meal tag) | MVP |
-| Video & photo capture with client-side encryption | MVP |
+| Video & photo capture (private Storage + TLS + RLS; device at-rest protection offline) | MVP |
 | Caretaker account | MVP |
 | Healthcare practitioner app (view data, notes, media) | MVP |
-| Charts & graphs (client-side decrypted) | MVP |
+| Charts & graphs (client-side from authorized queries) | MVP |
 | Offline support via PowerSync + SQLCipher (mobile) | MVP |
 
 ---
