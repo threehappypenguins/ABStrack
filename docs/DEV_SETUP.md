@@ -195,7 +195,7 @@ export SUPABASE_DB_PASSWORD='<database-password>'
 pnpm dlx supabase link --project-ref <project-ref>
 ```
 
-Find or reset the database password under **Project Settings → Database** in the [Supabase dashboard](https://supabase.com/dashboard) (not the API keys screen).
+Find or reset the database password in the [Supabase dashboard](https://supabase.com/dashboard) under **Database → Settings** for your project, or open **Connect** at the top of the project page to view connection strings and the `postgres` password. It is **not** the same as **API Keys** or **JWT Keys** under Project Settings.
 
 Linking writes local metadata (under `supabase/`, gitignored where appropriate) so commands like `db push` know which remote database to target.
 
@@ -222,7 +222,7 @@ The workflow [`.github/workflows/supabase-migrations.yml`](../.github/workflows/
 |--------|--------|
 | `SUPABASE_ACCESS_TOKEN` | Personal access token for the CLI (`supabase login` equivalent). |
 | `SUPABASE_PROJECT_ID` | Project ref string (same as `supabase link --project-ref`). |
-| `SUPABASE_DB_PASSWORD` | Postgres password from **Project Settings → Database**. |
+| `SUPABASE_DB_PASSWORD` | Postgres password for the `postgres` role (from **Connect** or **Database → Settings**; see §4 above). |
 
 Add these under **Repository → Settings → Secrets and variables → Actions**. The workflow runs **`supabase db push --dry-run`** on pull requests that change migration files (same-repo branches only; **fork PRs do not receive secrets**, so migrate checks are skipped there), and **`supabase db push`** on pushes to `main` when migration paths change. You can also run the workflow manually (**Actions → Supabase migrations → Run workflow**).
 
@@ -306,7 +306,7 @@ The workspace pins **React 19.1.x** to match **Expo SDK 54** and to stay aligned
 | Wrong Node version | Switch to Node 20 with your version manager; confirm with `node -v`. |
 | Next.js cannot see Supabase env | Confirm variables are in **`apps/<app>/.env.local`**, not only the repo root. Restart the dev server after changes. |
 | Expo cannot see variables | Use `EXPO_PUBLIC_*` names in **`apps/mobile/.env`**; restart Metro / clear cache if needed (`pnpm exec nx start mobile` with Expo’s cache clear options if documented for your setup). |
-| `supabase link` / `db push` fails in CI | Confirm **Actions secrets** match [§4](#4-supabase-database-migrations-cloud-cli-and-ci) (`SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_ID`, `SUPABASE_DB_PASSWORD`). The database password is from **Project Settings → Database**, not the API key screen. |
+| `supabase link` / `db push` fails in CI | Confirm **Actions secrets** match [§4](#4-supabase-database-migrations-cloud-cli-and-ci) (`SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_ID`, `SUPABASE_DB_PASSWORD`). The database password is the **Postgres** password from **Connect** or **Database → Settings**, not the Data API / anon keys. |
 | Fork PR: migration workflow skipped | Expected: GitHub does not expose repository secrets to workflows from forks. Run checks on a branch in the main repo or apply migrations manually after merge. |
 | `pnpm install` fails on Windows | Run shell as admin once if permission errors; check antivirus locking `node_modules`; try deleting `node_modules` and reinstalling. |
 | Path errors on Windows | Use forward slashes in copied commands where supported, or use the `copy` / `Copy-Item` examples above with backslashes in `cmd`. |
