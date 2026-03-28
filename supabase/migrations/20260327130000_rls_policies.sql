@@ -268,6 +268,65 @@ ALTER TABLE public.caretaker_access
 ALTER TABLE public.access_log
   ENABLE ROW LEVEL SECURITY;
 
+-- profiles: own row only; app_role is not self-service for practitioner (PRD: invitation path).
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.profiles_trusted_session_for_app_role ()
+  RETURNS boolean
+  LANGUAGE sql
+  STABLE
+  SECURITY DEFINER
+  SET search_path = pg_catalog, public
+  AS $$
+    SELECT
+      COALESCE((auth.jwt() ->> 'role') = 'service_role', FALSE)
+      OR session_user = 'postgres';
+
+$$;
+
+COMMENT ON FUNCTION public.profiles_trusted_session_for_app_role () IS 'True for service_role JWT or direct postgres session (migrations / trusted role assignment).';
+
+REVOKE ALL ON FUNCTION public.profiles_trusted_session_for_app_role ()
+  FROM PUBLIC;
+
+CREATE OR REPLACE FUNCTION public.profiles_enforce_app_role ()
+  RETURNS TRIGGER
+  LANGUAGE plpgsql
+  SECURITY DEFINER
+  SET search_path = pg_catalog, public, pg_temp
+  AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.app_role = 'practitioner'
+      AND NOT public.profiles_trusted_session_for_app_role () THEN
+      RAISE EXCEPTION 'profiles.app_role practitioner requires a trusted path';
+    END IF;
+    RETURN NEW;
+  END IF;
+  IF TG_OP = 'UPDATE' THEN
+    IF OLD.app_role IS DISTINCT FROM NEW.app_role
+      AND NOT public.profiles_trusted_session_for_app_role () THEN
+      RAISE EXCEPTION 'profiles.app_role cannot be changed without a trusted path';
+    END IF;
+    RETURN NEW;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER profiles_enforce_app_role
+  BEFORE INSERT OR UPDATE ON public.profiles
+  FOR EACH ROW
+  EXECUTE FUNCTION public.profiles_enforce_app_role ();
+
+COMMENT ON FUNCTION public.profiles_enforce_app_role () IS 'Blocks practitioner self-signup and arbitrary app_role changes unless session is trusted (service_role / postgres).';
+
+REVOKE ALL ON FUNCTION public.profiles_enforce_app_role ()
+  FROM PUBLIC;
+
+GRANT EXECUTE ON FUNCTION public.profiles_enforce_app_role () TO authenticated;
+
+GRANT EXECUTE ON FUNCTION public.profiles_enforce_app_role () TO service_role;
+
 -- profiles: own row only (routing metadata; not caretaker-as-patient proxy)
 CREATE POLICY profiles_select_own ON public.profiles
   FOR SELECT
@@ -277,7 +336,8 @@ CREATE POLICY profiles_select_own ON public.profiles
 CREATE POLICY profiles_insert_own ON public.profiles
   FOR INSERT
   TO authenticated
-  WITH CHECK (id = (SELECT auth.uid()));
+  WITH CHECK (id = (SELECT auth.uid())
+    AND app_role IN ('patient', 'caretaker'));
 
 CREATE POLICY profiles_update_own ON public.profiles
   FOR UPDATE
@@ -289,6 +349,12 @@ CREATE POLICY profiles_delete_own ON public.profiles
   FOR DELETE
   TO authenticated
   USING (id = (SELECT auth.uid()));
+
+CREATE POLICY profiles_service_role_all ON public.profiles
+  FOR ALL
+  TO service_role
+  USING (TRUE)
+  WITH CHECK (TRUE);
 
 -- symptom_presets
 CREATE POLICY symptom_presets_select ON public.symptom_presets
