@@ -3,7 +3,8 @@
 #
 # - push to main: applies migrations (supabase db push)
 # - pull_request: dry-run only (supabase db push --dry-run) when migration files change
-# - workflow_dispatch: manual deploy
+# - workflow_dispatch: manual deploy (deploy job only runs on refs/heads/main so a mistaken
+#   dispatch from a feature branch cannot push unmerged migrations to the linked project).
 # Concurrency: one run at a time per branch/ref so overlapping supabase db push jobs do not
 # contend on the remote migration history (especially main → cloud).
 
@@ -56,7 +57,7 @@ jobs:
         run: supabase db push --dry-run --yes
 
   deploy:
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
