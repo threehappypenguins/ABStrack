@@ -4,6 +4,8 @@
 # - push to main: applies migrations (supabase db push)
 # - pull_request: dry-run only (supabase db push --dry-run) when migration files change
 # - workflow_dispatch: manual deploy
+# Concurrency: one run at a time per branch/ref so overlapping supabase db push jobs do not
+# contend on the remote migration history (especially main → cloud).
 
 name: Supabase migrations
 
@@ -26,6 +28,10 @@ env:
 
 permissions:
   contents: read
+
+concurrency:
+  group: supabase-migrations-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   # Validate that migrations apply cleanly without mutating the remote DB.
