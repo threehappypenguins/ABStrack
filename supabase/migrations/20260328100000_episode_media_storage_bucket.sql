@@ -51,6 +51,62 @@ REVOKE ALL ON FUNCTION public.episode_media_storage_path_patient_id (text)
 GRANT EXECUTE ON FUNCTION public.episode_media_storage_path_patient_id (text) TO authenticated;
 
 -- ---------------------------------------------------------------------------
+-- Single evaluation of path → patient id per policy check (avoid repeated foldername/regex)
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.episode_media_storage_can_select (p_object_name text)
+  RETURNS boolean
+  LANGUAGE sql
+  STABLE
+  SECURITY INVOKER
+  SET search_path = pg_catalog, public
+  AS $$
+    SELECT
+      CASE
+        WHEN v.pid IS NULL THEN FALSE
+        WHEN v.pid = (SELECT auth.uid()) THEN TRUE
+        WHEN public.user_is_caretaker_for_patient (v.pid) THEN TRUE
+        WHEN public.user_has_practitioner_access (v.pid) THEN TRUE
+        ELSE FALSE
+      END
+    FROM (
+      SELECT
+        public.episode_media_storage_path_patient_id (p_object_name) AS pid) AS v;
+  $$;
+
+COMMENT ON FUNCTION public.episode_media_storage_can_select (text) IS 'True if current user may read/list episode-media object: owner, active caretaker, or authorized practitioner. Computes path patient id once.';
+
+CREATE OR REPLACE FUNCTION public.episode_media_storage_can_write (p_object_name text)
+  RETURNS boolean
+  LANGUAGE sql
+  STABLE
+  SECURITY INVOKER
+  SET search_path = pg_catalog, public
+  AS $$
+    SELECT
+      CASE
+        WHEN v.pid IS NULL THEN FALSE
+        WHEN v.pid = (SELECT auth.uid()) THEN TRUE
+        WHEN public.user_is_caretaker_for_patient (v.pid) THEN TRUE
+        ELSE FALSE
+      END
+    FROM (
+      SELECT
+        public.episode_media_storage_path_patient_id (p_object_name) AS pid) AS v;
+  $$;
+
+COMMENT ON FUNCTION public.episode_media_storage_can_write (text) IS 'True if current user may insert/update/delete episode-media object: owner or active caretaker only. Computes path patient id once.';
+
+REVOKE ALL ON FUNCTION public.episode_media_storage_can_select (text)
+  FROM PUBLIC;
+
+REVOKE ALL ON FUNCTION public.episode_media_storage_can_write (text)
+  FROM PUBLIC;
+
+GRANT EXECUTE ON FUNCTION public.episode_media_storage_can_select (text) TO authenticated;
+
+GRANT EXECUTE ON FUNCTION public.episode_media_storage_can_write (text) TO authenticated;
+
+-- ---------------------------------------------------------------------------
 -- storage.objects — episode-media only; no anon policies (anonymous has no access)
 -- ---------------------------------------------------------------------------
 ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
@@ -60,44 +116,28 @@ CREATE POLICY episode_media_storage_select ON storage.objects
   TO authenticated
   USING (
     bucket_id = 'episode-media'
-    AND public.episode_media_storage_path_patient_id (name) IS NOT NULL
-    AND (
-      public.episode_media_storage_path_patient_id (name) = (SELECT auth.uid())
-      OR public.user_is_caretaker_for_patient (public.episode_media_storage_path_patient_id (name))
-      OR public.user_has_practitioner_access (public.episode_media_storage_path_patient_id (name))));
+    AND public.episode_media_storage_can_select (name));
 
 CREATE POLICY episode_media_storage_insert ON storage.objects
   FOR INSERT
   TO authenticated
   WITH CHECK (
     bucket_id = 'episode-media'
-    AND public.episode_media_storage_path_patient_id (name) IS NOT NULL
-    AND (
-      public.episode_media_storage_path_patient_id (name) = (SELECT auth.uid())
-      OR public.user_is_caretaker_for_patient (public.episode_media_storage_path_patient_id (name))));
+    AND public.episode_media_storage_can_write (name));
 
 CREATE POLICY episode_media_storage_update ON storage.objects
   FOR UPDATE
   TO authenticated
   USING (
     bucket_id = 'episode-media'
-    AND public.episode_media_storage_path_patient_id (name) IS NOT NULL
-    AND (
-      public.episode_media_storage_path_patient_id (name) = (SELECT auth.uid())
-      OR public.user_is_caretaker_for_patient (public.episode_media_storage_path_patient_id (name))))
+    AND public.episode_media_storage_can_write (name))
   WITH CHECK (
     bucket_id = 'episode-media'
-    AND public.episode_media_storage_path_patient_id (name) IS NOT NULL
-    AND (
-      public.episode_media_storage_path_patient_id (name) = (SELECT auth.uid())
-      OR public.user_is_caretaker_for_patient (public.episode_media_storage_path_patient_id (name))));
+    AND public.episode_media_storage_can_write (name));
 
 CREATE POLICY episode_media_storage_delete ON storage.objects
   FOR DELETE
   TO authenticated
   USING (
     bucket_id = 'episode-media'
-    AND public.episode_media_storage_path_patient_id (name) IS NOT NULL
-    AND (
-      public.episode_media_storage_path_patient_id (name) = (SELECT auth.uid())
-      OR public.user_is_caretaker_for_patient (public.episode_media_storage_path_patient_id (name))));
+    AND public.episode_media_storage_can_write (name));
