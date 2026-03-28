@@ -185,11 +185,39 @@ CREATE OR REPLACE FUNCTION public.access_log_prevent_update_or_delete ()
   LANGUAGE plpgsql
   AS $$
 BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'access_log is append-only';
+    RETURN NULL;
+  END IF;
+
+  -- UPDATE: allow only auth.users FK ON DELETE SET NULL on actor_user_id / patient_user_id;
+  -- all other columns must be unchanged (append-only audit semantics).
+  IF TG_OP = 'UPDATE'
+    AND OLD.id IS NOT DISTINCT FROM NEW.id
+    AND OLD.occurred_at IS NOT DISTINCT FROM NEW.occurred_at
+    AND OLD.actor_role IS NOT DISTINCT FROM NEW.actor_role
+    AND OLD.action IS NOT DISTINCT FROM NEW.action
+    AND OLD.resource_type IS NOT DISTINCT FROM NEW.resource_type
+    AND OLD.resource_id IS NOT DISTINCT FROM NEW.resource_id
+    AND OLD.request_id IS NOT DISTINCT FROM NEW.request_id
+    AND OLD.ip_hash IS NOT DISTINCT FROM NEW.ip_hash
+    AND (
+      OLD.actor_user_id IS NOT DISTINCT FROM NEW.actor_user_id
+      OR (OLD.actor_user_id IS NOT NULL AND NEW.actor_user_id IS NULL)
+    )
+    AND (
+      OLD.patient_user_id IS NOT DISTINCT FROM NEW.patient_user_id
+      OR (OLD.patient_user_id IS NOT NULL AND NEW.patient_user_id IS NULL)
+    ) THEN
+    RETURN NEW;
+  END IF;
+
   RAISE EXCEPTION 'access_log is append-only';
   RETURN NULL;
-  -- Unreachable today; documents BEFORE UPDATE/DELETE trigger contract if RAISE is ever relaxed.
 END;
 $$;
+
+COMMENT ON FUNCTION public.access_log_prevent_update_or_delete () IS 'Blocks UPDATE/DELETE except FK cleanup when referenced auth.users rows are deleted (SET NULL on actor_user_id / patient_user_id only).';
 
 CREATE TRIGGER access_log_append_only
   BEFORE UPDATE OR DELETE ON public.access_log
@@ -608,12 +636,23 @@ CREATE POLICY caretaker_access_caretaker_select ON public.caretaker_access
   TO authenticated
   USING (caretaker_user_id = (SELECT auth.uid()));
 
--- access_log: read rules from PRD; no INSERT/UPDATE/DELETE for authenticated (service_role bypasses RLS)
+-- access_log: read rules from PRD; authenticated has no INSERT (trusted path uses service_role).
+-- Explicit service_role policies so INSERT/SELECT succeed even if BYPASSRLS is not set (local/self-hosted).
 CREATE POLICY access_log_select ON public.access_log
   FOR SELECT
   TO authenticated
   USING (patient_user_id = (SELECT auth.uid())
   OR actor_user_id = (SELECT auth.uid()));
+
+CREATE POLICY access_log_service_role_select ON public.access_log
+  FOR SELECT
+  TO service_role
+  USING (TRUE);
+
+CREATE POLICY access_log_service_role_insert ON public.access_log
+  FOR INSERT
+  TO service_role
+  WITH CHECK (TRUE);
 
 CREATE POLICY access_log_deny_update ON public.access_log
   FOR UPDATE
