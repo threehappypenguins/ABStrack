@@ -33,8 +33,7 @@ CREATE TABLE public.symptom_presets (
   user_id uuid NOT NULL REFERENCES auth.users (id) ON DELETE CASCADE,
   name text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now (),
-  updated_at timestamptz NOT NULL DEFAULT now (),
-  CONSTRAINT symptom_presets_user_id_id_key UNIQUE (user_id, id)
+  updated_at timestamptz NOT NULL DEFAULT now ()
 );
 
 CREATE INDEX symptom_presets_user_idx ON public.symptom_presets (user_id);
@@ -131,8 +130,8 @@ CREATE TABLE public.episodes (
   ended_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now (),
   updated_at timestamptz NOT NULL DEFAULT now (),
-  CONSTRAINT episodes_symptom_preset_fk FOREIGN KEY (user_id, symptom_preset_id)
-    REFERENCES public.symptom_presets (user_id, id)
+  CONSTRAINT episodes_symptom_preset_id_fk FOREIGN KEY (symptom_preset_id)
+    REFERENCES public.symptom_presets (id)
     ON DELETE SET NULL,
   CONSTRAINT episodes_ended_after_started CHECK (
     ended_at IS NULL
@@ -144,8 +143,33 @@ CREATE TABLE public.episodes (
 CREATE INDEX episodes_user_started_idx ON public.episodes (user_id, started_at DESC);
 CREATE INDEX episodes_user_type_idx ON public.episodes (user_id, episode_type);
 
-COMMENT ON COLUMN public.episodes.symptom_preset_id IS 'Optional FK to symptom_presets.id; composite (user_id, symptom_preset_id) ensures the preset belongs to the episode owner.';
+COMMENT ON COLUMN public.episodes.symptom_preset_id IS 'Optional FK to symptom_presets.id; ON DELETE SET NULL clears only this column. Same-owner vs user_id is enforced by trigger episode_symptom_preset_owner (composite FK SET NULL would null user_id).';
+
 COMMENT ON COLUMN public.episodes.episode_type IS 'Filtering/metadata: ABS vs Other per PRD §4.';
+
+CREATE OR REPLACE FUNCTION public.enforce_episode_symptom_preset_owner ()
+  RETURNS TRIGGER
+  LANGUAGE plpgsql
+  AS $$
+BEGIN
+  IF NEW.symptom_preset_id IS NOT NULL THEN
+    IF NOT EXISTS (
+      SELECT 1
+      FROM public.symptom_presets s
+      WHERE s.id = NEW.symptom_preset_id
+        AND s.user_id = NEW.user_id
+    ) THEN
+      RAISE EXCEPTION 'episodes.symptom_preset_id must reference a preset owned by user_id';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER episode_symptom_preset_owner
+  BEFORE INSERT OR UPDATE OF symptom_preset_id, user_id ON public.episodes
+  FOR EACH ROW
+  EXECUTE FUNCTION public.enforce_episode_symptom_preset_owner ();
 
 -- ---------------------------------------------------------------------------
 -- episode_symptoms — one row per logged symptom (nullable episode_id for ad-hoc logs)
@@ -195,6 +219,7 @@ CREATE TABLE public.episode_symptoms (
       response_type IN ('photo', 'video')
       AND response_boolean IS NULL
       AND response_severity IS NULL
+      AND response_text IS NULL
     )
   ),
   CONSTRAINT episode_symptoms_episode_fk FOREIGN KEY (user_id, episode_id)
@@ -264,8 +289,8 @@ CREATE TABLE public.food_diary_entries (
   logged_at timestamptz NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now (),
   updated_at timestamptz NOT NULL DEFAULT now (),
-  CONSTRAINT food_diary_episode_fk FOREIGN KEY (user_id, episode_id)
-    REFERENCES public.episodes (user_id, id)
+  CONSTRAINT food_diary_episode_id_fk FOREIGN KEY (episode_id)
+    REFERENCES public.episodes (id)
     ON DELETE SET NULL
 );
 
@@ -274,6 +299,31 @@ CREATE INDEX food_diary_episode_idx ON public.food_diary_entries (episode_id);
 
 COMMENT ON COLUMN public.food_diary_entries.food_note IS 'Free-text meal description; plaintext under RLS per PRD §6.';
 COMMENT ON COLUMN public.food_diary_entries.meal_tag IS 'Filtering metadata: Breakfast / Lunch / Dinner / Snack / Other per PRD §6.';
+COMMENT ON COLUMN public.food_diary_entries.episode_id IS 'Optional link; ON DELETE SET NULL only clears episode_id. Same-owner vs user_id is enforced by trigger food_diary_episode_owner (composite FK would SET NULL both columns and break NOT NULL on user_id).';
+
+CREATE OR REPLACE FUNCTION public.enforce_food_diary_episode_owner ()
+  RETURNS TRIGGER
+  LANGUAGE plpgsql
+  AS $$
+BEGIN
+  IF NEW.episode_id IS NOT NULL THEN
+    IF NOT EXISTS (
+      SELECT 1
+      FROM public.episodes e
+      WHERE e.id = NEW.episode_id
+        AND e.user_id = NEW.user_id
+    ) THEN
+      RAISE EXCEPTION 'food_diary_entries.episode_id must reference an episode owned by user_id';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER food_diary_episode_owner
+  BEFORE INSERT OR UPDATE OF episode_id, user_id ON public.food_diary_entries
+  FOR EACH ROW
+  EXECUTE FUNCTION public.enforce_food_diary_episode_owner ();
 
 -- ---------------------------------------------------------------------------
 -- practitioner_access — patient-initiated grants (no shared DEK columns)
