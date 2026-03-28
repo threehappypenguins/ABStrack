@@ -3,8 +3,9 @@
 -- Confidentiality: private bucket + RLS + TLS + platform encryption at rest — not app-layer DEK
 -- wrapping of objects. Optional @abstrack/crypto does not encrypt blobs in this bucket for MVP.
 --
--- Path convention: object keys MUST start with {patient_user_id}/... where patient_user_id is the
--- owning auth user UUID (first path segment). Aligns with public.episode_media.storage_object_key.
+-- Object key prefix (one term only): "{user_id}/..." — user_id is always public.episode_media.user_id
+-- (auth uid of the patient who owns the row). Do not use other placeholders (e.g. {patient_user_id}) in
+-- docs or client code; alternate names invite keys that do not match this column or RLS.
 --
 -- Signed URLs: time-limited URLs (e.g. ~60s) for playback/download are created by the client/app in
 -- later weeks; this migration is only the bucket and policy shell — no client decrypt step for objects.
@@ -19,12 +20,12 @@ ON CONFLICT (id)
     public = FALSE,
     name = EXCLUDED.name;
 
-COMMENT ON COLUMN public.episode_media.storage_object_key IS 'Path/key within the episode-media bucket; first segment MUST be the owning patient auth user id ({user_id}/...). RLS on storage.objects uses the same convention. No ciphertext columns in Postgres per PRD §10.';
+COMMENT ON COLUMN public.episode_media.storage_object_key IS 'Path/key in episode-media bucket; MUST be "{user_id}/..." where user_id equals this row''s user_id (see migration header). RLS on storage.objects uses the same prefix. No ciphertext columns in Postgres per PRD §10.';
 
 -- ---------------------------------------------------------------------------
--- First path segment → patient UUID (invalid or missing segment → NULL, policies fail closed)
+-- First path segment → episode_media.user_id value (invalid or missing segment → NULL, fail closed)
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.episode_media_storage_path_patient_id (p_object_name text)
+CREATE OR REPLACE FUNCTION public.episode_media_storage_path_user_id (p_object_name text)
   RETURNS uuid
   LANGUAGE sql
   STABLE
@@ -43,15 +44,15 @@ CREATE OR REPLACE FUNCTION public.episode_media_storage_path_patient_id (p_objec
         (storage.foldername (p_object_name))[1] AS seg) s;
   $$;
 
-COMMENT ON FUNCTION public.episode_media_storage_path_patient_id (text) IS 'Patient (owner) user id from episode-media object path: first segment must be a UUID. Keys MUST be {patient_user_id}/... per PRD §10 / episode_media.storage_object_key.';
+COMMENT ON FUNCTION public.episode_media_storage_path_user_id (text) IS 'Parses public.episode_media.user_id from object path: first segment must be a UUID. Keys MUST be "{user_id}/..." with that user_id per PRD §10.';
 
-REVOKE ALL ON FUNCTION public.episode_media_storage_path_patient_id (text)
+REVOKE ALL ON FUNCTION public.episode_media_storage_path_user_id (text)
   FROM PUBLIC;
 
-GRANT EXECUTE ON FUNCTION public.episode_media_storage_path_patient_id (text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.episode_media_storage_path_user_id (text) TO authenticated;
 
 -- ---------------------------------------------------------------------------
--- Single evaluation of path → patient id per policy check (avoid repeated foldername/regex)
+-- Single evaluation of path → user_id per policy check (avoid repeated foldername/regex)
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.episode_media_storage_can_select (p_object_name text)
   RETURNS boolean
@@ -70,10 +71,10 @@ CREATE OR REPLACE FUNCTION public.episode_media_storage_can_select (p_object_nam
       END
     FROM (
       SELECT
-        public.episode_media_storage_path_patient_id (p_object_name) AS pid) AS v;
+        public.episode_media_storage_path_user_id (p_object_name) AS pid) AS v;
   $$;
 
-COMMENT ON FUNCTION public.episode_media_storage_can_select (text) IS 'True if current user may read/list episode-media object: owner, active caretaker, or authorized practitioner. Computes path patient id once.';
+COMMENT ON FUNCTION public.episode_media_storage_can_select (text) IS 'True if current user may read/list episode-media object: owner, active caretaker, or authorized practitioner. Computes episode_media.user_id from path once.';
 
 CREATE OR REPLACE FUNCTION public.episode_media_storage_can_write (p_object_name text)
   RETURNS boolean
@@ -91,10 +92,10 @@ CREATE OR REPLACE FUNCTION public.episode_media_storage_can_write (p_object_name
       END
     FROM (
       SELECT
-        public.episode_media_storage_path_patient_id (p_object_name) AS pid) AS v;
+        public.episode_media_storage_path_user_id (p_object_name) AS pid) AS v;
   $$;
 
-COMMENT ON FUNCTION public.episode_media_storage_can_write (text) IS 'True if current user may insert/update/delete episode-media object: owner or active caretaker only. Computes path patient id once.';
+COMMENT ON FUNCTION public.episode_media_storage_can_write (text) IS 'True if current user may insert/update/delete episode-media object: owner or active caretaker only. Computes episode_media.user_id from path once.';
 
 REVOKE ALL ON FUNCTION public.episode_media_storage_can_select (text)
   FROM PUBLIC;
