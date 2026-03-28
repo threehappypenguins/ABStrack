@@ -2,9 +2,11 @@
 --
 -- PRD: Authorized access, RLS requirements table, Access logging (append-only).
 -- Practitioner MFA (aal2) is centralized in user_has_practitioner_access() for Week 5.
+-- Grant tables: triggers enforce profiles.app_role on grant endpoints; helpers require
+-- matching app_role for the current user (fail-closed PHI reads/writes).
 
 -- ---------------------------------------------------------------------------
--- Helpers (SECURITY DEFINER: stable join to grant tables; Week 5: add JWT/aal predicate here)
+-- Helpers (SECURITY DEFINER; Week 5: add JWT/aal predicate on practitioner path)
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.user_has_practitioner_access (p_patient_user_id uuid)
   RETURNS boolean
@@ -19,14 +21,16 @@ CREATE OR REPLACE FUNCTION public.user_has_practitioner_access (p_patient_user_i
           1
         FROM
           public.practitioner_access pa
+          INNER JOIN public.profiles pr ON pr.id = (SELECT auth.uid())
         WHERE
           pa.patient_user_id = p_patient_user_id
           AND pa.practitioner_user_id = (SELECT auth.uid())
-          AND pa.revoked_at IS NULL);
+          AND pa.revoked_at IS NULL
+          AND pr.app_role = 'practitioner');
 
 $$;
 
-COMMENT ON FUNCTION public.user_has_practitioner_access (uuid) IS 'True when the current user is the granted practitioner for this patient (active grant). Extend in Week 5 with fail-closed MFA (e.g. aal2) in one place.';
+COMMENT ON FUNCTION public.user_has_practitioner_access (uuid) IS 'True when the current user has profiles.app_role practitioner and an active practitioner_access grant for this patient. Fail-closed; extend in Week 5 with MFA (e.g. aal2).';
 
 CREATE OR REPLACE FUNCTION public.user_is_caretaker_for_patient (p_patient_user_id uuid)
   RETURNS boolean
@@ -41,18 +45,99 @@ CREATE OR REPLACE FUNCTION public.user_is_caretaker_for_patient (p_patient_user_
           1
         FROM
           public.caretaker_access ca
+          INNER JOIN public.profiles pr ON pr.id = (SELECT auth.uid())
         WHERE
           ca.patient_user_id = p_patient_user_id
           AND ca.caretaker_user_id = (SELECT auth.uid())
-          AND ca.revoked_at IS NULL);
+          AND ca.revoked_at IS NULL
+          AND pr.app_role = 'caretaker');
 
 $$;
 
-COMMENT ON FUNCTION public.user_is_caretaker_for_patient (uuid) IS 'True when the current user is the active caretaker linked to this patient.';
+COMMENT ON FUNCTION public.user_is_caretaker_for_patient (uuid) IS 'True when the current user has profiles.app_role caretaker and an active caretaker_access link to this patient.';
 
 GRANT EXECUTE ON FUNCTION public.user_has_practitioner_access (uuid) TO authenticated;
 
 GRANT EXECUTE ON FUNCTION public.user_is_caretaker_for_patient (uuid) TO authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Grant tables: require profile roles on insert/update (RLS hides other users' profiles)
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.enforce_practitioner_access_profile_roles ()
+  RETURNS TRIGGER
+  LANGUAGE plpgsql
+  SECURITY DEFINER
+  SET search_path = public
+  AS $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT
+      1
+    FROM
+      public.profiles p
+    WHERE
+      p.id = NEW.patient_user_id
+      AND p.app_role = 'patient') THEN
+    RAISE EXCEPTION 'practitioner_access.patient_user_id must reference a profile with app_role patient';
+  END IF;
+  IF NOT EXISTS (
+    SELECT
+      1
+    FROM
+      public.profiles p
+    WHERE
+      p.id = NEW.practitioner_user_id
+      AND p.app_role = 'practitioner') THEN
+    RAISE EXCEPTION 'practitioner_access.practitioner_user_id must reference a profile with app_role practitioner';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER practitioner_access_profile_roles
+  BEFORE INSERT OR UPDATE ON public.practitioner_access
+  FOR EACH ROW
+  EXECUTE FUNCTION public.enforce_practitioner_access_profile_roles ();
+
+CREATE OR REPLACE FUNCTION public.enforce_caretaker_access_profile_roles ()
+  RETURNS TRIGGER
+  LANGUAGE plpgsql
+  SECURITY DEFINER
+  SET search_path = public
+  AS $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT
+      1
+    FROM
+      public.profiles p
+    WHERE
+      p.id = NEW.patient_user_id
+      AND p.app_role = 'patient') THEN
+    RAISE EXCEPTION 'caretaker_access.patient_user_id must reference a profile with app_role patient';
+  END IF;
+  IF NOT EXISTS (
+    SELECT
+      1
+    FROM
+      public.profiles p
+    WHERE
+      p.id = NEW.caretaker_user_id
+      AND p.app_role = 'caretaker') THEN
+    RAISE EXCEPTION 'caretaker_access.caretaker_user_id must reference a profile with app_role caretaker';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER caretaker_access_profile_roles
+  BEFORE INSERT OR UPDATE ON public.caretaker_access
+  FOR EACH ROW
+  EXECUTE FUNCTION public.enforce_caretaker_access_profile_roles ();
+
+COMMENT ON FUNCTION public.enforce_practitioner_access_profile_roles () IS 'Ensures practitioner grants only link patient + practitioner profiles per PRD; runs under definer to read profiles despite RLS.';
+
+COMMENT ON FUNCTION public.enforce_caretaker_access_profile_roles () IS 'Ensures caretaker grants only link patient + caretaker profiles per PRD; runs under definer to read profiles despite RLS.';
 
 -- ---------------------------------------------------------------------------
 -- Append-only access_log: privileges + trigger (RLS policies below)
