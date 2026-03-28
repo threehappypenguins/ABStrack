@@ -79,8 +79,7 @@ CREATE TABLE public.health_marker_presets (
   user_id uuid NOT NULL REFERENCES auth.users (id) ON DELETE CASCADE,
   name text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now (),
-  updated_at timestamptz NOT NULL DEFAULT now (),
-  CONSTRAINT health_marker_presets_user_id_id_key UNIQUE (user_id, id)
+  updated_at timestamptz NOT NULL DEFAULT now ()
 );
 
 CREATE INDEX health_marker_presets_user_idx ON public.health_marker_presets (user_id);
@@ -138,7 +137,8 @@ CREATE TABLE public.episodes (
   CONSTRAINT episodes_ended_after_started CHECK (
     ended_at IS NULL
     OR ended_at >= started_at
-  )
+  ),
+  CONSTRAINT episodes_user_id_id_key UNIQUE (user_id, id)
 );
 
 CREATE INDEX episodes_user_started_idx ON public.episodes (user_id, started_at DESC);
@@ -153,7 +153,7 @@ COMMENT ON COLUMN public.episodes.episode_type IS 'Filtering/metadata: ABS vs Ot
 CREATE TABLE public.episode_symptoms (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid (),
   user_id uuid NOT NULL REFERENCES auth.users (id) ON DELETE CASCADE,
-  episode_id uuid REFERENCES public.episodes (id) ON DELETE CASCADE,
+  episode_id uuid,
   preset_symptom_id uuid REFERENCES public.preset_symptoms (id) ON DELETE SET NULL,
   symptom_name text NOT NULL,
   response_type text NOT NULL
@@ -196,7 +196,11 @@ CREATE TABLE public.episode_symptoms (
       AND response_boolean IS NULL
       AND response_severity IS NULL
     )
-  )
+  ),
+  CONSTRAINT episode_symptoms_episode_fk FOREIGN KEY (user_id, episode_id)
+    REFERENCES public.episodes (user_id, id)
+    ON DELETE CASCADE,
+  CONSTRAINT episode_symptoms_episode_id_id_key UNIQUE (episode_id, id)
 );
 
 CREATE INDEX episode_symptoms_episode_idx ON public.episode_symptoms (episode_id);
@@ -212,7 +216,7 @@ COMMENT ON COLUMN public.episode_symptoms.episode_id IS 'Null for standalone / w
 CREATE TABLE public.health_markers (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid (),
   user_id uuid NOT NULL REFERENCES auth.users (id) ON DELETE CASCADE,
-  episode_id uuid REFERENCES public.episodes (id) ON DELETE CASCADE,
+  episode_id uuid,
   marker_kind text NOT NULL
     CHECK (
       marker_kind IN (
@@ -233,7 +237,10 @@ CREATE TABLE public.health_markers (
   recorded_at timestamptz NOT NULL,
   notes text,
   created_at timestamptz NOT NULL DEFAULT now (),
-  updated_at timestamptz NOT NULL DEFAULT now ()
+  updated_at timestamptz NOT NULL DEFAULT now (),
+  CONSTRAINT health_markers_episode_fk FOREIGN KEY (user_id, episode_id)
+    REFERENCES public.episodes (user_id, id)
+    ON DELETE CASCADE
 );
 
 CREATE INDEX health_markers_user_recorded_idx ON public.health_markers (user_id, recorded_at DESC);
@@ -248,7 +255,7 @@ COMMENT ON COLUMN public.health_markers.marker_kind IS 'Includes wellness_mood f
 CREATE TABLE public.food_diary_entries (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid (),
   user_id uuid NOT NULL REFERENCES auth.users (id) ON DELETE CASCADE,
-  episode_id uuid REFERENCES public.episodes (id) ON DELETE SET NULL,
+  episode_id uuid,
   meal_tag text NOT NULL
     CHECK (
       meal_tag IN ('Breakfast', 'Lunch', 'Dinner', 'Snack', 'Other')
@@ -256,7 +263,10 @@ CREATE TABLE public.food_diary_entries (
   food_note text NOT NULL,
   logged_at timestamptz NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now (),
-  updated_at timestamptz NOT NULL DEFAULT now ()
+  updated_at timestamptz NOT NULL DEFAULT now (),
+  CONSTRAINT food_diary_episode_fk FOREIGN KEY (user_id, episode_id)
+    REFERENCES public.episodes (user_id, id)
+    ON DELETE SET NULL
 );
 
 CREATE INDEX food_diary_user_logged_idx ON public.food_diary_entries (user_id, logged_at DESC);
@@ -313,8 +323,8 @@ COMMENT ON TABLE public.caretaker_access IS 'Caretaker grant; partial unique ind
 CREATE TABLE public.episode_media (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid (),
   user_id uuid NOT NULL REFERENCES auth.users (id) ON DELETE CASCADE,
-  episode_id uuid NOT NULL REFERENCES public.episodes (id) ON DELETE CASCADE,
-  episode_symptom_id uuid REFERENCES public.episode_symptoms (id) ON DELETE SET NULL,
+  episode_id uuid NOT NULL,
+  episode_symptom_id uuid,
   storage_object_key text NOT NULL,
   thumbnail_storage_key text,
   media_type text NOT NULL CHECK (media_type IN ('photo', 'video')),
@@ -324,7 +334,13 @@ CREATE TABLE public.episode_media (
   ),
   upload_completed_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now (),
-  updated_at timestamptz NOT NULL DEFAULT now ()
+  updated_at timestamptz NOT NULL DEFAULT now (),
+  CONSTRAINT episode_media_episode_fk FOREIGN KEY (user_id, episode_id)
+    REFERENCES public.episodes (user_id, id)
+    ON DELETE CASCADE,
+  CONSTRAINT episode_media_symptom_step_fk FOREIGN KEY (episode_id, episode_symptom_id)
+    REFERENCES public.episode_symptoms (episode_id, id)
+    ON DELETE CASCADE
 );
 
 CREATE INDEX episode_media_episode_idx ON public.episode_media (episode_id);
@@ -333,6 +349,7 @@ CREATE INDEX episode_media_symptom_step_idx ON public.episode_media (episode_sym
 
 COMMENT ON TABLE public.episode_media IS 'Metadata for private bucket objects; confidentiality via Storage RLS + TLS + platform encryption (PRD §10), not ciphertext columns here.';
 COMMENT ON COLUMN public.episode_media.storage_object_key IS 'Path/key within the episode-media bucket; no encryption_iv or ciphertext columns in Postgres per PRD.';
+COMMENT ON CONSTRAINT episode_media_symptom_step_fk ON public.episode_media IS 'Links media to a symptom step in the same episode; ON DELETE CASCADE removes metadata if the symptom row is deleted (composite SET NULL would null episode_id, which is NOT NULL).';
 
 -- ---------------------------------------------------------------------------
 -- access_log — append-only audit metadata (no PHI in rows)
