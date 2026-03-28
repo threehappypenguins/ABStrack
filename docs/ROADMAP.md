@@ -25,9 +25,9 @@
 **Tasks:**
 
 - [x] Create Supabase project and configure environment variables (project + Email provider in [Supabase dashboard](https://supabase.com/dashboard); vars documented in [`.env.example`](../.env.example))
-- [ ] Design and apply database migrations for all tables: `profiles`, `episodes`, `episode_symptoms`, `health_markers`, `food_diary_entries`, `preset_symptoms`, `preset_health_markers`, `practitioner_access`, `caretaker_access`, `episode_media`, `access_log` (append-only audit; no PHI in log rows)
-- [ ] Write RLS policies for all PHI tables (patient owns data; caretaker and practitioner per grant tables; practitioner MFA rules per [PRD](PRD.md))
-- [ ] Append-only `access_log`: privilege/RLS/trigger pattern so clients cannot forge or mutate log rows (trusted insert path only)
+- [x] Design and apply database migrations for all tables: `profiles`, `episodes`, `episode_symptoms`, `health_markers`, `food_diary_entries`, `preset_symptoms`, `preset_health_markers`, `practitioner_access`, `caretaker_access`, `episode_media`, `access_log` (append-only audit; no PHI in log rows)
+- [x] Write RLS policies for all PHI tables (patient owns data; caretaker and practitioner per grant tables; practitioner MFA rules per [PRD](PRD.md))
+- [x] Append-only `access_log`: privilege/RLS/trigger pattern so clients cannot forge or mutate log rows (trusted insert path only)
 - [ ] Create the private `episode-media` storage bucket with RLS on `storage.objects`
 - [ ] Implement `@abstrack/types` -- all shared TypeScript interfaces and enums (episode types, meal tags, symptom response types, user roles, etc.)
 - [ ] Implement `@abstrack/supabase` -- Supabase client factory, auth helpers, typed query wrappers
