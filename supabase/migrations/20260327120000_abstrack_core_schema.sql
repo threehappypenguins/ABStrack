@@ -26,14 +26,28 @@ CREATE INDEX profiles_app_role_idx ON public.profiles (app_role);
 COMMENT ON TABLE public.profiles IS 'App profile keyed to auth.users; display_name may be identifying. Role used for routing; RLS in later migrations.';
 
 -- ---------------------------------------------------------------------------
--- preset_symptoms — ordered symptom lines within a named preset (rows, not columns)
+-- symptom_presets — named symptom preset (header row); lines live in preset_symptoms
+-- ---------------------------------------------------------------------------
+CREATE TABLE public.symptom_presets (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid (),
+  user_id uuid NOT NULL REFERENCES auth.users (id) ON DELETE CASCADE,
+  name text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now (),
+  updated_at timestamptz NOT NULL DEFAULT now (),
+  CONSTRAINT symptom_presets_user_id_id_key UNIQUE (user_id, id)
+);
+
+CREATE INDEX symptom_presets_user_idx ON public.symptom_presets (user_id);
+
+COMMENT ON TABLE public.symptom_presets IS 'One named symptom preset per row (PRD §2); preset_symptoms.preset_id FKs here.';
+
+-- ---------------------------------------------------------------------------
+-- preset_symptoms — ordered symptom lines within a preset (rows, not columns)
 -- ---------------------------------------------------------------------------
 CREATE TABLE public.preset_symptoms (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid (),
-  user_id uuid NOT NULL REFERENCES auth.users (id) ON DELETE CASCADE,
-  preset_id uuid NOT NULL,
-  preset_name text NOT NULL,
-  sort_order integer NOT NULL,
+  preset_id uuid NOT NULL REFERENCES public.symptom_presets (id) ON DELETE CASCADE,
+  sort_order integer NOT NULL CHECK (sort_order >= 0),
   symptom_name text NOT NULL,
   response_type text NOT NULL
     CHECK (
@@ -48,25 +62,38 @@ CREATE TABLE public.preset_symptoms (
   prompt_instruction text,
   created_at timestamptz NOT NULL DEFAULT now (),
   updated_at timestamptz NOT NULL DEFAULT now (),
-  UNIQUE (user_id, preset_id, sort_order)
+  UNIQUE (preset_id, sort_order)
 );
 
-CREATE INDEX preset_symptoms_user_preset_idx ON public.preset_symptoms (user_id, preset_id);
-CREATE INDEX preset_symptoms_user_idx ON public.preset_symptoms (user_id);
+CREATE INDEX preset_symptoms_preset_idx ON public.preset_symptoms (preset_id);
+CREATE INDEX preset_symptoms_preset_sort_idx ON public.preset_symptoms (preset_id, sort_order);
 
-COMMENT ON COLUMN public.preset_symptoms.preset_id IS 'Stable id for one named preset; groups rows without a separate preset header table.';
-COMMENT ON COLUMN public.preset_symptoms.sort_order IS 'Explicit per-row order within a preset; no default so UNIQUE (user_id, preset_id, sort_order) cannot collide on 0.';
+COMMENT ON COLUMN public.preset_symptoms.sort_order IS 'Explicit per-row order within a preset; UNIQUE (preset_id, sort_order).';
 COMMENT ON COLUMN public.preset_symptoms.response_type IS 'Symptom capture UI: yes/no, 1–5 scale, text, or media per PRD §2.';
 
 -- ---------------------------------------------------------------------------
--- preset_health_markers — ordered health marker lines within a named preset
+-- health_marker_presets — named health-marker preset (header); lines live in preset_health_markers
+-- ---------------------------------------------------------------------------
+CREATE TABLE public.health_marker_presets (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid (),
+  user_id uuid NOT NULL REFERENCES auth.users (id) ON DELETE CASCADE,
+  name text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now (),
+  updated_at timestamptz NOT NULL DEFAULT now (),
+  CONSTRAINT health_marker_presets_user_id_id_key UNIQUE (user_id, id)
+);
+
+CREATE INDEX health_marker_presets_user_idx ON public.health_marker_presets (user_id);
+
+COMMENT ON TABLE public.health_marker_presets IS 'One named health-marker preset per row (PRD §3); preset_health_markers.preset_id FKs here.';
+
+-- ---------------------------------------------------------------------------
+-- preset_health_markers — ordered health marker lines within a preset
 -- ---------------------------------------------------------------------------
 CREATE TABLE public.preset_health_markers (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid (),
-  user_id uuid NOT NULL REFERENCES auth.users (id) ON DELETE CASCADE,
-  preset_id uuid NOT NULL,
-  preset_name text NOT NULL,
-  sort_order integer NOT NULL,
+  preset_id uuid NOT NULL REFERENCES public.health_marker_presets (id) ON DELETE CASCADE,
+  sort_order integer NOT NULL CHECK (sort_order >= 0),
   marker_kind text NOT NULL
     CHECK (
       marker_kind IN (
@@ -82,13 +109,13 @@ CREATE TABLE public.preset_health_markers (
   custom_unit text,
   created_at timestamptz NOT NULL DEFAULT now (),
   updated_at timestamptz NOT NULL DEFAULT now (),
-  UNIQUE (user_id, preset_id, sort_order)
+  UNIQUE (preset_id, sort_order)
 );
 
-CREATE INDEX preset_health_markers_user_preset_idx ON public.preset_health_markers (user_id, preset_id);
-CREATE INDEX preset_health_markers_user_idx ON public.preset_health_markers (user_id);
+CREATE INDEX preset_health_markers_preset_idx ON public.preset_health_markers (preset_id);
+CREATE INDEX preset_health_markers_preset_sort_idx ON public.preset_health_markers (preset_id, sort_order);
 
-COMMENT ON COLUMN public.preset_health_markers.sort_order IS 'Explicit per-row order within a preset; no default so UNIQUE (user_id, preset_id, sort_order) cannot collide on 0.';
+COMMENT ON COLUMN public.preset_health_markers.sort_order IS 'Explicit per-row order within a preset; UNIQUE (preset_id, sort_order).';
 
 -- ---------------------------------------------------------------------------
 -- episodes — discrete ABS / other flare events
@@ -104,13 +131,20 @@ CREATE TABLE public.episodes (
   started_at timestamptz NOT NULL,
   ended_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now (),
-  updated_at timestamptz NOT NULL DEFAULT now ()
+  updated_at timestamptz NOT NULL DEFAULT now (),
+  CONSTRAINT episodes_symptom_preset_fk FOREIGN KEY (user_id, symptom_preset_id)
+    REFERENCES public.symptom_presets (user_id, id)
+    ON DELETE SET NULL,
+  CONSTRAINT episodes_ended_after_started CHECK (
+    ended_at IS NULL
+    OR ended_at >= started_at
+  )
 );
 
 CREATE INDEX episodes_user_started_idx ON public.episodes (user_id, started_at DESC);
 CREATE INDEX episodes_user_type_idx ON public.episodes (user_id, episode_type);
 
-COMMENT ON COLUMN public.episodes.symptom_preset_id IS 'Optional reference to preset_symptoms.preset_id used when starting the episode.';
+COMMENT ON COLUMN public.episodes.symptom_preset_id IS 'Optional FK to symptom_presets.id; composite (user_id, symptom_preset_id) ensures the preset belongs to the episode owner.';
 COMMENT ON COLUMN public.episodes.episode_type IS 'Filtering/metadata: ABS vs Other per PRD §4.';
 
 -- ---------------------------------------------------------------------------
@@ -138,9 +172,31 @@ CREATE TABLE public.episode_symptoms (
     OR (response_severity >= 1 AND response_severity <= 5)
   ),
   response_text text,
-  sort_order integer NOT NULL DEFAULT 0,
+  sort_order integer NOT NULL DEFAULT 0 CHECK (sort_order >= 0),
   created_at timestamptz NOT NULL DEFAULT now (),
-  updated_at timestamptz NOT NULL DEFAULT now ()
+  updated_at timestamptz NOT NULL DEFAULT now (),
+  CONSTRAINT episode_symptoms_response_matches_type CHECK (
+    (
+      response_type = 'yes_no'
+      AND response_severity IS NULL
+      AND response_text IS NULL
+    )
+    OR (
+      response_type = 'severity_scale'
+      AND response_boolean IS NULL
+      AND response_text IS NULL
+    )
+    OR (
+      response_type = 'free_text'
+      AND response_boolean IS NULL
+      AND response_severity IS NULL
+    )
+    OR (
+      response_type IN ('photo', 'video')
+      AND response_boolean IS NULL
+      AND response_severity IS NULL
+    )
+  )
 );
 
 CREATE INDEX episode_symptoms_episode_idx ON public.episode_symptoms (episode_id);
@@ -218,7 +274,8 @@ CREATE TABLE public.practitioner_access (
   practitioner_user_id uuid NOT NULL REFERENCES auth.users (id) ON DELETE CASCADE,
   created_at timestamptz NOT NULL DEFAULT now (),
   revoked_at timestamptz,
-  UNIQUE (patient_user_id, practitioner_user_id)
+  UNIQUE (patient_user_id, practitioner_user_id),
+  CHECK (patient_user_id <> practitioner_user_id)
 );
 
 CREATE INDEX practitioner_access_patient_idx ON public.practitioner_access (patient_user_id);
@@ -238,7 +295,8 @@ CREATE TABLE public.caretaker_access (
   caretaker_user_id uuid NOT NULL REFERENCES auth.users (id) ON DELETE CASCADE,
   created_at timestamptz NOT NULL DEFAULT now (),
   revoked_at timestamptz,
-  UNIQUE (patient_user_id, caretaker_user_id)
+  UNIQUE (patient_user_id, caretaker_user_id),
+  CHECK (patient_user_id <> caretaker_user_id)
 );
 
 CREATE INDEX caretaker_access_caretaker_idx ON public.caretaker_access (caretaker_user_id);
@@ -302,3 +360,66 @@ CREATE INDEX access_log_resource_idx ON public.access_log (resource_type, resour
 COMMENT ON TABLE public.access_log IS 'Append-only audit trail; no PHI or clinical free text. Privileges and triggers in issue #8.';
 COMMENT ON COLUMN public.access_log.action IS 'e.g. read, write, auth_failure per PRD § Access logging.';
 COMMENT ON COLUMN public.access_log.resource_type IS 'e.g. episode, storage_object; resource_id is opaque UUID.';
+
+-- ---------------------------------------------------------------------------
+-- updated_at: bump on row UPDATE (DEFAULT only covers INSERT)
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.set_updated_at ()
+  RETURNS TRIGGER
+  LANGUAGE plpgsql
+  AS $$
+BEGIN
+  NEW.updated_at := now();
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER set_updated_at
+  BEFORE UPDATE ON public.profiles
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_updated_at ();
+
+CREATE TRIGGER set_updated_at
+  BEFORE UPDATE ON public.symptom_presets
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_updated_at ();
+
+CREATE TRIGGER set_updated_at
+  BEFORE UPDATE ON public.health_marker_presets
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_updated_at ();
+
+CREATE TRIGGER set_updated_at
+  BEFORE UPDATE ON public.preset_symptoms
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_updated_at ();
+
+CREATE TRIGGER set_updated_at
+  BEFORE UPDATE ON public.preset_health_markers
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_updated_at ();
+
+CREATE TRIGGER set_updated_at
+  BEFORE UPDATE ON public.episodes
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_updated_at ();
+
+CREATE TRIGGER set_updated_at
+  BEFORE UPDATE ON public.episode_symptoms
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_updated_at ();
+
+CREATE TRIGGER set_updated_at
+  BEFORE UPDATE ON public.health_markers
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_updated_at ();
+
+CREATE TRIGGER set_updated_at
+  BEFORE UPDATE ON public.food_diary_entries
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_updated_at ();
+
+CREATE TRIGGER set_updated_at
+  BEFORE UPDATE ON public.episode_media
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_updated_at ();
