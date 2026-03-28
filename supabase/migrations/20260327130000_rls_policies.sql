@@ -187,7 +187,6 @@ CREATE OR REPLACE FUNCTION public.access_log_prevent_update_or_delete ()
 BEGIN
   IF TG_OP = 'DELETE' THEN
     RAISE EXCEPTION 'access_log is append-only';
-    RETURN NULL;
   END IF;
 
   -- UPDATE: allow only auth.users FK ON DELETE SET NULL on actor_user_id / patient_user_id;
@@ -213,7 +212,6 @@ BEGIN
   END IF;
 
   RAISE EXCEPTION 'access_log is append-only';
-  RETURN NULL;
 END;
 $$;
 
@@ -269,6 +267,7 @@ ALTER TABLE public.access_log
   ENABLE ROW LEVEL SECURITY;
 
 -- profiles: own row only; app_role is not self-service for practitioner (PRD: invitation path).
+-- Authenticated has no DELETE policy (avoids delete + reinsert to swap patient/caretaker).
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.profiles_trusted_session_for_app_role ()
   RETURNS boolean
@@ -327,7 +326,6 @@ GRANT EXECUTE ON FUNCTION public.profiles_enforce_app_role () TO authenticated;
 
 GRANT EXECUTE ON FUNCTION public.profiles_enforce_app_role () TO service_role;
 
--- profiles: own row only (routing metadata; not caretaker-as-patient proxy)
 CREATE POLICY profiles_select_own ON public.profiles
   FOR SELECT
   TO authenticated
@@ -344,11 +342,6 @@ CREATE POLICY profiles_update_own ON public.profiles
   TO authenticated
   USING (id = (SELECT auth.uid()))
   WITH CHECK (id = (SELECT auth.uid()));
-
-CREATE POLICY profiles_delete_own ON public.profiles
-  FOR DELETE
-  TO authenticated
-  USING (id = (SELECT auth.uid()));
 
 CREATE POLICY profiles_service_role_all ON public.profiles
   FOR ALL
