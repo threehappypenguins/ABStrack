@@ -8,6 +8,9 @@
 --
 -- Append-only audit semantics for public.access_log (privileges / triggers / RLS) are defined
 -- in issue #8; this migration only creates the table shape (no PHI columns in log rows).
+--
+-- UUID defaults use gen_random_uuid(), which is built into PostgreSQL 13+ (not the pgcrypto
+-- extension). Supabase managed Postgres satisfies this; self-hosted Postgres should use 13+.
 
 -- ---------------------------------------------------------------------------
 -- profiles — app metadata keyed to Supabase Auth
