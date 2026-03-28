@@ -6,14 +6,15 @@
 -- matching app_role for the current user (fail-closed PHI reads/writes).
 
 -- ---------------------------------------------------------------------------
--- Helpers (SECURITY DEFINER; Week 5: add JWT/aal predicate on practitioner path)
+-- Helpers (SECURITY INVOKER: only own profile + own-visible grant rows; RLS applies.
+-- Week 5: add JWT/aal predicate on practitioner path.)
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.user_has_practitioner_access (p_patient_user_id uuid)
   RETURNS boolean
   LANGUAGE sql
   STABLE
-  SECURITY DEFINER
-  SET search_path = public
+  SECURITY INVOKER
+  SET search_path = pg_catalog, public
   AS $$
     SELECT
       EXISTS (
@@ -36,8 +37,8 @@ CREATE OR REPLACE FUNCTION public.user_is_caretaker_for_patient (p_patient_user_
   RETURNS boolean
   LANGUAGE sql
   STABLE
-  SECURITY DEFINER
-  SET search_path = public
+  SECURITY INVOKER
+  SET search_path = pg_catalog, public
   AS $$
     SELECT
       EXISTS (
@@ -56,6 +57,12 @@ $$;
 
 COMMENT ON FUNCTION public.user_is_caretaker_for_patient (uuid) IS 'True when the current user has profiles.app_role caretaker and an active caretaker_access link to this patient.';
 
+REVOKE ALL ON FUNCTION public.user_has_practitioner_access (uuid)
+  FROM PUBLIC;
+
+REVOKE ALL ON FUNCTION public.user_is_caretaker_for_patient (uuid)
+  FROM PUBLIC;
+
 GRANT EXECUTE ON FUNCTION public.user_has_practitioner_access (uuid) TO authenticated;
 
 GRANT EXECUTE ON FUNCTION public.user_is_caretaker_for_patient (uuid) TO authenticated;
@@ -67,7 +74,7 @@ CREATE OR REPLACE FUNCTION public.enforce_practitioner_access_profile_roles ()
   RETURNS TRIGGER
   LANGUAGE plpgsql
   SECURITY DEFINER
-  SET search_path = public
+  SET search_path = pg_catalog, public, pg_temp
   AS $$
 BEGIN
   IF NOT EXISTS (
@@ -103,7 +110,7 @@ CREATE OR REPLACE FUNCTION public.enforce_caretaker_access_profile_roles ()
   RETURNS TRIGGER
   LANGUAGE plpgsql
   SECURITY DEFINER
-  SET search_path = public
+  SET search_path = pg_catalog, public, pg_temp
   AS $$
 BEGIN
   IF NOT EXISTS (
@@ -139,6 +146,20 @@ COMMENT ON FUNCTION public.enforce_practitioner_access_profile_roles () IS 'Ensu
 
 COMMENT ON FUNCTION public.enforce_caretaker_access_profile_roles () IS 'Ensures caretaker grants only link patient + caretaker profiles per PRD; runs under definer to read profiles despite RLS.';
 
+REVOKE ALL ON FUNCTION public.enforce_practitioner_access_profile_roles ()
+  FROM PUBLIC;
+
+REVOKE ALL ON FUNCTION public.enforce_caretaker_access_profile_roles ()
+  FROM PUBLIC;
+
+GRANT EXECUTE ON FUNCTION public.enforce_practitioner_access_profile_roles () TO authenticated;
+
+GRANT EXECUTE ON FUNCTION public.enforce_caretaker_access_profile_roles () TO authenticated;
+
+GRANT EXECUTE ON FUNCTION public.enforce_practitioner_access_profile_roles () TO service_role;
+
+GRANT EXECUTE ON FUNCTION public.enforce_caretaker_access_profile_roles () TO service_role;
+
 -- ---------------------------------------------------------------------------
 -- Append-only access_log: privileges + trigger (RLS policies below)
 -- ---------------------------------------------------------------------------
@@ -165,6 +186,8 @@ CREATE OR REPLACE FUNCTION public.access_log_prevent_update_or_delete ()
   AS $$
 BEGIN
   RAISE EXCEPTION 'access_log is append-only';
+  RETURN NULL;
+  -- Unreachable today; documents BEFORE UPDATE/DELETE trigger contract if RAISE is ever relaxed.
 END;
 $$;
 
