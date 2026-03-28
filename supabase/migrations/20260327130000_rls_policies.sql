@@ -4,6 +4,10 @@
 -- Practitioner MFA (aal2) is centralized in user_has_practitioner_access() for Week 5.
 -- Grant tables: triggers enforce profiles.app_role on grant endpoints; helpers require
 -- matching app_role for the current user (fail-closed PHI reads/writes).
+--
+-- SECURITY DEFINER trigger functions: no GRANT EXECUTE to authenticated/service_role; superuser
+-- ownership is enough for triggers to run (PostgreSQL perm-functions). Narrow EXECUTE is only for
+-- SECURITY INVOKER RLS helpers below (policy-evaluated, not direct RPC surface).
 
 -- ---------------------------------------------------------------------------
 -- Helpers (SECURITY INVOKER: only own profile + own-visible grant rows; RLS applies.
@@ -152,13 +156,7 @@ REVOKE ALL ON FUNCTION public.enforce_practitioner_access_profile_roles ()
 REVOKE ALL ON FUNCTION public.enforce_caretaker_access_profile_roles ()
   FROM PUBLIC;
 
-GRANT EXECUTE ON FUNCTION public.enforce_practitioner_access_profile_roles () TO authenticated;
-
-GRANT EXECUTE ON FUNCTION public.enforce_caretaker_access_profile_roles () TO authenticated;
-
-GRANT EXECUTE ON FUNCTION public.enforce_practitioner_access_profile_roles () TO service_role;
-
-GRANT EXECUTE ON FUNCTION public.enforce_caretaker_access_profile_roles () TO service_role;
+-- No GRANT EXECUTE on grant-table trigger functions: superuser-owned; invokers do not need EXECUTE.
 
 -- ---------------------------------------------------------------------------
 -- Append-only access_log: privileges + trigger (RLS policies below)
@@ -192,17 +190,10 @@ BEGIN
     RAISE EXCEPTION 'access_log is append-only';
   END IF;
 
-  -- UPDATE: allow only auth.users FK ON DELETE SET NULL on actor_user_id / patient_user_id;
-  -- all other columns must be unchanged (append-only audit semantics).
+  -- UPDATE: allow only auth.users FK ON DELETE SET NULL on actor_user_id / patient_user_id.
+  -- Compare all non-FK columns via jsonb (schema-evolution safe); FK columns only unchanged or nulling.
   IF TG_OP = 'UPDATE'
-    AND OLD.id IS NOT DISTINCT FROM NEW.id
-    AND OLD.occurred_at IS NOT DISTINCT FROM NEW.occurred_at
-    AND OLD.actor_role IS NOT DISTINCT FROM NEW.actor_role
-    AND OLD.action IS NOT DISTINCT FROM NEW.action
-    AND OLD.resource_type IS NOT DISTINCT FROM NEW.resource_type
-    AND OLD.resource_id IS NOT DISTINCT FROM NEW.resource_id
-    AND OLD.request_id IS NOT DISTINCT FROM NEW.request_id
-    AND OLD.ip_hash IS NOT DISTINCT FROM NEW.ip_hash
+    AND (to_jsonb(OLD) - 'actor_user_id' - 'patient_user_id') = (to_jsonb(NEW) - 'actor_user_id' - 'patient_user_id')
     AND (
       OLD.actor_user_id IS NOT DISTINCT FROM NEW.actor_user_id
       OR (OLD.actor_user_id IS NOT NULL AND NEW.actor_user_id IS NULL)
@@ -218,7 +209,7 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION public.access_log_prevent_update_or_delete () IS 'Blocks UPDATE/DELETE except FK cleanup when referenced auth.users rows are deleted (SET NULL on actor_user_id / patient_user_id only).';
+COMMENT ON FUNCTION public.access_log_prevent_update_or_delete () IS 'Blocks UPDATE/DELETE except FK SET NULL on actor_user_id/patient_user_id; non-FK columns compared via jsonb minus those keys (new columns covered automatically).';
 
 CREATE TRIGGER access_log_append_only
   BEFORE UPDATE OR DELETE ON public.access_log
@@ -325,9 +316,8 @@ COMMENT ON FUNCTION public.profiles_enforce_app_role () IS 'Blocks practitioner 
 REVOKE ALL ON FUNCTION public.profiles_enforce_app_role ()
   FROM PUBLIC;
 
-GRANT EXECUTE ON FUNCTION public.profiles_enforce_app_role () TO authenticated;
-
-GRANT EXECUTE ON FUNCTION public.profiles_enforce_app_role () TO service_role;
+-- No GRANT EXECUTE: trigger functions owned by a superuser do not require the invoker to have
+-- EXECUTE (PostgreSQL perm-functions). Avoids callable surface; not needed for trigger firing.
 
 CREATE POLICY profiles_select_own ON public.profiles
   FOR SELECT
@@ -696,9 +686,7 @@ COMMENT ON FUNCTION public.enforce_phi_row_user_id_immutable () IS 'Prevents car
 REVOKE ALL ON FUNCTION public.enforce_phi_row_user_id_immutable ()
   FROM PUBLIC;
 
-GRANT EXECUTE ON FUNCTION public.enforce_phi_row_user_id_immutable () TO authenticated;
-
-GRANT EXECUTE ON FUNCTION public.enforce_phi_row_user_id_immutable () TO service_role;
+-- No GRANT EXECUTE: superuser-owned trigger function; invokers do not need EXECUTE (PostgreSQL perm-functions).
 
 CREATE TRIGGER phi_user_id_immutable
   BEFORE UPDATE ON public.symptom_presets
