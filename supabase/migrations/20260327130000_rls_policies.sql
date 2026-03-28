@@ -175,7 +175,10 @@ REVOKE ALL ON public.access_log
 GRANT
   SELECT ON public.access_log TO authenticated;
 
--- Trusted path (Edge Function / automation) uses service_role; clients use authenticated only.
+-- Trusted path (Edge Function / automation) uses service_role; append-only: no UPDATE/DELETE privilege.
+REVOKE ALL ON public.access_log
+  FROM service_role;
+
 GRANT
   INSERT,
   SELECT ON public.access_log TO service_role;
@@ -349,7 +352,7 @@ CREATE POLICY profiles_service_role_all ON public.profiles
   USING (TRUE)
   WITH CHECK (TRUE);
 
--- symptom_presets
+-- symptom_presets (user_id immutability: phi_user_id_immutable trigger)
 CREATE POLICY symptom_presets_select ON public.symptom_presets
   FOR SELECT
   TO authenticated
@@ -440,7 +443,7 @@ CREATE POLICY preset_symptoms_delete ON public.preset_symptoms
       AND (sp.user_id = (SELECT auth.uid())
         OR public.user_is_caretaker_for_patient (sp.user_id))));
 
--- health_marker_presets
+-- health_marker_presets (user_id immutability: phi_user_id_immutable trigger)
 CREATE POLICY health_marker_presets_select ON public.health_marker_presets
   FOR SELECT
   TO authenticated
@@ -531,7 +534,7 @@ CREATE POLICY preset_health_markers_delete ON public.preset_health_markers
       AND (hp.user_id = (SELECT auth.uid())
         OR public.user_is_caretaker_for_patient (hp.user_id))));
 
--- episodes
+-- episodes (caretaker may update patient rows; changing user_id is blocked by phi_user_id_immutable)
 CREATE POLICY episodes_select ON public.episodes
   FOR SELECT
   TO authenticated
@@ -559,7 +562,7 @@ CREATE POLICY episodes_delete ON public.episodes
   USING (user_id = (SELECT auth.uid())
     OR public.user_is_caretaker_for_patient (user_id));
 
--- episode_symptoms
+-- episode_symptoms (user_id immutability: phi_user_id_immutable trigger)
 CREATE POLICY episode_symptoms_select ON public.episode_symptoms
   FOR SELECT
   TO authenticated
@@ -587,7 +590,7 @@ CREATE POLICY episode_symptoms_delete ON public.episode_symptoms
   USING (user_id = (SELECT auth.uid())
     OR public.user_is_caretaker_for_patient (user_id));
 
--- health_markers
+-- health_markers (user_id immutability: phi_user_id_immutable trigger)
 CREATE POLICY health_markers_select ON public.health_markers
   FOR SELECT
   TO authenticated
@@ -615,7 +618,7 @@ CREATE POLICY health_markers_delete ON public.health_markers
   USING (user_id = (SELECT auth.uid())
     OR public.user_is_caretaker_for_patient (user_id));
 
--- food_diary_entries
+-- food_diary_entries (user_id immutability: phi_user_id_immutable trigger)
 CREATE POLICY food_diary_entries_select ON public.food_diary_entries
   FOR SELECT
   TO authenticated
@@ -643,7 +646,7 @@ CREATE POLICY food_diary_entries_delete ON public.food_diary_entries
   USING (user_id = (SELECT auth.uid())
     OR public.user_is_caretaker_for_patient (user_id));
 
--- episode_media
+-- episode_media (user_id immutability: phi_user_id_immutable trigger)
 CREATE POLICY episode_media_select ON public.episode_media
   FOR SELECT
   TO authenticated
@@ -670,6 +673,67 @@ CREATE POLICY episode_media_delete ON public.episode_media
   TO authenticated
   USING (user_id = (SELECT auth.uid())
     OR public.user_is_caretaker_for_patient (user_id));
+
+-- PHI rows: user_id is the patient owner; caretaker UPDATE policies must not allow reassigning ownership.
+CREATE OR REPLACE FUNCTION public.enforce_phi_row_user_id_immutable ()
+  RETURNS TRIGGER
+  LANGUAGE plpgsql
+  SECURITY DEFINER
+  SET search_path = pg_catalog, public, pg_temp
+  AS $$
+BEGIN
+  IF OLD.user_id IS DISTINCT FROM NEW.user_id THEN
+    IF NOT public.profiles_trusted_session_for_app_role () THEN
+      RAISE EXCEPTION '%: user_id cannot be changed on update', TG_TABLE_NAME;
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+COMMENT ON FUNCTION public.enforce_phi_row_user_id_immutable () IS 'Prevents caretaker (or patient) from moving PHI rows to another user_id; trusted session may fix data.';
+
+REVOKE ALL ON FUNCTION public.enforce_phi_row_user_id_immutable ()
+  FROM PUBLIC;
+
+GRANT EXECUTE ON FUNCTION public.enforce_phi_row_user_id_immutable () TO authenticated;
+
+GRANT EXECUTE ON FUNCTION public.enforce_phi_row_user_id_immutable () TO service_role;
+
+CREATE TRIGGER phi_user_id_immutable
+  BEFORE UPDATE ON public.symptom_presets
+  FOR EACH ROW
+  EXECUTE FUNCTION public.enforce_phi_row_user_id_immutable ();
+
+CREATE TRIGGER phi_user_id_immutable
+  BEFORE UPDATE ON public.health_marker_presets
+  FOR EACH ROW
+  EXECUTE FUNCTION public.enforce_phi_row_user_id_immutable ();
+
+CREATE TRIGGER phi_user_id_immutable
+  BEFORE UPDATE ON public.episodes
+  FOR EACH ROW
+  EXECUTE FUNCTION public.enforce_phi_row_user_id_immutable ();
+
+CREATE TRIGGER phi_user_id_immutable
+  BEFORE UPDATE ON public.episode_symptoms
+  FOR EACH ROW
+  EXECUTE FUNCTION public.enforce_phi_row_user_id_immutable ();
+
+CREATE TRIGGER phi_user_id_immutable
+  BEFORE UPDATE ON public.health_markers
+  FOR EACH ROW
+  EXECUTE FUNCTION public.enforce_phi_row_user_id_immutable ();
+
+CREATE TRIGGER phi_user_id_immutable
+  BEFORE UPDATE ON public.food_diary_entries
+  FOR EACH ROW
+  EXECUTE FUNCTION public.enforce_phi_row_user_id_immutable ();
+
+CREATE TRIGGER phi_user_id_immutable
+  BEFORE UPDATE ON public.episode_media
+  FOR EACH ROW
+  EXECUTE FUNCTION public.enforce_phi_row_user_id_immutable ();
 
 -- practitioner_access (PRD grant table)
 CREATE POLICY practitioner_access_patient_all ON public.practitioner_access
