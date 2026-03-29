@@ -298,6 +298,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@abstrack/types':
+        specifier: workspace:*
+        version: link:../../packages/types
       next:
         specifier: ~16.0.1
         version: 16.0.11(@babel/core@7.29.0)(@playwright/test@1.58.2)(babel-plugin-macros@3.1.0)(babel-plugin-react-compiler@1.0.0)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(sass@1.97.3)
