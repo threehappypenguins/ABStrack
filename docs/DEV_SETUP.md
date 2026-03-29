@@ -165,6 +165,8 @@ Get URLs and keys from the [Supabase dashboard](https://supabase.com/dashboard):
 
 ## 4. Supabase database migrations (cloud CLI and CI)
 
+**Supabase workflow (cloud + CLI + GitHub Actions):** **[SUPABASE_CLOUD_DEVELOPER.md](SUPABASE_CLOUD_DEVELOPER.md)** — keep **Actions `db push` on `main`**; for a **single PR** with migrations + types, run **`db push`** and **`gen types --linked`** from your laptop **before merge**. **AI assistants:** **[AGENTS.md](../AGENTS.md)**.
+
 App environment variables (`NEXT_PUBLIC_SUPABASE_URL`, keys) let clients call the **Data API**; they do **not** apply SQL from the repo. Schema changes live in [`supabase/migrations/`](../supabase/migrations/) and must be applied to your hosted Postgres with the **Supabase CLI** (or an equivalent process).
 
 Official reference: [Managing Environments](https://supabase.com/docs/guides/cli/managing-environments) (CLI + GitHub Actions).
@@ -207,6 +209,8 @@ After new files exist in `supabase/migrations/`, apply them to the linked projec
 pnpm dlx supabase db push
 ```
 
+**Recommended with this repo:** run **`db push`** from your laptop **before merging** a migration PR, then **`gen types typescript --linked`** and update `packages/supabase/src/lib/database.types.ts` (see **[SUPABASE_CLOUD_DEVELOPER.md](SUPABASE_CLOUD_DEVELOPER.md)**). **GitHub Actions** still runs **`db push`** on **`main`** after merge as a backstop.
+
 Useful variants:
 
 - **`pnpm dlx supabase db push --dry-run`** — prints which migrations would run without applying them (good for checks before merge).
@@ -225,6 +229,8 @@ The workflow [`.github/workflows/supabase-migrations.yml`](../.github/workflows/
 | `SUPABASE_DB_PASSWORD` | Postgres password for the `postgres` role (from **Connect** or **Database → Settings**; see §4 above). |
 
 Add these under **Repository → Settings → Secrets and variables → Actions**. The workflow runs **`supabase db push --dry-run`** on pull requests that change migration files (same-repo branches only; **fork PRs do not receive secrets**, so migrate checks are skipped there), and **`supabase db push`** on pushes to `main` when migration paths change. You can also run the workflow manually (**Actions → Supabase migrations → Run workflow**).
+
+**Types file:** [`.github/workflows/supabase-migrations.yml`](../.github/workflows/supabase-migrations.yml) runs **`supabase gen types typescript --linked`** after `db push` on `main` only to **verify** the committed `packages/supabase/src/lib/database.types.ts` matches cloud—it **does not commit**. If it fails, follow **[SUPABASE_CLOUD_DEVELOPER.md](SUPABASE_CLOUD_DEVELOPER.md)**. [`.github/workflows/supabase-db-types-pr.yml`](../.github/workflows/supabase-db-types-pr.yml) may compare types to migration SQL on PRs using a **CI-only** Docker stack.
 
 If you later use **separate staging and production** projects, duplicate the pattern with different secrets (for example `STAGING_PROJECT_ID` / `PRODUCTION_PROJECT_ID`) as in the [demo workflow](https://supabase.com/docs/guides/cli/managing-environments#configure-github-actions).
 
@@ -320,7 +326,7 @@ The workspace pins **React 19.1.x** to match **Expo SDK 54** and to stay aligned
 - [ ] `pnpm install --frozen-lockfile` succeeded
 - [ ] `apps/web/.env.local` and `apps/practitioner/.env.local` created from `.env.example` and filled with project credentials
 - [ ] `apps/mobile/.env` created from `.env.example`, **trimmed** to `EXPO_PUBLIC_*` only, and filled with real values
-- [ ] Supabase CLI can talk to your cloud project: `pnpm dlx supabase login`, `pnpm dlx supabase link --project-ref <ref>`, then `pnpm dlx supabase db push` when you have pending migrations ([§4](#4-supabase-database-migrations-cloud-cli-and-ci))
+- [ ] Supabase CLI: `login`, `link`, and for migration PRs **`db push` + `gen types --linked`** + Prettier before merge ([§4](#4-supabase-database-migrations-cloud-cli-and-ci), [SUPABASE_CLOUD_DEVELOPER.md](SUPABASE_CLOUD_DEVELOPER.md))
 - [ ] If using GitHub Actions for migrations: repository secrets set (`SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_ID`, `SUPABASE_DB_PASSWORD`) per [§4](#4-supabase-database-migrations-cloud-cli-and-ci)
 - [ ] `pnpm exec nx run-many -t lint test typecheck` (and build excluding mobile if you match CI) passes
 - [ ] `pnpm exec nx dev web` (and/or other apps) runs as expected

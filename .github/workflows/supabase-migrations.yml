@@ -1,7 +1,12 @@
 # Apply pending SQL migrations from supabase/migrations/ to the linked Supabase Cloud project.
 # Requires repository secrets (see docs/DEV_SETUP.md §4).
 #
-# - push to main: applies migrations (supabase db push)
+# Intended workflow (docs/SUPABASE_CLOUD_DEVELOPER.md): developers also run `db push` + `gen types --linked`
+# locally before merge so one PR can include migration + database.types.ts. This workflow still runs `db push`
+# on main as a backstop and verifies types match cloud (no auto-commit).
+#
+# - push to main: applies migrations (supabase db push), then verifies that
+#   packages/supabase/src/lib/database.types.ts matches supabase gen types --linked (fails if not).
 # - pull_request: dry-run only (supabase db push --dry-run) when migration files change
 # - workflow_dispatch: manual deploy (deploy job only runs on refs/heads/main so a mistaken
 #   dispatch from a feature branch cannot push unmerged migrations to the linked project).
@@ -75,3 +80,20 @@ jobs:
 
       - name: Push migrations to Supabase Cloud
         run: supabase db push --yes
+
+      - name: Verify Database types match linked project (no auto-commit)
+        run: |
+          supabase gen types typescript --linked --schema public > /tmp/database.types.generated.ts
+          npx --yes prettier@3.6.2 --write /tmp/database.types.generated.ts
+          cp packages/supabase/src/lib/database.types.ts /tmp/database.types.committed.ts
+          npx --yes prettier@3.6.2 --write /tmp/database.types.committed.ts
+          if diff -q /tmp/database.types.committed.ts /tmp/database.types.generated.ts >/dev/null; then
+            echo "Database types match linked project."
+            exit 0
+          fi
+          echo "::error::packages/supabase/src/lib/database.types.ts does not match the linked Supabase project after db push."
+          echo "Run locally (Supabase CLI logged in and linked to this project), then commit:"
+          echo "  pnpm dlx supabase gen types typescript --linked --schema public > packages/supabase/src/lib/database.types.ts"
+          echo "  pnpm exec prettier --write packages/supabase/src/lib/database.types.ts"
+          diff -u /tmp/database.types.committed.ts /tmp/database.types.generated.ts || true
+          exit 1
