@@ -109,8 +109,9 @@ GRANT EXECUTE ON FUNCTION public.episode_media_storage_can_write (text) TO authe
 
 -- ---------------------------------------------------------------------------
 -- storage.objects — episode-media only; no anon policies (anonymous has no access)
+-- RLS is already enabled on storage.objects by the platform; do not ALTER that table here — the
+-- migration DB role cannot own storage schema tables (SQLSTATE 42501 on hosted Supabase).
 -- ---------------------------------------------------------------------------
-ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY episode_media_storage_select ON storage.objects
   FOR SELECT
