@@ -29,8 +29,8 @@
 - [x] Write RLS policies for all PHI tables (patient owns data; caretaker and practitioner per grant tables; practitioner MFA rules per [PRD](PRD.md))
 - [x] Append-only `access_log`: privilege/RLS/trigger pattern so clients cannot forge or mutate log rows (trusted insert path only)
 - [x] Create the private `episode-media` storage bucket with RLS on `storage.objects`
-- [ ] Implement `@abstrack/types` -- all shared TypeScript interfaces and enums (episode types, meal tags, symptom response types, user roles, etc.)
-- [ ] Implement `@abstrack/supabase` -- Supabase client factory, auth helpers, typed query wrappers
+- [x] Implement `@abstrack/types` -- all shared TypeScript interfaces and enums (episode types, meal tags, symptom response types, user roles, etc.)
+- [x] Implement `@abstrack/supabase` -- Supabase client factory, auth helpers, typed query wrappers
 
 **Why this week:** Foundation work with no UI to build or test -- ideal while school is busy. Everything downstream depends on the schema and types being correct. PHI is stored as normal columns protected by RLS, TLS, and platform encryption at rest ([PRD](PRD.md)).
 
@@ -43,9 +43,10 @@
 **Tasks:**
 
 - [ ] Patient sign-up and login: email/password via Supabase Auth
-- [ ] Persistent session via Supabase Auth refresh tokens (patient default: stays logged in; optional "require re-auth on app open" can be deferred or stubbed)
+- [ ] Persistent session via Supabase Auth refresh tokens (patient default: stays logged in); **optional patient preference** to require re-authentication when opening the app
 - [ ] Password reset via email link; password change does **not** re-encrypt PHI (server stores plaintext PHI under RLS per [PRD](PRD.md))
-- [ ] Optional: `@abstrack/crypto` package **only** for non-PHI utilities if needed (e.g. helpers); **not** used for encrypting database columns or shared keys between roles
+- [ ] Wire **`healthCheckProfilesLimit1`** from `@abstrack/supabase` in **one** patient app (web or mobile) as part of validating sign-in/session: env keys, session, and RLS end-to-end
+- [ ] `@abstrack/crypto`: README (and package entry) state **non-PHI utilities only** per PRD (no database PHI encryption, no shared PHI keys). Replace the placeholder export with **one** small non-PHI utility (e.g. stable id / hash helper for non-sensitive identifiers)
 - [ ] Document security baseline for the repo: TLS, RLS, grant tables (`practitioner_access`, `caretaker_access`), alignment with PRD security section
 
 **Why this week:** Establishes auth without a client-side encryption key hierarchy. The product safeguards are RLS, grants, TLS, audit logging, and (later) SQLCipher on device—not field-level E2E crypto.
@@ -80,7 +81,7 @@
 
 - [ ] TOTP setup flow for practitioners via Supabase Auth MFA API (mandatory for practitioners)
 - [ ] Practitioner MFA **fail-closed** per [PRD](PRD.md): RLS and/or **Edge Function** (or equivalent) verifies MFA via Auth APIs before patient-data reads; hooks alone must not be the sole control if they can fail open
-- [ ] Optional: JWT claims / role metadata for routing; practitioner patient-data access must satisfy MFA rules in policy or server path
+- [ ] JWT claims / role metadata for routing; practitioner patient-data access must satisfy MFA rules in policy or server path
 - [ ] Frontend MFA gating in practitioner app (no patient routes until MFA verified)
 
 **Second half (April 16-19, school finished):**
@@ -114,7 +115,7 @@
   - Free text note + meal tag (Breakfast/Lunch/Dinner/Snack/Other) + timestamp
   - Stored as plaintext in PostgreSQL under RLS (`food_diary_entries.food_note` per [PRD](PRD.md))
 - [ ] General wellness logging:
-  - "How are you feeling" mood/wellness entry with optional notes
+  - "How are you feeling" mood/wellness entry with a notes field
   - Ad-hoc symptom logging (without starting a full episode)
   - Ad-hoc health marker capture
 
@@ -130,7 +131,7 @@
 - [ ] Photo capture within episode prompt flow
 - [ ] Immediate playback preview + re-record option
 - [ ] **Server-side confidentiality for media (not client DEK):** upload to private `episode-media` bucket; access via RLS on `storage.objects` and **time-limited signed URLs**; confidentiality from private bucket + RLS + TLS + platform at-rest encryption ([PRD](PRD.md) Section 10)
-- [ ] Optional thumbnail object in same bucket (same access controls as primary file)
+- [ ] Thumbnail object in same bucket as primary media (same access controls as primary file)
 - [ ] Playback: obtain signed URL → download over TLS → display in `<video>` / `<img>` or RN equivalents (**no** application-layer decrypt step for stored objects)
 - [ ] Implement `@abstrack/powersync`:
   - PowerSync schema matching Supabase tables
@@ -249,10 +250,10 @@ graph TD
     W9 --> W10
 ```
 
-## Risk Mitigation Notes
+## Notes (constraints, not scope cuts)
 
-- **PowerSync + RLS consistency:** Sync Rules must mirror grant logic (patient / caretaker / practitioner). Treat RLS as authoritative for API access; validate rule changes in tests ([PRD](PRD.md) Architecture). If PowerSync setup is difficult, media can upload when online first; full offline sync can slip toward week 9 only if needed.
-- **Practitioner MFA fail-closed:** Prefer an Edge Function (or equivalent) that verifies MFA before returning patient data; do not rely on JWT hooks alone if they can omit claims. If blocked, narrow scope to "demo with verified MFA session only" rather than weakening the model.
-- **SQLCipher / offline queue:** Week 7 pairs media and offline sync. Device-bound encryption for queued blobs is recommended in the PRD; it is separate from server-side PHI encryption and does not involve sharing keys between users.
-- **Charts:** Scheduled in week 9 with server-side aggregation to match PRD and avoid heavy client downloads. If time is tight, food diary correlation (the most complex chart) can be cut.
-- **Presentation prep:** A full week is reserved. The demo script should be drafted by mid-week 10 to allow rehearsal time.
+- **PowerSync + RLS consistency:** Sync Rules must mirror grant logic (patient / caretaker / practitioner). Treat RLS as authoritative for API access; validate rule changes in tests ([PRD](PRD.md) Architecture). Week 7 delivers online media upload and the offline queue + PowerSync work as listed in that week’s tasks.
+- **Practitioner MFA fail-closed:** Use an Edge Function (or equivalent) that verifies MFA before returning patient data; do not rely on JWT hooks alone if they can omit claims. This is part of Week 5’s practitioner MFA work, not a downgrade path.
+- **SQLCipher / offline queue:** Week 7 pairs media and offline sync. Device-bound encryption for queued blobs matches the PRD; it is separate from server-side PHI encryption and does not involve sharing keys between users.
+- **Charts:** Week 9 includes server-side aggregation for all charts in that week’s task list, including food diary correlation—no client-side download of full histories for aggregation.
+- **Presentation prep:** Week 10 reserves time for polish, report, and presentation; draft the demo script by mid-week 10 so rehearsal is on schedule.
