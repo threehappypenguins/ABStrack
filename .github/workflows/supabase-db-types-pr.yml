@@ -29,6 +29,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - uses: supabase/setup-cli@v1
         with:
           version: ${{ env.SUPABASE_CLI_VERSION }}
@@ -40,7 +44,8 @@ jobs:
 
       - name: Check Database types match migrations
         run: |
-          cp packages/supabase/src/lib/database.types.ts /tmp/database.types.committed.ts
+          # Compare generated body only — committed file may include a hand-maintained header comment.
           supabase gen types typescript --local --schema public > /tmp/database.types.generated.ts
-          npx --yes prettier@3.6.2 --write /tmp/database.types.committed.ts /tmp/database.types.generated.ts
-          diff -u /tmp/database.types.committed.ts /tmp/database.types.generated.ts
+          awk '/^export type Json/{flag=1} flag' packages/supabase/src/lib/database.types.ts > /tmp/database.types.committed-body.ts
+          npx --yes prettier@3.6.2 --write /tmp/database.types.committed-body.ts /tmp/database.types.generated.ts
+          diff -u /tmp/database.types.committed-body.ts /tmp/database.types.generated.ts

@@ -1,3 +1,15 @@
+/**
+ * Generated Supabase `Database` type (public schema). Do not edit by hand.
+ *
+ * Regenerate after migrations are applied to your linked project, then format:
+ *
+ *   pnpm dlx supabase gen types typescript --linked --schema public > packages/supabase/src/lib/database.types.ts
+ *   pnpm exec prettier --write packages/supabase/src/lib/database.types.ts
+ *
+ * CI on `main` diffs this file against `gen types --linked` after `db push`.
+ * See docs/SUPABASE_CLOUD_DEVELOPER.md.
+ */
+
 export type Json =
   | string
   | number

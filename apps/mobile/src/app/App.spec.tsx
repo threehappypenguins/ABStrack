@@ -9,10 +9,33 @@ test('renders correctly', () => {
   expect(getByTestId('heading')).toHaveTextContent(/Welcome/);
 });
 
-test('@abstrack/supabase native factory wires with env', () => {
-  process.env.EXPO_PUBLIC_SUPABASE_URL = 'https://example.supabase.co';
-  process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_test';
-  expect(createMobileSupabaseClient()).toBeTruthy();
-  delete process.env.EXPO_PUBLIC_SUPABASE_URL;
-  delete process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+describe('@abstrack/supabase native factory', () => {
+  const ENV_KEYS = [
+    'EXPO_PUBLIC_SUPABASE_URL',
+    'EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
+  ] as const;
+  const snapshot: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    for (const key of ENV_KEYS) {
+      snapshot[key] = process.env[key];
+    }
+  });
+
+  afterEach(() => {
+    for (const key of ENV_KEYS) {
+      const value = snapshot[key];
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  });
+
+  test('wires with env', () => {
+    process.env.EXPO_PUBLIC_SUPABASE_URL = 'https://example.supabase.co';
+    process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_test';
+    expect(createMobileSupabaseClient()).toBeTruthy();
+  });
 });

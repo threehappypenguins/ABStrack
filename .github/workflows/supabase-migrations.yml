@@ -71,6 +71,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - uses: supabase/setup-cli@v1
         with:
           version: ${{ env.SUPABASE_CLI_VERSION }}
@@ -83,11 +87,11 @@ jobs:
 
       - name: Verify Database types match linked project (no auto-commit)
         run: |
+          # Compare generated body only — committed file may include a hand-maintained header comment.
           supabase gen types typescript --linked --schema public > /tmp/database.types.generated.ts
-          npx --yes prettier@3.6.2 --write /tmp/database.types.generated.ts
-          cp packages/supabase/src/lib/database.types.ts /tmp/database.types.committed.ts
-          npx --yes prettier@3.6.2 --write /tmp/database.types.committed.ts
-          if diff -q /tmp/database.types.committed.ts /tmp/database.types.generated.ts >/dev/null; then
+          awk '/^export type Json/{flag=1} flag' packages/supabase/src/lib/database.types.ts > /tmp/database.types.committed-body.ts
+          npx --yes prettier@3.6.2 --write /tmp/database.types.committed-body.ts /tmp/database.types.generated.ts
+          if diff -q /tmp/database.types.committed-body.ts /tmp/database.types.generated.ts >/dev/null; then
             echo "Database types match linked project."
             exit 0
           fi
@@ -95,5 +99,5 @@ jobs:
           echo "Run locally (Supabase CLI logged in and linked to this project), then commit:"
           echo "  pnpm dlx supabase gen types typescript --linked --schema public > packages/supabase/src/lib/database.types.ts"
           echo "  pnpm exec prettier --write packages/supabase/src/lib/database.types.ts"
-          diff -u /tmp/database.types.committed.ts /tmp/database.types.generated.ts || true
+          diff -u /tmp/database.types.committed-body.ts /tmp/database.types.generated.ts || true
           exit 1
