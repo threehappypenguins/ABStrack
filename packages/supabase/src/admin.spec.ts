@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { getSupabaseServiceRoleKey } from './admin.js';
+import { getSupabaseSecretKey } from './admin.js';
 
 describe('@abstrack/supabase/admin', () => {
   let snapshotSecret: string | undefined;
@@ -16,15 +16,13 @@ describe('@abstrack/supabase/admin', () => {
     }
   });
 
-  it('getSupabaseServiceRoleKey throws when secret env is missing', () => {
+  it('getSupabaseSecretKey throws when secret env is missing', () => {
     delete process.env.SUPABASE_SECRET_KEY;
-    expect(() => getSupabaseServiceRoleKey()).toThrow(
-      /Missing SUPABASE_SECRET_KEY/,
-    );
+    expect(() => getSupabaseSecretKey()).toThrow(/Missing SUPABASE_SECRET_KEY/);
   });
 
-  it('getSupabaseServiceRoleKey reads SUPABASE_SECRET_KEY', () => {
+  it('getSupabaseSecretKey reads SUPABASE_SECRET_KEY', () => {
     process.env.SUPABASE_SECRET_KEY = 'sb_secret_unit_test';
-    expect(getSupabaseServiceRoleKey()).toBe('sb_secret_unit_test');
+    expect(getSupabaseSecretKey()).toBe('sb_secret_unit_test');
   });
 });

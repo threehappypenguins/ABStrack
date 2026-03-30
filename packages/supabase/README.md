@@ -42,8 +42,8 @@ Full template: [`.env.example`](../../.env.example).
 
 ## Server-only admin API (`@abstrack/supabase/admin`)
 
-- **`getSupabaseServiceRoleKey()`** — reads **`SUPABASE_SECRET_KEY`** (`sb_secret_...`) only.
-- **`getSupabaseAdminClient()`** — service-role client (bypasses RLS). Use only in audited server jobs or admin routes.
+- **`getSupabaseSecretKey()`** — reads **`SUPABASE_SECRET_KEY`** (`sb_secret_...`) only (not the legacy JWT `service_role` env name).
+- **`getSupabaseAdminClient()`** — client built with that secret key; **bypasses RLS** (elevated access). Use only in audited server jobs or admin routes.
 
 ## Regenerate / automation
 

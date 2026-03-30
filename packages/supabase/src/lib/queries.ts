@@ -5,7 +5,7 @@ export async function fetchProfileByUserId(
   client: AbstrackSupabaseClient,
   userId: string,
 ) {
-  return client.from('profiles').select('*').eq('id', userId).maybeSingle();
+  return await client.from('profiles').select('*').eq('id', userId).maybeSingle();
 }
 
 /**
@@ -13,5 +13,5 @@ export async function fetchProfileByUserId(
  * no rows when RLS blocks or user has no profile yet).
  */
 export async function healthCheckProfilesLimit1(client: AbstrackSupabaseClient) {
-  return client.from('profiles').select('id').limit(1);
+  return await client.from('profiles').select('id').limit(1);
 }

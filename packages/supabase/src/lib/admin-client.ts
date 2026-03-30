@@ -3,11 +3,12 @@ import type { Database } from './database.types.js';
 import { getSupabaseUrl } from './env-public.js';
 
 /**
- * Server-only **secret** API key (`sb_secret_...` from the dashboard).
+ * Server-only **secret** API key (`sb_secret_...` from Project Settings → API Keys).
+ * Named for what you configure (`SUPABASE_SECRET_KEY`), not the old JWT `service_role` env name.
  * Per [Supabase API keys](https://supabase.com/docs/guides/api/api-keys), use publishable + secret keys;
- * this package does not read legacy JWT `service_role` env vars. Never import this module from client code.
+ * legacy JWT service_role keys are not read here. Never import this module from client code.
  */
-export function getSupabaseServiceRoleKey(): string {
+export function getSupabaseSecretKey(): string {
   const key =
     typeof process !== 'undefined' && process.env
       ? process.env.SUPABASE_SECRET_KEY
@@ -21,10 +22,11 @@ export function getSupabaseServiceRoleKey(): string {
 }
 
 /**
- * Bypasses RLS — use only in trusted server jobs, migrations tooling, or audited admin routes.
+ * Supabase client using the **secret** key — bypasses RLS (same privilege level as classic “service role”).
+ * Use only in trusted server jobs, migrations tooling, or audited admin routes.
  */
 export function getSupabaseAdminClient() {
-  return createClient<Database>(getSupabaseUrl(), getSupabaseServiceRoleKey(), {
+  return createClient<Database>(getSupabaseUrl(), getSupabaseSecretKey(), {
     auth: {
       persistSession: false,
       autoRefreshToken: false,

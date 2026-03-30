@@ -63,7 +63,7 @@ describe('env-public', () => {
 describe('public entry', () => {
   it('does not expose service-role helpers', () => {
     expect(main).not.toHaveProperty('getSupabaseAdminClient');
-    expect(main).not.toHaveProperty('getSupabaseServiceRoleKey');
+    expect(main).not.toHaveProperty('getSupabaseSecretKey');
   });
 });
 
