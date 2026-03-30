@@ -14,7 +14,7 @@ Use [Supabase hosted API keys](https://supabase.com/docs/guides/api/api-keys) as
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` / `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | **Project Settings → API Keys** → publishable key | `sb_publishable_...` |
 | `SUPABASE_SECRET_KEY` | **Project Settings → API Keys** → secret key (server-only) | `sb_secret_...` |
 
-Pass **URL + publishable key** (or legacy anon) into browser, SSR, and mobile clients. Use **secret key** (or legacy `SUPABASE_SERVICE_ROLE_KEY`) only in trusted server code — import **`@abstrack/supabase/admin`**, never the main entry, from route handlers or scripts.
+Pass **URL + publishable key** (or legacy anon) into browser, SSR, and mobile clients. Use **`SUPABASE_SECRET_KEY`** (`sb_secret_...`) only in trusted server code — import **`@abstrack/supabase/admin`**, never the main entry, from route handlers or scripts. **`@abstrack/supabase/admin` does not read legacy JWT `service_role` keys.**
 
 ### Where to set them in this repo
 
@@ -24,9 +24,9 @@ Pass **URL + publishable key** (or legacy anon) into browser, SSR, and mobile cl
 | `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | `apps/mobile/.env` |
 | `SUPABASE_SECRET_KEY` | Same app’s `.env.local` when Next server code runs, or CI secrets |
 
-### Legacy (optional)
+### Legacy (optional, clients only)
 
-`NEXT_PUBLIC_SUPABASE_ANON_KEY` / `EXPO_PUBLIC_SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` — same second argument to `createClient`; do not expose `service_role` to clients.
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` / `EXPO_PUBLIC_SUPABASE_ANON_KEY` — fallback for `createClient` when publishable keys are not enabled yet. Do not use JWT **service_role** in client bundles; server admin uses **`SUPABASE_SECRET_KEY`** only.
 
 Full template: [`.env.example`](../../.env.example).
 
@@ -42,7 +42,7 @@ Full template: [`.env.example`](../../.env.example).
 
 ## Server-only admin API (`@abstrack/supabase/admin`)
 
-- **`getSupabaseServiceRoleKey()`** — reads `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY`.
+- **`getSupabaseServiceRoleKey()`** — reads **`SUPABASE_SECRET_KEY`** (`sb_secret_...`) only.
 - **`getSupabaseAdminClient()`** — service-role client (bypasses RLS). Use only in audited server jobs or admin routes.
 
 ## Regenerate / automation
