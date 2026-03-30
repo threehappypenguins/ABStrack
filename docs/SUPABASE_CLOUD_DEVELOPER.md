@@ -80,6 +80,20 @@ Then the migration hits cloud when **CI runs `db push` on `main`** after merge. 
 
 ---
 
+## After you change migrations or `database.types.ts`: check the TypeScript package
+
+**`db push` and `gen types` only refresh the schema snapshot.** They do **not** compile or test **`@abstrack/supabase`** (clients, auth, queries). After any migration/typegen work—or before you push a PR that touches `packages/supabase`—run:
+
+```bash
+pnpm exec nx run supabase:lint
+pnpm exec nx run supabase:test
+pnpm exec nx run supabase:build
+```
+
+For the whole workspace (closer to CI), see [DEV_SETUP.md §5](DEV_SETUP.md#5-verify-the-workspace).
+
+---
+
 ## PR check (Docker in CI only)
 
 [`.github/workflows/supabase-db-types-pr.yml`](../.github/workflows/supabase-db-types-pr.yml) may compare committed types to output from migrations applied in a **temporary** CI database—not your cloud. It does **not** replace the recommended **local `db push` + `--linked`** flow for your machine; it is an extra guard on PRs that touch migrations.
