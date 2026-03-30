@@ -71,7 +71,7 @@ Commit migration file(s) and `database.types.ts`. **GitHub Actions** still runs 
 
 **On pull requests that change `supabase/migrations/`:** [`.github/workflows/supabase-db-types-pr.yml`](../../.github/workflows/supabase-db-types-pr.yml) starts Supabase **inside GitHub’s CI runner** (Docker on the runner) and compares types there. That is **not** something you run on your laptop; it is an extra guard in CI.
 
-**Optional — compare before push (linked cloud):** same idea as CI on `main` — extract the body from `export type Json`, run `gen types --linked` to a temp file, format both with **`packages/supabase/src/lib/.prettierrc`**, then `diff`. Most of the time it is enough to run **`gen types` → Prettier** as in the block above and commit.
+**Optional — compare before push (linked cloud):** same idea as CI on `main` — extract the body from `export type Json`, run `gen types --linked` to a temp file, format both with **`pnpm exec prettier --config prettier.database-types.json --write <files>`**, then `diff`. Usually **`gen types` → Prettier** on `database.types.ts` in place (root config applies the override) is enough.
 
 ## Building and tests
 

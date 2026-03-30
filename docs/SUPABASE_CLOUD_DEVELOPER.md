@@ -44,7 +44,7 @@ Use this when you add or change **`supabase/migrations/*.sql`** and want **`data
 
    The redirect overwrites the whole file. If you keep the docblock above `export type Json`, paste it back from the previous commit or merge only the generated body. CI compares from `export type Json` downward, so the header does not need to match the CLI output.
 
-   **Prettier for this file:** `packages/supabase/src/lib/.prettierrc` sets `semi: false` and `singleQuote: false` so formatting matches what `supabase gen types` emits. The repo root `.prettierrc` still uses single quotes for the rest of the codebase.
+   **Prettier for this file:** `.prettierrc.cjs` overrides **`packages/supabase/src/lib/database.types.ts`** only, using options from **`prettier.database-types.json`** (`semi: false`, `singleQuote: false`) so formatting matches `supabase gen types`. GitHub Actions uses that same JSON with `--config` when formatting temp files for the diff.
 
 5. **Commit** `packages/supabase/src/lib/database.types.ts` and **open / update your PR** with both files.
 6. **Merge to `main`.** GitHub Actions runs **`db push` again**; for migrations you already applied, that is typically a **no-op**. The workflow then **verifies** that committed `database.types.ts` matches **`gen types --linked`** output—if something drifted, fix and push.

@@ -53,7 +53,7 @@ jobs:
       - name: Check Database types match migrations
         run: |
           set -euo pipefail
-          TYPES_PRETTIER="$GITHUB_WORKSPACE/packages/supabase/src/lib/.prettierrc"
+          TYPES_PRETTIER="$GITHUB_WORKSPACE/prettier.database-types.json"
           awk '/^export type Json/{flag=1} flag' packages/supabase/src/lib/database.types.ts > /tmp/db-types.committed.ts
           supabase gen types typescript --local --schema public > /tmp/db-types.generated.ts
           pnpm exec prettier --config "$TYPES_PRETTIER" --write /tmp/db-types.committed.ts /tmp/db-types.generated.ts

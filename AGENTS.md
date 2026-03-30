@@ -21,7 +21,7 @@ pnpm dlx supabase gen types typescript --linked --schema public > packages/supab
 pnpm exec prettier --write packages/supabase/src/lib/database.types.ts
 ```
 
-(`database.types.ts` uses `packages/supabase/src/lib/.prettierrc` — `semi: false` and `singleQuote: false` — so Prettier matches what `supabase gen types` emits; the repo root `.prettierrc` keeps single quotes for everything else.)
+(`database.types.ts` is the only file overridden in `.prettierrc.cjs` to use `prettier.database-types.json` — `semi: false` and `singleQuote: false` — so Prettier matches what `supabase gen types` emits; the rest of the repo stays single-quoted.)
 
 Then **commit** both the migration file(s) and **`packages/supabase/src/lib/database.types.ts`**.
 
