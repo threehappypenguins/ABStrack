@@ -65,5 +65,10 @@ describe('public entry', () => {
     expect(main).not.toHaveProperty('getSupabaseAdminClient');
     expect(main).not.toHaveProperty('getSupabaseSecretKey');
   });
+
+  it('does not pull Next SSR entrypoints (use @abstrack/supabase/browser and /server)', () => {
+    expect(main).not.toHaveProperty('getSupabaseBrowserClient');
+    expect(main).not.toHaveProperty('createSupabaseServerClient');
+  });
 });
 

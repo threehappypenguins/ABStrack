@@ -50,7 +50,7 @@
   ],
   "references": [
     {
-      "path": "../../packages/supabase/tsconfig.lib.json"
+      "path": "../../packages/supabase"
     }
   ]
 }

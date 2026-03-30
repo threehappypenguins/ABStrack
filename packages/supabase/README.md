@@ -30,15 +30,25 @@ Pass **URL + publishable key** (or legacy anon) into browser, SSR, and mobile cl
 
 Full template: [`.env.example`](../../.env.example).
 
-## Public API (`@abstrack/supabase`)
+## Package entrypoints
 
-- **`Database`**, **`Json`** — types for `SupabaseClient<Database>`.
-- **`getSupabaseUrl`**, **`getSupabasePublishableKey`** — read documented env names (client-safe).
-- **`getSupabaseBrowserClient()`** — Next.js client components via `@supabase/ssr` `createBrowserClient`.
-- **`createSupabaseServerClient(cookies)`** — server components, route handlers, middleware; pass `getAll` / `setAll` from `next/headers` or `NextRequest`/`NextResponse` per [Supabase SSR](https://supabase.com/docs/guides/auth/server-side/nextjs).
-- **`createSupabaseNativeClient(storage)`** — React Native / Expo; pass `AsyncStorage` (or similar) for session persistence.
-- **Auth:** `signInWithEmailPassword`, `signUpWithEmailPassword`, `signOut`, `getSession`, `getAuthUser` (prefer `getAuthUser` on the server).
-- **Queries:** `fetchProfileByUserId`, `healthCheckProfilesLimit1` (lightweight RLS/session check).
+The **default** export (`@abstrack/supabase`) is **Metro-safe**: it does not load `@supabase/ssr`. Use **subpaths** for Next.js so React Native never pulls SSR code.
+
+| Import | Use when |
+|--------|----------|
+| **`@abstrack/supabase`** | Shared types, env readers, **`createSupabaseNativeClient`**, auth helpers, query helpers (Expo / shared code). |
+| **`@abstrack/supabase/browser`** | Next.js **client components** — `getSupabaseBrowserClient()` (`@supabase/ssr`). |
+| **`@abstrack/supabase/server`** | Next.js **server** — `createSupabaseServerClient(cookies)`; pass cookie `getAll` / `setAll` per [Supabase SSR](https://supabase.com/docs/guides/auth/server-side/nextjs). |
+| **`@abstrack/supabase/native`** | Optional alias for **`createSupabaseNativeClient`** only (same as main export; explicit “no SSR” surface). |
+| **`@abstrack/supabase/admin`** | Secret-key server client only (see below). |
+
+### Main (`@abstrack/supabase`)
+
+- **`Database`**, **`Json`**, **`AbstrackSupabaseClient`**
+- **`getSupabaseUrl`**, **`getSupabasePublishableKey`**
+- **`createSupabaseNativeClient`**, **`NativeAuthStorage`**, **`NativeClientOptions`**
+- **Auth:** `signInWithEmailPassword`, `signUpWithEmailPassword`, `signOut`, `getSession`, `getAuthUser`
+- **Queries:** `fetchProfileByUserId`, `healthCheckProfilesLimit1`
 
 ## Server-only admin API (`@abstrack/supabase/admin`)
 

@@ -1,4 +1,4 @@
-import type { AbstrackSupabaseClient } from './browser-client.js';
+import type { AbstrackSupabaseClient } from './supabase-client-type.js';
 
 export type { AbstrackSupabaseClient };
 

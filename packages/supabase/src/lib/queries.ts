@@ -1,4 +1,4 @@
-import type { AbstrackSupabaseClient } from './auth.js';
+import type { AbstrackSupabaseClient } from './supabase-client-type.js';
 
 /** Single profile row for the given auth user id, if RLS allows. */
 export async function fetchProfileByUserId(

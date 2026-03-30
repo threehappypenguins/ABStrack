@@ -14,6 +14,24 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./browser": {
+      "@abstrack/source": "./src/browser.ts",
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.js",
+      "default": "./dist/browser.js"
+    },
+    "./server": {
+      "@abstrack/source": "./src/server.ts",
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js",
+      "default": "./dist/server.js"
+    },
+    "./native": {
+      "@abstrack/source": "./src/native.ts",
+      "types": "./dist/native.d.ts",
+      "import": "./dist/native.js",
+      "default": "./dist/native.js"
+    },
     "./admin": {
       "@abstrack/source": "./src/admin.ts",
       "types": "./dist/admin.d.ts",

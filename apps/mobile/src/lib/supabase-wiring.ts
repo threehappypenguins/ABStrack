@@ -1,7 +1,7 @@
 import {
   createSupabaseNativeClient,
   type NativeAuthStorage,
-} from '@abstrack/supabase';
+} from '@abstrack/supabase/native';
 
 const memory: Record<string, string> = {};
 
