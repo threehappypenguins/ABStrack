@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr';
 import type { CookieMethodsServer } from '@supabase/ssr';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from './database.types.js';
 import { getSupabasePublishableKey, getSupabaseUrl } from './env-public.js';
 
@@ -10,10 +11,12 @@ export type { CookieMethodsServer };
  * `next/headers` / `NextRequest` / `NextResponse` per Supabase SSR guides.
  * Use **publishable/anon** key only — never the service role key.
  */
-export function createSupabaseServerClient(cookies: CookieMethodsServer) {
+export function createSupabaseServerClient(
+  cookies: CookieMethodsServer,
+): SupabaseClient<Database> {
   return createServerClient<Database>(
     getSupabaseUrl(),
     getSupabasePublishableKey(),
     { cookies },
-  );
+  ) as unknown as SupabaseClient<Database>;
 }
