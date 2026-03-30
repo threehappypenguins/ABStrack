@@ -1,3 +1,4 @@
+import type { AbstrackSupabaseClient } from '@abstrack/supabase';
 import {
   createSupabaseNativeClient,
   type NativeAuthStorage,
@@ -16,6 +17,6 @@ export const mobileDevAuthStorage: NativeAuthStorage = {
   },
 };
 
-export function createMobileSupabaseClient() {
+export function createMobileSupabaseClient(): AbstrackSupabaseClient {
   return createSupabaseNativeClient(mobileDevAuthStorage);
 }
