@@ -71,9 +71,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+          run_install: false
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
 
       - uses: supabase/setup-cli@v1
         with:
@@ -87,18 +95,17 @@ jobs:
 
       - name: Verify Database types match linked project (no auto-commit)
         run: |
-          # Compare generated body only — committed file may include a hand-maintained header comment.
-          supabase gen types typescript --linked --schema public > /tmp/database.types.generated.ts
-          awk '/^export type Json/{flag=1} flag' packages/supabase/src/lib/database.types.ts > /tmp/database.types.committed-body.ts
-          # Prettier resolves config from the file path; /tmp would miss repo .prettierrc and format differently.
-          npx --yes prettier@3.6.2 --config .prettierrc --write /tmp/database.types.committed-body.ts /tmp/database.types.generated.ts
-          if diff -q /tmp/database.types.committed-body.ts /tmp/database.types.generated.ts >/dev/null; then
+          set -euo pipefail
+          TYPES_PRETTIER="$GITHUB_WORKSPACE/prettier.database-types.json"
+          awk '/^export type Json/{flag=1} flag' packages/supabase/src/lib/database.types.ts > /tmp/db-types.committed.ts
+          supabase gen types typescript --linked --schema public > /tmp/db-types.generated.ts
+          pnpm exec prettier --config "$TYPES_PRETTIER" --write /tmp/db-types.committed.ts /tmp/db-types.generated.ts
+          if diff -q /tmp/db-types.committed.ts /tmp/db-types.generated.ts >/dev/null; then
             echo "Database types match linked project."
             exit 0
           fi
           echo "::error::packages/supabase/src/lib/database.types.ts does not match the linked Supabase project after db push."
-          echo "Run locally (Supabase CLI logged in and linked to this project), then commit:"
-          echo "  pnpm dlx supabase gen types typescript --linked --schema public > packages/supabase/src/lib/database.types.ts"
-          echo "  pnpm exec prettier --write packages/supabase/src/lib/database.types.ts"
-          diff -u /tmp/database.types.committed-body.ts /tmp/database.types.generated.ts || true
+          echo "Regenerate: pnpm dlx supabase gen types typescript --linked --schema public > packages/supabase/src/lib/database.types.ts"
+          echo "Then: pnpm exec prettier --write packages/supabase/src/lib/database.types.ts"
+          diff -u /tmp/db-types.committed.ts /tmp/db-types.generated.ts || true
           exit 1

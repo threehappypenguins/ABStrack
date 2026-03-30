@@ -29,9 +29,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+          run_install: false
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
 
       - uses: supabase/setup-cli@v1
         with:
@@ -44,9 +52,9 @@ jobs:
 
       - name: Check Database types match migrations
         run: |
-          # Compare generated body only — committed file may include a hand-maintained header comment.
-          supabase gen types typescript --local --schema public > /tmp/database.types.generated.ts
-          awk '/^export type Json/{flag=1} flag' packages/supabase/src/lib/database.types.ts > /tmp/database.types.committed-body.ts
-          # Prettier resolves config from the file path; /tmp would miss repo .prettierrc and format differently.
-          npx --yes prettier@3.6.2 --config .prettierrc --write /tmp/database.types.committed-body.ts /tmp/database.types.generated.ts
-          diff -u /tmp/database.types.committed-body.ts /tmp/database.types.generated.ts
+          set -euo pipefail
+          TYPES_PRETTIER="$GITHUB_WORKSPACE/prettier.database-types.json"
+          awk '/^export type Json/{flag=1} flag' packages/supabase/src/lib/database.types.ts > /tmp/db-types.committed.ts
+          supabase gen types typescript --local --schema public > /tmp/db-types.generated.ts
+          pnpm exec prettier --config "$TYPES_PRETTIER" --write /tmp/db-types.committed.ts /tmp/db-types.generated.ts
+          diff -u /tmp/db-types.committed.ts /tmp/db-types.generated.ts
