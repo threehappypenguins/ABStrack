@@ -3,17 +3,18 @@ import type { Database } from './database.types.js';
 import { getSupabaseUrl } from './env-public.js';
 
 /**
- * Server-only secret or legacy service_role JWT. Never import this module from client code.
+ * Server-only **secret** API key (`sb_secret_...` from the dashboard).
+ * Per [Supabase API keys](https://supabase.com/docs/guides/api/api-keys), use publishable + secret keys;
+ * this package does not read legacy JWT `service_role` env vars. Never import this module from client code.
  */
 export function getSupabaseServiceRoleKey(): string {
   const key =
-    (typeof process !== 'undefined' && process.env
-      ? process.env.SUPABASE_SECRET_KEY ??
-        process.env.SUPABASE_SERVICE_ROLE_KEY
-      : undefined) ?? undefined;
+    typeof process !== 'undefined' && process.env
+      ? process.env.SUPABASE_SECRET_KEY
+      : undefined;
   if (!key) {
     throw new Error(
-      'Missing SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY (server-only).',
+      'Missing SUPABASE_SECRET_KEY (server-only). Set the secret key from Project Settings → API Keys.',
     );
   }
   return key;
