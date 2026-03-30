@@ -1,0 +1,51 @@
+# Ensure packages/supabase/src/lib/database.types.ts matches the schema produced by applying
+# supabase/migrations/* to a fresh local database (no Supabase Cloud secrets required).
+#
+# Runs on pull requests that touch migration SQL (same-repo only; mirrors the migrations dry-run policy).
+# Developers typically also run db push + gen types --linked against cloud before merge (see docs/SUPABASE_CLOUD_DEVELOPER.md).
+# On main, supabase-migrations.yml checks types against --linked after db push (no bot commit).
+
+name: Supabase Database types (PR)
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supabase-db-types-pr-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      SUPABASE_CLI_VERSION: 2.84.4
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+
+      - name: Start local stack and apply migrations
+        run: |
+          supabase db start
+          supabase db reset --yes
+
+      - name: Check Database types match migrations
+        run: |
+          # Compare generated body only — committed file may include a hand-maintained header comment.
+          supabase gen types typescript --local --schema public > /tmp/database.types.generated.ts
+          awk '/^export type Json/{flag=1} flag' packages/supabase/src/lib/database.types.ts > /tmp/database.types.committed-body.ts
+          npx --yes prettier@3.6.2 --write /tmp/database.types.committed-body.ts /tmp/database.types.generated.ts
+          diff -u /tmp/database.types.committed-body.ts /tmp/database.types.generated.ts

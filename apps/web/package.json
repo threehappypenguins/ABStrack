@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "dependencies": {
+    "@abstrack/supabase": "workspace:*",
     "@abstrack/types": "workspace:*",
     "next": "~16.0.1",
     "react": "19.1.0",
