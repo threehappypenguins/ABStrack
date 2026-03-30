@@ -42,6 +42,10 @@ Use this when you add or change **`supabase/migrations/*.sql`** and want **`data
    pnpm exec prettier --write packages/supabase/src/lib/database.types.ts
    ```
 
+   The redirect overwrites the whole file. If you keep the docblock above `export type Json`, paste it back from the previous commit or merge only the generated body. CI compares from `export type Json` downward, so the header does not need to match the CLI output.
+
+   **Prettier for this file:** `packages/supabase/src/lib/.prettierrc` sets `semi: false` and `singleQuote: false` so formatting matches what `supabase gen types` emits. The repo root `.prettierrc` still uses single quotes for the rest of the codebase.
+
 5. **Commit** `packages/supabase/src/lib/database.types.ts` and **open / update your PR** with both files.
 6. **Merge to `main`.** GitHub Actions runs **`db push` again**; for migrations you already applied, that is typically a **no-op**. The workflow then **verifies** that committed `database.types.ts` matches **`gen types --linked`** output—if something drifted, fix and push.
 
@@ -94,15 +98,15 @@ For the whole workspace (closer to CI), see [DEV_SETUP.md §5](DEV_SETUP.md#5-ve
 
 ---
 
-## PR check (Docker in CI only)
+## PR check (Supabase in Docker on GitHub runners only)
 
-[`.github/workflows/supabase-db-types-pr.yml`](../.github/workflows/supabase-db-types-pr.yml) may compare committed types to output from migrations applied in a **temporary** CI database—not your cloud. It does **not** replace the recommended **local `db push` + `--linked`** flow for your machine; it is an extra guard on PRs that touch migrations.
+[`.github/workflows/supabase-db-types-pr.yml`](../.github/workflows/supabase-db-types-pr.yml) runs `supabase db start` / `db reset` **on the CI machine** (Docker on the runner) and compares types to your committed file. That is **not** “local Supabase on your laptop”; it is an automated check in GitHub. It does **not** replace the recommended **`db push` + `gen types --linked`** flow on your side when you change migrations.
 
 ---
 
-## If you never run Docker locally
+## Cloud-only development (no Docker on your machine)
 
-**You do not need Docker** for the recommended path—only **`db push`** and **`gen types --linked`** against cloud. Docker appears only **inside** certain GitHub Actions jobs.
+**You do not need Docker** for the recommended path—only **`db push`** and **`gen types --linked`** against Supabase Cloud. **Docker** in this repo only appears **inside** certain GitHub Actions jobs, not as a requirement for your computer.
 
 ---
 
@@ -119,6 +123,8 @@ For the whole workspace (closer to CI), see [DEV_SETUP.md §5](DEV_SETUP.md#5-ve
 5. **Do not** imply a bot commits `database.types.ts`.
 
 6. **Ask before changing** `.github/workflows/*` deployment or secrets without her approval.
+
+7. When **`database.types.ts`** or **`supabase/migrations/`** are involved, point to **`gen types --linked`** + Prettier (see **Recommended workflow** above) and that **[`.github/workflows/supabase-migrations.yml`](../.github/workflows/supabase-migrations.yml)** verifies on `main` after `db push`. **Do not** suggest Docker on her laptop unless she asks.
 
 ---
 
