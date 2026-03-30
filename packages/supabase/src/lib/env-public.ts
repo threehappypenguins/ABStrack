@@ -15,7 +15,11 @@ function normalizeEnv(value: string | undefined): string | undefined {
   return value === undefined || value === '' ? undefined : value;
 }
 
-/** Project URL (Next, Expo, or generic server `SUPABASE_URL`). */
+/**
+ * Project URL. Prefer **`NEXT_PUBLIC_SUPABASE_URL`** (Next) or **`EXPO_PUBLIC_SUPABASE_URL`** (Expo)
+ * so the value is available in client bundles. **`SUPABASE_URL`** is only read in environments
+ * with a full `process.env` (e.g. Node server); it is **not** exposed to browser or Expo client code.
+ */
 export function getSupabaseUrl(): string {
   const url =
     normalizeEnv(process.env.NEXT_PUBLIC_SUPABASE_URL) ??
@@ -23,7 +27,7 @@ export function getSupabaseUrl(): string {
     normalizeEnv(process.env.SUPABASE_URL);
   if (!url) {
     throw new Error(
-      'Missing Supabase URL. Set NEXT_PUBLIC_SUPABASE_URL, EXPO_PUBLIC_SUPABASE_URL, or SUPABASE_URL.',
+      'Missing Supabase URL. Set NEXT_PUBLIC_SUPABASE_URL (Next.js) or EXPO_PUBLIC_SUPABASE_URL (Expo) for client code. SUPABASE_URL is optional and server/Node-only—it is not inlined into browser or mobile bundles.',
     );
   }
   return url;
