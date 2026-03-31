@@ -6,6 +6,7 @@
  * `@abstrack/supabase/server`.
  */
 export type { Database, Json } from './lib/database.types.js';
+export type { Session } from '@supabase/supabase-js';
 export {
   getSupabasePublishableKey,
   getSupabaseUrl,

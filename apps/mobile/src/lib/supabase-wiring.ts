@@ -1,22 +1,19 @@
 import type { AbstrackSupabaseClient } from '@abstrack/supabase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   createSupabaseNativeClient,
-  type NativeAuthStorage,
 } from '@abstrack/supabase/native';
 
-const memory: Record<string, string> = {};
-
-/** In-memory storage for tests / early wiring; swap for AsyncStorage in production auth flows. */
-export const mobileDevAuthStorage: NativeAuthStorage = {
-  getItem: (key) => memory[key] ?? null,
-  setItem: (key, value) => {
-    memory[key] = value;
-  },
-  removeItem: (key) => {
-    delete memory[key];
-  },
-};
-
 export function createMobileSupabaseClient(): AbstrackSupabaseClient {
-  return createSupabaseNativeClient(mobileDevAuthStorage);
+  return createSupabaseNativeClient(AsyncStorage);
+}
+
+let mobileSupabaseClient: AbstrackSupabaseClient | null = null;
+
+export function getMobileSupabaseClient(): AbstrackSupabaseClient {
+  if (!mobileSupabaseClient) {
+    mobileSupabaseClient = createMobileSupabaseClient();
+  }
+
+  return mobileSupabaseClient;
 }
