@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { getSupabaseBrowserClient } from '@abstrack/supabase/browser';
 
@@ -10,9 +10,10 @@ import { getSupabaseBrowserClient } from '@abstrack/supabase/browser';
  */
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const supabase = useMemo(() => getSupabaseBrowserClient(), []);
 
   useEffect(() => {
+    const supabase = getSupabaseBrowserClient();
+
     // Set up auth state change listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event) => {
@@ -34,7 +35,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       subscription?.unsubscribe();
     };
-  }, [supabase, router]);
+  }, [router]);
 
   return <>{children}</>;
 }
