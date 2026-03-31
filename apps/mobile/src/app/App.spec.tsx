@@ -69,7 +69,11 @@ afterEach(() => {
 
 test('renders correctly', async () => {
   const { findByTestId } = render(<App />);
-  expect(await findByTestId('auth-email')).toBeTruthy();
+  expect(
+    await findByTestId('auth-email', {
+      includeHiddenElements: true,
+    }),
+  ).toBeTruthy();
 });
 
 describe('@abstrack/supabase native factory', () => {

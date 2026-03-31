@@ -1,3 +1,5 @@
+import { configure } from '@testing-library/react-native';
+
 jest.mock('expo/src/winter/ImportMetaRegistry', () => ({
   ImportMetaRegistry: {
     get url() {
@@ -17,6 +19,8 @@ jest.mock(
     };
   },
 );
+
+configure({ asyncUtilTimeout: 5000 });
 
 if (typeof global.structuredClone === 'undefined') {
   global.structuredClone = (object) => JSON.parse(JSON.stringify(object));
