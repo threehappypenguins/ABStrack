@@ -48,6 +48,10 @@ export function App() {
     const {
       data: { subscription },
     } = mobileSupabase.auth.onAuthStateChange((event, nextSession) => {
+      if (event === 'SIGNED_OUT') {
+        setAuthRoute('Login');
+      }
+
       if (
         event === 'SIGNED_IN' ||
         event === 'SIGNED_OUT' ||

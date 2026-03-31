@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { act, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import type { Session } from '@abstrack/supabase';
 
 import App from './App';
@@ -85,6 +85,66 @@ describe('@abstrack/supabase native factory', () => {
 });
 
 describe('mobile auth state sync', () => {
+  test('returns to Login after SIGNED_OUT even if auth route was Signup', async () => {
+    let authStateListener: ((event: string, session: Session | null) => void) | null = null;
+
+    const mockClient = {
+      auth: {
+        getSession: jest.fn(async () => ({ data: { session: null } })),
+        onAuthStateChange: jest.fn((callback) => {
+          authStateListener = callback;
+          return {
+            data: {
+              subscription: {
+                unsubscribe: jest.fn(),
+              },
+            },
+          };
+        }),
+      },
+    } as any;
+
+    jest.mocked(getMobileSupabaseClient).mockReturnValue(mockClient);
+
+    const { getByText, queryByText } = render(<App />);
+
+    await waitFor(() => {
+      expect(getByText('Need an account? Sign up')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(getByText('Need an account? Sign up'));
+    });
+
+    await waitFor(() => {
+      expect(getByText('Already have an account? Login')).toBeTruthy();
+    });
+
+    await act(async () => {
+      authStateListener?.('SIGNED_IN', {
+        access_token: 'access',
+        refresh_token: 'refresh',
+        token_type: 'bearer',
+        expires_in: 3600,
+        expires_at: 9999999999,
+        user: { id: 'user-1' },
+      } as unknown as Session);
+    });
+
+    await waitFor(() => {
+      expect(getByText('Welcome to ABStrack')).toBeTruthy();
+    });
+
+    await act(async () => {
+      authStateListener?.('SIGNED_OUT', null);
+    });
+
+    await waitFor(() => {
+      expect(getByText('Need an account? Sign up')).toBeTruthy();
+      expect(queryByText('Already have an account? Login')).toBeNull();
+    });
+  });
+
   test('switches between auth stack and main stack from auth events', async () => {
     let authStateListener: ((event: string, session: Session | null) => void) | null = null;
 

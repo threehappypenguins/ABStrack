@@ -7,6 +7,29 @@ const protectedRoutes = ['/dashboard'];
 // Public auth routes that redirect authenticated users
 const authRoutes = ['/login', '/signup'];
 
+function withSupabaseCookies(
+  response: NextResponse,
+  supabaseResponse: NextResponse,
+) {
+  supabaseResponse.cookies.getAll().forEach((cookie) => {
+    const { name, value, ...rest } = cookie as {
+      name: string;
+      value: string;
+      options?: Record<string, unknown>;
+      [key: string]: unknown;
+    };
+
+    const options =
+      'options' in rest && rest.options
+        ? (rest.options as Record<string, unknown>)
+        : (Object.keys(rest).length > 0 ? (rest as Record<string, unknown>) : undefined);
+
+    response.cookies.set(name, value, options);
+  });
+
+  return response;
+}
+
 export default async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   let supabaseResponse = NextResponse.next({
@@ -48,12 +71,18 @@ export default async function proxy(req: NextRequest) {
 
   // Handle protected routes: redirect to login if not authenticated
   if (isProtectedRoute && !user) {
-    return NextResponse.redirect(new URL('/login', req.url));
+    return withSupabaseCookies(
+      NextResponse.redirect(new URL('/login', req.url)),
+      supabaseResponse,
+    );
   }
 
   // Handle auth routes: redirect authenticated users to home
   if (isAuthRoute && user) {
-    return NextResponse.redirect(new URL('/', req.url));
+    return withSupabaseCookies(
+      NextResponse.redirect(new URL('/', req.url)),
+      supabaseResponse,
+    );
   }
 
   return supabaseResponse;
