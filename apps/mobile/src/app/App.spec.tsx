@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { act, render, waitFor } from '@testing-library/react-native';
-import type { Session } from '@supabase/supabase-js';
+import type { Session } from '@abstrack/supabase';
 
 import App from './App';
 import {
@@ -42,6 +42,8 @@ const makeMockClient = () => ({
 });
 
 beforeEach(() => {
+  jest.clearAllMocks();
+
   for (const key of ENV_KEYS) {
     snapshot[key] = process.env[key];
   }
@@ -66,10 +68,8 @@ afterEach(() => {
 });
 
 test('renders correctly', async () => {
-  const { getByText } = render(<App />);
-  await waitFor(() => {
-    expect(getByText('Login')).toBeTruthy();
-  });
+  const { findByTestId } = render(<App />);
+  expect(await findByTestId('auth-email')).toBeTruthy();
 });
 
 describe('@abstrack/supabase native factory', () => {

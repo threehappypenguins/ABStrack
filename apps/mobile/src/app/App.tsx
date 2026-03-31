@@ -3,7 +3,7 @@ import { ActivityIndicator } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import type { Session } from '@supabase/supabase-js';
+import type { Session } from '@abstrack/supabase';
 import { getMobileSupabaseClient } from '../lib/supabase-wiring';
 import { AppProviders } from './components/AppProviders';
 import { HomeScreen } from './screens/HomeScreen';
