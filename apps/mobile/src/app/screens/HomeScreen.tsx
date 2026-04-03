@@ -15,13 +15,18 @@ export function HomeScreen() {
     setSignOutBusy(true);
     setSignOutError(null);
 
-    const { error } = await signOut(mobileSupabase);
+    try {
+      const { error } = await signOut(mobileSupabase);
 
-    if (error) {
-      setSignOutError(mapAuthError(error.message));
+      if (error) {
+        setSignOutError(mapAuthError(error.message));
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unexpected authentication error';
+      setSignOutError(mapAuthError(message));
+    } finally {
+      setSignOutBusy(false);
     }
-
-    setSignOutBusy(false);
   };
 
   return (

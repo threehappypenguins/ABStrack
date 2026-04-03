@@ -133,6 +133,7 @@ describe('ChunkingSecureStore (via supabase-wiring)', () => {
       const result = await mobileAuthStorage.getItem('auth-session');
 
       expect(result).toBeNull();
+      expect(mockStore['auth-session.meta']).toBeUndefined();
     });
 
     test('handles missing chunks gracefully', async () => {
@@ -144,6 +145,9 @@ describe('ChunkingSecureStore (via supabase-wiring)', () => {
       const result = await mobileAuthStorage.getItem('auth-session');
 
       expect(result).toBeNull();
+      expect(mockStore['auth-session.meta']).toBeUndefined();
+      expect(mockStore['auth-session.chunk.0']).toBeUndefined();
+      expect(mockStore['auth-session.chunk.1']).toBeUndefined();
     });
 
     test('replaces chunked value with smaller value', async () => {

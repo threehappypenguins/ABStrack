@@ -21,17 +21,22 @@ export function LoginScreen({ onGoToSignup }: { onGoToSignup: () => void }) {
     setLoading(true);
     setErrorMessage(null);
 
-    const { error: authError } = await signInWithEmailPassword(
-      mobileSupabase,
-      email.trim(),
-      password,
-    );
+    try {
+      const { error: authError } = await signInWithEmailPassword(
+        mobileSupabase,
+        email.trim(),
+        password,
+      );
 
-    if (authError) {
-      setErrorMessage(mapAuthError(authError.message));
+      if (authError) {
+        setErrorMessage(mapAuthError(authError.message));
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unexpected authentication error';
+      setErrorMessage(mapAuthError(message));
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   return (

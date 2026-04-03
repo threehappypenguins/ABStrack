@@ -29,19 +29,25 @@ export function SignupScreen({ onGoToLogin }: { onGoToLogin: () => void }) {
     setErrorMessage(null);
     setStatusMessage(null);
 
-    const { data, error: authError } = await signUpWithEmailPassword(
-      mobileSupabase,
-      email.trim(),
-      password,
-    );
+    try {
+      const { data, error: authError } = await signUpWithEmailPassword(
+        mobileSupabase,
+        email.trim(),
+        password,
+      );
 
-    if (authError) {
-      setErrorMessage(mapAuthError(authError.message));
-    } else if (!data.session) {
-      setStatusMessage('Account created. Check your email to confirm your account.');
+      if (authError) {
+        setErrorMessage(mapAuthError(authError.message));
+      } else if (!data.session) {
+        setStatusMessage('Account created. Check your email to confirm your account.');
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unexpected authentication error';
+      setErrorMessage(mapAuthError(message));
+      setStatusMessage(null);
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   return (

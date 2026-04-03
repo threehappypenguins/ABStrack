@@ -52,6 +52,7 @@ class ChunkingSecureStore {
       const chunkCount = parseInt(meta, 10);
       if (isNaN(chunkCount) || chunkCount < 1) {
         console.warn(`[ChunkingSecureStore] Invalid chunk metadata for key: ${key}`);
+        await this.removeChunks(key);
         return null;
       }
 
@@ -71,6 +72,7 @@ class ChunkingSecureStore {
           console.warn(
             `[ChunkingSecureStore] Missing chunk ${i}/${chunkCount} for key: ${key} (incomplete write/crash recovery)`,
           );
+          await this.removeChunks(key);
           return null;
         }
         chunks.push(chunk);
@@ -90,9 +92,7 @@ class ChunkingSecureStore {
       // ENCODING FLOW: String → UTF-8 bytes → base64 string (ASCII-safe, no multi-byte sequences)
       // This ensures chunk boundaries can be placed anywhere without splitting UTF-8 code points.
       const base64 = ChunkingSecureStore.toBase64(value);
-      const base64Length = new TextEncoder().encode(base64).byteLength;
-
-      if (base64Length <= ChunkingSecureStore.CHUNK_SIZE) {
+      if (base64.length <= ChunkingSecureStore.CHUNK_SIZE) {
         // Small value: store UTF-8 string directly (not base64-encoded), clean up any existing chunks
         await this.removeChunks(key);
         await SecureStore.setItemAsync(key, value);
@@ -109,19 +109,9 @@ class ChunkingSecureStore {
       const chunks: string[] = [];
       let pos = 0;
       while (pos < base64.length) {
-        // Find the right slice length by checking byte length
-        let sliceLength = Math.ceil((ChunkingSecureStore.CHUNK_SIZE * base64.length) / base64Length);
-        let chunk = base64.slice(pos, pos + sliceLength);
-
-        // Adjust slice length if this chunk exceeds the byte limit
-        // (base64 can vary in byte size due to padding characters)
-        while (new TextEncoder().encode(chunk).byteLength > ChunkingSecureStore.CHUNK_SIZE && sliceLength > 1) {
-          sliceLength--;
-          chunk = base64.slice(pos, pos + sliceLength);
-        }
-
+        const chunk = base64.slice(pos, pos + ChunkingSecureStore.CHUNK_SIZE);
         chunks.push(chunk);
-        pos += sliceLength;
+        pos += ChunkingSecureStore.CHUNK_SIZE;
       }
 
       // Store base64 chunks (not UTF-8 bytes) so no decoding happens at chunk boundaries
