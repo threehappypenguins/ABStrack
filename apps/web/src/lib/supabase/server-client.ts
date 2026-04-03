@@ -1,7 +1,6 @@
 import { createServerClient as createServerSupabaseClient } from '@supabase/ssr';
 import type { CookieMethodsServer } from '@supabase/ssr';
 import type { AbstrackSupabaseClient, Database } from '@abstrack/supabase';
-import { cookies } from 'next/headers';
 import { getSupabaseClientKey, getSupabaseUrl } from './env';
 
 type ServerCookiesToSet = Parameters<
@@ -19,6 +18,7 @@ export async function createServerClient(
     ) as unknown as AbstrackSupabaseClient;
   }
 
+  const { cookies } = await import('next/headers');
   const cookieStore = await cookies();
 
   return createServerSupabaseClient<Database>(
