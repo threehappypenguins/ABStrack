@@ -14,9 +14,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const supabase = createBrowserClient();
 
-    // Smoke-check browser auth wiring with @supabase/ssr in a client component.
-    void supabase.auth.getSession();
-
     // Set up auth state change listener
     const {
       data: { subscription },

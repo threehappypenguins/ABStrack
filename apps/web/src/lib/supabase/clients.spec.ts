@@ -1,6 +1,12 @@
 import { createBrowserClient } from './browser-client';
 import { createServerClient } from './server-client';
 
+type TestCookie = {
+  name: string;
+  value: string;
+  options?: Record<string, unknown>;
+};
+
 const createBrowserClientMock = jest.fn<
   { kind: string },
   [string, string, Record<string, unknown>?]
@@ -9,18 +15,17 @@ const createServerClientMock = jest.fn<
   { kind: string },
   [string, string, Record<string, unknown>?]
 >(() => ({ kind: 'server-client' }));
-const cookiesMock = jest.fn(async () => ({
-  getAll: jest.fn(() => []),
-  set: jest.fn(),
-}));
+const cookieStore = {
+  getAll: jest.fn<TestCookie[], []>(() => []),
+  set: jest.fn<void, [string, string, Record<string, unknown>?]>(),
+};
+const cookiesMock = jest.fn(async () => cookieStore);
 
 jest.mock('@supabase/ssr', () => ({
-  createBrowserClient: (
-    ...args: [string, string, Record<string, unknown>?]
-  ) => createBrowserClientMock(...args),
-  createServerClient: (
-    ...args: [string, string, Record<string, unknown>?]
-  ) => createServerClientMock(...args),
+  createBrowserClient: (...args: [string, string, Record<string, unknown>?]) =>
+    createBrowserClientMock(...args),
+  createServerClient: (...args: [string, string, Record<string, unknown>?]) =>
+    createServerClientMock(...args),
 }));
 
 jest.mock('next/headers', () => ({
@@ -32,6 +37,8 @@ describe('web supabase clients env wiring', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    cookieStore.getAll.mockReturnValue([]);
+    cookieStore.set.mockImplementation(() => undefined);
     process.env = {
       ...originalEnv,
       NEXT_PUBLIC_SUPABASE_URL: 'https://example.supabase.co',
@@ -65,6 +72,83 @@ describe('web supabase clients env wiring', () => {
       'publishable-key',
       { cookies: cookieMethods },
     );
+  });
+
+  it('uses next headers cookies store when createServerClient is called without cookie methods', async () => {
+    cookieStore.getAll.mockReturnValue([
+      { name: 'sb-auth-token', value: 'token' },
+    ]);
+
+    await createServerClient();
+
+    expect(cookiesMock).toHaveBeenCalledTimes(1);
+    expect(createServerClientMock).toHaveBeenCalledWith(
+      'https://example.supabase.co',
+      'publishable-key',
+      {
+        cookies: expect.objectContaining({
+          getAll: expect.any(Function),
+          setAll: expect.any(Function),
+        }),
+      },
+    );
+
+    const cookiesArg = createServerClientMock.mock.calls[0]?.[2]?.cookies as {
+      getAll: () => Array<{ name: string; value: string }>;
+      setAll: (
+        values: Array<{
+          name: string;
+          value: string;
+          options?: Record<string, unknown>;
+        }>,
+      ) => void;
+    };
+
+    expect(cookiesArg.getAll()).toEqual([
+      { name: 'sb-auth-token', value: 'token' },
+    ]);
+    expect(cookieStore.getAll).toHaveBeenCalledTimes(1);
+
+    cookiesArg.setAll([
+      {
+        name: 'sb-auth-token',
+        value: 'new-token',
+        options: { path: '/' },
+      },
+    ]);
+
+    expect(cookieStore.set).toHaveBeenCalledWith('sb-auth-token', 'new-token', {
+      path: '/',
+    });
+  });
+
+  it('swallows cookie write failures in the implicit next headers path', async () => {
+    const writeError = new Error('read only cookies');
+    cookieStore.set.mockImplementation(() => {
+      throw writeError;
+    });
+
+    await createServerClient();
+
+    const cookiesArg = createServerClientMock.mock.calls[0]?.[2]?.cookies as {
+      setAll: (
+        values: Array<{
+          name: string;
+          value: string;
+          options?: Record<string, unknown>;
+        }>,
+      ) => void;
+    };
+
+    expect(() =>
+      cookiesArg.setAll([
+        {
+          name: 'sb-auth-token',
+          value: 'new-token',
+          options: { path: '/' },
+        },
+      ]),
+    ).not.toThrow();
   });
 
   it('falls back to NEXT_PUBLIC_SUPABASE_ANON_KEY when publishable key is not set', () => {

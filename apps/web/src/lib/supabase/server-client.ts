@@ -1,16 +1,22 @@
 import { createServerClient as createServerSupabaseClient } from '@supabase/ssr';
 import type { CookieMethodsServer } from '@supabase/ssr';
-import type { Database } from '@abstrack/supabase';
+import type { AbstrackSupabaseClient, Database } from '@abstrack/supabase';
 import { cookies } from 'next/headers';
 import { getSupabaseClientKey, getSupabaseUrl } from './env';
 
-export async function createServerClient(cookieMethods?: CookieMethodsServer) {
+type ServerCookiesToSet = Parameters<
+  NonNullable<CookieMethodsServer['setAll']>
+>[0];
+
+export async function createServerClient(
+  cookieMethods?: CookieMethodsServer,
+): Promise<AbstrackSupabaseClient> {
   if (cookieMethods) {
     return createServerSupabaseClient<Database>(
       getSupabaseUrl(),
       getSupabaseClientKey(),
       { cookies: cookieMethods },
-    );
+    ) as unknown as AbstrackSupabaseClient;
   }
 
   const cookieStore = await cookies();
@@ -23,7 +29,7 @@ export async function createServerClient(cookieMethods?: CookieMethodsServer) {
         getAll() {
           return cookieStore.getAll();
         },
-        setAll(cookiesToSet) {
+        setAll(cookiesToSet: ServerCookiesToSet) {
           try {
             cookiesToSet.forEach(({ name, value, options }) => {
               cookieStore.set(name, value, options);
@@ -34,5 +40,5 @@ export async function createServerClient(cookieMethods?: CookieMethodsServer) {
         },
       },
     },
-  );
+  ) as unknown as AbstrackSupabaseClient;
 }
