@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { signOut } from '@abstrack/supabase';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
+import { mapAuthError } from '../auth-helpers';
 import { ScreenShell } from '../components/ScreenShell';
 import { styles } from '../styles';
 
@@ -17,7 +18,7 @@ export function HomeScreen() {
     const { error } = await signOut(mobileSupabase);
 
     if (error) {
-      setSignOutError(error.message);
+      setSignOutError(mapAuthError(error.message));
     }
 
     setSignOutBusy(false);
