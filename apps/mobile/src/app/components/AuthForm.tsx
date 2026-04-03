@@ -75,6 +75,8 @@ export function AuthForm({
       <TextInput
         ref={passwordInputRef}
         secureTextEntry
+        autoCapitalize="none"
+        autoCorrect={false}
         autoComplete="password"
         textContentType="password"
         value={password}
@@ -95,7 +97,7 @@ export function AuthForm({
       ) : null}
 
       {statusMessage ? (
-        <Text style={styles.infoText} accessibilityRole="status">
+        <Text style={styles.infoText} accessibilityRole="alert">
           {statusMessage}
         </Text>
       ) : null}
