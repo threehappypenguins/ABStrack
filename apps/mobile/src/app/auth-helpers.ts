@@ -3,9 +3,10 @@ export function validateEmailPassword(
   password: string,
 ): string | null {
   const trimmedEmail = email.trim();
+  const hasPassword = password.trim().length > 0;
   const hasEmailFormat = /.+@.+\..+/.test(trimmedEmail);
 
-  if (!trimmedEmail || !password) {
+  if (!trimmedEmail || !hasPassword) {
     return 'Enter your email and password.';
   }
 

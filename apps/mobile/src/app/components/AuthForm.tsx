@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import { ScreenShell } from './ScreenShell';
 import { styles } from '../styles';
@@ -40,6 +40,7 @@ export function AuthForm({
   onSubmit,
   onAlternateAction,
 }: AuthFormProps) {
+  const passwordInputRef = useRef<TextInput>(null);
   const primaryDisabled = loading || Boolean(submitDisabled);
   const handleSubmit = () => {
     if (primaryDisabled) {
@@ -66,10 +67,13 @@ export function AuthForm({
         accessibilityLabel="Email address"
         accessibilityHint="Enter your account email"
         returnKeyType="next"
+        blurOnSubmit={false}
+        onSubmitEditing={() => passwordInputRef.current?.focus()}
         testID={emailTestId}
       />
       <Text style={styles.labelText}>Password</Text>
       <TextInput
+        ref={passwordInputRef}
         secureTextEntry
         autoComplete="password"
         textContentType="password"
