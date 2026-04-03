@@ -9,14 +9,17 @@ import { createSupabaseNativeClient } from '@abstrack/supabase/native';
  * as a single JSON blob under one key. This payload often exceeds the 2048-byte per-key limit enforced
  * by expo-secure-store, causing setItemAsync to fail and breaking persistence.
  *
- * This adapter splits large values into 2048-byte chunks, storing each chunk with an indexed key
- * (e.g., `key.chunk.0`, `key.chunk.1`) and a metadata key tracking the chunk count.
- * On read, chunks are reassembled in order. On remove, all chunks and metadata are deleted.
+ * This adapter splits large values into byte chunks (with a 4-byte safety margin to avoid splitting
+ * multi-byte UTF-8 characters), storing each chunk with an indexed key (e.g., `key.chunk.0`, `key.chunk.1`)
+ * and a metadata key tracking the chunk count. On read, chunks are reassembled in order. On remove, all
+ * chunks and metadata are deleted.
  *
  * Satisfies HIPAA/PHIA requirements by storing all data encrypted via OS Keychain (iOS) / Keystore (Android).
  */
 class ChunkingSecureStore {
-  private static readonly CHUNK_SIZE = 2048;
+  // 2048-byte limit minus 4-byte safety margin to avoid splitting multi-byte UTF-8 characters
+  // UTF-8 characters can be 1-4 bytes; this margin ensures we never cut a character in half
+  private static readonly CHUNK_SIZE = 2044;
   private static readonly CHUNK_SUFFIX = '.chunk';
   private static readonly META_SUFFIX = '.meta';
 
@@ -57,7 +60,9 @@ class ChunkingSecureStore {
 
   async setItem(key: string, value: string): Promise<void> {
     try {
-      const valueLength = Buffer.byteLength(value, 'utf-8');
+      // Use TextEncoder (Web API available in RN) instead of Buffer.byteLength
+      const valueBytes = new TextEncoder().encode(value);
+      const valueLength = valueBytes.byteLength;
 
       if (valueLength <= ChunkingSecureStore.CHUNK_SIZE) {
         // Small value: store directly, clean up any existing chunks
@@ -66,10 +71,17 @@ class ChunkingSecureStore {
         return;
       }
 
-      // Large value: split into chunks
+      // Large value: split into byte chunks, then decode each chunk to string
+      // First, clean up the main key and any existing chunks to avoid orphaned data
+      await SecureStore.deleteItemAsync(key);
+      await this.removeChunks(key);
+
       const chunks: string[] = [];
-      for (let i = 0; i < value.length; i += ChunkingSecureStore.CHUNK_SIZE) {
-        chunks.push(value.slice(i, i + ChunkingSecureStore.CHUNK_SIZE));
+      for (let i = 0; i < valueLength; i += ChunkingSecureStore.CHUNK_SIZE) {
+        const chunk = valueBytes.slice(i, i + ChunkingSecureStore.CHUNK_SIZE);
+        // Decode bytes back to string (UTF-8 safe)
+        const chunkString = new TextDecoder().decode(chunk);
+        chunks.push(chunkString);
       }
 
       // Store chunks and metadata

@@ -82,9 +82,9 @@ describe('ChunkingSecureStore (via supabase-wiring)', () => {
       expect(retrieved).toBe(largeValue);
     });
 
-    test('handles exact 2048-byte boundary', async () => {
-      // Exactly 2048 bytes
-      const boundaryValue = 'x'.repeat(2048);
+    test('handles exact 2044-byte boundary (internal chunk size)', async () => {
+      // Exactly 2044 bytes (internal CHUNK_SIZE with 4-byte UTF-8 safety margin)
+      const boundaryValue = 'x'.repeat(2044);
 
       await mobileAuthStorage.setItem('auth-session', boundaryValue);
       const retrieved = await mobileAuthStorage.getItem('auth-session');
@@ -93,8 +93,8 @@ describe('ChunkingSecureStore (via supabase-wiring)', () => {
       expect(mockStore['auth-session.meta']).toBeUndefined(); // Not chunked
     });
 
-    test('stores just over 2048 bytes as chunks', async () => {
-      const overshootValue = 'x'.repeat(2049);
+    test('stores just over 2044 bytes as chunks', async () => {
+      const overshootValue = 'x'.repeat(2045);
 
       await mobileAuthStorage.setItem('auth-session', overshootValue);
 
