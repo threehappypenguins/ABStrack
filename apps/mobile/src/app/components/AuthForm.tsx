@@ -40,7 +40,14 @@ export function AuthForm({
   onSubmit,
   onAlternateAction,
 }: AuthFormProps) {
-  const primaryDisabled = loading || submitDisabled;
+  const primaryDisabled = loading || Boolean(submitDisabled);
+  const handleSubmit = () => {
+    if (primaryDisabled) {
+      return;
+    }
+
+    onSubmit();
+  };
 
   return (
     <ScreenShell>
@@ -73,7 +80,7 @@ export function AuthForm({
         accessibilityLabel="Password"
         accessibilityHint="Enter your account password"
         returnKeyType="done"
-        onSubmitEditing={onSubmit}
+        onSubmitEditing={handleSubmit}
         testID={passwordTestId}
       />
 
@@ -88,7 +95,7 @@ export function AuthForm({
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={loading ? loadingSubmitLabel : idleSubmitLabel}
-        onPress={onSubmit}
+        onPress={handleSubmit}
         disabled={primaryDisabled}
         style={[
           styles.primaryButton,

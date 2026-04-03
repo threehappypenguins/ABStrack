@@ -2,35 +2,11 @@ import React, { useState } from 'react';
 import { signUpWithEmailPassword } from '@abstrack/supabase';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { AuthForm } from '../components/AuthForm';
-
-function validateSignupInput(email: string, password: string): string | null {
-  const trimmedEmail = email.trim();
-  const hasEmailFormat = /.+@.+\..+/.test(trimmedEmail);
-
-  if (!trimmedEmail || !password) {
-    return 'Enter your email and password.';
-  }
-
-  if (!hasEmailFormat) {
-    return 'Enter a valid email address.';
-  }
-
-  if (password.length < 8) {
-    return 'Password must be at least 8 characters.';
-  }
-
-  return null;
-}
-
-function mapAuthError(message: string): string {
-  const normalized = message.toLowerCase();
-
-  if (normalized.includes('already registered')) {
-    return 'An account with this email already exists.';
-  }
-
-  return message;
-}
+import {
+  mapAuthError,
+  validateEmailPassword,
+  validateSignupPassword,
+} from '../auth-helpers';
 
 export function SignupScreen({ onGoToLogin }: { onGoToLogin: () => void }) {
   const [email, setEmail] = useState('');
@@ -40,7 +16,8 @@ export function SignupScreen({ onGoToLogin }: { onGoToLogin: () => void }) {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   const handleSignup = async () => {
-    const validationError = validateSignupInput(email, password);
+    const validationError =
+      validateEmailPassword(email, password) ?? validateSignupPassword(password);
     if (validationError) {
       setErrorMessage(validationError);
       setStatusMessage(null);
