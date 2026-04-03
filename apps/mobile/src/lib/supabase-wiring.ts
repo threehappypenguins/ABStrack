@@ -1,11 +1,11 @@
 import type { AbstrackSupabaseClient } from '@abstrack/supabase';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import { createSupabaseNativeClient } from '@abstrack/supabase/native';
 
 const mobileAuthStorage = {
-  getItem: (key: string) => AsyncStorage.getItem(key),
-  setItem: (key: string, value: string) => AsyncStorage.setItem(key, value),
-  removeItem: (key: string) => AsyncStorage.removeItem(key),
+  getItem: (key: string) => SecureStore.getItemAsync(key),
+  setItem: (key: string, value: string) => SecureStore.setItemAsync(key, value),
+  removeItem: (key: string) => SecureStore.deleteItemAsync(key),
 };
 
 export function createMobileSupabaseClient(): AbstrackSupabaseClient {
