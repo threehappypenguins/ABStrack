@@ -1,5 +1,5 @@
 import './global.css';
-import { AuthProvider } from './lib/auth-provider';
+import { AuthProvider } from '../lib/auth-provider';
 
 export const metadata = {
   title: 'ABStrack',
