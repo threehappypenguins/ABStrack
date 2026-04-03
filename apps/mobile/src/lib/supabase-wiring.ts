@@ -1,5 +1,6 @@
 import type { AbstrackSupabaseClient } from '@abstrack/supabase';
 import * as SecureStore from 'expo-secure-store';
+import { Base64 } from 'js-base64';
 import { createSupabaseNativeClient } from '@abstrack/supabase/native';
 
 /**
@@ -30,11 +31,14 @@ class ChunkingSecureStore {
   private static readonly META_SUFFIX = '.meta';
 
   private static toBase64(str: string): string {
-    return btoa(unescape(encodeURIComponent(str)));
+    // Encode UTF-8 string to base64 using cross-platform js-base64 library
+    // (avoids deprecated btoa/atob and escape/unescape which may not exist in all RN/Hermes runtimes)
+    return Base64.encode(str);
   }
 
   private static fromBase64(str: string): string {
-    return decodeURIComponent(escape(atob(str)));
+    // Decode base64 to UTF-8 string using cross-platform js-base64 library
+    return Base64.decode(str);
   }
 
   async getItem(key: string): Promise<string | null> {

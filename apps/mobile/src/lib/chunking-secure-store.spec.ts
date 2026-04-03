@@ -82,8 +82,8 @@ describe('ChunkingSecureStore (via supabase-wiring)', () => {
       expect(retrieved).toBe(largeValue);
     });
 
-    test('stores small values without chunking (base64-encoded)', async () => {
-      // Small value: ~1500 chars → ~2000 bytes when base64-encoded → fits in 2044-byte limit
+    test('stores small values directly without chunking', async () => {
+      // Small value: direct string storage path (no chunking metadata)
       const smallValue = 'x'.repeat(1500);
 
       await mobileAuthStorage.setItem('auth-session', smallValue);
