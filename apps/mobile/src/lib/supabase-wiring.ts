@@ -2,8 +2,14 @@ import type { AbstrackSupabaseClient } from '@abstrack/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createSupabaseNativeClient } from '@abstrack/supabase/native';
 
+const mobileAuthStorage = {
+  getItem: (key: string) => AsyncStorage.getItem(key),
+  setItem: (key: string, value: string) => AsyncStorage.setItem(key, value),
+  removeItem: (key: string) => AsyncStorage.removeItem(key),
+};
+
 export function createMobileSupabaseClient(): AbstrackSupabaseClient {
-  return createSupabaseNativeClient(AsyncStorage);
+  return createSupabaseNativeClient(mobileAuthStorage);
 }
 
 let mobileSupabaseClient: AbstrackSupabaseClient | null = null;
