@@ -23,7 +23,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const {
           data: { session },
+          error,
         } = await supabase.auth.getSession();
+
+        if (error) {
+          console.error('Failed to load auth session', error);
+          if (mounted) {
+            setSession(null);
+          }
+          return;
+        }
 
         if (mounted) {
           setSession(session);
