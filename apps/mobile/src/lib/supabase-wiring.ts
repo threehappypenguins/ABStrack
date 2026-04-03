@@ -1,8 +1,6 @@
 import type { AbstrackSupabaseClient } from '@abstrack/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {
-  createSupabaseNativeClient,
-} from '@abstrack/supabase/native';
+import { createSupabaseNativeClient } from '@abstrack/supabase/native';
 
 export function createMobileSupabaseClient(): AbstrackSupabaseClient {
   return createSupabaseNativeClient(AsyncStorage);

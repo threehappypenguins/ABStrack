@@ -1,10 +1,10 @@
-import { createSupabaseServerClient } from '@abstrack/supabase/server';
+import { createServerClient } from '../../../../lib/supabase/server-client';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(request: NextRequest) {
   const response = NextResponse.redirect(new URL('/login', request.url), 303);
 
-  const supabase = createSupabaseServerClient({
+  const supabase = await createServerClient({
     getAll() {
       return request.cookies.getAll();
     },

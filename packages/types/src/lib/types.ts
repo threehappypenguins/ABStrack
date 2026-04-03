@@ -57,7 +57,8 @@ export const PRESET_HEALTH_MARKER_KINDS = [
   'weight',
   'custom',
 ] as const;
-export type PresetHealthMarkerKind = (typeof PRESET_HEALTH_MARKER_KINDS)[number];
+export type PresetHealthMarkerKind =
+  (typeof PRESET_HEALTH_MARKER_KINDS)[number];
 
 /** Rows in `health_markers` (includes wellness-only kind). */
 export const HEALTH_MARKER_KINDS = [
@@ -283,10 +284,7 @@ export interface EpisodeRow {
   updated_at: IsoTimestamptz;
 }
 
-export type EpisodeInsert = Pick<
-  EpisodeRow,
-  'user_id' | 'started_at'
-> & {
+export type EpisodeInsert = Pick<EpisodeRow, 'user_id' | 'started_at'> & {
   id?: Uuid;
   symptom_preset_id?: Uuid | null;
   episode_type?: EpisodeType;
@@ -414,10 +412,7 @@ export type FoodDiaryEntryInsert = Pick<
 };
 
 export type FoodDiaryEntryUpdate = Partial<
-  Pick<
-    FoodDiaryEntryRow,
-    'episode_id' | 'meal_tag' | 'food_note' | 'logged_at'
-  >
+  Pick<FoodDiaryEntryRow, 'episode_id' | 'meal_tag' | 'food_note' | 'logged_at'>
 >;
 
 export interface PractitionerAccessRow {

@@ -1,4 +1,8 @@
-import type { EpisodeRow, FoodDiaryEntryRow, ProfileRow } from '@abstrack/types';
+import type {
+  EpisodeRow,
+  FoodDiaryEntryRow,
+  ProfileRow,
+} from '@abstrack/types';
 import type { Database } from '@abstrack/supabase';
 
 /**

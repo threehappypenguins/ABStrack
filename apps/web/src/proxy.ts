@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createSupabaseServerClient } from '@abstrack/supabase/server';
+import { createServerClient } from './lib/supabase/server-client';
 
 // Protected routes that require authentication
 const protectedRoutes = ['/dashboard'];
@@ -22,7 +22,9 @@ function withSupabaseCookies(
     const options =
       'options' in rest && rest.options
         ? (rest.options as Record<string, unknown>)
-        : (Object.keys(rest).length > 0 ? (rest as Record<string, unknown>) : undefined);
+        : Object.keys(rest).length > 0
+          ? (rest as Record<string, unknown>)
+          : undefined;
 
     response.cookies.set(name, value, options);
   });
@@ -38,7 +40,7 @@ export default async function proxy(req: NextRequest) {
 
   // Check if current route is protected
   const isProtectedRoute = protectedRoutes.some((route) =>
-    pathname.startsWith(route)
+    pathname.startsWith(route),
   );
 
   // Check if current route is an auth route
@@ -46,7 +48,7 @@ export default async function proxy(req: NextRequest) {
 
   // Get session by calling supabase.auth.getUser() on every request
   // This refreshes the session from the Auth server (validates refresh token if needed)
-  const supabase = createSupabaseServerClient({
+  const supabase = await createServerClient({
     getAll() {
       return req.cookies.getAll();
     },
@@ -90,5 +92,7 @@ export default async function proxy(req: NextRequest) {
 
 // Matcher config: apply to all routes except API, static files, and images
 export const config = {
-  matcher: ['/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
+  matcher: [
+    '/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+  ],
 };

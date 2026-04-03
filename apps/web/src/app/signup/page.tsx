@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getSupabaseBrowserClient } from '@abstrack/supabase/browser';
+import { createBrowserClient } from '@/lib/supabase/browser-client';
 import { signUpWithEmailPassword } from '@abstrack/supabase';
 
 export default function SignupPage() {
@@ -25,11 +25,11 @@ export default function SignupPage() {
     }
 
     try {
-      const supabase = getSupabaseBrowserClient();
+      const supabase = createBrowserClient();
       const { error: authError } = await signUpWithEmailPassword(
         supabase,
         email,
-        password
+        password,
       );
 
       if (authError) {
@@ -59,7 +59,10 @@ export default function SignupPage() {
 
         <form onSubmit={handleSignup} className="space-y-4">
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+            <label
+              htmlFor="email"
+              className="block text-sm font-medium text-gray-700"
+            >
               Email
             </label>
             <input
@@ -74,7 +77,10 @@ export default function SignupPage() {
           </div>
 
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+            <label
+              htmlFor="password"
+              className="block text-sm font-medium text-gray-700"
+            >
               Password
             </label>
             <input
@@ -89,7 +95,10 @@ export default function SignupPage() {
           </div>
 
           <div>
-            <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700">
+            <label
+              htmlFor="confirmPassword"
+              className="block text-sm font-medium text-gray-700"
+            >
               Confirm Password
             </label>
             <input

@@ -53,7 +53,7 @@ export default function Index() {
               <a
                 href="https://nx.dev/getting-started/intro?utm_source=nx-project"
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
                 className="list-item-link"
               >
                 <svg
@@ -90,7 +90,7 @@ export default function Index() {
               <a
                 href="https://nx.dev/blog/?utm_source=nx-project"
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
                 className="list-item-link"
               >
                 <svg
@@ -127,7 +127,7 @@ export default function Index() {
               <a
                 href="https://www.youtube.com/@NxDevtools/videos?utm_source=nx-project&sub_confirmation=1"
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
                 className="list-item-link"
               >
                 <svg
@@ -160,7 +160,7 @@ export default function Index() {
               <a
                 href="https://nx.dev/react-tutorial/1-code-generation?utm_source=nx-project"
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
                 className="list-item-link"
               >
                 <svg
@@ -197,7 +197,7 @@ export default function Index() {
               <a
                 href="https://nxplaybook.com/?utm_source=nx-project"
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
                 className="list-item-link"
               >
                 <svg
@@ -240,7 +240,7 @@ export default function Index() {
                 className="button-pill rounded shadow"
                 href="https://marketplace.visualstudio.com/items?itemName=nrwl.angular-console&utm_source=nx-project"
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
               >
                 <svg
                   fill="currentColor"
@@ -261,7 +261,7 @@ export default function Index() {
                 className="button-pill rounded shadow"
                 href="https://plugins.jetbrains.com/plugin/21060-nx-console"
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
               >
                 <svg
                   height="48"
@@ -322,7 +322,7 @@ export default function Index() {
                 <a
                   href="https://nx.app/?utm_source=nx-project"
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                 >
                   {' '}
                   What is Nx Cloud?{' '}
@@ -333,7 +333,7 @@ export default function Index() {
                 className="button-pill rounded shadow"
                 href="https://github.com/nrwl/nx?utm_source=nx-project"
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
               >
                 <svg
                   fill="currentColor"

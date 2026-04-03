@@ -31,7 +31,8 @@ describe('client assignability', () => {
     process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://example.supabase.co';
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_test';
     const client = createSupabaseServerClient({ getAll: () => [] });
-    const deferred = () => signInWithEmailPassword(client, 'a@example.com', 'pw');
+    const deferred = () =>
+      signInWithEmailPassword(client, 'a@example.com', 'pw');
     expect(deferred).toBeDefined();
   });
 });

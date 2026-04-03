@@ -3,3 +3,11 @@
 /coverage
 /.nx/cache
 /.nx/workspace-data
+**/dist
+**/coverage
+**/.next
+**/out-tsc
+**/test-output
+**/.expo
+**/web-build
+**/next-env.d.ts

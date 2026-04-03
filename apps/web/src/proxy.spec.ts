@@ -1,8 +1,8 @@
 import proxy from './proxy';
-import { createSupabaseServerClient } from '@abstrack/supabase/server';
+import { createServerClient } from './lib/supabase/server-client';
 
-jest.mock('@abstrack/supabase/server', () => ({
-  createSupabaseServerClient: jest.fn(),
+jest.mock('./lib/supabase/server-client', () => ({
+  createServerClient: jest.fn(),
 }));
 
 jest.mock('next/server', () => ({
@@ -17,9 +17,15 @@ jest.mock('next/server', () => ({
       return {
         type: 'next',
         cookies: {
-          set: jest.fn((name: string, value: string, options?: Record<string, unknown>) => {
-            jar.push({ name, value, options });
-          }),
+          set: jest.fn(
+            (
+              name: string,
+              value: string,
+              options?: Record<string, unknown>,
+            ) => {
+              jar.push({ name, value, options });
+            },
+          ),
           getAll: jest.fn(() => [...jar]),
         },
       };
@@ -34,9 +40,15 @@ jest.mock('next/server', () => ({
         type: 'redirect',
         location: url.toString(),
         cookies: {
-          set: jest.fn((name: string, value: string, options?: Record<string, unknown>) => {
-            jar.push({ name, value, options });
-          }),
+          set: jest.fn(
+            (
+              name: string,
+              value: string,
+              options?: Record<string, unknown>,
+            ) => {
+              jar.push({ name, value, options });
+            },
+          ),
           getAll: jest.fn(() => [...jar]),
         },
       };
@@ -45,7 +57,7 @@ jest.mock('next/server', () => ({
 }));
 
 describe('web auth proxy', () => {
-  const createSupabaseServerClientMock = jest.mocked(createSupabaseServerClient);
+  const createServerClientMock = jest.mocked(createServerClient);
 
   const makeRequest = (pathname: string) => {
     const cookies = {
@@ -78,7 +90,7 @@ describe('web auth proxy', () => {
         }
       | undefined;
 
-    createSupabaseServerClientMock.mockImplementation((methods: any) => {
+    createServerClientMock.mockImplementation((methods: any) => {
       cookieMethods = methods;
       return {
         auth: {
@@ -113,7 +125,7 @@ describe('web auth proxy', () => {
   });
 
   it('redirects authenticated user away from /login to /', async () => {
-    createSupabaseServerClientMock.mockReturnValue({
+    createServerClientMock.mockReturnValue({
       auth: {
         getUser: jest.fn(async () => ({ data: { user: { id: 'user-1' } } })),
       },
@@ -132,14 +144,14 @@ describe('web auth proxy', () => {
   it('refreshes session via getUser and allows request when route is public', async () => {
     const getUser = jest.fn(async () => ({ data: { user: null } }));
 
-    createSupabaseServerClientMock.mockReturnValue({
+    createServerClientMock.mockReturnValue({
       auth: { getUser },
     } as any);
 
     const result = await proxy(makeRequest('/'));
 
-    expect(createSupabaseServerClientMock).toHaveBeenCalledTimes(1);
-    expect(createSupabaseServerClientMock).toHaveBeenCalledWith(
+    expect(createServerClientMock).toHaveBeenCalledTimes(1);
+    expect(createServerClientMock).toHaveBeenCalledWith(
       expect.objectContaining({
         getAll: expect.any(Function),
         setAll: expect.any(Function),

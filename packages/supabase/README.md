@@ -8,21 +8,21 @@ Use [Supabase hosted API keys](https://supabase.com/docs/guides/api/api-keys) as
 
 ### What to copy from the dashboard
 
-| Env variable | Dashboard source | Value shape |
-|--------------|------------------|-------------|
-| `NEXT_PUBLIC_SUPABASE_URL` (Next) / `EXPO_PUBLIC_SUPABASE_URL` (Expo) | **Project Settings → API** (“Project URL”), **Connect** dialog, or **Integrations → Data API** (“API Url”) | `https://<project-ref>.supabase.co` (no trailing path) |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` / `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | **Project Settings → API Keys** → publishable key | `sb_publishable_...` |
-| `SUPABASE_SECRET_KEY` | **Project Settings → API Keys** → secret key (server-only) | `sb_secret_...` |
+| Env variable                                                                    | Dashboard source                                                                                           | Value shape                                            |
+| ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `NEXT_PUBLIC_SUPABASE_URL` (Next) / `EXPO_PUBLIC_SUPABASE_URL` (Expo)           | **Project Settings → API** (“Project URL”), **Connect** dialog, or **Integrations → Data API** (“API Url”) | `https://<project-ref>.supabase.co` (no trailing path) |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` / `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | **Project Settings → API Keys** → publishable key                                                          | `sb_publishable_...`                                   |
+| `SUPABASE_SECRET_KEY`                                                           | **Project Settings → API Keys** → secret key (server-only)                                                 | `sb_secret_...`                                        |
 
 Pass **URL + publishable key** (or legacy anon) into browser, SSR, and mobile clients. Use **`SUPABASE_SECRET_KEY`** (`sb_secret_...`) only in trusted server code — import **`@abstrack/supabase/admin`**, never the main entry, from route handlers or scripts. **`@abstrack/supabase/admin` does not read legacy JWT `service_role` keys.**
 
 ### Where to set them in this repo
 
-| Variable | File |
-|----------|------|
-| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | `apps/web/.env.local`, `apps/practitioner/.env.local` |
-| `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | `apps/mobile/.env` |
-| `SUPABASE_SECRET_KEY` | Same app’s `.env.local` when Next server code runs, or CI secrets |
+| Variable                                                           | File                                                              |
+| ------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | `apps/web/.env.local`, `apps/practitioner/.env.local`             |
+| `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | `apps/mobile/.env`                                                |
+| `SUPABASE_SECRET_KEY`                                              | Same app’s `.env.local` when Next server code runs, or CI secrets |
 
 ### Legacy (optional, clients only)
 
@@ -34,13 +34,13 @@ Full template: [`.env.example`](../../.env.example).
 
 The **default** export (`@abstrack/supabase`) is **Metro-safe**: it does not load `@supabase/ssr`. Use **subpaths** for Next.js so React Native never pulls SSR code.
 
-| Import | Use when |
-|--------|----------|
-| **`@abstrack/supabase`** | Shared types, env readers, **`createSupabaseNativeClient`**, auth helpers, query helpers (Expo / shared code). |
-| **`@abstrack/supabase/browser`** | Next.js **client components** — `getSupabaseBrowserClient()` (`@supabase/ssr`). |
-| **`@abstrack/supabase/server`** | Next.js **server** — `createSupabaseServerClient(cookies)`; pass cookie `getAll` / `setAll` per [Supabase SSR](https://supabase.com/docs/guides/auth/server-side/nextjs). |
-| **`@abstrack/supabase/native`** | Optional alias for **`createSupabaseNativeClient`** only (same as main export; explicit “no SSR” surface). |
-| **`@abstrack/supabase/admin`** | Secret-key server client only (see below). |
+| Import                           | Use when                                                                                                                                                                  |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`@abstrack/supabase`**         | Shared types, env readers, **`createSupabaseNativeClient`**, auth helpers, query helpers (Expo / shared code).                                                            |
+| **`@abstrack/supabase/browser`** | Next.js **client components** — `getSupabaseBrowserClient()` (`@supabase/ssr`).                                                                                           |
+| **`@abstrack/supabase/server`**  | Next.js **server** — `createSupabaseServerClient(cookies)`; pass cookie `getAll` / `setAll` per [Supabase SSR](https://supabase.com/docs/guides/auth/server-side/nextjs). |
+| **`@abstrack/supabase/native`**  | Optional alias for **`createSupabaseNativeClient`** only (same as main export; explicit “no SSR” surface).                                                                |
+| **`@abstrack/supabase/admin`**   | Secret-key server client only (see below).                                                                                                                                |
 
 ### Main (`@abstrack/supabase`)
 
