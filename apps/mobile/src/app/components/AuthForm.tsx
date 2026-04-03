@@ -94,7 +94,11 @@ export function AuthForm({
         </Text>
       ) : null}
 
-      {statusMessage ? <Text style={styles.infoText}>{statusMessage}</Text> : null}
+      {statusMessage ? (
+        <Text style={styles.infoText} accessibilityRole="status">
+          {statusMessage}
+        </Text>
+      ) : null}
 
       <Pressable
         accessibilityRole="button"
