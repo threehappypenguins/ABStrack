@@ -82,26 +82,30 @@ describe('ChunkingSecureStore (via supabase-wiring)', () => {
       expect(retrieved).toBe(largeValue);
     });
 
-    test('handles exact 2044-byte boundary (internal chunk size)', async () => {
-      // Exactly 2044 bytes (internal CHUNK_SIZE with 4-byte UTF-8 safety margin)
-      const boundaryValue = 'x'.repeat(2044);
+    test('stores small values without chunking (base64-encoded)', async () => {
+      // Small value: ~1500 chars → ~2000 bytes when base64-encoded → fits in 2044-byte limit
+      const smallValue = 'x'.repeat(1500);
 
-      await mobileAuthStorage.setItem('auth-session', boundaryValue);
+      await mobileAuthStorage.setItem('auth-session', smallValue);
       const retrieved = await mobileAuthStorage.getItem('auth-session');
 
-      expect(retrieved).toBe(boundaryValue);
-      expect(mockStore['auth-session.meta']).toBeUndefined(); // Not chunked
+      expect(retrieved).toBe(smallValue);
+      expect(mockStore['auth-session']).toBeDefined(); // Stored directly (not chunked)
+      expect(mockStore['auth-session.meta']).toBeUndefined(); // No metadata
     });
 
-    test('stores just over 2044 bytes as chunks', async () => {
-      const overshootValue = 'x'.repeat(2045);
+    test('chunks values that exceed 2044 bytes when base64-encoded', async () => {
+      // ~1600 chars → ~2133 bytes when base64-encoded → exceeds 2044-byte limit → needs chunking
+      const largeValue = 'x'.repeat(1600);
 
-      await mobileAuthStorage.setItem('auth-session', overshootValue);
+      await mobileAuthStorage.setItem('auth-session', largeValue);
+      const retrieved = await mobileAuthStorage.getItem('auth-session');
 
-      expect(mockStore['auth-session']).toBeUndefined();
-      expect(mockStore['auth-session.meta']).toBe('2'); // 2 chunks
-      expect(mockStore['auth-session.chunk.0']).toBeDefined();
-      expect(mockStore['auth-session.chunk.1']).toBeDefined();
+      expect(retrieved).toBe(largeValue);
+      expect(mockStore['auth-session']).toBeUndefined(); // Not stored as single value
+      expect(mockStore['auth-session.meta']).toBeDefined(); // Metadata present (chunked)
+      expect(mockStore['auth-session.chunk.0']).toBeDefined(); // First chunk exists
+      expect(mockStore['auth-session.chunk.1']).toBeDefined(); // Second chunk exists
     });
 
     test('removes all chunks when removing a key', async () => {
@@ -154,6 +158,49 @@ describe('ChunkingSecureStore (via supabase-wiring)', () => {
       expect(mockStore['auth-session']).toBe(smallValue);
       expect(mockStore['auth-session.meta']).toBeUndefined();
       expect(mockStore['auth-session.chunk.0']).toBeUndefined();
+    });
+
+    test('preserves multi-byte UTF-8 characters across chunk boundaries', async () => {
+      // Create a chunked value (~1600 chars) with multi-byte UTF-8 sequences
+      // This value will be split into multiple chunks at arbitrary byte positions,
+      // but base64 encoding ensures no UTF-8 sequences are split.
+      // The original UTF-8 string must round-trip exactly after chunking/dechunking.
+      const multibyteValue = JSON.stringify({
+        user_metadata: {
+          // Emoji (4 bytes each): 🏥 💊 ♿
+          full_name: 'Françoise Müller 🏥 Patient',
+          // Accented characters (2-3 bytes): é, ñ, ü, etc.
+          locale: 'fr-FR',
+          notes: 'Consultation: ' + '日本語テスト中文测试'.repeat(100), // Japanese/Chinese (3-4 bytes per char)
+          // Mixed ASCII + emoji + accents spread across ~1600 chars
+          description: 'This patient 👤 uses assistive technology. ' + '🦽 ♿ 👨‍🦯'.repeat(150),
+        },
+      });
+
+      // Verify the test data is large enough to require chunking
+      expect(multibyteValue.length).toBeGreaterThan(1500);
+
+      // Store and retrieve
+      await mobileAuthStorage.setItem('auth-session', multibyteValue);
+      const retrieved = await mobileAuthStorage.getItem('auth-session');
+
+      // CRITICAL: Verify exact round-trip (no corruption, no replacement characters)
+      expect(retrieved).toBe(multibyteValue);
+
+      // Verify it was actually chunked (not stored as single value)
+      expect(mockStore['auth-session']).toBeUndefined();
+      const metaValue = mockStore['auth-session.meta'];
+      expect(metaValue).toBeDefined();
+      const chunkCount = parseInt(metaValue!, 10);
+      expect(chunkCount).toBeGreaterThanOrEqual(2); // Should require multiple chunks
+      expect(mockStore['auth-session.chunk.0']).toBeDefined();
+      expect(mockStore['auth-session.chunk.1']).toBeDefined();
+
+      // Verify no corruption for common multi-byte sequences
+      expect(retrieved).toContain('Françoise Müller 🏥 Patient');
+      expect(retrieved).toContain('日本語テスト中文测试');
+      expect(retrieved).toContain('👤');
+      expect(retrieved).toContain('🦽');
     });
   });
 });
