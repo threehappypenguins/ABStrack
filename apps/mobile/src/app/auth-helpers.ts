@@ -25,6 +25,11 @@ export function validateSignupPassword(password: string): string | null {
   return null;
 }
 
+/**
+ * Maps Supabase auth errors to user-friendly messages.
+ * Unknown errors return a generic message to avoid leaking implementation details;
+ * the original error is logged for telemetry/debugging.
+ */
 export function mapAuthError(message: string): string {
   const normalized = message.toLowerCase();
 
@@ -40,5 +45,7 @@ export function mapAuthError(message: string): string {
     return 'An account with this email already exists.';
   }
 
-  return message;
+  // Log unmapped errors for telemetry/debugging; return generic message to user
+  console.warn('[Auth] Unmapped Supabase error:', message);
+  return 'An error occurred during authentication. Please try again.';
 }

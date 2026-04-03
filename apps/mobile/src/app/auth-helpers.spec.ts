@@ -63,7 +63,15 @@ describe('mapAuthError', () => {
     );
   });
 
-  test('returns original message for unknown error', () => {
-    expect(mapAuthError('Some unexpected error')).toBe('Some unexpected error');
+  test('returns generic message for unknown error and logs original', () => {
+    const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+    expect(mapAuthError('Some unexpected database error')).toBe(
+      'An error occurred during authentication. Please try again.',
+    );
+    expect(consoleWarnSpy).toHaveBeenCalledWith(
+      '[Auth] Unmapped Supabase error:',
+      'Some unexpected database error',
+    );
+    consoleWarnSpy.mockRestore();
   });
 });
