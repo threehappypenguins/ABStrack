@@ -1,8 +1,8 @@
 import { POST } from './route';
-import { createSupabaseServerClient } from '@abstrack/supabase/server';
+import { createServerClient } from '../../../../lib/supabase/server-client';
 
-jest.mock('@abstrack/supabase/server', () => ({
-  createSupabaseServerClient: jest.fn(),
+jest.mock('../../../../lib/supabase/server-client', () => ({
+  createServerClient: jest.fn(),
 }));
 
 jest.mock('next/server', () => ({
@@ -19,7 +19,7 @@ jest.mock('next/server', () => ({
 }));
 
 describe('logout route', () => {
-  const createSupabaseServerClientMock = jest.mocked(createSupabaseServerClient);
+  const createServerClientMock = jest.mocked(createServerClient);
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -49,7 +49,7 @@ describe('logout route', () => {
       ]);
     });
 
-    createSupabaseServerClientMock.mockImplementation((methods: any) => {
+    createServerClientMock.mockImplementation((methods: any) => {
       cookieMethods = methods;
       return {
         auth: { signOut },
@@ -65,7 +65,7 @@ describe('logout route', () => {
 
     const response = await POST(request);
 
-    expect(createSupabaseServerClientMock).toHaveBeenCalledWith(
+    expect(createServerClientMock).toHaveBeenCalledWith(
       expect.objectContaining({
         getAll: expect.any(Function),
         setAll: expect.any(Function),

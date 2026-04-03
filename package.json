@@ -2,7 +2,10 @@
   "name": "@abstrack/source",
   "version": "0.0.0",
   "license": "MIT",
-  "scripts": {},
+  "scripts": {
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
   "private": true,
   "devDependencies": {
     "@babel/runtime": "~7.27.6",

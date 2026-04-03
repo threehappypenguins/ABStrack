@@ -13,11 +13,11 @@ This project uses **Supabase Cloud** as the development database.
 
 ## Ground rules (read first)
 
-| Fact | Implication |
-|------|-------------|
-| **Canonical DB is Supabase Cloud** | `db push` applies `supabase/migrations/` to your hosted project (CLI on your laptop **and/or** GitHub Actions on `main`). |
-| **`supabase db reset` is local-only** | It only affects a **Docker** database from `supabase db start` (your machine or CI). It does **not** reset cloud. |
-| **`gen types typescript --linked` reads cloud** | It does not “read” new SQL from git until that SQL has been applied to cloud via **`db push`**. |
+| Fact                                            | Implication                                                                                                               |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| **Canonical DB is Supabase Cloud**              | `db push` applies `supabase/migrations/` to your hosted project (CLI on your laptop **and/or** GitHub Actions on `main`). |
+| **`supabase db reset` is local-only**           | It only affects a **Docker** database from `supabase db start` (your machine or CI). It does **not** reset cloud.         |
+| **`gen types typescript --linked` reads cloud** | It does not “read” new SQL from git until that SQL has been applied to cloud via **`db push`**.                           |
 
 ---
 
@@ -77,10 +77,10 @@ Then the migration hits cloud when **CI runs `db push` on `main`** after merge. 
 
 ## Types file: no bot
 
-| What | Who / what |
-|------|------------|
-| **`database.types.ts` in git** | **You** regenerate with **`gen types --linked`** + Prettier and **commit**. Nothing auto-commits. |
-| **Verify on `main`** | After CI `db push`, the workflow **diffs** committed types vs `--linked` output; **fails** if they differ (run the regen commands and push). |
+| What                           | Who / what                                                                                                                                   |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`database.types.ts` in git** | **You** regenerate with **`gen types --linked`** + Prettier and **commit**. Nothing auto-commits.                                            |
+| **Verify on `main`**           | After CI `db push`, the workflow **diffs** committed types vs `--linked` output; **fails** if they differ (run the regen commands and push). |
 
 ---
 
@@ -130,9 +130,9 @@ For the whole workspace (closer to CI), see [DEV_SETUP.md §5](DEV_SETUP.md#5-ve
 
 ## Related files
 
-| Topic | Location |
-|-------|----------|
-| CLI install, link, secrets | [DEV_SETUP.md §4](DEV_SETUP.md#4-supabase-database-migrations-cloud-cli-and-ci) |
-| Migrations + verify on `main` | [`.github/workflows/supabase-migrations.yml`](../.github/workflows/supabase-migrations.yml) |
-| PR types check | [`.github/workflows/supabase-db-types-pr.yml`](../.github/workflows/supabase-db-types-pr.yml) |
-| App env vars | [`packages/supabase/README.md`](../packages/supabase/README.md), [`.env.example`](../.env.example) |
+| Topic                         | Location                                                                                           |
+| ----------------------------- | -------------------------------------------------------------------------------------------------- |
+| CLI install, link, secrets    | [DEV_SETUP.md §4](DEV_SETUP.md#4-supabase-database-migrations-cloud-cli-and-ci)                    |
+| Migrations + verify on `main` | [`.github/workflows/supabase-migrations.yml`](../.github/workflows/supabase-migrations.yml)        |
+| PR types check                | [`.github/workflows/supabase-db-types-pr.yml`](../.github/workflows/supabase-db-types-pr.yml)      |
+| App env vars                  | [`packages/supabase/README.md`](../packages/supabase/README.md), [`.env.example`](../.env.example) |

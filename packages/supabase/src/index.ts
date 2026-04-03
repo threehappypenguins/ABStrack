@@ -7,10 +7,7 @@
  */
 export type { Database, Json } from './lib/database.types.js';
 export type { Session } from '@supabase/supabase-js';
-export {
-  getSupabasePublishableKey,
-  getSupabaseUrl,
-} from './lib/env-public.js';
+export { getSupabasePublishableKey, getSupabaseUrl } from './lib/env-public.js';
 export type { AbstrackSupabaseClient } from './lib/supabase-client-type.js';
 export {
   createSupabaseNativeClient,

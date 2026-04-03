@@ -3,11 +3,7 @@ import { signUpWithEmailPassword } from '@abstrack/supabase';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { AuthForm } from '../components/AuthForm';
 
-export function SignupScreen({
-  onGoToLogin,
-}: {
-  onGoToLogin: () => void;
-}) {
+export function SignupScreen({ onGoToLogin }: { onGoToLogin: () => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);

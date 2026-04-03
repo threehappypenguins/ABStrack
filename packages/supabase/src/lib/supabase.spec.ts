@@ -71,4 +71,3 @@ describe('public entry', () => {
     expect(main).not.toHaveProperty('createSupabaseServerClient');
   });
 });
-

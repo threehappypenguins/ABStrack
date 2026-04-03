@@ -8,19 +8,19 @@ This guide covers getting the ABStrack monorepo running on a new machine and onb
 
 ### All platforms
 
-| Requirement | Notes |
-|-------------|--------|
-| **Git** | For clone and version control. |
+| Requirement      | Notes                                                                                                              |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------ |
+| **Git**          | For clone and version control.                                                                                     |
 | **Node.js 20.x** | Matches [CI](../.github/workflows/ci.yml). Use [nodejs.org](https://nodejs.org/) or a version manager (see below). |
-| **pnpm 10.29.2** | Matches CI. Install via [pnpm.io/installation](https://pnpm.io/installation) or Corepack (below). |
+| **pnpm 10.29.2** | Matches CI. Install via [pnpm.io/installation](https://pnpm.io/installation) or Corepack (below).                  |
 
 Optional but common:
 
-| Tool | When you need it |
-|------|------------------|
-| **Android Studio** (with SDK + emulator) | Running the mobile app on Android. |
-| **Xcode** (macOS only) | Running the mobile app on the iOS Simulator. |
-| **Watchman** (macOS/Linux) | Can improve Metro file-watching for React Native; not strictly required. |
+| Tool                                     | When you need it                                                         |
+| ---------------------------------------- | ------------------------------------------------------------------------ |
+| **Android Studio** (with SDK + emulator) | Running the mobile app on Android.                                       |
+| **Xcode** (macOS only)                   | Running the mobile app on the iOS Simulator.                             |
+| **Watchman** (macOS/Linux)               | Can improve Metro file-watching for React Native; not strictly required. |
 
 ### macOS and Linux (including Ubuntu)
 
@@ -104,11 +104,11 @@ Secrets must **never** be committed. The repo root [`.env.example`](../.env.exam
 
 ### What each app reads
 
-| App | File (create locally) | Purpose |
-|-----|------------------------|---------|
-| User web (`apps/web`) | `apps/web/.env.local` | Next.js: URL + publishable (or legacy anon) key. |
-| Practitioner web (`apps/practitioner`) | `apps/practitioner/.env.local` | Same pattern as `web`. |
-| Mobile (`apps/mobile`) | `apps/mobile/.env` | Expo / Metro: `EXPO_PUBLIC_*` variables. |
+| App                                    | File (create locally)          | Purpose                                          |
+| -------------------------------------- | ------------------------------ | ------------------------------------------------ |
+| User web (`apps/web`)                  | `apps/web/.env.local`          | Next.js: URL + publishable (or legacy anon) key. |
+| Practitioner web (`apps/practitioner`) | `apps/practitioner/.env.local` | Same pattern as `web`.                           |
+| Mobile (`apps/mobile`)                 | `apps/mobile/.env`             | Expo / Metro: `EXPO_PUBLIC_*` variables.         |
 
 Next.js documents `.env.local` in each app directory. Expo picks up `.env` under `apps/mobile/`. See also [`packages/supabase/README.md`](../packages/supabase/README.md) for dashboard ↔ variable mapping.
 
@@ -222,11 +222,11 @@ Useful variants:
 
 The workflow [`.github/workflows/supabase-migrations.yml`](../.github/workflows/supabase-migrations.yml) uses the same non-interactive variables as the [Supabase managing environments](https://supabase.com/docs/guides/cli/managing-environments) guide:
 
-| Secret | Purpose |
-|--------|--------|
-| `SUPABASE_ACCESS_TOKEN` | Personal access token for the CLI (`supabase login` equivalent). |
-| `SUPABASE_PROJECT_ID` | Project ref string (same as `supabase link --project-ref`). |
-| `SUPABASE_DB_PASSWORD` | Postgres password for the `postgres` role (from **Connect** or **Database → Settings**; see §4 above). |
+| Secret                  | Purpose                                                                                                |
+| ----------------------- | ------------------------------------------------------------------------------------------------------ |
+| `SUPABASE_ACCESS_TOKEN` | Personal access token for the CLI (`supabase login` equivalent).                                       |
+| `SUPABASE_PROJECT_ID`   | Project ref string (same as `supabase link --project-ref`).                                            |
+| `SUPABASE_DB_PASSWORD`  | Postgres password for the `postgres` role (from **Connect** or **Database → Settings**; see §4 above). |
 
 Add these under **Repository → Settings → Secrets and variables → Actions**. The workflow runs **`supabase db push --dry-run`** on pull requests that change migration files (same-repo branches only; **fork PRs do not receive secrets**, so migrate checks are skipped there), and **`supabase db push`** on pushes to `main` when migration paths change. You can also run the workflow manually (**Actions → Supabase migrations → Run workflow**).
 
@@ -255,11 +255,11 @@ Env vars are **not** required for these tasks unless code reads them at import t
 
 Run from the **repository root** unless noted.
 
-| Goal | Command |
-|------|---------|
-| User web app | `pnpm exec nx dev web` |
+| Goal                 | Command                         |
+| -------------------- | ------------------------------- |
+| User web app         | `pnpm exec nx dev web`          |
 | Practitioner web app | `pnpm exec nx dev practitioner` |
-| Mobile (Expo) | `pnpm exec nx start mobile` |
+| Mobile (Expo)        | `pnpm exec nx start mobile`     |
 
 Default ports depend on Nx/Next/Expo; watch the terminal output. For mobile, use Expo Go or an emulator after `nx start mobile`.
 
@@ -296,26 +296,26 @@ The workspace pins **React 19.1.x** to match **Expo SDK 54** and to stay aligned
 
 ## 8. Optional tooling
 
-| Area | Notes |
-|------|--------|
-| **Nx Console** | Editor plugin for tasks and graph: [Nx editor setup](https://nx.dev/getting-started/editor-setup). |
+| Area                 | Notes                                                                                                                                                 |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Nx Console**       | Editor plugin for tasks and graph: [Nx editor setup](https://nx.dev/getting-started/editor-setup).                                                    |
 | **Playwright (e2e)** | Projects `web-e2e` and `practitioner-e2e`; run when you need end-to-end tests (browsers may need a one-time install: `pnpm exec playwright install`). |
-| **Docker** | Not required for the default Node/Nx workflow unless you add containerized services later. |
+| **Docker**           | Not required for the default Node/Nx workflow unless you add containerized services later.                                                            |
 
 ---
 
 ## 9. Troubleshooting
 
-| Symptom | Things to try |
-|---------|----------------|
-| `pnpm: command not found` | Ensure Corepack prepared pnpm, or install pnpm globally; reopen the terminal. |
-| Wrong Node version | Switch to Node 20 with your version manager; confirm with `node -v`. |
-| Next.js cannot see Supabase env | Confirm variables are in **`apps/<app>/.env.local`**, not only the repo root. Restart the dev server after changes. |
-| Expo cannot see variables | Use `EXPO_PUBLIC_*` names in **`apps/mobile/.env`**; restart Metro / clear cache if needed (`pnpm exec nx start mobile` with Expo’s cache clear options if documented for your setup). |
+| Symptom                                 | Things to try                                                                                                                                                                                                                                                                                    |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pnpm: command not found`               | Ensure Corepack prepared pnpm, or install pnpm globally; reopen the terminal.                                                                                                                                                                                                                    |
+| Wrong Node version                      | Switch to Node 20 with your version manager; confirm with `node -v`.                                                                                                                                                                                                                             |
+| Next.js cannot see Supabase env         | Confirm variables are in **`apps/<app>/.env.local`**, not only the repo root. Restart the dev server after changes.                                                                                                                                                                              |
+| Expo cannot see variables               | Use `EXPO_PUBLIC_*` names in **`apps/mobile/.env`**; restart Metro / clear cache if needed (`pnpm exec nx start mobile` with Expo’s cache clear options if documented for your setup).                                                                                                           |
 | `supabase link` / `db push` fails in CI | Confirm **Actions secrets** match [§4](#4-supabase-database-migrations-cloud-cli-and-ci) (`SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_ID`, `SUPABASE_DB_PASSWORD`). The database password is the **Postgres** password from **Connect** or **Database → Settings**, not the Data API / anon keys. |
-| Fork PR: migration workflow skipped | Expected: GitHub does not expose repository secrets to workflows from forks. Run checks on a branch in the main repo or apply migrations manually after merge. |
-| `pnpm install` fails on Windows | Run shell as admin once if permission errors; check antivirus locking `node_modules`; try deleting `node_modules` and reinstalling. |
-| Path errors on Windows | Use forward slashes in copied commands where supported, or use the `copy` / `Copy-Item` examples above with backslashes in `cmd`. |
+| Fork PR: migration workflow skipped     | Expected: GitHub does not expose repository secrets to workflows from forks. Run checks on a branch in the main repo or apply migrations manually after merge.                                                                                                                                   |
+| `pnpm install` fails on Windows         | Run shell as admin once if permission errors; check antivirus locking `node_modules`; try deleting `node_modules` and reinstalling.                                                                                                                                                              |
+| Path errors on Windows                  | Use forward slashes in copied commands where supported, or use the `copy` / `Copy-Item` examples above with backslashes in `cmd`.                                                                                                                                                                |
 
 ---
 

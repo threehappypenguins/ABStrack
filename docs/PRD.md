@@ -38,10 +38,10 @@ ABStrack is an open-source, privacy-first health tracking application for indivi
 
 The application consists of three sub-applications:
 
-| App | Platform | Audience |
-|---|---|---|
-| User App | Mobile (React Native/Expo) + Web (Next.js) | Patients with ABS and their caretakers |
-| Practitioner App | Web (Next.js) | Healthcare practitioners |
+| App              | Platform                                   | Audience                               |
+| ---------------- | ------------------------------------------ | -------------------------------------- |
+| User App         | Mobile (React Native/Expo) + Web (Next.js) | Patients with ABS and their caretakers |
+| Practitioner App | Web (Next.js)                              | Healthcare practitioners               |
 
 ---
 
@@ -83,30 +83,33 @@ Documenting these episodes is critical for diagnosis, treatment, and ongoing car
 ## Users & Roles
 
 ### Patient (Primary User)
+
 An individual diagnosed with or suspected of having ABS. May be cognitively impaired during use. Accesses the app via mobile (primary) or web.
 
 ### Caretaker
+
 A trusted person (family member, partner, etc.) who assists the patient during episodes. Has a secondary account linked to the patient's account. Sees everything the patient sees and can complete episode logging on the patient's behalf from their own device. Receives push notifications when the patient logs an episode (post-MVP).
 
 ### Healthcare Practitioner
+
 A doctor, specialist, or other clinician chosen by the patient. Receives a credential invitation from the patient. Can view the patient’s health data only when the patient has **granted access**—i.e. there is an **active row** in **`practitioner_access`** for that patient–practitioner pair. **Authorization** is that explicit grant; **row-level security (RLS)** and practitioner MFA rules **enforce** it on every query. Can leave observation notes and review media. Accesses the practitioner web app only.
 
 ---
 
 ## Technical Stack
 
-| Layer | Technology |
-|---|---|
-| Mobile App | React Native + NativeWind (Expo for development) |
-| User Web App | Next.js + Tailwind CSS |
-| Practitioner Web App | Next.js + Tailwind CSS |
-| Database | Supabase (PostgreSQL) |
-| Offline Sync | PowerSync |
-| Monorepo Tooling | Nx |
-| Package Manager | pnpm |
-| Shared Packages | `@abstrack/types`, `@abstrack/supabase`, `@abstrack/ui`, `@abstrack/powersync` (optional `@abstrack/crypto` for non-PHI utilities only—not used for application-layer PHI encryption in this model) |
-| Media Storage | Supabase Storage |
-| CI/CD | GitHub Actions |
+| Layer                | Technology                                                                                                                                                                                          |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Mobile App           | React Native + NativeWind (Expo for development)                                                                                                                                                    |
+| User Web App         | Next.js + Tailwind CSS                                                                                                                                                                              |
+| Practitioner Web App | Next.js + Tailwind CSS                                                                                                                                                                              |
+| Database             | Supabase (PostgreSQL)                                                                                                                                                                               |
+| Offline Sync         | PowerSync                                                                                                                                                                                           |
+| Monorepo Tooling     | Nx                                                                                                                                                                                                  |
+| Package Manager      | pnpm                                                                                                                                                                                                |
+| Shared Packages      | `@abstrack/types`, `@abstrack/supabase`, `@abstrack/ui`, `@abstrack/powersync` (optional `@abstrack/crypto` for non-PHI utilities only—not used for application-layer PHI encryption in this model) |
+| Media Storage        | Supabase Storage                                                                                                                                                                                    |
+| CI/CD                | GitHub Actions                                                                                                                                                                                      |
 
 **Hosting:** Supabase cloud for development. Self-hosted on Oracle VM (free tier) for production.
 
@@ -143,7 +146,7 @@ All three apps share types, the Supabase client, UI components, and PowerSync co
 
 ### Compliance statement (design intent)
 
-ABStrack is **designed and intended to align with and support** the technical safeguard expectations in the HIPAA Security Rule ([45 CFR §164.312](https://www.ecfr.gov/current/title-45/section-164.312)) and the **information-protection duties** described under Nova Scotia’s [Personal Health Information Act (PHIA)](https://www.novascotia.ca/dhw/phia/) and Ontario’s [*Personal Health Information Protection Act*, 2004 (PHIPA)](https://www.ontario.ca/laws/statute/04p03), **when implemented according to this PRD** and **when deployed and operated** per separate deployment/operations documentation (policies, training, breach response, risk analysis, vendor agreements). An implementation that follows this PRD should **support** those requirements; it does not, by itself, replace organizational compliance programs.
+ABStrack is **designed and intended to align with and support** the technical safeguard expectations in the HIPAA Security Rule ([45 CFR §164.312](https://www.ecfr.gov/current/title-45/section-164.312)) and the **information-protection duties** described under Nova Scotia’s [Personal Health Information Act (PHIA)](https://www.novascotia.ca/dhw/phia/) and Ontario’s [_Personal Health Information Protection Act_, 2004 (PHIPA)](https://www.ontario.ca/laws/statute/04p03), **when implemented according to this PRD** and **when deployed and operated** per separate deployment/operations documentation (policies, training, breach response, risk analysis, vendor agreements). An implementation that follows this PRD should **support** those requirements; it does not, by itself, replace organizational compliance programs.
 
 **Regulators do not certify consumer software as “compliant” in the abstract.** The **architecture and controls described here** are **intended** to align with those **technical and operational-process** expectations—similar to how cloud and health-IT vendors describe product capabilities. HIPAA requires safeguards to be **reasonable and appropriate** to the entity’s context ([45 CFR §164.306](https://www.ecfr.gov/current/title-45/section-164.306)); this design is intended to follow that model.
 
@@ -163,29 +166,29 @@ The system provides:
 
 **Primary reference links (cite in security documentation and audits):**
 
-| Topic | Link |
-|------|------|
-| HIPAA — overview (HHS) | [HIPAA (HHS)](https://www.hhs.gov/hipaa/index.html) |
-| HIPAA Security Rule — general requirements | [45 CFR §164.306 (eCFR)](https://www.ecfr.gov/current/title-45/section-164.306) |
-| HIPAA Security Rule — Technical safeguards | [45 CFR §164.312 (eCFR)](https://www.ecfr.gov/current/title-45/section-164.312) |
-| NS — PHIA overview | [Personal Health Information Act: overview](https://www.novascotia.ca/dhw/phia/) |
-| NS — PHIA statute (PDF) | [Personal Health Information Act (PDF)](https://nslegislature.ca/sites/default/files/legc/statutes/personal%20health%20information.pdf) |
-| NS — PHIA Regulations | [Personal Health Information Regulations](https://novascotia.ca/just/regulations/regs/phipershealth.htm) |
-| NS — OIPC legislation index | [Legislation — OIPC Nova Scotia](https://oipc.novascotia.ca/legislation) |
-| NS — Record of User Activity (custodian audit expectations) | [Fact Sheet — Record of User Activity (PDF)](https://novascotia.ca/dhw/phia/documents/Fact-Sheet-Record-of-User-Activity.pdf) |
-| ON — PHIPA statute | [*Personal Health Information Protection Act*, 2004 (Ontario)](https://www.ontario.ca/laws/statute/04p03) |
+| Topic                                                       | Link                                                                                                                                    |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| HIPAA — overview (HHS)                                      | [HIPAA (HHS)](https://www.hhs.gov/hipaa/index.html)                                                                                     |
+| HIPAA Security Rule — general requirements                  | [45 CFR §164.306 (eCFR)](https://www.ecfr.gov/current/title-45/section-164.306)                                                         |
+| HIPAA Security Rule — Technical safeguards                  | [45 CFR §164.312 (eCFR)](https://www.ecfr.gov/current/title-45/section-164.312)                                                         |
+| NS — PHIA overview                                          | [Personal Health Information Act: overview](https://www.novascotia.ca/dhw/phia/)                                                        |
+| NS — PHIA statute (PDF)                                     | [Personal Health Information Act (PDF)](https://nslegislature.ca/sites/default/files/legc/statutes/personal%20health%20information.pdf) |
+| NS — PHIA Regulations                                       | [Personal Health Information Regulations](https://novascotia.ca/just/regulations/regs/phipershealth.htm)                                |
+| NS — OIPC legislation index                                 | [Legislation — OIPC Nova Scotia](https://oipc.novascotia.ca/legislation)                                                                |
+| NS — Record of User Activity (custodian audit expectations) | [Fact Sheet — Record of User Activity (PDF)](https://novascotia.ca/dhw/phia/documents/Fact-Sheet-Record-of-User-Activity.pdf)           |
+| ON — PHIPA statute                                          | [_Personal Health Information Protection Act_, 2004 (Ontario)](https://www.ontario.ca/laws/statute/04p03)                               |
 
 **Secondary references (interpretive, not law):** [Compliancy Group — PHIPA vs HIPAA](https://compliancy-group.com/the-differences-between-canadas-phipa-and-hipaa/) · [Digital Health Canada — HIPAA-oriented software development practices](https://digitalhealthcanada.com/comprehensive-guide-to-achieving-hipaa-compliance-in-healthcare-software-development/)
 
 ### Statutory mapping (technical safeguards)
 
-| Requirement (HIPAA Security Rule — technical) | ABStrack design | Intended satisfaction |
-|------------------------------------------------|-----------------|------------------------|
-| Access control ([§164.312(a)](https://www.ecfr.gov/current/title-45/section-164.312)) | Unique user IDs (Supabase Auth), RLS on PHI tables, grant tables | Yes |
-| Audit controls ([§164.312(b)](https://www.ecfr.gov/current/title-45/section-164.312)) | Append-only `access_log`, trusted insert path | Yes |
-| Integrity ([§164.312(c)](https://www.ecfr.gov/current/title-45/section-164.312)) | TLS, authenticated APIs, DB constraints | Yes |
-| Person/entity authentication ([§164.312(d)](https://www.ecfr.gov/current/title-45/section-164.312)) | Passwords; mandatory MFA for practitioners | Yes |
-| Transmission security ([§164.312(e)](https://www.ecfr.gov/current/title-45/section-164.312)) | TLS for API and Storage | Yes |
+| Requirement (HIPAA Security Rule — technical)                                                          | ABStrack design                                                  | Intended satisfaction                                                                                                                |
+| ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Access control ([§164.312(a)](https://www.ecfr.gov/current/title-45/section-164.312))                  | Unique user IDs (Supabase Auth), RLS on PHI tables, grant tables | Yes                                                                                                                                  |
+| Audit controls ([§164.312(b)](https://www.ecfr.gov/current/title-45/section-164.312))                  | Append-only `access_log`, trusted insert path                    | Yes                                                                                                                                  |
+| Integrity ([§164.312(c)](https://www.ecfr.gov/current/title-45/section-164.312))                       | TLS, authenticated APIs, DB constraints                          | Yes                                                                                                                                  |
+| Person/entity authentication ([§164.312(d)](https://www.ecfr.gov/current/title-45/section-164.312))    | Passwords; mandatory MFA for practitioners                       | Yes                                                                                                                                  |
+| Transmission security ([§164.312(e)](https://www.ecfr.gov/current/title-45/section-164.312))           | TLS for API and Storage                                          | Yes                                                                                                                                  |
 | Encryption (addressable specs under [§164.312](https://www.ecfr.gov/current/title-45/section-164.312)) | TLS + platform at-rest encryption + SQLCipher/keystore on mobile | Implemented (reasonable and appropriate); client-side end-to-end field encryption is **not** required by HIPAA for this architecture |
 
 PHIA and PHIPA do not prescribe a specific cryptography stack; they require **reasonable safeguards** against unauthorized access, use, and disclosure. This architecture is **consistent with** those duties for a consumer-directed application and supports **custodian/service-provider** scenarios when contracted.
@@ -194,15 +197,15 @@ PHIA and PHIPA do not prescribe a specific cryptography stack; they require **re
 
 The rows below mirror the **HIPAA Security Rule** technical safeguards ([45 CFR §164.312](https://www.ecfr.gov/current/title-45/section-164.312)). **PHIA** (NS) and **PHIPA** (ON) obligations are **intended to be supported** by the same **reasonable technical measures**—access control, auditing, authentication, integrity, and encryption in transit and at rest—not by a separate checklist in statute.
 
-| Requirement | ABStrack design | Status |
-|---------------|-----------------|--------|
-| Access control | RLS on all PHI tables (Supabase API); Sync Rules mirroring grants for PowerSync; Supabase Auth; `practitioner_access` / `caretaker_access` | ✅ |
-| Audit controls | Append-only `access_log` written via trusted server path (Edge Function or triggers) | ✅ |
-| Authentication | Passwords; mandatory MFA (TOTP) for practitioners (fail-closed) | ✅ |
-| Integrity | Authenticated APIs; database constraints; TLS | ✅ |
-| Encryption in transit | TLS for all client–server and Storage access | ✅ |
-| Encryption at rest (server) | Managed PostgreSQL + object storage encryption (platform / self-hosted equivalent) | ✅ |
-| Encryption at rest (mobile) | SQLCipher-encrypted local SQLite; OS secure storage for secrets / optional keystore-bound keys | ✅ |
+| Requirement                 | ABStrack design                                                                                                                            | Status |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
+| Access control              | RLS on all PHI tables (Supabase API); Sync Rules mirroring grants for PowerSync; Supabase Auth; `practitioner_access` / `caretaker_access` | ✅     |
+| Audit controls              | Append-only `access_log` written via trusted server path (Edge Function or triggers)                                                       | ✅     |
+| Authentication              | Passwords; mandatory MFA (TOTP) for practitioners (fail-closed)                                                                            | ✅     |
+| Integrity                   | Authenticated APIs; database constraints; TLS                                                                                              | ✅     |
+| Encryption in transit       | TLS for all client–server and Storage access                                                                                               | ✅     |
+| Encryption at rest (server) | Managed PostgreSQL + object storage encryption (platform / self-hosted equivalent)                                                         | ✅     |
+| Encryption at rest (mobile) | SQLCipher-encrypted local SQLite; OS secure storage for secrets / optional keystore-bound keys                                             | ✅     |
 
 ### Technical safeguard baseline (HIPAA §164.312–oriented)
 
@@ -228,12 +231,12 @@ Access is modeled with **grant tables** and RLS. There is **no** per-user data e
 
 **RLS requirements (explicit):**
 
-| Table / object | Patient | Caretaker | Practitioner |
-|----------------|---------|-----------|--------------|
-| PHI tables (`episodes`, `episode_symptoms`, etc.) | Full read/write own `user_id` | Read/write where `caretaker_access` links to patient’s `user_id` | Read-only where `practitioner_access` grant exists and not revoked; **only after** practitioner MFA is verified per the **fail-closed** rules in Authentication |
-| `practitioner_access` | Insert/delete (grant/revoke) own patient id | No access | Select rows where `practitioner_user_id` = self |
-| `caretaker_access` | Insert/delete own grants | Select row where self is caretaker | No access |
-| Practitioner observation notes | N/A | N/A | Insert/update own notes; read per patient grant |
+| Table / object                                    | Patient                                     | Caretaker                                                        | Practitioner                                                                                                                                                    |
+| ------------------------------------------------- | ------------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PHI tables (`episodes`, `episode_symptoms`, etc.) | Full read/write own `user_id`               | Read/write where `caretaker_access` links to patient’s `user_id` | Read-only where `practitioner_access` grant exists and not revoked; **only after** practitioner MFA is verified per the **fail-closed** rules in Authentication |
+| `practitioner_access`                             | Insert/delete (grant/revoke) own patient id | No access                                                        | Select rows where `practitioner_user_id` = self                                                                                                                 |
+| `caretaker_access`                                | Insert/delete own grants                    | Select row where self is caretaker                               | No access                                                                                                                                                       |
+| Practitioner observation notes                    | N/A                                         | N/A                                                              | Insert/update own notes; read per patient grant                                                                                                                 |
 
 **Revocation:** Deleting or revoking a grant **stops future** reads via the API. It does **not** erase data the party already saw or exported; that limitation is stated in-product where relevant.
 
@@ -305,6 +308,7 @@ Videos and images are stored in a **private** Supabase Storage bucket (`episode-
 **MVP**
 
 #### Sign-up & Login
+
 - Email/password sign-up and login for patients, caretakers, and practitioners.
 - Patients can create a linked caretaker account during onboarding or from settings.
 - Practitioner accounts are created via invitation only (patient-initiated).
@@ -314,11 +318,11 @@ Videos and images are stored in a **private** Supabase Storage bucket (`episode-
 
 ABStrack is an accessibility-first application. Users may need to log symptoms while cognitively impaired, and friction at login must be minimised.
 
-| Role | Default Behaviour | User-Controlled Option |
-|---|---|---|
-| Patient | Persistent session — stays logged in across app close, device lock, and browser close | Can enable "Require re-authentication on app open" in security settings |
-| Caretaker | Persistent session — same as patient | Can enable "Require re-authentication on app open" in security settings |
-| Practitioner | Standard session with expiry | N/A |
+| Role         | Default Behaviour                                                                     | User-Controlled Option                                                  |
+| ------------ | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Patient      | Persistent session — stays logged in across app close, device lock, and browser close | Can enable "Require re-authentication on app open" in security settings |
+| Caretaker    | Persistent session — same as patient                                                  | Can enable "Require re-authentication on app open" in security settings |
+| Practitioner | Standard session with expiry                                                          | N/A                                                                     |
 
 Persistent sessions are implemented via Supabase Auth refresh tokens stored in device/browser storage. **No DEK** is persisted for decryption: the server stores plaintext PHI; the mobile app holds **plaintext inside SQLCipher** after sync, protected by the device encryption key/passphrase strategy in the Security section.
 
@@ -326,10 +330,10 @@ Persistent sessions are implemented via Supabase Auth refresh tokens stored in d
 
 TOTP is implemented via Supabase Auth's built-in MFA API. Compatible with any TOTP authenticator app (Google Authenticator, Authy, 1Password, etc.).
 
-| Role | TOTP | Enforcement |
-|---|---|---|
-| Patient | Optional — can be enabled in security settings | Not enforced |
-| Caretaker | Optional — can be enabled in security settings | Not enforced |
+| Role         | TOTP                                                     | Enforcement                           |
+| ------------ | -------------------------------------------------------- | ------------------------------------- |
+| Patient      | Optional — can be enabled in security settings           | Not enforced                          |
+| Caretaker    | Optional — can be enabled in security settings           | Not enforced                          |
 | Practitioner | **Mandatory** — must enrol before first login is granted | Enforced via three layers (see below) |
 
 **Practitioner TOTP enforcement (fail-closed):** If MFA status cannot be verified, the practitioner **must not** receive access to patient data. A custom JWT hook that errors and causes Supabase to issue a token **without** the expected `aal` claim would **bypass** RLS that relies only on that claim—therefore enforcement **must not** depend on a hook that can fail open.
@@ -357,6 +361,7 @@ Hooks may still set JWT claims for convenience, but **must not** be the sole con
 Symptom presets allow the user to pre-configure the symptoms they commonly experience during an ABS episode. During an episode, the app prompts through the preset list rather than requiring the user to type or search.
 
 #### Preset Setup
+
 - The user can create one or more named symptom presets (e.g., "Typical ABS Episode", "Mild Episode").
 - Each preset contains an ordered list of symptoms.
 - For each symptom, the user can configure:
@@ -371,11 +376,12 @@ Symptom presets allow the user to pre-configure the symptoms they commonly exper
 - Presets can be reordered, edited, and deleted from the preset management screen (not during an active episode prompt).
 
 #### Common ABS Symptom Suggestions (pre-populated list)
+
 - Nausea
 - Vomiting
 - Vertigo
 - Dizziness
-- Slurred speech *(video capture recommended)*
+- Slurred speech _(video capture recommended)_
 - Brain fog / confusion
 - Fatigue
 - Headache
@@ -383,8 +389,9 @@ Symptom presets allow the user to pre-configure the symptoms they commonly exper
 - Anxiety
 
 #### Uncommon ABS Symptom Suggestions
-- Hemiparesis *(photo/video capture recommended)*
-- Facial drooping *(photo capture recommended)*
+
+- Hemiparesis _(photo/video capture recommended)_
+- Facial drooping _(photo capture recommended)_
 - Feelings of impending doom
 
 ---
@@ -396,6 +403,7 @@ Symptom presets allow the user to pre-configure the symptoms they commonly exper
 Health marker presets allow the user to pre-configure the health measurements they want to capture during or around an episode.
 
 #### Preset Setup
+
 - The user can add health markers to their preset, including:
   - Blood alcohol content (BAC) — manual entry
   - Blood glucose — manual entry
@@ -406,6 +414,7 @@ Health marker presets allow the user to pre-configure the health measurements th
 - For MVP, all health markers are manually entered.
 
 **Post-MVP**
+
 - BACtrac Bluetooth API integration
 - Dexcom G7 CGM API integration
 
@@ -418,11 +427,13 @@ Health marker presets allow the user to pre-configure the health measurements th
 An "episode" or "flare" is a discrete event where the user experiences ABS-related symptoms.
 
 #### Starting an Episode
+
 - A prominent "I'm having an episode" button is available on the home screen.
 - The UI during an episode must be designed for impaired users: large text, large touch targets, minimal cognitive load, high contrast.
 - The user selects which symptom preset to use.
 
 #### Episode Prompt Flow
+
 1. The app prompts through each symptom in the selected preset, one at a time.
 2. For video/photo symptoms, the camera is launched inline with instructions shown on screen.
 3. After all preset symptoms, the app prompts through health marker preset items.
@@ -435,6 +446,7 @@ An "episode" or "flare" is a discrete event where the user experiences ABS-relat
 7. The episode is saved with a timestamp.
 
 #### Ending an Episode
+
 - The user can mark an episode as ended, which records the end timestamp and duration.
 
 ---
@@ -469,6 +481,7 @@ Accessibility is the primary design concern for the food diary. Users may be unw
 - The free text note is stored as plaintext in `food_diary_entries.food_note`, protected by RLS and TLS.
 
 **Post-MVP**
+
 - AI-assisted parsing of food diary notes into structured nutritional data (foods, quantities, carbohydrate content) for improved pattern analysis in charts and graphs. The AI parsing happens after the fact — the user never has to do careful per-item logging.
 
 ---
@@ -484,6 +497,7 @@ Accessibility is the primary design concern for the food diary. Users may be unw
 - One patient can have one caretaker account for MVP (multiple caretakers post-MVP).
 
 **Post-MVP**
+
 - Push notification to the caretaker when the patient starts or completes an episode log.
 
 ---
@@ -495,12 +509,14 @@ Accessibility is the primary design concern for the food diary. Users may be unw
 The practitioner app is a separate web application accessible only via invitation.
 
 #### Access & Invitation
+
 - The patient initiates practitioner access from their settings by entering the practitioner's email address.
 - The practitioner receives an email invitation to create an account.
 - The practitioner can only see data for patients who have invited them.
 - The patient can revoke practitioner access at any time. Revocation removes or invalidates the **`practitioner_access` grant**, so the practitioner is **no longer authorized**; **RLS** then **denies** further reads. It does not retroactively erase what was already viewed.
 
 #### Practitioner Features
+
 - View a patient's full episode history, symptom logs, health markers, and food diary.
 - View charts and graphs of patient data (see section 9).
 - Review videos and photos captured during episodes.
@@ -508,6 +524,7 @@ The practitioner app is a separate web application accessible only via invitatio
 - Receive an in-app notification when the patient shares a specific chart with notes (see section 9).
 
 #### Practitioner Permissions
+
 - Read access to all patient health data returned over TLS when `practitioner_access` is active and MFA requirements are satisfied (see Security and Authentication sections).
 - Write access to observation notes only.
 - No ability to modify or delete patient data.
@@ -525,6 +542,7 @@ Both the user app and the practitioner app display data visualizations to help i
 **Implementation expectations (non-prescriptive):** Use **RLS-respecting** queries—e.g. Supabase **RPCs** (`SECURITY INVOKER`) or **SQL views** evaluated under the caller’s JWT so **`practitioner_access` / patient ownership** is enforced on underlying tables—or an **Edge Function** that runs validated SQL with the user’s context. **Do not** ship MVP charts that `SELECT *` all rows into the client to aggregate in JavaScript. Optional **materialized views** or scheduled rollups may be added later for very heavy dashboards.
 
 #### Available Charts
+
 - **Episode frequency** over time (daily/weekly/monthly)
 - **BAC readings** over time (line chart)
 - **Blood glucose** over time (line chart)
@@ -533,6 +551,7 @@ Both the user app and the practitioner app display data visualizations to help i
 - **Food diary correlation** — episodes mapped alongside food entries on a timeline
 
 #### Sharing (User → Practitioner)
+
 - The user can share a specific chart with applied filters to their practitioner, along with written observation notes.
 - The practitioner receives an in-app notification of the shared chart.
 
@@ -543,34 +562,39 @@ Both the user app and the practitioner app display data visualizations to help i
 **MVP**
 
 #### Recording
+
 - Short video and photo capture is available within the episode prompt flow, as configured in the symptom preset.
 - Maximum video duration is **15 seconds**. The user can stop recording early at any time.
 - After recording, the user is shown an **immediate playback preview** and given the option to **re-record** before saving.
 - Photos are captured as single frames.
 
 #### Server-side confidentiality (not client DEK encryption)
+
 - Media objects are stored **without** an application-layer DEK or per-file AES from `@abstrack/crypto`. Confidentiality is provided by a **private bucket**, **RLS on `storage.objects`**, **TLS** in transit, and **platform encryption at rest** on the storage backend (Supabase or self-hosted S3-compatible).
 - A **thumbnail** object may be stored alongside the full media (same bucket, separate object key) for grids; thumbnails are subject to the same access controls as the primary file.
 
 #### Storage
+
 - Media is stored in a **private Supabase Storage bucket** (`episode-media`).
 - Access is controlled via RLS policies on `storage.objects` — only the owning user, their caretaker, and their authorized practitioner (with valid grant + MFA) can create signed URLs or read objects per policy design.
 - **Time-limited signed URLs** (e.g. 60 seconds) authorize downloading the **object** for playback or display in the client.
 - The Supabase Storage SDK is the only storage interface the app talks to — the underlying backend is swappable via environment variables with no app code changes.
 
-| Phase | Storage Backend | Notes |
-|---|---|---|
-| Development | Supabase Cloud Storage (1GB free) | Sufficient for dev with compressed ~2-5MB videos |
-| Production | Self-hosted S3-compatible backend (RustFS or SeaweedFS on Oracle VM) | Swap via env vars only |
+| Phase       | Storage Backend                                                      | Notes                                            |
+| ----------- | -------------------------------------------------------------------- | ------------------------------------------------ |
+| Development | Supabase Cloud Storage (1GB free)                                    | Sufficient for dev with compressed ~2-5MB videos |
+| Production  | Self-hosted S3-compatible backend (RustFS or SeaweedFS on Oracle VM) | Swap via env vars only                           |
 
 > **Note:** MinIO Community was archived in February 2026. RustFS (Rust-based, ~2GB RAM) and SeaweedFS (Go-based, ~512MB RAM) are the recommended self-hosted S3-compatible replacements. SeaweedFS is preferred for Oracle VM free tier due to its lower memory footprint.
 
 #### Playback
+
 - To view media: obtain a signed URL → download blob over TLS → display in `<video>` or `<img>` (or equivalent React Native component). No client-side decryption step for application-layer crypto.
 - For 15-second compressed videos (~2-5MB), download-and-display is typically under one second on modern devices. No streaming required for MVP.
 - The user sees a brief loading indicator, then the media plays.
 
 #### Offline Media Capture
+
 PowerSync syncs database rows only — not files. A separate offline upload queue handles media:
 
 1. User captures video or photo while offline.
@@ -584,6 +608,7 @@ If **application-level encryption** is applied to queued media blobs, the **init
 Practitioner access to media uses the same **RLS + signed URL** model as other patient data once `practitioner_access` is granted; no separate key-exchange mechanism.
 
 **Post-MVP**
+
 - Multiple media captures per symptom prompt.
 
 ---
@@ -592,33 +617,33 @@ Practitioner access to media uses the same **RLS + signed URL** model as other p
 
 The following features are in scope for the two-month internship MVP:
 
-| Feature | Status |
-|---|---|
-| Authentication (patient, caretaker, practitioner) with TOTP | MVP |
-| Symptom preset setup | MVP |
-| Health marker preset setup | MVP |
-| Episode logging with prompt flow | MVP |
-| General wellness logging | MVP |
-| Food diary (free text + meal tag) | MVP |
-| Video & photo capture (private Storage + TLS + RLS; device at-rest protection offline) | MVP |
-| Caretaker account | MVP |
-| Healthcare practitioner app (view data, notes, media) | MVP |
-| Charts & graphs (server-side aggregation; client renders only) | MVP |
-| Offline support via PowerSync + SQLCipher (mobile) | MVP |
+| Feature                                                                                | Status |
+| -------------------------------------------------------------------------------------- | ------ |
+| Authentication (patient, caretaker, practitioner) with TOTP                            | MVP    |
+| Symptom preset setup                                                                   | MVP    |
+| Health marker preset setup                                                             | MVP    |
+| Episode logging with prompt flow                                                       | MVP    |
+| General wellness logging                                                               | MVP    |
+| Food diary (free text + meal tag)                                                      | MVP    |
+| Video & photo capture (private Storage + TLS + RLS; device at-rest protection offline) | MVP    |
+| Caretaker account                                                                      | MVP    |
+| Healthcare practitioner app (view data, notes, media)                                  | MVP    |
+| Charts & graphs (server-side aggregation; client renders only)                         | MVP    |
+| Offline support via PowerSync + SQLCipher (mobile)                                     | MVP    |
 
 ---
 
 ## Post-MVP Roadmap
 
-| Feature | Priority |
-|---|---|
-| Caretaker push notification on episode logged | High |
-| BACtrac Bluetooth API integration | High |
-| Dexcom G7 CGM API integration | High |
-| AI-assisted food diary parsing (structured nutritional data from free text) | High |
-| Self-hosted Supabase + SeaweedFS on Oracle VM | High (production) |
-| Native app store publishing (iOS & Android) | High (production) |
-| Multiple caretakers per patient | Medium |
-| Practitioner-initiated data request | Medium |
-| Export data to PDF (for medical appointments) | Medium |
-| Multi-language support | Low |
+| Feature                                                                     | Priority          |
+| --------------------------------------------------------------------------- | ----------------- |
+| Caretaker push notification on episode logged                               | High              |
+| BACtrac Bluetooth API integration                                           | High              |
+| Dexcom G7 CGM API integration                                               | High              |
+| AI-assisted food diary parsing (structured nutritional data from free text) | High              |
+| Self-hosted Supabase + SeaweedFS on Oracle VM                               | High (production) |
+| Native app store publishing (iOS & Android)                                 | High (production) |
+| Multiple caretakers per patient                                             | Medium            |
+| Practitioner-initiated data request                                         | Medium            |
+| Export data to PDF (for medical appointments)                               | Medium            |
+| Multi-language support                                                      | Low               |

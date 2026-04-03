@@ -86,7 +86,9 @@ describe('@abstrack/supabase native factory', () => {
 
 describe('mobile auth state sync', () => {
   test('returns to Login after SIGNED_OUT even if auth route was Signup', async () => {
-    let authStateListener: ((event: string, session: Session | null) => void) | null = null;
+    let authStateListener:
+      | ((event: string, session: Session | null) => void)
+      | null = null;
 
     const mockClient = {
       auth: {
@@ -146,7 +148,9 @@ describe('mobile auth state sync', () => {
   });
 
   test('switches between auth stack and main stack from auth events', async () => {
-    let authStateListener: ((event: string, session: Session | null) => void) | null = null;
+    let authStateListener:
+      | ((event: string, session: Session | null) => void)
+      | null = null;
 
     const mockClient = {
       auth: {

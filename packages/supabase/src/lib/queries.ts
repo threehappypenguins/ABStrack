@@ -5,13 +5,19 @@ export async function fetchProfileByUserId(
   client: AbstrackSupabaseClient,
   userId: string,
 ) {
-  return await client.from('profiles').select('*').eq('id', userId).maybeSingle();
+  return await client
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .maybeSingle();
 }
 
 /**
  * Minimal read to validate connectivity and session + RLS (empty error when allowed,
  * no rows when RLS blocks or user has no profile yet).
  */
-export async function healthCheckProfilesLimit1(client: AbstrackSupabaseClient) {
+export async function healthCheckProfilesLimit1(
+  client: AbstrackSupabaseClient,
+) {
   return await client.from('profiles').select('id').limit(1);
 }
