@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { Linking } from 'react-native';
 import type { AbstrackSupabaseClient, Session } from '@abstrack/supabase';
 
 import App from './App';
@@ -87,6 +88,9 @@ describe('@abstrack/supabase native factory', () => {
 });
 
 describe('mobile auth state sync', () => {
+  const invalidOrExpiredMessage =
+    'This reset link is invalid or expired. Request a new one.';
+
   test('returns to Login after SIGNED_OUT even if auth route was Signup', async () => {
     let authStateListener:
       | ((event: string, session: Session | null) => void)
@@ -203,5 +207,181 @@ describe('mobile auth state sync', () => {
       expect(getByText('Login')).toBeTruthy();
       expect(queryByText('Welcome to ABStrack')).toBeNull();
     });
+  });
+
+  test('does not enter recovery flow for unrelated deep links that only contain code', async () => {
+    const exchangeCodeForSession = jest.fn(async () => ({ error: null }));
+
+    const mockClient = {
+      auth: {
+        getSession: jest.fn(async () => ({ data: { session: null } })),
+        exchangeCodeForSession,
+        setSession: jest.fn(async () => ({ error: null })),
+        onAuthStateChange: jest.fn(() => ({
+          data: {
+            subscription: {
+              unsubscribe: jest.fn(),
+            },
+          },
+        })),
+      },
+    } as unknown as AbstrackSupabaseClient;
+
+    jest.mocked(getMobileSupabaseClient).mockReturnValue(mockClient);
+
+    const getInitialUrlSpy = jest
+      .spyOn(Linking, 'getInitialURL')
+      .mockResolvedValue('abstrack:///signup?code=abc&type=magiclink');
+
+    const { getByText, queryByText } = render(<App />);
+
+    await waitFor(() => {
+      expect(getByText('Need an account? Sign up')).toBeTruthy();
+    });
+
+    expect(queryByText('Set new password')).toBeNull();
+    expect(exchangeCodeForSession).not.toHaveBeenCalled();
+
+    getInitialUrlSpy.mockRestore();
+  });
+
+  test('enters recovery flow for recovery links targeting update-password', async () => {
+    const exchangeCodeForSession = jest.fn(async () => ({ error: null }));
+
+    const mockClient = {
+      auth: {
+        getSession: jest.fn(async () => ({ data: { session: null } })),
+        exchangeCodeForSession,
+        setSession: jest.fn(async () => ({ error: null })),
+        onAuthStateChange: jest.fn(() => ({
+          data: {
+            subscription: {
+              unsubscribe: jest.fn(),
+            },
+          },
+        })),
+      },
+    } as unknown as AbstrackSupabaseClient;
+
+    jest.mocked(getMobileSupabaseClient).mockReturnValue(mockClient);
+
+    const getInitialUrlSpy = jest
+      .spyOn(Linking, 'getInitialURL')
+      .mockResolvedValue('abstrack:///update-password?code=abc&type=recovery');
+
+    const { findByText } = render(<App />);
+
+    expect(await findByText('Set new password')).toBeTruthy();
+    expect(exchangeCodeForSession).toHaveBeenCalledWith('abc');
+
+    getInitialUrlSpy.mockRestore();
+  });
+
+  test('surfaces provider error from recovery deep links', async () => {
+    const exchangeCodeForSession = jest.fn(async () => ({ error: null }));
+
+    const mockClient = {
+      auth: {
+        getSession: jest.fn(async () => ({ data: { session: null } })),
+        exchangeCodeForSession,
+        setSession: jest.fn(async () => ({ error: null })),
+        onAuthStateChange: jest.fn(() => ({
+          data: {
+            subscription: {
+              unsubscribe: jest.fn(),
+            },
+          },
+        })),
+      },
+    } as unknown as AbstrackSupabaseClient;
+
+    jest.mocked(getMobileSupabaseClient).mockReturnValue(mockClient);
+
+    const getInitialUrlSpy = jest
+      .spyOn(Linking, 'getInitialURL')
+      .mockResolvedValue(
+        'abstrack:///update-password?type=recovery&error_description=access_denied',
+      );
+
+    const { findByText } = render(<App />);
+
+    expect(await findByText('Set new password')).toBeTruthy();
+    expect(await findByText(invalidOrExpiredMessage)).toBeTruthy();
+    expect(exchangeCodeForSession).not.toHaveBeenCalled();
+
+    getInitialUrlSpy.mockRestore();
+  });
+
+  test('shows invalid/expired message when recovery code exchange fails', async () => {
+    const exchangeCodeForSession = jest.fn(async () => ({
+      error: { message: 'invalid grant' },
+    }));
+
+    const mockClient = {
+      auth: {
+        getSession: jest.fn(async () => ({ data: { session: null } })),
+        exchangeCodeForSession,
+        setSession: jest.fn(async () => ({ error: null })),
+        onAuthStateChange: jest.fn(() => ({
+          data: {
+            subscription: {
+              unsubscribe: jest.fn(),
+            },
+          },
+        })),
+      },
+    } as unknown as AbstrackSupabaseClient;
+
+    jest.mocked(getMobileSupabaseClient).mockReturnValue(mockClient);
+
+    const getInitialUrlSpy = jest
+      .spyOn(Linking, 'getInitialURL')
+      .mockResolvedValue('abstrack:///update-password?code=abc&type=recovery');
+
+    const { findByText } = render(<App />);
+
+    expect(await findByText('Set new password')).toBeTruthy();
+    expect(await findByText(invalidOrExpiredMessage)).toBeTruthy();
+    expect(exchangeCodeForSession).toHaveBeenCalledWith('abc');
+
+    getInitialUrlSpy.mockRestore();
+  });
+
+  test('shows invalid/expired message when recovery token session setup fails', async () => {
+    const setSession = jest.fn(async () => ({
+      error: { message: 'invalid token' },
+    }));
+
+    const mockClient = {
+      auth: {
+        getSession: jest.fn(async () => ({ data: { session: null } })),
+        exchangeCodeForSession: jest.fn(async () => ({ error: null })),
+        setSession,
+        onAuthStateChange: jest.fn(() => ({
+          data: {
+            subscription: {
+              unsubscribe: jest.fn(),
+            },
+          },
+        })),
+      },
+    } as unknown as AbstrackSupabaseClient;
+
+    jest.mocked(getMobileSupabaseClient).mockReturnValue(mockClient);
+
+    const getInitialUrlSpy = jest.spyOn(Linking, 'getInitialURL').mockResolvedValue(
+      'abstrack:///update-password?type=recovery&access_token=access&refresh_token=refresh',
+    );
+
+    const { findByText } = render(<App />);
+
+    expect(await findByText('Set new password')).toBeTruthy();
+    expect(await findByText(invalidOrExpiredMessage)).toBeTruthy();
+    expect(setSession).toHaveBeenCalledWith({
+      access_token: 'access',
+      refresh_token: 'refresh',
+    });
+
+    getInitialUrlSpy.mockRestore();
   });
 });

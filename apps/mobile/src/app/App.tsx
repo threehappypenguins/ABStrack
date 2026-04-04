@@ -30,7 +30,11 @@ const MainStack = createNativeStackNavigator<MainStackParamList>();
 
 type AuthRoute = keyof AuthStackParamList;
 
-function parseDeepLinkParams(url: string): URLSearchParams {
+function parseDeepLink(url: string): {
+  params: URLSearchParams;
+  pathname: string;
+  hostname: string;
+} {
   try {
     const parsedUrl = new URL(url);
     const params = new URLSearchParams(parsedUrl.search);
@@ -40,10 +44,23 @@ function parseDeepLinkParams(url: string): URLSearchParams {
       params.set(key, value);
     });
 
-    return params;
+    return {
+      params,
+      pathname: parsedUrl.pathname,
+      hostname: parsedUrl.hostname,
+    };
   } catch {
-    return new URLSearchParams();
+    return {
+      params: new URLSearchParams(),
+      pathname: '',
+      hostname: '',
+    };
   }
+}
+
+function isRecoveryTargetPath(pathname: string, hostname: string): boolean {
+  const normalizedPath = pathname.replace(/\/+$/, '') || '/';
+  return normalizedPath === '/update-password' || hostname === 'update-password';
 }
 
 function getRecoveryErrorMessage(params: URLSearchParams): string | null {
@@ -67,15 +84,19 @@ export function App() {
     let mounted = true;
 
     const handleRecoveryLink = async (url: string) => {
-      const params = parseDeepLinkParams(url);
+      const { params, pathname, hostname } = parseDeepLink(url);
       const code = params.get('code');
       const type = params.get('type');
       const accessToken = params.get('access_token');
       const refreshToken = params.get('refresh_token');
+      const providerError = getRecoveryErrorMessage(params);
+      const isRecoveryType = type === 'recovery';
+      const hasRecoveryCredentials =
+        Boolean(code) || (Boolean(accessToken) && Boolean(refreshToken));
       const hasRecoveryPayload =
-        type === 'recovery' ||
-        Boolean(code) ||
-        (Boolean(accessToken) && Boolean(refreshToken));
+        isRecoveryType &&
+        isRecoveryTargetPath(pathname, hostname) &&
+        (hasRecoveryCredentials || Boolean(providerError));
 
       if (!hasRecoveryPayload || !mounted) {
         return;
@@ -84,7 +105,6 @@ export function App() {
       setRecoveryFlowActive(true);
       setAuthRoute('UpdatePassword');
 
-      const providerError = getRecoveryErrorMessage(params);
       if (providerError) {
         setRecoveryError(providerError);
         return;
