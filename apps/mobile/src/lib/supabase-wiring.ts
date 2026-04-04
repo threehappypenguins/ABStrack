@@ -177,14 +177,19 @@ class ChunkingSecureStore {
 
       if (meta) {
         const chunkCount = parseInt(meta, 10);
-        if (!isNaN(chunkCount) && chunkCount > 0) {
+        if (
+          !isNaN(chunkCount) &&
+          chunkCount > 0 &&
+          chunkCount <= ChunkingSecureStore.MAX_CHUNK_CLEANUP_ATTEMPTS
+        ) {
           for (let i = 0; i < chunkCount; i++) {
             const chunkKey = `${key}${ChunkingSecureStore.CHUNK_SUFFIX}.${i}`;
             await SecureStore.deleteItemAsync(chunkKey);
           }
         } else {
-          // Corrupted metadata means the chunk count is unknown. Best-effort sweep a bounded
-          // range of sequential chunk keys so orphaned data does not linger indefinitely.
+          // Corrupted or implausibly large metadata means the chunk count is not trustworthy.
+          // Best-effort sweep a bounded range of sequential chunk keys so orphaned data does
+          // not linger indefinitely or trigger extremely long cleanup loops.
           for (let i = 0; i < ChunkingSecureStore.MAX_CHUNK_CLEANUP_ATTEMPTS; i++) {
             const chunkKey = `${key}${ChunkingSecureStore.CHUNK_SUFFIX}.${i}`;
             const chunk = await SecureStore.getItemAsync(chunkKey);

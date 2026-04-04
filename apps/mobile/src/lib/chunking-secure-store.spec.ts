@@ -181,6 +181,19 @@ describe('ChunkingSecureStore (via supabase-wiring)', () => {
       expect(mockStore['auth-session.meta']).toBeUndefined();
     });
 
+    test('bounds cleanup when metadata parses to an implausibly large chunk count', async () => {
+      mockStore['auth-session.meta'] = '999999';
+      mockStore['auth-session.chunk.0'] = 'chunk0';
+
+      const getItemSpy = SecureStore.getItemAsync as jest.Mock;
+      const result = await mobileAuthStorage.getItem('auth-session');
+
+      expect(result).toBeNull();
+      expect(mockStore['auth-session.meta']).toBeUndefined();
+      expect(mockStore['auth-session.chunk.0']).toBeUndefined();
+      expect(getItemSpy).not.toHaveBeenCalledWith('auth-session.chunk.32');
+    });
+
     test('handles missing chunks gracefully', async () => {
       mockStore['auth-session.meta'] = '3';
       mockStore['auth-session.chunk.0'] = 'chunk0';
