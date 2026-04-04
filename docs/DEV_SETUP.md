@@ -263,11 +263,11 @@ Run from the **repository root** unless noted.
 
 Easier:
 
-| Goal                 | Command                         |
-| -------------------- | ------------------------------- |
-| User web app         | `pnpm web`                      |
-| Practitioner web app | `pnpm practitioner`             |
-| Mobile (Expo)        | `pnpm mobile`                   |
+| Goal                 | Command             |
+| -------------------- | ------------------- |
+| User web app         | `pnpm web`          |
+| Practitioner web app | `pnpm practitioner` |
+| Mobile (Expo)        | `pnpm mobile`       |
 
 Default ports depend on Nx/Next/Expo; watch the terminal output. For mobile, use Expo Go or an emulator after `nx start mobile`.
 

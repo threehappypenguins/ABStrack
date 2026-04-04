@@ -17,7 +17,8 @@ export function SignupScreen({ onGoToLogin }: { onGoToLogin: () => void }) {
 
   const handleSignup = async () => {
     const validationError =
-      validateEmailPassword(email, password) ?? validateSignupPassword(password);
+      validateEmailPassword(email, password) ??
+      validateSignupPassword(password);
     if (validationError) {
       setErrorMessage(validationError);
       setStatusMessage(null);
@@ -39,10 +40,15 @@ export function SignupScreen({ onGoToLogin }: { onGoToLogin: () => void }) {
       if (authError) {
         setErrorMessage(mapAuthError(authError.message));
       } else if (!data.session) {
-        setStatusMessage('Account created. Check your email to confirm your account.');
+        setStatusMessage(
+          'Account created. Check your email to confirm your account.',
+        );
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unexpected authentication error';
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Unexpected authentication error';
       setErrorMessage(mapAuthError(message));
       setStatusMessage(null);
     } finally {

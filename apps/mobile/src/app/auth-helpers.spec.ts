@@ -6,7 +6,9 @@ import {
 
 describe('validateEmailPassword', () => {
   test('returns error when both fields are empty', () => {
-    expect(validateEmailPassword('', '')).toBe('Enter your email and password.');
+    expect(validateEmailPassword('', '')).toBe(
+      'Enter your email and password.',
+    );
   });
 
   test('returns error for whitespace-only password', () => {

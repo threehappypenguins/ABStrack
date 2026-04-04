@@ -99,4 +99,13 @@ export const styles = StyleSheet.create({
   spacer: {
     height: 8,
   },
+  settingRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+  },
+  settingTextBlock: {
+    flex: 1,
+    gap: 6,
+  },
 });

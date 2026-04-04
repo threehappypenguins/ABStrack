@@ -38,7 +38,10 @@ export function LoginScreen({
         setErrorMessage(mapAuthError(authError.message));
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unexpected authentication error';
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Unexpected authentication error';
       setErrorMessage(mapAuthError(message));
     } finally {
       setLoading(false);

@@ -34,19 +34,27 @@ export function ForgotPasswordScreen({
     setStatusMessage(null);
 
     try {
-      const { error } = await resetPasswordForEmail(mobileSupabase, trimmedEmail, {
-        redirectTo: MOBILE_RESET_REDIRECT_URL,
-      });
+      const { error } = await resetPasswordForEmail(
+        mobileSupabase,
+        trimmedEmail,
+        {
+          redirectTo: MOBILE_RESET_REDIRECT_URL,
+        },
+      );
 
       if (error) {
         setErrorMessage(mapAuthError(error.message));
         return;
       }
 
-      setStatusMessage('Password reset email sent. Check your inbox for the recovery link.');
+      setStatusMessage(
+        'Password reset email sent. Check your inbox for the recovery link.',
+      );
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : 'Unexpected authentication error';
+        error instanceof Error
+          ? error.message
+          : 'Unexpected authentication error';
       setErrorMessage(mapAuthError(message));
       setStatusMessage(null);
     } finally {
@@ -87,7 +95,9 @@ export function ForgotPasswordScreen({
 
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={loading ? 'Sending reset email...' : 'Send reset email'}
+        accessibilityLabel={
+          loading ? 'Sending reset email...' : 'Send reset email'
+        }
         onPress={handleForgotPassword}
         disabled={loading || !email.trim()}
         style={[

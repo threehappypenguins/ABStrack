@@ -64,7 +64,8 @@ class ChunkingSecureStore {
         'chunkCount' in parsed
       ) {
         const format = (parsed as { format?: unknown }).format;
-        const activePrefix = (parsed as { activePrefix?: unknown }).activePrefix;
+        const activePrefix = (parsed as { activePrefix?: unknown })
+          .activePrefix;
         const chunkCount = (parsed as { chunkCount?: unknown }).chunkCount;
         if (
           format === ChunkingSecureStore.META_FORMAT &&
@@ -101,7 +102,9 @@ class ChunkingSecureStore {
 
   async getItem(key: string): Promise<string | null> {
     try {
-      const meta = await SecureStore.getItemAsync(key + ChunkingSecureStore.META_SUFFIX);
+      const meta = await SecureStore.getItemAsync(
+        key + ChunkingSecureStore.META_SUFFIX,
+      );
       if (!meta) {
         // No metadata = key wasn't chunked (single-value storage)
         return SecureStore.getItemAsync(key);
@@ -135,7 +138,9 @@ class ChunkingSecureStore {
 
       const chunkCount = parseInt(meta, 10);
       if (isNaN(chunkCount) || chunkCount < 1) {
-        console.warn(`[ChunkingSecureStore] Invalid chunk metadata for key: ${key}`);
+        console.warn(
+          `[ChunkingSecureStore] Invalid chunk metadata for key: ${key}`,
+        );
         await this.removeChunks(key);
         return readUnchunkedFallback();
       }
@@ -200,7 +205,11 @@ class ChunkingSecureStore {
     const base64 = ChunkingSecureStore.toBase64(value);
     // Determine original UTF-8 byte length from base64 so direct storage is used whenever raw
     // value fits within SecureStore's per-key limit. This avoids unnecessary chunking/IO.
-    const paddingLength = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;
+    const paddingLength = base64.endsWith('==')
+      ? 2
+      : base64.endsWith('=')
+        ? 1
+        : 0;
     const rawByteLength = (base64.length * 3) / 4 - paddingLength;
 
     if (rawByteLength <= ChunkingSecureStore.CHUNK_SIZE) {
@@ -250,7 +259,11 @@ class ChunkingSecureStore {
       // 1) Write new chunks under an inactive prefix.
       // 2) Flip metadata to the new prefix only after all chunks are written.
       for (let i = 0; i < chunks.length; i++) {
-        const chunkKey = ChunkingSecureStore.buildPrefixedChunkKey(key, nextPrefix, i);
+        const chunkKey = ChunkingSecureStore.buildPrefixedChunkKey(
+          key,
+          nextPrefix,
+          i,
+        );
         await SecureStore.setItemAsync(chunkKey, chunks[i]);
       }
 
@@ -318,11 +331,16 @@ class ChunkingSecureStore {
 
   private async deleteLegacyChunks(key: string): Promise<void> {
     for (let i = 0; i < ChunkingSecureStore.MAX_CHUNKS; i++) {
-      await SecureStore.deleteItemAsync(ChunkingSecureStore.buildLegacyChunkKey(key, i));
+      await SecureStore.deleteItemAsync(
+        ChunkingSecureStore.buildLegacyChunkKey(key, i),
+      );
     }
   }
 
-  private async deletePrefixedChunks(key: string, prefix: 'a' | 'b'): Promise<void> {
+  private async deletePrefixedChunks(
+    key: string,
+    prefix: 'a' | 'b',
+  ): Promise<void> {
     for (let i = 0; i < ChunkingSecureStore.MAX_CHUNKS; i++) {
       await SecureStore.deleteItemAsync(
         ChunkingSecureStore.buildPrefixedChunkKey(key, prefix, i),

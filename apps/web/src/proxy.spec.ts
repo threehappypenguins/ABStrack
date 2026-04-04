@@ -128,11 +128,13 @@ describe('web auth proxy', () => {
   });
 
   it('redirects authenticated user away from /login to /', async () => {
-    createServerClientMock.mockReturnValue(Promise.resolve({
-      auth: {
-        getUser: jest.fn(async () => ({ data: { user: { id: 'user-1' } } })),
-      },
-    } as unknown as ServerClient));
+    createServerClientMock.mockReturnValue(
+      Promise.resolve({
+        auth: {
+          getUser: jest.fn(async () => ({ data: { user: { id: 'user-1' } } })),
+        },
+      } as unknown as ServerClient),
+    );
 
     const result = await proxy(makeRequest('/login'));
 
@@ -147,9 +149,11 @@ describe('web auth proxy', () => {
   it('refreshes session via getUser and allows request when route is public', async () => {
     const getUser = jest.fn(async () => ({ data: { user: null } }));
 
-    createServerClientMock.mockReturnValue(Promise.resolve({
-      auth: { getUser },
-    } as unknown as ServerClient));
+    createServerClientMock.mockReturnValue(
+      Promise.resolve({
+        auth: { getUser },
+      } as unknown as ServerClient),
+    );
 
     const result = await proxy(makeRequest('/'));
 
