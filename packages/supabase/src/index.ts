@@ -17,9 +17,12 @@ export {
 export {
   getAuthUser,
   getSession,
+  resetPasswordForEmail,
   signInWithEmailPassword,
   signOut,
   signUpWithEmailPassword,
+  updateUserPassword,
+  updatePassword,
 } from './lib/auth.js';
 export {
   fetchProfileByUserId,

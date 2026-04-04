@@ -5,7 +5,7 @@ import { createServerClient } from './lib/supabase/server-client';
 const protectedRoutes = ['/dashboard'];
 
 // Public auth routes that redirect authenticated users
-const authRoutes = ['/login', '/signup'];
+const authRoutes = ['/login', '/signup', '/forgot-password'];
 
 function withSupabaseCookies(
   response: NextResponse,

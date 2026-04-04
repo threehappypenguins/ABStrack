@@ -20,6 +20,8 @@ jest.mock('next/server', () => ({
 
 describe('logout route', () => {
   const createServerClientMock = jest.mocked(createServerClient);
+  type CookieMethodsArg = Parameters<typeof createServerClient>[0];
+  type ServerClient = Awaited<ReturnType<typeof createServerClient>>;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -49,11 +51,11 @@ describe('logout route', () => {
       ]);
     });
 
-    createServerClientMock.mockImplementation((methods: any) => {
+    createServerClientMock.mockImplementation((methods: CookieMethodsArg) => {
       cookieMethods = methods;
-      return {
+      return Promise.resolve({
         auth: { signOut },
-      } as any;
+      } as unknown as ServerClient);
     });
 
     const request = {
@@ -61,7 +63,7 @@ describe('logout route', () => {
       cookies: {
         getAll: jest.fn(() => [{ name: 'sb-access-token', value: 'token' }]),
       },
-    } as any;
+    } as unknown as Parameters<typeof POST>[0];
 
     const response = await POST(request);
 

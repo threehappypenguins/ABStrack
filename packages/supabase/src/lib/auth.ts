@@ -33,6 +33,41 @@ export async function signOut(client: AbstrackSupabaseClient) {
   return client.auth.signOut();
 }
 
+export async function resetPasswordForEmail(
+  client: AbstrackSupabaseClient,
+  email: string,
+  optionsOrRedirectTo?:
+    | string
+    | {
+        redirectTo?: string;
+        captchaToken?: string;
+      },
+) {
+  const options =
+    typeof optionsOrRedirectTo === 'string'
+      ? { redirectTo: optionsOrRedirectTo }
+      : optionsOrRedirectTo;
+
+  return client.auth.resetPasswordForEmail(email, {
+    redirectTo: options?.redirectTo,
+    captchaToken: options?.captchaToken,
+  });
+}
+
+export async function updateUserPassword(
+  client: AbstrackSupabaseClient,
+  password: string,
+) {
+  return client.auth.updateUser({ password });
+}
+
+export async function updatePassword(
+  client: AbstrackSupabaseClient,
+  password: string,
+) {
+  return updateUserPassword(client, password);
+}
+
 export async function getSession(client: AbstrackSupabaseClient) {
   return client.auth.getSession();
 }
