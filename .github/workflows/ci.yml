@@ -13,6 +13,9 @@ permissions:
 jobs:
   main:
     runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -36,6 +39,11 @@ jobs:
         with:
           node-version: 20
           cache: 'pnpm'
+
+      - name: Validate required public Supabase env vars
+        run: |
+          test -n "$NEXT_PUBLIC_SUPABASE_URL" || (echo "::error::NEXT_PUBLIC_SUPABASE_URL is missing" && exit 1)
+          test -n "$NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY" || (echo "::error::NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY is missing" && exit 1)
 
       - run: pnpm install --frozen-lockfile
 
