@@ -95,9 +95,21 @@ describe('ChunkingSecureStore (via supabase-wiring)', () => {
       expect(mockStore['auth-session.meta']).toBeUndefined(); // No metadata
     });
 
-    test('chunks values that exceed 2044 bytes when base64-encoded', async () => {
-      // ~1600 chars → ~2133 bytes when base64-encoded → exceeds 2044-byte limit → needs chunking
-      const largeValue = 'x'.repeat(1600);
+    test('stores values directly when raw UTF-8 fits even if base64 would expand', async () => {
+      // 1600 ASCII chars fit raw limit (<= 2044) so this should remain unchunked,
+      // even though base64 expansion would exceed 2044.
+      const mediumValue = 'x'.repeat(1600);
+
+      await mobileAuthStorage.setItem('auth-session', mediumValue);
+      const retrieved = await mobileAuthStorage.getItem('auth-session');
+
+      expect(retrieved).toBe(mediumValue);
+      expect(mockStore['auth-session']).toBe(mediumValue);
+      expect(mockStore['auth-session.meta']).toBeUndefined();
+    });
+
+    test('chunks values that exceed 2044 raw UTF-8 bytes', async () => {
+      const largeValue = 'x'.repeat(3000);
 
       await mobileAuthStorage.setItem('auth-session', largeValue);
       const retrieved = await mobileAuthStorage.getItem('auth-session');
@@ -107,6 +119,21 @@ describe('ChunkingSecureStore (via supabase-wiring)', () => {
       expect(mockStore['auth-session.meta']).toBeDefined(); // Metadata present (chunked)
       expect(mockStore['auth-session.chunk.0']).toBeDefined(); // First chunk exists
       expect(mockStore['auth-session.chunk.1']).toBeDefined(); // Second chunk exists
+    });
+
+    test('fails fast when value exceeds supported max chunk count', async () => {
+      // MAX_CHUNKS is 32 and CHUNK_SIZE is 2044, so this base64 payload needs > 32 chunks.
+      const oversizedValue = 'x'.repeat(70000);
+      mockStore['auth-session'] = 'existing-session';
+
+      await expect(mobileAuthStorage.setItem('auth-session', oversizedValue)).rejects.toThrow(
+        /exceeds supported size/,
+      );
+
+      // Existing direct value should remain because we fail before destructive cleanup.
+      expect(mockStore['auth-session']).toBe('existing-session');
+      expect(mockStore['auth-session.meta']).toBeUndefined();
+      expect(mockStore['auth-session.chunk.0']).toBeUndefined();
     });
 
     test('rolls back partial chunked writes when SecureStore throws mid-write', async () => {

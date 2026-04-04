@@ -29,7 +29,7 @@ class ChunkingSecureStore {
   private static readonly CHUNK_SIZE = 2044; // Per-key byte limit is 2048; 2044 is conservative
   private static readonly CHUNK_SUFFIX = '.chunk';
   private static readonly META_SUFFIX = '.meta';
-  private static readonly MAX_CHUNK_CLEANUP_ATTEMPTS = 32;
+  private static readonly MAX_CHUNKS = 32;
 
   private static toBase64(str: string): string {
     // Encode UTF-8 string to base64 using cross-platform js-base64 library
@@ -106,11 +106,17 @@ class ChunkingSecureStore {
   }
 
   async setItem(key: string, value: string): Promise<void> {
+    let shouldRollback = false;
     try {
       // ENCODING FLOW: String → UTF-8 bytes → base64 string (ASCII-safe, no multi-byte sequences)
       // This ensures chunk boundaries can be placed anywhere without splitting UTF-8 code points.
       const base64 = ChunkingSecureStore.toBase64(value);
-      if (base64.length <= ChunkingSecureStore.CHUNK_SIZE) {
+      // Determine original UTF-8 byte length from base64 so direct storage is used whenever raw
+      // value fits within SecureStore's per-key limit. This avoids unnecessary chunking/IO.
+      const paddingLength = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;
+      const rawByteLength = (base64.length * 3) / 4 - paddingLength;
+
+      if (rawByteLength <= ChunkingSecureStore.CHUNK_SIZE) {
         // Small value: store UTF-8 string directly (not base64-encoded), clean up any existing chunks
         await this.removeChunks(key);
         await SecureStore.setItemAsync(key, value);
@@ -118,10 +124,6 @@ class ChunkingSecureStore {
       }
 
       // Large value: chunk the base64 string by character position (safe: base64 is pure ASCII)
-      // First, clean up the main key and any existing chunks to avoid orphaned data
-      await SecureStore.deleteItemAsync(key);
-      await this.removeChunks(key);
-
       // Split base64 string into chunks that respect the byte limit
       // Since base64 is pure ASCII (single-byte characters), any split point is safe.
       const chunks: string[] = [];
@@ -131,6 +133,18 @@ class ChunkingSecureStore {
         chunks.push(chunk);
         pos += ChunkingSecureStore.CHUNK_SIZE;
       }
+
+      // Enforce a hard upper bound so cleanup remains correct (SecureStore has no key enumeration).
+      if (chunks.length > ChunkingSecureStore.MAX_CHUNKS) {
+        throw new Error(
+          `Auth session exceeds supported size: requires ${chunks.length} chunks (max ${ChunkingSecureStore.MAX_CHUNKS})`,
+        );
+      }
+
+      // First, clean up the main key and any existing chunks to avoid orphaned data
+      shouldRollback = true;
+      await SecureStore.deleteItemAsync(key);
+      await this.removeChunks(key);
 
       // Store base64 chunks (not UTF-8 bytes) so no decoding happens at chunk boundaries
       // IMPORTANT: Write metadata FIRST as a marker that chunking is in progress.
@@ -146,14 +160,16 @@ class ChunkingSecureStore {
       }
     } catch (error) {
       console.error(`[ChunkingSecureStore] Error writing key ${key}:`, error);
-      try {
-        await SecureStore.deleteItemAsync(key);
-        await this.removeChunks(key);
-      } catch (cleanupError) {
-        console.error(
-          `[ChunkingSecureStore] Error rolling back failed write for key ${key}:`,
-          cleanupError,
-        );
+      if (shouldRollback) {
+        try {
+          await SecureStore.deleteItemAsync(key);
+          await this.removeChunks(key);
+        } catch (cleanupError) {
+          console.error(
+            `[ChunkingSecureStore] Error rolling back failed write for key ${key}:`,
+            cleanupError,
+          );
+        }
       }
       throw error;
     }
@@ -180,7 +196,7 @@ class ChunkingSecureStore {
         if (
           !isNaN(chunkCount) &&
           chunkCount > 0 &&
-          chunkCount <= ChunkingSecureStore.MAX_CHUNK_CLEANUP_ATTEMPTS
+          chunkCount <= ChunkingSecureStore.MAX_CHUNKS
         ) {
           for (let i = 0; i < chunkCount; i++) {
             const chunkKey = `${key}${ChunkingSecureStore.CHUNK_SUFFIX}.${i}`;
@@ -190,7 +206,7 @@ class ChunkingSecureStore {
           // Corrupted or implausibly large metadata means the chunk count is not trustworthy.
           // Best-effort sweep a bounded range of sequential chunk keys so orphaned data does
           // not linger indefinitely or trigger extremely long cleanup loops.
-          for (let i = 0; i < ChunkingSecureStore.MAX_CHUNK_CLEANUP_ATTEMPTS; i++) {
+          for (let i = 0; i < ChunkingSecureStore.MAX_CHUNKS; i++) {
             const chunkKey = `${key}${ChunkingSecureStore.CHUNK_SUFFIX}.${i}`;
             const chunk = await SecureStore.getItemAsync(chunkKey);
             if (!chunk) {
