@@ -108,6 +108,36 @@ describe('ChunkingSecureStore (via supabase-wiring)', () => {
       expect(mockStore['auth-session.chunk.1']).toBeDefined(); // Second chunk exists
     });
 
+    test('rolls back partial chunked writes when SecureStore throws mid-write', async () => {
+      const largeValue = 'x'.repeat(5000);
+      let writeCount = 0;
+
+      (SecureStore.setItemAsync as jest.Mock).mockImplementation(
+        (key: string, value: string) => {
+          if (Buffer.byteLength(value, 'utf-8') > 2048) {
+            throw new Error(`Value exceeds 2048 byte limit for key: ${key}`);
+          }
+
+          writeCount += 1;
+          if (writeCount === 3) {
+            throw new Error('Simulated SecureStore failure');
+          }
+
+          mockStore[key] = value;
+          return Promise.resolve();
+        },
+      );
+
+      await expect(mobileAuthStorage.setItem('auth-session', largeValue)).rejects.toThrow(
+        'Simulated SecureStore failure',
+      );
+
+      expect(mockStore['auth-session']).toBeUndefined();
+      expect(mockStore['auth-session.meta']).toBeUndefined();
+      expect(mockStore['auth-session.chunk.0']).toBeUndefined();
+      expect(mockStore['auth-session.chunk.1']).toBeUndefined();
+    });
+
     test('removes all chunks when removing a key', async () => {
       const largeValue = 'x'.repeat(5000);
 
@@ -136,6 +166,16 @@ describe('ChunkingSecureStore (via supabase-wiring)', () => {
       expect(mockStore['auth-session.meta']).toBeUndefined();
     });
 
+    test('falls back to main key when corrupted metadata exists with valid direct value', async () => {
+      mockStore['auth-session'] = 'direct-session-value';
+      mockStore['auth-session.meta'] = 'invalid-number';
+
+      const result = await mobileAuthStorage.getItem('auth-session');
+
+      expect(result).toBe('direct-session-value');
+      expect(mockStore['auth-session.meta']).toBeUndefined();
+    });
+
     test('handles missing chunks gracefully', async () => {
       mockStore['auth-session.meta'] = '3';
       mockStore['auth-session.chunk.0'] = 'chunk0';
@@ -145,6 +185,21 @@ describe('ChunkingSecureStore (via supabase-wiring)', () => {
       const result = await mobileAuthStorage.getItem('auth-session');
 
       expect(result).toBeNull();
+      expect(mockStore['auth-session.meta']).toBeUndefined();
+      expect(mockStore['auth-session.chunk.0']).toBeUndefined();
+      expect(mockStore['auth-session.chunk.1']).toBeUndefined();
+    });
+
+    test('falls back to main key when chunk metadata is stale', async () => {
+      mockStore['auth-session'] = 'direct-session-value';
+      mockStore['auth-session.meta'] = '3';
+      mockStore['auth-session.chunk.0'] = 'chunk0';
+      mockStore['auth-session.chunk.1'] = 'chunk1';
+      // chunk.2 missing
+
+      const result = await mobileAuthStorage.getItem('auth-session');
+
+      expect(result).toBe('direct-session-value');
       expect(mockStore['auth-session.meta']).toBeUndefined();
       expect(mockStore['auth-session.chunk.0']).toBeUndefined();
       expect(mockStore['auth-session.chunk.1']).toBeUndefined();

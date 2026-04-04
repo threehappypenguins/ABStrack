@@ -49,11 +49,23 @@ class ChunkingSecureStore {
         return SecureStore.getItemAsync(key);
       }
 
+      const readUnchunkedFallback = async () => SecureStore.getItemAsync(key);
+
       const chunkCount = parseInt(meta, 10);
       if (isNaN(chunkCount) || chunkCount < 1) {
         console.warn(`[ChunkingSecureStore] Invalid chunk metadata for key: ${key}`);
         await this.removeChunks(key);
-        return null;
+        return readUnchunkedFallback();
+      }
+
+      const firstChunkKey = `${key}${ChunkingSecureStore.CHUNK_SUFFIX}.0`;
+      const firstChunk = await SecureStore.getItemAsync(firstChunkKey);
+      if (!firstChunk) {
+        console.warn(
+          `[ChunkingSecureStore] Missing first chunk for key: ${key} (falling back to unchunked value)`,
+        );
+        await this.removeChunks(key);
+        return readUnchunkedFallback();
       }
 
       // Reassemble chunks in order
@@ -63,9 +75,9 @@ class ChunkingSecureStore {
       //
       // If metadata exists but chunks are missing, it indicates an incomplete write
       // (e.g., app crashed after metadata was written but before all chunks).
-      // We return null to signal the session is broken; caller should trigger re-auth.
-      const chunks: string[] = [];
-      for (let i = 0; i < chunkCount; i++) {
+      // We try to clean up stale chunking metadata and fall back to the unchunked key.
+      const chunks: string[] = [firstChunk];
+      for (let i = 1; i < chunkCount; i++) {
         const chunkKey = `${key}${ChunkingSecureStore.CHUNK_SUFFIX}.${i}`;
         const chunk = await SecureStore.getItemAsync(chunkKey);
         if (!chunk) {
@@ -73,7 +85,7 @@ class ChunkingSecureStore {
             `[ChunkingSecureStore] Missing chunk ${i}/${chunkCount} for key: ${key} (incomplete write/crash recovery)`,
           );
           await this.removeChunks(key);
-          return null;
+          return readUnchunkedFallback();
         }
         chunks.push(chunk);
       }
@@ -128,6 +140,8 @@ class ChunkingSecureStore {
       }
     } catch (error) {
       console.error(`[ChunkingSecureStore] Error writing key ${key}:`, error);
+      await SecureStore.deleteItemAsync(key);
+      await this.removeChunks(key);
       throw error;
     }
   }
