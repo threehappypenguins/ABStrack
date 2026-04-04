@@ -7,6 +7,8 @@ import { mobileAuthStorage } from './supabase-wiring';
 
 describe('ChunkingSecureStore (via supabase-wiring)', () => {
   let mockStore: Record<string, string>;
+  const chunkEntries = () =>
+    Object.entries(mockStore).filter(([key]) => key.startsWith('auth-session.chunk.'));
 
   beforeEach(() => {
     mockStore = {};
@@ -66,12 +68,10 @@ describe('ChunkingSecureStore (via supabase-wiring)', () => {
       // Should create chunk keys and metadata
       expect(mockStore['auth-session']).toBeUndefined(); // Not stored as single value
       expect(mockStore['auth-session.meta']).toBeDefined();
-      expect(mockStore['auth-session.chunk.0']).toBeDefined();
-      expect(mockStore['auth-session.chunk.1']).toBeDefined();
+      const chunks = chunkEntries();
+      expect(chunks.length).toBeGreaterThanOrEqual(2);
       // Chunks should not exceed 2048 bytes individually
-      expect(Buffer.byteLength(mockStore['auth-session.chunk.0'], 'utf-8')).toBeLessThanOrEqual(
-        2048,
-      );
+      expect(Buffer.byteLength(chunks[0][1], 'utf-8')).toBeLessThanOrEqual(2048);
     });
 
     test('reassembles chunked values on read', async () => {
@@ -117,8 +117,7 @@ describe('ChunkingSecureStore (via supabase-wiring)', () => {
       expect(retrieved).toBe(largeValue);
       expect(mockStore['auth-session']).toBeUndefined(); // Not stored as single value
       expect(mockStore['auth-session.meta']).toBeDefined(); // Metadata present (chunked)
-      expect(mockStore['auth-session.chunk.0']).toBeDefined(); // First chunk exists
-      expect(mockStore['auth-session.chunk.1']).toBeDefined(); // Second chunk exists
+      expect(chunkEntries().length).toBeGreaterThanOrEqual(2);
     });
 
     test('fails fast when value exceeds supported max chunk count', async () => {
@@ -133,7 +132,7 @@ describe('ChunkingSecureStore (via supabase-wiring)', () => {
       // Existing direct value should remain because we fail before destructive cleanup.
       expect(mockStore['auth-session']).toBe('existing-session');
       expect(mockStore['auth-session.meta']).toBeUndefined();
-      expect(mockStore['auth-session.chunk.0']).toBeUndefined();
+      expect(chunkEntries().length).toBe(0);
     });
 
     test('rolls back partial chunked writes when SecureStore throws mid-write', async () => {
@@ -162,8 +161,7 @@ describe('ChunkingSecureStore (via supabase-wiring)', () => {
 
       expect(mockStore['auth-session']).toBeUndefined();
       expect(mockStore['auth-session.meta']).toBeUndefined();
-      expect(mockStore['auth-session.chunk.0']).toBeUndefined();
-      expect(mockStore['auth-session.chunk.1']).toBeUndefined();
+      expect(chunkEntries().length).toBe(0);
     });
 
     test('removes all chunks when removing a key', async () => {
@@ -171,13 +169,13 @@ describe('ChunkingSecureStore (via supabase-wiring)', () => {
 
       await mobileAuthStorage.setItem('auth-session', largeValue);
       expect(mockStore['auth-session.meta']).toBeDefined();
-      expect(mockStore['auth-session.chunk.0']).toBeDefined();
+      expect(chunkEntries().length).toBeGreaterThanOrEqual(1);
 
       await mobileAuthStorage.removeItem('auth-session');
 
       expect(mockStore['auth-session']).toBeUndefined();
       expect(mockStore['auth-session.meta']).toBeUndefined();
-      expect(mockStore['auth-session.chunk.0']).toBeUndefined();
+      expect(chunkEntries().length).toBe(0);
     });
 
     test('returns null for missing key', async () => {
@@ -311,10 +309,13 @@ describe('ChunkingSecureStore (via supabase-wiring)', () => {
       expect(mockStore['auth-session']).toBeUndefined();
       const metaValue = mockStore['auth-session.meta'];
       expect(metaValue).toBeDefined();
-      const chunkCount = parseInt(metaValue!, 10);
+      const parsedMeta = JSON.parse(metaValue!);
+      const chunkCount =
+        typeof parsedMeta === 'object' && parsedMeta !== null && 'chunkCount' in parsedMeta
+          ? (parsedMeta as { chunkCount: number }).chunkCount
+          : parseInt(metaValue!, 10);
       expect(chunkCount).toBeGreaterThanOrEqual(2); // Should require multiple chunks
-      expect(mockStore['auth-session.chunk.0']).toBeDefined();
-      expect(mockStore['auth-session.chunk.1']).toBeDefined();
+      expect(chunkEntries().length).toBeGreaterThanOrEqual(2);
 
       // Verify no corruption for common multi-byte sequences
       expect(retrieved).toContain('Françoise Müller 🏥 Patient');

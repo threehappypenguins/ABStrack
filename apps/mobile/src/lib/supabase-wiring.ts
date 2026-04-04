@@ -30,6 +30,63 @@ class ChunkingSecureStore {
   private static readonly CHUNK_SUFFIX = '.chunk';
   private static readonly META_SUFFIX = '.meta';
   private static readonly MAX_CHUNKS = 32;
+  private static readonly META_FORMAT = 'v2';
+  private static readonly PREFIX_A = 'a';
+  private static readonly PREFIX_B = 'b';
+
+  private static buildLegacyChunkKey(key: string, index: number): string {
+    return `${key}${ChunkingSecureStore.CHUNK_SUFFIX}.${index}`;
+  }
+
+  private static buildPrefixedChunkKey(
+    key: string,
+    prefix: 'a' | 'b',
+    index: number,
+  ): string {
+    return `${key}${ChunkingSecureStore.CHUNK_SUFFIX}.${prefix}.${index}`;
+  }
+
+  private static parseChunkMeta(rawMeta: string | null): {
+    activePrefix: 'a' | 'b';
+    chunkCount: number;
+  } | null {
+    if (!rawMeta) {
+      return null;
+    }
+
+    try {
+      const parsed: unknown = JSON.parse(rawMeta);
+      if (
+        typeof parsed === 'object' &&
+        parsed !== null &&
+        'format' in parsed &&
+        'activePrefix' in parsed &&
+        'chunkCount' in parsed
+      ) {
+        const format = (parsed as { format?: unknown }).format;
+        const activePrefix = (parsed as { activePrefix?: unknown }).activePrefix;
+        const chunkCount = (parsed as { chunkCount?: unknown }).chunkCount;
+        if (
+          format === ChunkingSecureStore.META_FORMAT &&
+          (activePrefix === ChunkingSecureStore.PREFIX_A ||
+            activePrefix === ChunkingSecureStore.PREFIX_B) &&
+          typeof chunkCount === 'number' &&
+          Number.isInteger(chunkCount) &&
+          chunkCount > 0 &&
+          chunkCount <= ChunkingSecureStore.MAX_CHUNKS
+        ) {
+          return {
+            activePrefix,
+            chunkCount,
+          };
+        }
+      }
+    } catch {
+      // Legacy metadata is a plain number string; fall through.
+    }
+
+    return null;
+  }
 
   private static toBase64(str: string): string {
     // Encode UTF-8 string to base64 using cross-platform js-base64 library
@@ -52,6 +109,30 @@ class ChunkingSecureStore {
 
       const readUnchunkedFallback = async () => SecureStore.getItemAsync(key);
 
+      const parsedMeta = ChunkingSecureStore.parseChunkMeta(meta);
+      if (parsedMeta) {
+        const chunks: string[] = [];
+        for (let i = 0; i < parsedMeta.chunkCount; i++) {
+          const chunkKey = ChunkingSecureStore.buildPrefixedChunkKey(
+            key,
+            parsedMeta.activePrefix,
+            i,
+          );
+          const chunk = await SecureStore.getItemAsync(chunkKey);
+          if (!chunk) {
+            console.warn(
+              `[ChunkingSecureStore] Missing chunk ${i}/${parsedMeta.chunkCount} for key: ${key} (incomplete write/crash recovery)`,
+            );
+            await this.removeChunks(key);
+            return readUnchunkedFallback();
+          }
+          chunks.push(chunk);
+        }
+
+        const base64 = chunks.join('');
+        return ChunkingSecureStore.fromBase64(base64);
+      }
+
       const chunkCount = parseInt(meta, 10);
       if (isNaN(chunkCount) || chunkCount < 1) {
         console.warn(`[ChunkingSecureStore] Invalid chunk metadata for key: ${key}`);
@@ -59,7 +140,15 @@ class ChunkingSecureStore {
         return readUnchunkedFallback();
       }
 
-      const firstChunkKey = `${key}${ChunkingSecureStore.CHUNK_SUFFIX}.0`;
+      if (chunkCount > ChunkingSecureStore.MAX_CHUNKS) {
+        console.warn(
+          `[ChunkingSecureStore] Metadata chunk count exceeds supported max for key: ${key}`,
+        );
+        await this.removeChunks(key);
+        return readUnchunkedFallback();
+      }
+
+      const firstChunkKey = ChunkingSecureStore.buildLegacyChunkKey(key, 0);
       const firstChunk = await SecureStore.getItemAsync(firstChunkKey);
       if (!firstChunk) {
         console.warn(
@@ -79,7 +168,7 @@ class ChunkingSecureStore {
       // We try to clean up stale chunking metadata and fall back to the unchunked key.
       const chunks: string[] = [firstChunk];
       for (let i = 1; i < chunkCount; i++) {
-        const chunkKey = `${key}${ChunkingSecureStore.CHUNK_SUFFIX}.${i}`;
+        const chunkKey = ChunkingSecureStore.buildLegacyChunkKey(key, i);
         const chunk = await SecureStore.getItemAsync(chunkKey);
         if (!chunk) {
           console.warn(
@@ -118,8 +207,8 @@ class ChunkingSecureStore {
 
       if (rawByteLength <= ChunkingSecureStore.CHUNK_SIZE) {
         // Small value: store UTF-8 string directly (not base64-encoded), clean up any existing chunks
-        await this.removeChunks(key);
         await SecureStore.setItemAsync(key, value);
+        await this.removeChunks(key);
         return;
       }
 
@@ -141,23 +230,48 @@ class ChunkingSecureStore {
         );
       }
 
-      // First, clean up the main key and any existing chunks to avoid orphaned data
+      const currentMetaRaw = await SecureStore.getItemAsync(
+        key + ChunkingSecureStore.META_SUFFIX,
+      );
+      const currentMeta = ChunkingSecureStore.parseChunkMeta(currentMetaRaw);
+      const nextPrefix: 'a' | 'b' =
+        currentMeta?.activePrefix === ChunkingSecureStore.PREFIX_A
+          ? ChunkingSecureStore.PREFIX_B
+          : ChunkingSecureStore.PREFIX_A;
+
+      // Prepare target prefix by clearing any stale data for that inactive prefix.
+      await this.deletePrefixedChunks(key, nextPrefix);
+
       shouldRollback = true;
-      await SecureStore.deleteItemAsync(key);
-      await this.removeChunks(key);
 
       // Store base64 chunks (not UTF-8 bytes) so no decoding happens at chunk boundaries
-      // IMPORTANT: Write metadata FIRST as a marker that chunking is in progress.
-      // If the app crashes after this point, the next read will detect incomplete chunks
-      // and error cleanly (triggering re-auth). Without metadata, orphaned chunks are undiscoverable.
-      const metaKey = key + ChunkingSecureStore.META_SUFFIX;
-      await SecureStore.setItemAsync(metaKey, chunks.length.toString());
-
-      // Then write chunks; if crash occurs here, next read will see metadata but missing chunks
+      // Two-phase write:
+      // 1) Write new chunks under an inactive prefix.
+      // 2) Flip metadata to the new prefix only after all chunks are written.
       for (let i = 0; i < chunks.length; i++) {
-        const chunkKey = `${key}${ChunkingSecureStore.CHUNK_SUFFIX}.${i}`;
+        const chunkKey = ChunkingSecureStore.buildPrefixedChunkKey(key, nextPrefix, i);
         await SecureStore.setItemAsync(chunkKey, chunks[i]);
       }
+
+      const metaKey = key + ChunkingSecureStore.META_SUFFIX;
+      await SecureStore.setItemAsync(
+        metaKey,
+        JSON.stringify({
+          format: ChunkingSecureStore.META_FORMAT,
+          activePrefix: nextPrefix,
+          chunkCount: chunks.length,
+        }),
+      );
+
+      // Cleanup old direct value and inactive chunk data best-effort after commit.
+      await SecureStore.deleteItemAsync(key);
+      const oldPrefix: 'a' | 'b' =
+        nextPrefix === ChunkingSecureStore.PREFIX_A
+          ? ChunkingSecureStore.PREFIX_B
+          : ChunkingSecureStore.PREFIX_A;
+      await this.deletePrefixedChunks(key, oldPrefix);
+      await this.deleteLegacyChunks(key);
+      shouldRollback = false;
     } catch (error) {
       console.error(`[ChunkingSecureStore] Error writing key ${key}:`, error);
       if (shouldRollback) {
@@ -188,41 +302,30 @@ class ChunkingSecureStore {
 
   private async removeChunks(key: string): Promise<void> {
     try {
-      const metaKey = key + ChunkingSecureStore.META_SUFFIX;
-      const meta = await SecureStore.getItemAsync(metaKey);
-
-      if (meta) {
-        const chunkCount = parseInt(meta, 10);
-        if (
-          !isNaN(chunkCount) &&
-          chunkCount > 0 &&
-          chunkCount <= ChunkingSecureStore.MAX_CHUNKS
-        ) {
-          for (let i = 0; i < chunkCount; i++) {
-            const chunkKey = `${key}${ChunkingSecureStore.CHUNK_SUFFIX}.${i}`;
-            await SecureStore.deleteItemAsync(chunkKey);
-          }
-        } else {
-          // Corrupted or implausibly large metadata means the chunk count is not trustworthy.
-          // Best-effort sweep a bounded range of sequential chunk keys so orphaned data does
-          // not linger indefinitely or trigger extremely long cleanup loops.
-          for (let i = 0; i < ChunkingSecureStore.MAX_CHUNKS; i++) {
-            const chunkKey = `${key}${ChunkingSecureStore.CHUNK_SUFFIX}.${i}`;
-            const chunk = await SecureStore.getItemAsync(chunkKey);
-            if (!chunk) {
-              break;
-            }
-            await SecureStore.deleteItemAsync(chunkKey);
-          }
-        }
-        await SecureStore.deleteItemAsync(metaKey);
-      }
+      await this.deleteLegacyChunks(key);
+      await this.deletePrefixedChunks(key, ChunkingSecureStore.PREFIX_A);
+      await this.deletePrefixedChunks(key, ChunkingSecureStore.PREFIX_B);
+      await SecureStore.deleteItemAsync(key + ChunkingSecureStore.META_SUFFIX);
     } catch (error) {
       console.error(
         `[ChunkingSecureStore] Error cleaning up chunks for key ${key}:`,
         error,
       );
       // Best-effort cleanup; don't throw
+    }
+  }
+
+  private async deleteLegacyChunks(key: string): Promise<void> {
+    for (let i = 0; i < ChunkingSecureStore.MAX_CHUNKS; i++) {
+      await SecureStore.deleteItemAsync(ChunkingSecureStore.buildLegacyChunkKey(key, i));
+    }
+  }
+
+  private async deletePrefixedChunks(key: string, prefix: 'a' | 'b'): Promise<void> {
+    for (let i = 0; i < ChunkingSecureStore.MAX_CHUNKS; i++) {
+      await SecureStore.deleteItemAsync(
+        ChunkingSecureStore.buildPrefixedChunkKey(key, prefix, i),
+      );
     }
   }
 }
