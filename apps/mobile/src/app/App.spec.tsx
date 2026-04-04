@@ -512,6 +512,82 @@ describe('mobile auth state sync', () => {
     ).toBeTruthy();
   });
 
+  test('enforces re-auth when app returns to foreground and preference is enabled', async () => {
+    let appStateListener: ((state: string) => void) | null = null;
+    const addEventListenerSpy = jest
+      .spyOn(AppState, 'addEventListener')
+      .mockImplementation((eventType, listener) => {
+        if (eventType === 'change') {
+          appStateListener = listener as (state: string) => void;
+        }
+
+        return {
+          remove: jest.fn(),
+        } as unknown as ReturnType<typeof AppState.addEventListener>;
+      });
+
+    let authStateListener:
+      | ((event: string, session: Session | null) => void)
+      | null = null;
+
+    const signedInSession = {
+      access_token: 'access',
+      refresh_token: 'refresh',
+      token_type: 'bearer',
+      expires_in: 3600,
+      expires_at: 9999999999,
+      user: { id: 'user-1' },
+    } as unknown as Session;
+
+    const signOut = jest.fn(async () => {
+      authStateListener?.('SIGNED_OUT', null);
+      return { error: null };
+    });
+
+    const mockClient = {
+      auth: {
+        getSession: jest.fn(async () => ({
+          data: { session: signedInSession },
+          error: null,
+        })),
+        signOut,
+        onAuthStateChange: jest.fn((callback) => {
+          authStateListener = callback;
+          return {
+            data: {
+              subscription: {
+                unsubscribe: jest.fn(),
+              },
+            },
+          };
+        }),
+      },
+    } as unknown as AbstrackSupabaseClient;
+
+    jest.mocked(getMobileSupabaseClient).mockReturnValue(mockClient);
+    jest
+      .mocked(SecureStore.getItemAsync)
+      .mockResolvedValueOnce('false')
+      .mockResolvedValueOnce('true');
+
+    const { findByText } = render(<App />);
+
+    expect(await findByText('You are signed in.')).toBeTruthy();
+    expect(signOut).not.toHaveBeenCalled();
+
+    await act(async () => {
+      appStateListener?.('active');
+    });
+
+    await waitFor(() => {
+      expect(signOut).toHaveBeenCalledTimes(1);
+    });
+
+    expect(await findByText('Need an account? Sign up')).toBeTruthy();
+
+    addEventListenerSpy.mockRestore();
+  });
+
   test('does not enforce re-auth during recovery flow when app becomes active', async () => {
     let appStateListener: ((state: string) => void) | null = null;
     const addEventListenerSpy = jest
