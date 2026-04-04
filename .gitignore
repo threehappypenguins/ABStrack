@@ -66,6 +66,8 @@ error.log
 /android/
 /ios/
 /app.json
+/apps/mobile/android/
+/apps/mobile/ios/
 
 # Next.js
 .next/
