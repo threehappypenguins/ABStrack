@@ -96,7 +96,12 @@ class ChunkingSecureStore {
       return ChunkingSecureStore.fromBase64(base64);
     } catch (error) {
       console.error(`[ChunkingSecureStore] Error reading key ${key}:`, error);
-      return null;
+      await this.removeChunks(key);
+      try {
+        return await SecureStore.getItemAsync(key);
+      } catch {
+        return null;
+      }
     }
   }
 
@@ -141,8 +146,15 @@ class ChunkingSecureStore {
       }
     } catch (error) {
       console.error(`[ChunkingSecureStore] Error writing key ${key}:`, error);
-      await SecureStore.deleteItemAsync(key);
-      await this.removeChunks(key);
+      try {
+        await SecureStore.deleteItemAsync(key);
+        await this.removeChunks(key);
+      } catch (cleanupError) {
+        console.error(
+          `[ChunkingSecureStore] Error rolling back failed write for key ${key}:`,
+          cleanupError,
+        );
+      }
       throw error;
     }
   }

@@ -1,4 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
+import { Base64 } from 'js-base64';
 import { mobileAuthStorage } from './supabase-wiring';
 
 // Since ChunkingSecureStore is not exported, we'll test it via the public adapter interface
@@ -207,6 +208,22 @@ describe('ChunkingSecureStore (via supabase-wiring)', () => {
       expect(mockStore['auth-session.meta']).toBeUndefined();
       expect(mockStore['auth-session.chunk.0']).toBeUndefined();
       expect(mockStore['auth-session.chunk.1']).toBeUndefined();
+    });
+
+    test('cleans up chunk state and falls back to main key when base64 decode fails', async () => {
+      mockStore['auth-session'] = 'direct-session-value';
+      mockStore['auth-session.meta'] = '1';
+      mockStore['auth-session.chunk.0'] = 'YWJj';
+
+      jest.spyOn(Base64, 'decode').mockImplementation(() => {
+        throw new Error('Corrupted base64 payload');
+      });
+
+      const result = await mobileAuthStorage.getItem('auth-session');
+
+      expect(result).toBe('direct-session-value');
+      expect(mockStore['auth-session.meta']).toBeUndefined();
+      expect(mockStore['auth-session.chunk.0']).toBeUndefined();
     });
 
     test('replaces chunked value with smaller value', async () => {
