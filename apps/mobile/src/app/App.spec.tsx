@@ -41,8 +41,6 @@ const makeMockClient = () => ({
   },
 });
 
-type MockMobileClient = Pick<AbstrackSupabaseClient, 'auth'>;
-
 beforeEach(() => {
   jest.clearAllMocks();
 
@@ -57,7 +55,7 @@ beforeEach(() => {
 
   jest
     .mocked(getMobileSupabaseClient)
-    .mockReturnValue(makeMockClient() as unknown as MockMobileClient);
+    .mockReturnValue(makeMockClient() as unknown as AbstrackSupabaseClient);
 });
 
 afterEach(() => {
@@ -108,7 +106,7 @@ describe('mobile auth state sync', () => {
           };
         }),
       },
-    } as unknown as MockMobileClient;
+    } as unknown as AbstrackSupabaseClient;
 
     jest.mocked(getMobileSupabaseClient).mockReturnValue(mockClient);
 
@@ -170,7 +168,7 @@ describe('mobile auth state sync', () => {
           };
         }),
       },
-    } as unknown as MockMobileClient;
+    } as unknown as AbstrackSupabaseClient;
 
     jest.mocked(getMobileSupabaseClient).mockReturnValue(mockClient);
 
