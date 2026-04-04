@@ -4,15 +4,20 @@ import { createServerClient } from '@/lib/supabase/server-client';
 const DEFAULT_REDIRECT_PATH = '/update-password';
 
 function getSafeRedirectPath(nextParam: string | null): string {
-  if (!nextParam) {
+  if (!nextParam || !nextParam.startsWith('/') || nextParam.startsWith('//')) {
     return DEFAULT_REDIRECT_PATH;
   }
 
-  if (!nextParam.startsWith('/')) {
+  try {
+    const parsed = new URL(nextParam, 'https://abstrack.local');
+    if (parsed.origin !== 'https://abstrack.local') {
+      return DEFAULT_REDIRECT_PATH;
+    }
+
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
     return DEFAULT_REDIRECT_PATH;
   }
-
-  return nextParam;
 }
 
 function redirectWithError(

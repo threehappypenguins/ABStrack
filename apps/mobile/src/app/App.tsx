@@ -206,6 +206,11 @@ export function App() {
             {() => (
               <UpdatePasswordScreen
                 recoveryError={recoveryError}
+                onGoToLogin={() => {
+                  setRecoveryFlowActive(false);
+                  setRecoveryError(null);
+                  setAuthRoute('Login');
+                }}
                 onPasswordUpdated={() => {
                   setRecoveryFlowActive(false);
                   setRecoveryError(null);

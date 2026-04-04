@@ -8,9 +8,11 @@ import { styles } from '../styles';
 
 export function UpdatePasswordScreen({
   recoveryError,
+  onGoToLogin,
   onPasswordUpdated,
 }: {
   recoveryError: string | null;
+  onGoToLogin: () => void;
   onPasswordUpdated: () => void;
 }) {
   const [password, setPassword] = useState('');
@@ -22,6 +24,9 @@ export function UpdatePasswordScreen({
   useEffect(() => {
     setErrorMessage(recoveryError);
   }, [recoveryError]);
+
+  const isSubmitDisabled =
+    loading || Boolean(recoveryError) || !password.trim() || !confirmPassword.trim();
 
   const handleUpdatePassword = async () => {
     if (recoveryError) {
@@ -126,18 +131,28 @@ export function UpdatePasswordScreen({
         accessibilityRole="button"
         accessibilityLabel={loading ? 'Updating password...' : 'Update password'}
         onPress={handleUpdatePassword}
-        disabled={loading || !password.trim() || !confirmPassword.trim()}
+        disabled={isSubmitDisabled}
         style={[
           styles.primaryButton,
-          loading || !password.trim() || !confirmPassword.trim()
-            ? styles.primaryButtonDisabled
-            : null,
+          isSubmitDisabled ? styles.primaryButtonDisabled : null,
         ]}
       >
         <Text style={styles.primaryButtonText}>
           {loading ? 'Updating password...' : 'Update password'}
         </Text>
       </Pressable>
+
+      {recoveryError ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Back to login"
+          onPress={onGoToLogin}
+          disabled={loading}
+          style={styles.secondaryButton}
+        >
+          <Text style={styles.secondaryButtonText}>Back to login</Text>
+        </Pressable>
+      ) : null}
     </ScreenShell>
   );
 }

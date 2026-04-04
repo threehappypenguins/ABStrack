@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
@@ -11,6 +11,7 @@ const MIN_PASSWORD_LENGTH = 8;
 export default function UpdatePasswordPage() {
   const router = useRouter();
   const supabase = useMemo(() => createBrowserClient(), []);
+  const redirectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -25,7 +26,7 @@ export default function UpdatePasswordPage() {
     const initialize = async () => {
       const errorParam = new URLSearchParams(window.location.search).get('error');
       if (errorParam && mounted) {
-        setError(decodeURIComponent(errorParam));
+        setError(errorParam);
       }
 
       try {
@@ -54,6 +55,14 @@ export default function UpdatePasswordPage() {
       mounted = false;
     };
   }, [supabase]);
+
+  useEffect(() => {
+    return () => {
+      if (redirectTimeoutRef.current) {
+        clearTimeout(redirectTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -92,7 +101,7 @@ export default function UpdatePasswordPage() {
 
       await supabase.auth.signOut();
       setStatus('Password updated. Redirecting to login...');
-      setTimeout(() => {
+      redirectTimeoutRef.current = setTimeout(() => {
         router.replace('/login');
       }, 1000);
     } catch (submitError) {
