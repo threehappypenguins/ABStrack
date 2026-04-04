@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { Linking } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
 import type { AbstrackSupabaseClient, Session } from '@abstrack/supabase';
 
 import App from './App';
@@ -32,6 +33,7 @@ const snapshot: Record<string, string | undefined> = {};
 const makeMockClient = () => ({
   auth: {
     getSession: jest.fn(async () => ({ data: { session: null } })),
+    signOut: jest.fn(async () => ({ error: null })),
     onAuthStateChange: jest.fn(() => ({
       data: {
         subscription: {
@@ -369,9 +371,11 @@ describe('mobile auth state sync', () => {
 
     jest.mocked(getMobileSupabaseClient).mockReturnValue(mockClient);
 
-    const getInitialUrlSpy = jest.spyOn(Linking, 'getInitialURL').mockResolvedValue(
-      'abstrack:///update-password?type=recovery&access_token=access&refresh_token=refresh',
-    );
+    const getInitialUrlSpy = jest
+      .spyOn(Linking, 'getInitialURL')
+      .mockResolvedValue(
+        'abstrack:///update-password?type=recovery&access_token=access&refresh_token=refresh',
+      );
 
     const { findByText } = render(<App />);
 
@@ -383,5 +387,128 @@ describe('mobile auth state sync', () => {
     });
 
     getInitialUrlSpy.mockRestore();
+  });
+
+  test('keeps patients signed in on app open when require re-auth is off', async () => {
+    const signedInSession = {
+      access_token: 'access',
+      refresh_token: 'refresh',
+      token_type: 'bearer',
+      expires_in: 3600,
+      expires_at: 9999999999,
+      user: { id: 'user-1' },
+    } as unknown as Session;
+
+    const signOut = jest.fn(async () => ({ error: null }));
+
+    const mockClient = {
+      auth: {
+        getSession: jest.fn(async () => ({
+          data: { session: signedInSession },
+        })),
+        signOut,
+        onAuthStateChange: jest.fn(() => ({
+          data: {
+            subscription: {
+              unsubscribe: jest.fn(),
+            },
+          },
+        })),
+      },
+    } as unknown as AbstrackSupabaseClient;
+
+    jest.mocked(SecureStore.getItemAsync).mockResolvedValue('false');
+    jest.mocked(getMobileSupabaseClient).mockReturnValue(mockClient);
+
+    const { findByText } = render(<App />);
+
+    expect(await findByText('You are signed in.')).toBeTruthy();
+    expect(signOut).not.toHaveBeenCalled();
+  });
+
+  test('prompts login on app open when require re-auth is on', async () => {
+    let authStateListener:
+      | ((event: string, session: Session | null) => void)
+      | null = null;
+
+    const signedInSession = {
+      access_token: 'access',
+      refresh_token: 'refresh',
+      token_type: 'bearer',
+      expires_in: 3600,
+      expires_at: 9999999999,
+      user: { id: 'user-1' },
+    } as unknown as Session;
+
+    const signOut = jest.fn(async () => {
+      authStateListener?.('SIGNED_OUT', null);
+      return { error: null };
+    });
+
+    const mockClient = {
+      auth: {
+        getSession: jest.fn(async () => ({
+          data: { session: signedInSession },
+        })),
+        signOut,
+        onAuthStateChange: jest.fn((callback) => {
+          authStateListener = callback;
+          return {
+            data: {
+              subscription: {
+                unsubscribe: jest.fn(),
+              },
+            },
+          };
+        }),
+      },
+    } as unknown as AbstrackSupabaseClient;
+
+    jest.mocked(SecureStore.getItemAsync).mockResolvedValue('true');
+    jest.mocked(getMobileSupabaseClient).mockReturnValue(mockClient);
+
+    const { findByText } = render(<App />);
+
+    expect(await findByText('Need an account? Sign up')).toBeTruthy();
+    expect(signOut).toHaveBeenCalledTimes(1);
+  });
+
+  test('exposes the re-authentication toggle in settings', async () => {
+    const signedInSession = {
+      access_token: 'access',
+      refresh_token: 'refresh',
+      token_type: 'bearer',
+      expires_in: 3600,
+      expires_at: 9999999999,
+      user: { id: 'user-1' },
+    } as unknown as Session;
+
+    const mockClient = {
+      auth: {
+        getSession: jest.fn(async () => ({
+          data: { session: signedInSession },
+        })),
+        signOut: jest.fn(async () => ({ error: null })),
+        onAuthStateChange: jest.fn(() => ({
+          data: {
+            subscription: {
+              unsubscribe: jest.fn(),
+            },
+          },
+        })),
+      },
+    } as unknown as AbstrackSupabaseClient;
+
+    jest.mocked(SecureStore.getItemAsync).mockResolvedValue('false');
+    jest.mocked(getMobileSupabaseClient).mockReturnValue(mockClient);
+
+    const { findByText, findByLabelText } = render(<App />);
+
+    const settingsButton = await findByText('Settings');
+    fireEvent.press(settingsButton);
+
+    expect(
+      await findByLabelText('Require re-authentication on app open'),
+    ).toBeTruthy();
   });
 });

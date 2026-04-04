@@ -31,7 +31,9 @@ export default function ForgotPasswordPage() {
         return;
       }
 
-      setStatus('Password reset email sent. Check your inbox for the recovery link.');
+      setStatus(
+        'Password reset email sent. Check your inbox for the recovery link.',
+      );
     } catch (submitError) {
       console.error(submitError);
       setError('Unable to send reset email. Please try again.');

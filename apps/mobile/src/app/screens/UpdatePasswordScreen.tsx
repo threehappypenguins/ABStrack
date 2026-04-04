@@ -18,7 +18,9 @@ export function UpdatePasswordScreen({
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(recoveryError);
+  const [errorMessage, setErrorMessage] = useState<string | null>(
+    recoveryError,
+  );
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -26,7 +28,10 @@ export function UpdatePasswordScreen({
   }, [recoveryError]);
 
   const isSubmitDisabled =
-    loading || Boolean(recoveryError) || !password.trim() || !confirmPassword.trim();
+    loading ||
+    Boolean(recoveryError) ||
+    !password.trim() ||
+    !confirmPassword.trim();
 
   const handleUpdatePassword = async () => {
     if (recoveryError) {
@@ -59,7 +64,9 @@ export function UpdatePasswordScreen({
       } = await mobileSupabase.auth.getSession();
 
       if (!session) {
-        setErrorMessage('This reset link is invalid or expired. Request a new one.');
+        setErrorMessage(
+          'This reset link is invalid or expired. Request a new one.',
+        );
         return;
       }
 
@@ -74,7 +81,9 @@ export function UpdatePasswordScreen({
       onPasswordUpdated();
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : 'Unexpected authentication error';
+        error instanceof Error
+          ? error.message
+          : 'Unexpected authentication error';
       setErrorMessage(mapAuthError(message));
       setStatusMessage(null);
     } finally {
@@ -129,7 +138,9 @@ export function UpdatePasswordScreen({
 
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={loading ? 'Updating password...' : 'Update password'}
+        accessibilityLabel={
+          loading ? 'Updating password...' : 'Update password'
+        }
         onPress={handleUpdatePassword}
         disabled={isSubmitDisabled}
         style={[

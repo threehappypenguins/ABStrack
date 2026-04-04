@@ -8,27 +8,35 @@ import { mobileAuthStorage } from './supabase-wiring';
 describe('ChunkingSecureStore (via supabase-wiring)', () => {
   let mockStore: Record<string, string>;
   const chunkEntries = () =>
-    Object.entries(mockStore).filter(([key]) => key.startsWith('auth-session.chunk.'));
+    Object.entries(mockStore).filter(([key]) =>
+      key.startsWith('auth-session.chunk.'),
+    );
 
   beforeEach(() => {
     mockStore = {};
-    jest.spyOn(SecureStore, 'getItemAsync').mockImplementation((key: string) => {
-      return Promise.resolve(mockStore[key] ?? null);
-    });
+    jest
+      .spyOn(SecureStore, 'getItemAsync')
+      .mockImplementation((key: string) => {
+        return Promise.resolve(mockStore[key] ?? null);
+      });
 
-    jest.spyOn(SecureStore, 'setItemAsync').mockImplementation((key: string, value: string) => {
-      // Simulate 2KB limit: throw if value exceeds limit
-      if (Buffer.byteLength(value, 'utf-8') > 2048) {
-        throw new Error(`Value exceeds 2048 byte limit for key: ${key}`);
-      }
-      mockStore[key] = value;
-      return Promise.resolve();
-    });
+    jest
+      .spyOn(SecureStore, 'setItemAsync')
+      .mockImplementation((key: string, value: string) => {
+        // Simulate 2KB limit: throw if value exceeds limit
+        if (Buffer.byteLength(value, 'utf-8') > 2048) {
+          throw new Error(`Value exceeds 2048 byte limit for key: ${key}`);
+        }
+        mockStore[key] = value;
+        return Promise.resolve();
+      });
 
-    jest.spyOn(SecureStore, 'deleteItemAsync').mockImplementation((key: string) => {
-      delete mockStore[key];
-      return Promise.resolve();
-    });
+    jest
+      .spyOn(SecureStore, 'deleteItemAsync')
+      .mockImplementation((key: string) => {
+        delete mockStore[key];
+        return Promise.resolve();
+      });
   });
 
   afterEach(() => {
@@ -71,7 +79,9 @@ describe('ChunkingSecureStore (via supabase-wiring)', () => {
       const chunks = chunkEntries();
       expect(chunks.length).toBeGreaterThanOrEqual(2);
       // Chunks should not exceed 2048 bytes individually
-      expect(Buffer.byteLength(chunks[0][1], 'utf-8')).toBeLessThanOrEqual(2048);
+      expect(Buffer.byteLength(chunks[0][1], 'utf-8')).toBeLessThanOrEqual(
+        2048,
+      );
     });
 
     test('reassembles chunked values on read', async () => {
@@ -125,9 +135,9 @@ describe('ChunkingSecureStore (via supabase-wiring)', () => {
       const oversizedValue = 'x'.repeat(70000);
       mockStore['auth-session'] = 'existing-session';
 
-      await expect(mobileAuthStorage.setItem('auth-session', oversizedValue)).rejects.toThrow(
-        /exceeds supported size/,
-      );
+      await expect(
+        mobileAuthStorage.setItem('auth-session', oversizedValue),
+      ).rejects.toThrow(/exceeds supported size/);
 
       // Existing direct value should remain because we fail before destructive cleanup.
       expect(mockStore['auth-session']).toBe('existing-session');
@@ -155,9 +165,9 @@ describe('ChunkingSecureStore (via supabase-wiring)', () => {
         },
       );
 
-      await expect(mobileAuthStorage.setItem('auth-session', largeValue)).rejects.toThrow(
-        'Simulated SecureStore failure',
-      );
+      await expect(
+        mobileAuthStorage.setItem('auth-session', largeValue),
+      ).rejects.toThrow('Simulated SecureStore failure');
 
       expect(mockStore['auth-session']).toBeUndefined();
       expect(mockStore['auth-session.meta']).toBeUndefined();
@@ -187,9 +197,9 @@ describe('ChunkingSecureStore (via supabase-wiring)', () => {
         },
       );
 
-      await expect(mobileAuthStorage.setItem('auth-session', nextValue)).rejects.toThrow(
-        'Simulated SecureStore failure',
-      );
+      await expect(
+        mobileAuthStorage.setItem('auth-session', nextValue),
+      ).rejects.toThrow('Simulated SecureStore failure');
 
       const preserved = await mobileAuthStorage.getItem('auth-session');
       expect(preserved).toBe(previousValue);
@@ -328,7 +338,9 @@ describe('ChunkingSecureStore (via supabase-wiring)', () => {
           locale: 'fr-FR',
           notes: 'Consultation: ' + '日本語テスト中文测试'.repeat(100), // Japanese/Chinese (3-4 bytes per char)
           // Mixed ASCII + emoji + accents spread across ~1600 chars
-          description: 'This patient 👤 uses assistive technology. ' + '🦽 ♿ 👨‍🦯'.repeat(150),
+          description:
+            'This patient 👤 uses assistive technology. ' +
+            '🦽 ♿ 👨‍🦯'.repeat(150),
         },
       });
 
@@ -351,7 +363,9 @@ describe('ChunkingSecureStore (via supabase-wiring)', () => {
       }
       const parsedMeta = JSON.parse(metaValue);
       const chunkCount =
-        typeof parsedMeta === 'object' && parsedMeta !== null && 'chunkCount' in parsedMeta
+        typeof parsedMeta === 'object' &&
+        parsedMeta !== null &&
+        'chunkCount' in parsedMeta
           ? (parsedMeta as { chunkCount: number }).chunkCount
           : parseInt(metaValue, 10);
       expect(chunkCount).toBeGreaterThanOrEqual(2); // Should require multiple chunks

@@ -6,7 +6,11 @@ import { mapAuthError } from '../auth-helpers';
 import { ScreenShell } from '../components/ScreenShell';
 import { styles } from '../styles';
 
-export function HomeScreen() {
+type HomeScreenProps = {
+  onGoToSettings: () => void;
+};
+
+export function HomeScreen({ onGoToSettings }: HomeScreenProps) {
   const [signOutBusy, setSignOutBusy] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
 
@@ -22,7 +26,10 @@ export function HomeScreen() {
         setSignOutError(mapAuthError(error.message));
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unexpected authentication error';
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Unexpected authentication error';
       setSignOutError(mapAuthError(message));
     } finally {
       setSignOutBusy(false);
@@ -40,6 +47,17 @@ export function HomeScreen() {
           {signOutError}
         </Text>
       ) : null}
+      <View style={styles.spacer} />
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Go to settings"
+        onPress={onGoToSettings}
+        style={styles.secondaryButton}
+      >
+        <Text style={styles.secondaryButtonText}>Settings</Text>
+      </Pressable>
+
       <View style={styles.spacer} />
 
       <Pressable

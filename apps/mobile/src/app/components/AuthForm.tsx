@@ -133,7 +133,9 @@ export function AuthForm({
           <Text style={styles.tertiaryButtonText}>{tertiaryLabel}</Text>
         </Pressable>
       ) : null}
-      {tertiaryLabel && onTertiaryAction ? <View style={styles.spacer} /> : null}
+      {tertiaryLabel && onTertiaryAction ? (
+        <View style={styles.spacer} />
+      ) : null}
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={alternateLabel}

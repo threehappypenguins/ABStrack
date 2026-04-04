@@ -24,7 +24,9 @@ export default function UpdatePasswordPage() {
     let mounted = true;
 
     const initialize = async () => {
-      const errorParam = new URLSearchParams(window.location.search).get('error');
+      const errorParam = new URLSearchParams(window.location.search).get(
+        'error',
+      );
       if (errorParam && mounted) {
         setError(errorParam);
       }
@@ -115,7 +117,9 @@ export default function UpdatePasswordPage() {
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-100">
       <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
-        <h1 className="text-2xl font-bold mb-6 text-center">Set new password</h1>
+        <h1 className="text-2xl font-bold mb-6 text-center">
+          Set new password
+        </h1>
 
         {checkingSession ? (
           <div className="mb-4 p-4 bg-gray-50 text-gray-700 rounded border border-gray-200">
@@ -183,7 +187,10 @@ export default function UpdatePasswordPage() {
 
         <p className="mt-4 text-center text-sm text-gray-600">
           Need a new link?{' '}
-          <Link href="/forgot-password" className="text-blue-600 hover:underline">
+          <Link
+            href="/forgot-password"
+            className="text-blue-600 hover:underline"
+          >
             Forgot password
           </Link>
         </p>

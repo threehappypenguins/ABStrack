@@ -33,20 +33,19 @@ describe('auth callback route', () => {
     } as unknown as ServerClient);
   });
 
-  const makeRequest = (url: string): CallbackRequest =>
-    {
-      const parsedUrl = new URL(url);
-      return {
-        url,
-        nextUrl: {
-          searchParams: parsedUrl.searchParams,
-        },
-        cookies: {
-          getAll: jest.fn(() => []),
-          set: jest.fn(),
-        },
-      } as unknown as CallbackRequest;
-    };
+  const makeRequest = (url: string): CallbackRequest => {
+    const parsedUrl = new URL(url);
+    return {
+      url,
+      nextUrl: {
+        searchParams: parsedUrl.searchParams,
+      },
+      cookies: {
+        getAll: jest.fn(() => []),
+        set: jest.fn(),
+      },
+    } as unknown as CallbackRequest;
+  };
 
   it('redirects to the provided in-app path when next is safe', async () => {
     const response = await GET(

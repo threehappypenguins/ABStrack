@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator } from 'react-native';
+import { AppState } from 'react-native';
 import { Linking } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -10,8 +11,10 @@ import { AppProviders } from './components/AppProviders';
 import { ForgotPasswordScreen } from './screens/ForgotPasswordScreen';
 import { HomeScreen } from './screens/HomeScreen';
 import { LoginScreen } from './screens/LoginScreen';
+import { SettingsScreen } from './screens/SettingsScreen';
 import { SignupScreen } from './screens/SignupScreen';
 import { UpdatePasswordScreen } from './screens/UpdatePasswordScreen';
+import { getRequireReauthOnOpenPreference } from './reauth-preference';
 import { styles } from './styles';
 
 type AuthStackParamList = {
@@ -23,6 +26,7 @@ type AuthStackParamList = {
 
 type MainStackParamList = {
   Home: undefined;
+  Settings: undefined;
 };
 
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
@@ -60,7 +64,9 @@ function parseDeepLink(url: string): {
 
 function isRecoveryTargetPath(pathname: string, hostname: string): boolean {
   const normalizedPath = pathname.replace(/\/+$/, '') || '/';
-  return normalizedPath === '/update-password' || hostname === 'update-password';
+  return (
+    normalizedPath === '/update-password' || hostname === 'update-password'
+  );
 }
 
 function getRecoveryErrorMessage(params: URLSearchParams): string | null {
@@ -82,6 +88,24 @@ export function App() {
 
   useEffect(() => {
     let mounted = true;
+
+    const enforceReauthIfNeeded = async () => {
+      const reauthRequired = await getRequireReauthOnOpenPreference();
+
+      if (!reauthRequired) {
+        return;
+      }
+
+      const {
+        data: { session: currentSession },
+      } = await mobileSupabase.auth.getSession();
+
+      if (!currentSession) {
+        return;
+      }
+
+      await mobileSupabase.auth.signOut();
+    };
 
     const handleRecoveryLink = async (url: string) => {
       const { params, pathname, hostname } = parseDeepLink(url);
@@ -111,9 +135,12 @@ export function App() {
       }
 
       if (code) {
-        const { error } = await mobileSupabase.auth.exchangeCodeForSession(code);
+        const { error } =
+          await mobileSupabase.auth.exchangeCodeForSession(code);
         if (error) {
-          setRecoveryError('This reset link is invalid or expired. Request a new one.');
+          setRecoveryError(
+            'This reset link is invalid or expired. Request a new one.',
+          );
         } else {
           setRecoveryError(null);
         }
@@ -127,14 +154,18 @@ export function App() {
         });
 
         if (error) {
-          setRecoveryError('This reset link is invalid or expired. Request a new one.');
+          setRecoveryError(
+            'This reset link is invalid or expired. Request a new one.',
+          );
         } else {
           setRecoveryError(null);
         }
         return;
       }
 
-      setRecoveryError('This reset link is invalid or expired. Request a new one.');
+      setRecoveryError(
+        'This reset link is invalid or expired. Request a new one.',
+      );
     };
 
     const bootstrap = async () => {
@@ -151,6 +182,8 @@ export function App() {
         await handleRecoveryLink(initialUrl);
       }
 
+      await enforceReauthIfNeeded();
+
       if (mounted) {
         setInitializing(false);
       }
@@ -161,6 +194,15 @@ export function App() {
     const urlSubscription = Linking.addEventListener('url', ({ url }) => {
       void handleRecoveryLink(url);
     });
+
+    const appStateSubscription = AppState.addEventListener(
+      'change',
+      (nextState) => {
+        if (nextState === 'active') {
+          void enforceReauthIfNeeded();
+        }
+      },
+    );
 
     const {
       data: { subscription },
@@ -184,6 +226,7 @@ export function App() {
       mounted = false;
       subscription.unsubscribe();
       urlSubscription.remove();
+      appStateSubscription.remove();
     };
   }, [mobileSupabase]);
 
@@ -264,7 +307,20 @@ export function App() {
           authStack
         ) : (
           <MainStack.Navigator>
-            <MainStack.Screen name="Home" component={HomeScreen} />
+            <MainStack.Screen name="Home" options={{ title: 'Home' }}>
+              {({ navigation }) => (
+                <HomeScreen
+                  onGoToSettings={() => {
+                    navigation.navigate('Settings');
+                  }}
+                />
+              )}
+            </MainStack.Screen>
+            <MainStack.Screen
+              name="Settings"
+              component={SettingsScreen}
+              options={{ title: 'Settings' }}
+            />
           </MainStack.Navigator>
         )}
       </NavigationContainer>
