@@ -85,6 +85,17 @@ export const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
   },
+  tertiaryButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 32,
+  },
+  tertiaryButtonText: {
+    color: '#1d4ed8',
+    fontSize: 15,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
   spacer: {
     height: 8,
   },

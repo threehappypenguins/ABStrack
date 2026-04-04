@@ -58,6 +58,9 @@ jest.mock('next/server', () => ({
 
 describe('web auth proxy', () => {
   const createServerClientMock = jest.mocked(createServerClient);
+  type ProxyRequest = Parameters<typeof proxy>[0];
+  type CookieMethodsArg = Parameters<typeof createServerClient>[0];
+  type ServerClient = Awaited<ReturnType<typeof createServerClient>>;
 
   const makeRequest = (pathname: string) => {
     const cookies = {
@@ -69,7 +72,7 @@ describe('web auth proxy', () => {
       nextUrl: { pathname },
       url: `https://example.com${pathname}`,
       cookies,
-    } as any;
+    } as unknown as ProxyRequest;
   };
 
   beforeEach(() => {
@@ -90,9 +93,9 @@ describe('web auth proxy', () => {
         }
       | undefined;
 
-    createServerClientMock.mockImplementation((methods: any) => {
+    createServerClientMock.mockImplementation((methods: CookieMethodsArg) => {
       cookieMethods = methods;
-      return {
+      return Promise.resolve({
         auth: {
           getUser: jest.fn(async () => {
             cookieMethods?.setAll?.([
@@ -106,7 +109,7 @@ describe('web auth proxy', () => {
             return { data: { user: null } };
           }),
         },
-      } as any;
+      } as unknown as ServerClient);
     });
 
     const result = await proxy(makeRequest('/dashboard/patients'));
@@ -125,11 +128,11 @@ describe('web auth proxy', () => {
   });
 
   it('redirects authenticated user away from /login to /', async () => {
-    createServerClientMock.mockReturnValue({
+    createServerClientMock.mockReturnValue(Promise.resolve({
       auth: {
         getUser: jest.fn(async () => ({ data: { user: { id: 'user-1' } } })),
       },
-    } as any);
+    } as unknown as ServerClient));
 
     const result = await proxy(makeRequest('/login'));
 
@@ -144,9 +147,9 @@ describe('web auth proxy', () => {
   it('refreshes session via getUser and allows request when route is public', async () => {
     const getUser = jest.fn(async () => ({ data: { user: null } }));
 
-    createServerClientMock.mockReturnValue({
+    createServerClientMock.mockReturnValue(Promise.resolve({
       auth: { getUser },
-    } as any);
+    } as unknown as ServerClient));
 
     const result = await proxy(makeRequest('/'));
 

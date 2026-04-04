@@ -4,7 +4,13 @@ import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { AuthForm } from '../components/AuthForm';
 import { mapAuthError, validateEmailPassword } from '../auth-helpers';
 
-export function LoginScreen({ onGoToSignup }: { onGoToSignup: () => void }) {
+export function LoginScreen({
+  onGoToSignup,
+  onGoToForgotPassword,
+}: {
+  onGoToSignup: () => void;
+  onGoToForgotPassword: () => void;
+}) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -51,11 +57,13 @@ export function LoginScreen({ onGoToSignup }: { onGoToSignup: () => void }) {
       passwordTestId="auth-password"
       idleSubmitLabel="Sign in"
       loadingSubmitLabel="Signing in..."
+      tertiaryLabel="Forgot password?"
       alternateLabel="Need an account? Sign up"
       onEmailChange={setEmail}
       onPasswordChange={setPassword}
       onSubmit={handleLogin}
       onAlternateAction={onGoToSignup}
+      onTertiaryAction={onGoToForgotPassword}
     />
   );
 }

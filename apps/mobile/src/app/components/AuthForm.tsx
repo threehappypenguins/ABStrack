@@ -16,10 +16,12 @@ export type AuthFormProps = {
   idleSubmitLabel: string;
   loadingSubmitLabel: string;
   alternateLabel: string;
+  tertiaryLabel?: string;
   onEmailChange: (value: string) => void;
   onPasswordChange: (value: string) => void;
   onSubmit: () => void;
   onAlternateAction: () => void;
+  onTertiaryAction?: () => void;
 };
 
 export function AuthForm({
@@ -35,10 +37,12 @@ export function AuthForm({
   idleSubmitLabel,
   loadingSubmitLabel,
   alternateLabel,
+  tertiaryLabel,
   onEmailChange,
   onPasswordChange,
   onSubmit,
   onAlternateAction,
+  onTertiaryAction,
 }: AuthFormProps) {
   const passwordInputRef = useRef<TextInput>(null);
   const primaryDisabled = loading || Boolean(submitDisabled);
@@ -118,6 +122,18 @@ export function AuthForm({
       </Pressable>
 
       <View style={styles.spacer} />
+      {tertiaryLabel && onTertiaryAction ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={tertiaryLabel}
+          onPress={onTertiaryAction}
+          disabled={loading}
+          style={styles.tertiaryButton}
+        >
+          <Text style={styles.tertiaryButtonText}>{tertiaryLabel}</Text>
+        </Pressable>
+      ) : null}
+      {tertiaryLabel && onTertiaryAction ? <View style={styles.spacer} /> : null}
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={alternateLabel}
