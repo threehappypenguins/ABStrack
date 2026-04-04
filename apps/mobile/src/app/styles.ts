@@ -27,6 +27,11 @@ export const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '600',
   },
+  labelText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#0f172a',
+  },
   bodyText: {
     fontSize: 16,
     color: '#334155',
@@ -38,10 +43,47 @@ export const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 16,
+    minHeight: 52,
   },
   errorText: {
     color: '#b91c1c',
     fontSize: 14,
+  },
+  infoText: {
+    color: '#1d4ed8',
+    fontSize: 14,
+  },
+  primaryButton: {
+    backgroundColor: '#1d4ed8',
+    borderRadius: 10,
+    minHeight: 52,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryButtonDisabled: {
+    opacity: 0.6,
+  },
+  primaryButtonText: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  secondaryButton: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#1d4ed8',
+    minHeight: 52,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+  },
+  secondaryButtonText: {
+    color: '#1d4ed8',
+    fontSize: 17,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   spacer: {
     height: 8,

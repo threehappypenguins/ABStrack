@@ -2,29 +2,41 @@ import React, { useState } from 'react';
 import { signInWithEmailPassword } from '@abstrack/supabase';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { AuthForm } from '../components/AuthForm';
+import { mapAuthError, validateEmailPassword } from '../auth-helpers';
 
 export function LoginScreen({ onGoToSignup }: { onGoToSignup: () => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleLogin = async () => {
-    const mobileSupabase = getMobileSupabaseClient();
-    setLoading(true);
-    setError(null);
-
-    const { error: authError } = await signInWithEmailPassword(
-      mobileSupabase,
-      email.trim(),
-      password,
-    );
-
-    if (authError) {
-      setError(authError.message);
+    const validationError = validateEmailPassword(email, password);
+    if (validationError) {
+      setErrorMessage(validationError);
+      return;
     }
 
-    setLoading(false);
+    const mobileSupabase = getMobileSupabaseClient();
+    setLoading(true);
+    setErrorMessage(null);
+
+    try {
+      const { error: authError } = await signInWithEmailPassword(
+        mobileSupabase,
+        email.trim(),
+        password,
+      );
+
+      if (authError) {
+        setErrorMessage(mapAuthError(authError.message));
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unexpected authentication error';
+      setErrorMessage(mapAuthError(message));
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -33,7 +45,8 @@ export function LoginScreen({ onGoToSignup }: { onGoToSignup: () => void }) {
       email={email}
       password={password}
       loading={loading}
-      error={error}
+      errorMessage={errorMessage}
+      submitDisabled={!email.trim() || !password.trim()}
       emailTestId="auth-email"
       passwordTestId="auth-password"
       idleSubmitLabel="Sign in"

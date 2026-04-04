@@ -2,29 +2,52 @@ import React, { useState } from 'react';
 import { signUpWithEmailPassword } from '@abstrack/supabase';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { AuthForm } from '../components/AuthForm';
+import {
+  mapAuthError,
+  validateEmailPassword,
+  validateSignupPassword,
+} from '../auth-helpers';
 
 export function SignupScreen({ onGoToLogin }: { onGoToLogin: () => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   const handleSignup = async () => {
-    const mobileSupabase = getMobileSupabaseClient();
-    setLoading(true);
-    setError(null);
-
-    const { error: authError } = await signUpWithEmailPassword(
-      mobileSupabase,
-      email.trim(),
-      password,
-    );
-
-    if (authError) {
-      setError(authError.message);
+    const validationError =
+      validateEmailPassword(email, password) ?? validateSignupPassword(password);
+    if (validationError) {
+      setErrorMessage(validationError);
+      setStatusMessage(null);
+      return;
     }
 
-    setLoading(false);
+    const mobileSupabase = getMobileSupabaseClient();
+    setLoading(true);
+    setErrorMessage(null);
+    setStatusMessage(null);
+
+    try {
+      const { data, error: authError } = await signUpWithEmailPassword(
+        mobileSupabase,
+        email.trim(),
+        password,
+      );
+
+      if (authError) {
+        setErrorMessage(mapAuthError(authError.message));
+      } else if (!data.session) {
+        setStatusMessage('Account created. Check your email to confirm your account.');
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unexpected authentication error';
+      setErrorMessage(mapAuthError(message));
+      setStatusMessage(null);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -33,7 +56,9 @@ export function SignupScreen({ onGoToLogin }: { onGoToLogin: () => void }) {
       email={email}
       password={password}
       loading={loading}
-      error={error}
+      errorMessage={errorMessage}
+      statusMessage={statusMessage}
+      submitDisabled={!email.trim() || !password.trim()}
       emailTestId="signup-email"
       passwordTestId="signup-password"
       idleSubmitLabel="Create account"

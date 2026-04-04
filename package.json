@@ -4,7 +4,10 @@
   "license": "MIT",
   "scripts": {
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "web": "nx dev web",
+    "practitioner": "nx dev practitioner",
+    "mobile": "cd apps/mobile && pnpm expo start"
   },
   "private": true,
   "devDependencies": {

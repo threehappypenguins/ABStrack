@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
-import type { Session } from '@abstrack/supabase';
+import type { AbstrackSupabaseClient, Session } from '@abstrack/supabase';
 
 import App from './App';
 import {
@@ -8,10 +8,10 @@ import {
   getMobileSupabaseClient,
 } from '../lib/supabase-wiring';
 
-jest.mock('@react-native-async-storage/async-storage', () => ({
-  getItem: jest.fn(async () => null),
-  setItem: jest.fn(async () => undefined),
-  removeItem: jest.fn(async () => undefined),
+jest.mock('expo-secure-store', () => ({
+  getItemAsync: jest.fn(async () => null),
+  setItemAsync: jest.fn(async () => undefined),
+  deleteItemAsync: jest.fn(async () => undefined),
 }));
 
 jest.mock('../lib/supabase-wiring', () => {
@@ -53,7 +53,9 @@ beforeEach(() => {
   process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY =
     process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? 'sb_publishable_test';
 
-  jest.mocked(getMobileSupabaseClient).mockReturnValue(makeMockClient() as any);
+  jest
+    .mocked(getMobileSupabaseClient)
+    .mockReturnValue(makeMockClient() as unknown as AbstrackSupabaseClient);
 });
 
 afterEach(() => {
@@ -104,7 +106,7 @@ describe('mobile auth state sync', () => {
           };
         }),
       },
-    } as any;
+    } as unknown as AbstrackSupabaseClient;
 
     jest.mocked(getMobileSupabaseClient).mockReturnValue(mockClient);
 
@@ -166,7 +168,7 @@ describe('mobile auth state sync', () => {
           };
         }),
       },
-    } as any;
+    } as unknown as AbstrackSupabaseClient;
 
     jest.mocked(getMobileSupabaseClient).mockReturnValue(mockClient);
 
