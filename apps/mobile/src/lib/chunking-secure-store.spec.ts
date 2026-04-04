@@ -160,10 +160,14 @@ describe('ChunkingSecureStore (via supabase-wiring)', () => {
 
     test('handles corrupted metadata gracefully', async () => {
       mockStore['auth-session.meta'] = 'invalid-number';
+      mockStore['auth-session.chunk.0'] = 'chunk0';
+      mockStore['auth-session.chunk.1'] = 'chunk1';
       const result = await mobileAuthStorage.getItem('auth-session');
 
       expect(result).toBeNull();
       expect(mockStore['auth-session.meta']).toBeUndefined();
+      expect(mockStore['auth-session.chunk.0']).toBeUndefined();
+      expect(mockStore['auth-session.chunk.1']).toBeUndefined();
     });
 
     test('falls back to main key when corrupted metadata exists with valid direct value', async () => {

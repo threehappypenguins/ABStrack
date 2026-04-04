@@ -23,12 +23,13 @@ import { createSupabaseNativeClient } from '@abstrack/supabase/native';
  * or find metadata but missing chunks (detects incomplete write, signals error to trigger re-auth).
  * SecureStore has no key enumeration, but this approach minimizes orphaned chunk keys.
  *
- * Satisfies HIPAA/PHIA requirements by storing all data encrypted via OS Keychain (iOS) / Keystore (Android).
+ * Stores auth session data using OS-backed encrypted storage via Keychain (iOS) / Keystore (Android).
  */
 class ChunkingSecureStore {
   private static readonly CHUNK_SIZE = 2044; // Per-key byte limit is 2048; 2044 is conservative
   private static readonly CHUNK_SUFFIX = '.chunk';
   private static readonly META_SUFFIX = '.meta';
+  private static readonly MAX_CHUNK_CLEANUP_ATTEMPTS = 32;
 
   private static toBase64(str: string): string {
     // Encode UTF-8 string to base64 using cross-platform js-base64 library
@@ -167,6 +168,17 @@ class ChunkingSecureStore {
         if (!isNaN(chunkCount) && chunkCount > 0) {
           for (let i = 0; i < chunkCount; i++) {
             const chunkKey = `${key}${ChunkingSecureStore.CHUNK_SUFFIX}.${i}`;
+            await SecureStore.deleteItemAsync(chunkKey);
+          }
+        } else {
+          // Corrupted metadata means the chunk count is unknown. Best-effort sweep a bounded
+          // range of sequential chunk keys so orphaned data does not linger indefinitely.
+          for (let i = 0; i < ChunkingSecureStore.MAX_CHUNK_CLEANUP_ATTEMPTS; i++) {
+            const chunkKey = `${key}${ChunkingSecureStore.CHUNK_SUFFIX}.${i}`;
+            const chunk = await SecureStore.getItemAsync(chunkKey);
+            if (!chunk) {
+              break;
+            }
             await SecureStore.deleteItemAsync(chunkKey);
           }
         }
