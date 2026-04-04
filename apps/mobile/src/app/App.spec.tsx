@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
-import type { Session } from '@abstrack/supabase';
+import type { AbstrackSupabaseClient, Session } from '@abstrack/supabase';
 
 import App from './App';
 import {
@@ -41,6 +41,8 @@ const makeMockClient = () => ({
   },
 });
 
+type MockMobileClient = Pick<AbstrackSupabaseClient, 'auth'>;
+
 beforeEach(() => {
   jest.clearAllMocks();
 
@@ -53,7 +55,9 @@ beforeEach(() => {
   process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY =
     process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? 'sb_publishable_test';
 
-  jest.mocked(getMobileSupabaseClient).mockReturnValue(makeMockClient() as any);
+  jest
+    .mocked(getMobileSupabaseClient)
+    .mockReturnValue(makeMockClient() as unknown as MockMobileClient);
 });
 
 afterEach(() => {
@@ -104,7 +108,7 @@ describe('mobile auth state sync', () => {
           };
         }),
       },
-    } as any;
+    } as unknown as MockMobileClient;
 
     jest.mocked(getMobileSupabaseClient).mockReturnValue(mockClient);
 
@@ -166,7 +170,7 @@ describe('mobile auth state sync', () => {
           };
         }),
       },
-    } as any;
+    } as unknown as MockMobileClient;
 
     jest.mocked(getMobileSupabaseClient).mockReturnValue(mockClient);
 

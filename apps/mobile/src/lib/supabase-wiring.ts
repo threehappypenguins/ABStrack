@@ -195,102 +195,98 @@ class ChunkingSecureStore {
   }
 
   async setItem(key: string, value: string): Promise<void> {
-    try {
-      // ENCODING FLOW: String → UTF-8 bytes → base64 string (ASCII-safe, no multi-byte sequences)
-      // This ensures chunk boundaries can be placed anywhere without splitting UTF-8 code points.
-      const base64 = ChunkingSecureStore.toBase64(value);
-      // Determine original UTF-8 byte length from base64 so direct storage is used whenever raw
-      // value fits within SecureStore's per-key limit. This avoids unnecessary chunking/IO.
-      const paddingLength = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;
-      const rawByteLength = (base64.length * 3) / 4 - paddingLength;
+    // ENCODING FLOW: String → UTF-8 bytes → base64 string (ASCII-safe, no multi-byte sequences)
+    // This ensures chunk boundaries can be placed anywhere without splitting UTF-8 code points.
+    const base64 = ChunkingSecureStore.toBase64(value);
+    // Determine original UTF-8 byte length from base64 so direct storage is used whenever raw
+    // value fits within SecureStore's per-key limit. This avoids unnecessary chunking/IO.
+    const paddingLength = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;
+    const rawByteLength = (base64.length * 3) / 4 - paddingLength;
 
-      if (rawByteLength <= ChunkingSecureStore.CHUNK_SIZE) {
-        // Small value: store UTF-8 string directly (not base64-encoded), clean up any existing chunks
-        await SecureStore.setItemAsync(key, value);
-        await this.removeChunks(key);
-        return;
-      }
+    if (rawByteLength <= ChunkingSecureStore.CHUNK_SIZE) {
+      // Small value: store UTF-8 string directly (not base64-encoded), clean up any existing chunks
+      await SecureStore.setItemAsync(key, value);
+      await this.removeChunks(key);
+      return;
+    }
 
-      // Large value: chunk the base64 string by character position (safe: base64 is pure ASCII)
-      // Split base64 string into chunks that respect the byte limit
-      // Since base64 is pure ASCII (single-byte characters), any split point is safe.
-      const chunks: string[] = [];
-      let pos = 0;
-      while (pos < base64.length) {
-        const chunk = base64.slice(pos, pos + ChunkingSecureStore.CHUNK_SIZE);
-        chunks.push(chunk);
-        pos += ChunkingSecureStore.CHUNK_SIZE;
-      }
+    // Large value: chunk the base64 string by character position (safe: base64 is pure ASCII)
+    // Split base64 string into chunks that respect the byte limit
+    // Since base64 is pure ASCII (single-byte characters), any split point is safe.
+    const chunks: string[] = [];
+    let pos = 0;
+    while (pos < base64.length) {
+      const chunk = base64.slice(pos, pos + ChunkingSecureStore.CHUNK_SIZE);
+      chunks.push(chunk);
+      pos += ChunkingSecureStore.CHUNK_SIZE;
+    }
 
-      // Enforce a hard upper bound so cleanup remains correct (SecureStore has no key enumeration).
-      if (chunks.length > ChunkingSecureStore.MAX_CHUNKS) {
-        throw new Error(
-          `Auth session exceeds supported size: requires ${chunks.length} chunks (max ${ChunkingSecureStore.MAX_CHUNKS})`,
-        );
-      }
-
-      const currentMetaRaw = await SecureStore.getItemAsync(
-        key + ChunkingSecureStore.META_SUFFIX,
+    // Enforce a hard upper bound so cleanup remains correct (SecureStore has no key enumeration).
+    if (chunks.length > ChunkingSecureStore.MAX_CHUNKS) {
+      throw new Error(
+        `Auth session exceeds supported size: requires ${chunks.length} chunks (max ${ChunkingSecureStore.MAX_CHUNKS})`,
       );
-      const currentMeta = ChunkingSecureStore.parseChunkMeta(currentMetaRaw);
-      const nextPrefix: 'a' | 'b' =
-        currentMeta?.activePrefix === ChunkingSecureStore.PREFIX_A
-          ? ChunkingSecureStore.PREFIX_B
-          : ChunkingSecureStore.PREFIX_A;
-      const oldPrefix: 'a' | 'b' =
-        nextPrefix === ChunkingSecureStore.PREFIX_A
-          ? ChunkingSecureStore.PREFIX_B
-          : ChunkingSecureStore.PREFIX_A;
+    }
 
-      try {
-        // Prepare target prefix by clearing any stale data for that inactive prefix.
-        await this.deletePrefixedChunks(key, nextPrefix);
+    const currentMetaRaw = await SecureStore.getItemAsync(
+      key + ChunkingSecureStore.META_SUFFIX,
+    );
+    const currentMeta = ChunkingSecureStore.parseChunkMeta(currentMetaRaw);
+    const nextPrefix: 'a' | 'b' =
+      currentMeta?.activePrefix === ChunkingSecureStore.PREFIX_A
+        ? ChunkingSecureStore.PREFIX_B
+        : ChunkingSecureStore.PREFIX_A;
+    const oldPrefix: 'a' | 'b' =
+      nextPrefix === ChunkingSecureStore.PREFIX_A
+        ? ChunkingSecureStore.PREFIX_B
+        : ChunkingSecureStore.PREFIX_A;
 
-        // Store base64 chunks (not UTF-8 bytes) so no decoding happens at chunk boundaries.
-        // Two-phase write:
-        // 1) Write new chunks under an inactive prefix.
-        // 2) Flip metadata to the new prefix only after all chunks are written.
-        for (let i = 0; i < chunks.length; i++) {
-          const chunkKey = ChunkingSecureStore.buildPrefixedChunkKey(key, nextPrefix, i);
-          await SecureStore.setItemAsync(chunkKey, chunks[i]);
-        }
+    try {
+      // Prepare target prefix by clearing any stale data for that inactive prefix.
+      await this.deletePrefixedChunks(key, nextPrefix);
 
-        const metaKey = key + ChunkingSecureStore.META_SUFFIX;
-        await SecureStore.setItemAsync(
-          metaKey,
-          JSON.stringify({
-            format: ChunkingSecureStore.META_FORMAT,
-            activePrefix: nextPrefix,
-            chunkCount: chunks.length,
-          }),
-        );
-      } catch (error) {
-        console.error(`[ChunkingSecureStore] Error writing key ${key}:`, error);
-        try {
-          // Only clean the in-progress prefix. Preserve metadata and the last committed prefix.
-          await this.deletePrefixedChunks(key, nextPrefix);
-        } catch (cleanupError) {
-          console.error(
-            `[ChunkingSecureStore] Error rolling back failed write for key ${key}:`,
-            cleanupError,
-          );
-        }
-        throw error;
+      // Store base64 chunks (not UTF-8 bytes) so no decoding happens at chunk boundaries.
+      // Two-phase write:
+      // 1) Write new chunks under an inactive prefix.
+      // 2) Flip metadata to the new prefix only after all chunks are written.
+      for (let i = 0; i < chunks.length; i++) {
+        const chunkKey = ChunkingSecureStore.buildPrefixedChunkKey(key, nextPrefix, i);
+        await SecureStore.setItemAsync(chunkKey, chunks[i]);
       }
 
+      const metaKey = key + ChunkingSecureStore.META_SUFFIX;
+      await SecureStore.setItemAsync(
+        metaKey,
+        JSON.stringify({
+          format: ChunkingSecureStore.META_FORMAT,
+          activePrefix: nextPrefix,
+          chunkCount: chunks.length,
+        }),
+      );
+    } catch (error) {
+      console.error(`[ChunkingSecureStore] Error writing key ${key}:`, error);
       try {
-        // Cleanup old direct value and inactive chunk data best-effort after commit.
-        await SecureStore.deleteItemAsync(key);
-        await this.deletePrefixedChunks(key, oldPrefix);
-        await this.deleteLegacyChunks(key);
+        // Only clean the in-progress prefix. Preserve metadata and the last committed prefix.
+        await this.deletePrefixedChunks(key, nextPrefix);
       } catch (cleanupError) {
         console.error(
-          `[ChunkingSecureStore] Error cleaning up committed write for key ${key}:`,
+          `[ChunkingSecureStore] Error rolling back failed write for key ${key}:`,
           cleanupError,
         );
       }
-    } catch (error) {
       throw error;
+    }
+
+    try {
+      // Cleanup old direct value and inactive chunk data best-effort after commit.
+      await SecureStore.deleteItemAsync(key);
+      await this.deletePrefixedChunks(key, oldPrefix);
+      await this.deleteLegacyChunks(key);
+    } catch (cleanupError) {
+      console.error(
+        `[ChunkingSecureStore] Error cleaning up committed write for key ${key}:`,
+        cleanupError,
+      );
     }
   }
 

@@ -346,11 +346,14 @@ describe('ChunkingSecureStore (via supabase-wiring)', () => {
       expect(mockStore['auth-session']).toBeUndefined();
       const metaValue = mockStore['auth-session.meta'];
       expect(metaValue).toBeDefined();
-      const parsedMeta = JSON.parse(metaValue!);
+      if (!metaValue) {
+        throw new Error('Expected chunk metadata to be defined');
+      }
+      const parsedMeta = JSON.parse(metaValue);
       const chunkCount =
         typeof parsedMeta === 'object' && parsedMeta !== null && 'chunkCount' in parsedMeta
           ? (parsedMeta as { chunkCount: number }).chunkCount
-          : parseInt(metaValue!, 10);
+          : parseInt(metaValue, 10);
       expect(chunkCount).toBeGreaterThanOrEqual(2); // Should require multiple chunks
       expect(chunkEntries().length).toBeGreaterThanOrEqual(2);
 
