@@ -195,7 +195,6 @@ class ChunkingSecureStore {
   }
 
   async setItem(key: string, value: string): Promise<void> {
-    let shouldRollback = false;
     try {
       // ENCODING FLOW: String → UTF-8 bytes → base64 string (ASCII-safe, no multi-byte sequences)
       // This ensures chunk boundaries can be placed anywhere without splitting UTF-8 code points.
@@ -238,53 +237,59 @@ class ChunkingSecureStore {
         currentMeta?.activePrefix === ChunkingSecureStore.PREFIX_A
           ? ChunkingSecureStore.PREFIX_B
           : ChunkingSecureStore.PREFIX_A;
-
-      // Prepare target prefix by clearing any stale data for that inactive prefix.
-      await this.deletePrefixedChunks(key, nextPrefix);
-
-      shouldRollback = true;
-
-      // Store base64 chunks (not UTF-8 bytes) so no decoding happens at chunk boundaries
-      // Two-phase write:
-      // 1) Write new chunks under an inactive prefix.
-      // 2) Flip metadata to the new prefix only after all chunks are written.
-      for (let i = 0; i < chunks.length; i++) {
-        const chunkKey = ChunkingSecureStore.buildPrefixedChunkKey(key, nextPrefix, i);
-        await SecureStore.setItemAsync(chunkKey, chunks[i]);
-      }
-
-      const metaKey = key + ChunkingSecureStore.META_SUFFIX;
-      await SecureStore.setItemAsync(
-        metaKey,
-        JSON.stringify({
-          format: ChunkingSecureStore.META_FORMAT,
-          activePrefix: nextPrefix,
-          chunkCount: chunks.length,
-        }),
-      );
-
-      // Cleanup old direct value and inactive chunk data best-effort after commit.
-      await SecureStore.deleteItemAsync(key);
       const oldPrefix: 'a' | 'b' =
         nextPrefix === ChunkingSecureStore.PREFIX_A
           ? ChunkingSecureStore.PREFIX_B
           : ChunkingSecureStore.PREFIX_A;
-      await this.deletePrefixedChunks(key, oldPrefix);
-      await this.deleteLegacyChunks(key);
-      shouldRollback = false;
-    } catch (error) {
-      console.error(`[ChunkingSecureStore] Error writing key ${key}:`, error);
-      if (shouldRollback) {
+
+      try {
+        // Prepare target prefix by clearing any stale data for that inactive prefix.
+        await this.deletePrefixedChunks(key, nextPrefix);
+
+        // Store base64 chunks (not UTF-8 bytes) so no decoding happens at chunk boundaries.
+        // Two-phase write:
+        // 1) Write new chunks under an inactive prefix.
+        // 2) Flip metadata to the new prefix only after all chunks are written.
+        for (let i = 0; i < chunks.length; i++) {
+          const chunkKey = ChunkingSecureStore.buildPrefixedChunkKey(key, nextPrefix, i);
+          await SecureStore.setItemAsync(chunkKey, chunks[i]);
+        }
+
+        const metaKey = key + ChunkingSecureStore.META_SUFFIX;
+        await SecureStore.setItemAsync(
+          metaKey,
+          JSON.stringify({
+            format: ChunkingSecureStore.META_FORMAT,
+            activePrefix: nextPrefix,
+            chunkCount: chunks.length,
+          }),
+        );
+      } catch (error) {
+        console.error(`[ChunkingSecureStore] Error writing key ${key}:`, error);
         try {
-          await SecureStore.deleteItemAsync(key);
-          await this.removeChunks(key);
+          // Only clean the in-progress prefix. Preserve metadata and the last committed prefix.
+          await this.deletePrefixedChunks(key, nextPrefix);
         } catch (cleanupError) {
           console.error(
             `[ChunkingSecureStore] Error rolling back failed write for key ${key}:`,
             cleanupError,
           );
         }
+        throw error;
       }
+
+      try {
+        // Cleanup old direct value and inactive chunk data best-effort after commit.
+        await SecureStore.deleteItemAsync(key);
+        await this.deletePrefixedChunks(key, oldPrefix);
+        await this.deleteLegacyChunks(key);
+      } catch (cleanupError) {
+        console.error(
+          `[ChunkingSecureStore] Error cleaning up committed write for key ${key}:`,
+          cleanupError,
+        );
+      }
+    } catch (error) {
       throw error;
     }
   }

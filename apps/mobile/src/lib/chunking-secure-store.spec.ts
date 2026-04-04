@@ -164,6 +164,43 @@ describe('ChunkingSecureStore (via supabase-wiring)', () => {
       expect(chunkEntries().length).toBe(0);
     });
 
+    test('preserves previously committed chunked session when overwrite fails mid-write', async () => {
+      const previousValue = 'a'.repeat(5000);
+      const nextValue = 'b'.repeat(5000);
+
+      await mobileAuthStorage.setItem('auth-session', previousValue);
+      const previousMeta = JSON.parse(mockStore['auth-session.meta']);
+      expect(previousMeta.activePrefix).toBe('a');
+
+      (SecureStore.setItemAsync as jest.Mock).mockImplementation(
+        (key: string, value: string) => {
+          if (Buffer.byteLength(value, 'utf-8') > 2048) {
+            throw new Error(`Value exceeds 2048 byte limit for key: ${key}`);
+          }
+
+          if (key === 'auth-session.chunk.b.1') {
+            throw new Error('Simulated SecureStore failure');
+          }
+
+          mockStore[key] = value;
+          return Promise.resolve();
+        },
+      );
+
+      await expect(mobileAuthStorage.setItem('auth-session', nextValue)).rejects.toThrow(
+        'Simulated SecureStore failure',
+      );
+
+      const preserved = await mobileAuthStorage.getItem('auth-session');
+      expect(preserved).toBe(previousValue);
+
+      const preservedMeta = JSON.parse(mockStore['auth-session.meta']);
+      expect(preservedMeta.activePrefix).toBe('a');
+      expect(mockStore['auth-session.chunk.a.0']).toBeDefined();
+      expect(mockStore['auth-session.chunk.b.0']).toBeUndefined();
+      expect(mockStore['auth-session.chunk.b.1']).toBeUndefined();
+    });
+
     test('removes all chunks when removing a key', async () => {
       const largeValue = 'x'.repeat(5000);
 
