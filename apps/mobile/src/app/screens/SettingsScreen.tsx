@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Switch, Text, View } from 'react-native';
 import {
   getRequireReauthOnOpenPreference,
@@ -8,27 +8,28 @@ import { ScreenShell } from '../components/ScreenShell';
 import { styles } from '../styles';
 
 export function SettingsScreen() {
+  const isMountedRef = useRef(true);
   const [requireReauth, setRequireReauth] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    let mounted = true;
+    isMountedRef.current = true;
 
     const loadPreference = async () => {
       try {
         const enabled = await getRequireReauthOnOpenPreference();
 
-        if (mounted) {
+        if (isMountedRef.current) {
           setRequireReauth(enabled);
         }
       } catch {
-        if (mounted) {
+        if (isMountedRef.current) {
           setErrorMessage('Unable to load your setting right now. Try again.');
         }
       } finally {
-        if (mounted) {
+        if (isMountedRef.current) {
           setLoading(false);
         }
       }
@@ -37,7 +38,7 @@ export function SettingsScreen() {
     void loadPreference();
 
     return () => {
-      mounted = false;
+      isMountedRef.current = false;
     };
   }, []);
 
@@ -47,11 +48,18 @@ export function SettingsScreen() {
 
     try {
       await setRequireReauthOnOpenPreference(nextValue);
-      setRequireReauth(nextValue);
+
+      if (isMountedRef.current) {
+        setRequireReauth(nextValue);
+      }
     } catch {
-      setErrorMessage('Unable to save your setting right now. Try again.');
+      if (isMountedRef.current) {
+        setErrorMessage('Unable to save your setting right now. Try again.');
+      }
     } finally {
-      setSaving(false);
+      if (isMountedRef.current) {
+        setSaving(false);
+      }
     }
   };
 

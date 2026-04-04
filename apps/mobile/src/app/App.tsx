@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator } from 'react-native';
 import { AppState } from 'react-native';
 import { Linking } from 'react-native';
@@ -85,26 +85,63 @@ export function App() {
   const [authRoute, setAuthRoute] = useState<AuthRoute>('Login');
   const [recoveryFlowActive, setRecoveryFlowActive] = useState(false);
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
+  const recoveryFlowActiveRef = useRef(false);
+  const authRouteRef = useRef<AuthRoute>('Login');
 
   useEffect(() => {
     let mounted = true;
 
+    const isRecoveryFlowInProgress = () =>
+      recoveryFlowActiveRef.current ||
+      authRouteRef.current === 'UpdatePassword';
+
     const enforceReauthIfNeeded = async () => {
-      const reauthRequired = await getRequireReauthOnOpenPreference();
+      try {
+        if (isRecoveryFlowInProgress()) {
+          return;
+        }
 
-      if (!reauthRequired) {
-        return;
+        const reauthRequired = await getRequireReauthOnOpenPreference();
+
+        if (!reauthRequired) {
+          return;
+        }
+
+        if (isRecoveryFlowInProgress()) {
+          return;
+        }
+
+        const {
+          data: { session: currentSession },
+          error: getSessionError,
+        } = await mobileSupabase.auth.getSession();
+
+        if (getSessionError) {
+          console.warn(
+            'Unable to check current session before enforcing re-auth.',
+            getSessionError,
+          );
+          return;
+        }
+
+        if (!currentSession) {
+          return;
+        }
+
+        const { error: signOutError } = await mobileSupabase.auth.signOut();
+
+        if (signOutError) {
+          console.warn(
+            'Unable to sign out while enforcing re-auth preference.',
+            signOutError,
+          );
+        }
+      } catch (error) {
+        console.warn(
+          'Skipping re-auth enforcement because session checks failed.',
+          error,
+        );
       }
-
-      const {
-        data: { session: currentSession },
-      } = await mobileSupabase.auth.getSession();
-
-      if (!currentSession) {
-        return;
-      }
-
-      await mobileSupabase.auth.signOut();
     };
 
     const handleRecoveryLink = async (url: string) => {
@@ -126,6 +163,8 @@ export function App() {
         return;
       }
 
+      recoveryFlowActiveRef.current = true;
+      authRouteRef.current = 'UpdatePassword';
       setRecoveryFlowActive(true);
       setAuthRoute('UpdatePassword');
 
@@ -208,6 +247,8 @@ export function App() {
       data: { subscription },
     } = mobileSupabase.auth.onAuthStateChange((event, nextSession) => {
       if (event === 'SIGNED_OUT') {
+        authRouteRef.current = 'Login';
+        recoveryFlowActiveRef.current = false;
         setAuthRoute('Login');
         setRecoveryFlowActive(false);
         setRecoveryError(null);
@@ -225,8 +266,8 @@ export function App() {
     return () => {
       mounted = false;
       subscription.unsubscribe();
-      urlSubscription.remove();
-      appStateSubscription.remove();
+      urlSubscription?.remove?.();
+      appStateSubscription?.remove?.();
     };
   }, [mobileSupabase]);
 
@@ -270,11 +311,15 @@ export function App() {
               <UpdatePasswordScreen
                 recoveryError={recoveryError}
                 onGoToLogin={() => {
+                  authRouteRef.current = 'Login';
+                  recoveryFlowActiveRef.current = false;
                   setRecoveryFlowActive(false);
                   setRecoveryError(null);
                   setAuthRoute('Login');
                 }}
                 onPasswordUpdated={() => {
+                  authRouteRef.current = 'Login';
+                  recoveryFlowActiveRef.current = false;
                   setRecoveryFlowActive(false);
                   setRecoveryError(null);
                   setAuthRoute('Login');
