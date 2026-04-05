@@ -16,6 +16,7 @@ export default async function DashboardPage() {
     data: { user },
     error: getUserError,
   } = await supabase.auth.getUser();
+  const allowDevAuthErrorDebugView = showHealthCheck && !!getUserError;
 
   if (getUserError) {
     console.error(
@@ -35,13 +36,9 @@ export default async function DashboardPage() {
     };
   }
 
-  // This should not happen due to proxy, but as a safety check
-  if (!user) {
-    if (showHealthCheck && getUserError) {
-      // Keep the page visible in development so auth/session failures are actionable.
-    } else {
-      redirect('/login');
-    }
+  // Keep the page visible only for dev auth-error debugging; otherwise redirect.
+  if (!user && !allowDevAuthErrorDebugView) {
+    redirect('/login');
   }
 
   if (showHealthCheck && user && !healthCheck) {
