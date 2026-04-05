@@ -36,17 +36,17 @@
 
 ---
 
-## Week 3: March 30 - April 5 -- Patient Authentication and Security Baseline
+## Week 3: March 30-April 5 -- Patient Authentication and Security Baseline (COMPLETE)
 
 **Goal:** Implement patient-facing auth and session behavior so all future data flows use Supabase Auth + RLS (no application-layer PHI encryption or per-user DEK in this model).
 
 **Tasks:**
 
-- [ ] Patient sign-up and login: email/password via Supabase Auth
-- [ ] Persistent session via Supabase Auth refresh tokens (patient default: stays logged in); **optional patient preference** to require re-authentication when opening the app
-- [ ] Password reset via email link; password change does **not** re-encrypt PHI (server stores plaintext PHI under RLS per [PRD](PRD.md))
-- [ ] Wire **`healthCheckProfilesLimit1`** from `@abstrack/supabase` in **one** patient app (web or mobile) as part of validating sign-in/session: env keys, session, and RLS end-to-end
-- [ ] Document security baseline for the repo: TLS, RLS, grant tables (`practitioner_access`, `caretaker_access`), alignment with PRD security section
+- [x] Patient sign-up and login: email/password via Supabase Auth
+- [x] Persistent session via Supabase Auth refresh tokens (patient default: stays logged in); **optional patient preference** to require re-authentication when opening the app
+- [x] Password reset via email link; password change does **not** re-encrypt PHI (server stores plaintext PHI under RLS per [PRD](PRD.md))
+- [x] Wire **`healthCheckProfilesLimit1`** from `@abstrack/supabase` in **one** patient app (web or mobile) as part of validating sign-in/session: env keys, session, and RLS end-to-end
+- [x] Document security baseline for the repo: TLS, RLS, grant tables (`practitioner_access`, `caretaker_access`), alignment with PRD security section
 
 **Why this week:** Establishes auth without a client-side encryption key hierarchy. The product safeguards are RLS, grants, TLS, audit logging, and (later) SQLCipher on device—not field-level E2E crypto.
 
