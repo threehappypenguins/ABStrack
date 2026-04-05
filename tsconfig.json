@@ -29,9 +29,6 @@
     },
     {
       "path": "./packages/powersync"
-    },
-    {
-      "path": "./packages/crypto"
     }
   ]
 }

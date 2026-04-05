@@ -98,18 +98,18 @@ A doctor, specialist, or other clinician chosen by the patient. Receives a crede
 
 ## Technical Stack
 
-| Layer                | Technology                                                                                                                                                                                          |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Mobile App           | React Native + NativeWind (Expo for development)                                                                                                                                                    |
-| User Web App         | Next.js + Tailwind CSS                                                                                                                                                                              |
-| Practitioner Web App | Next.js + Tailwind CSS                                                                                                                                                                              |
-| Database             | Supabase (PostgreSQL)                                                                                                                                                                               |
-| Offline Sync         | PowerSync                                                                                                                                                                                           |
-| Monorepo Tooling     | Nx                                                                                                                                                                                                  |
-| Package Manager      | pnpm                                                                                                                                                                                                |
-| Shared Packages      | `@abstrack/types`, `@abstrack/supabase`, `@abstrack/ui`, `@abstrack/powersync` (optional `@abstrack/crypto` for non-PHI utilities only—not used for application-layer PHI encryption in this model) |
-| Media Storage        | Supabase Storage                                                                                                                                                                                    |
-| CI/CD                | GitHub Actions                                                                                                                                                                                      |
+| Layer                | Technology                                                                     |
+| -------------------- | ------------------------------------------------------------------------------ |
+| Mobile App           | React Native + NativeWind (Expo for development)                               |
+| User Web App         | Next.js + Tailwind CSS                                                         |
+| Practitioner Web App | Next.js + Tailwind CSS                                                         |
+| Database             | Supabase (PostgreSQL)                                                          |
+| Offline Sync         | PowerSync                                                                      |
+| Monorepo Tooling     | Nx                                                                             |
+| Package Manager      | pnpm                                                                           |
+| Shared Packages      | `@abstrack/types`, `@abstrack/supabase`, `@abstrack/ui`, `@abstrack/powersync` |
+| Media Storage        | Supabase Storage                                                               |
+| CI/CD                | GitHub Actions                                                                 |
 
 **Hosting:** Supabase cloud for development. Self-hosted on Oracle VM (free tier) for production.
 
@@ -127,8 +127,7 @@ ABStrack/
     ├── types/           # Shared TypeScript types
     ├── supabase/        # Shared Supabase client & helpers
     ├── ui/              # Shared UI components
-    ├── powersync/       # PowerSync schema & sync configuration
-    └── crypto/          # Optional; not used for PHI encryption in the server-side safeguard model
+    └── powersync/       # PowerSync schema & sync configuration
 ```
 
 All three apps share types, the Supabase client, UI components, and PowerSync configuration from the shared packages.
@@ -570,7 +569,7 @@ Both the user app and the practitioner app display data visualizations to help i
 
 #### Server-side confidentiality (not client DEK encryption)
 
-- Media objects are stored **without** an application-layer DEK or per-file AES from `@abstrack/crypto`. Confidentiality is provided by a **private bucket**, **RLS on `storage.objects`**, **TLS** in transit, and **platform encryption at rest** on the storage backend (Supabase or self-hosted S3-compatible).
+- Media objects are stored **without** an application-layer DEK or per-file AES encryption. Confidentiality is provided by a **private bucket**, **RLS on `storage.objects`**, **TLS** in transit, and **platform encryption at rest** on the storage backend (Supabase or self-hosted S3-compatible).
 - A **thumbnail** object may be stored alongside the full media (same bucket, separate object key) for grids; thumbnails are subject to the same access controls as the primary file.
 
 #### Storage
