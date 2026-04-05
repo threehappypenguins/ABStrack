@@ -1,10 +1,16 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { signOut } from '@abstrack/supabase';
+import { signOut, healthCheckProfilesLimit1 } from '@abstrack/supabase';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { mapAuthError } from '../auth-helpers';
 import { ScreenShell } from '../components/ScreenShell';
 import { styles } from '../styles';
+
+interface HealthCheckResult {
+  success: boolean;
+  message: string;
+  error?: string;
+}
 
 type HomeScreenProps = {
   onGoToSettings: () => void;
@@ -13,6 +19,41 @@ type HomeScreenProps = {
 export function HomeScreen({ onGoToSettings }: HomeScreenProps) {
   const [signOutBusy, setSignOutBusy] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
+  const [healthCheck, setHealthCheck] = useState<HealthCheckResult | null>(
+    null,
+  );
+
+  useEffect(() => {
+    // Run health check on component mount to validate env, session, and RLS
+    const runHealthCheck = async () => {
+      try {
+        const mobileSupabase = getMobileSupabaseClient();
+        const result = await healthCheckProfilesLimit1(mobileSupabase);
+
+        if (result.error) {
+          setHealthCheck({
+            success: false,
+            message: 'Health check failed',
+            error: result.error.message,
+          });
+        } else {
+          setHealthCheck({
+            success: true,
+            message:
+              'Health check passed: env vars, session, and RLS are functional',
+          });
+        }
+      } catch (err) {
+        setHealthCheck({
+          success: false,
+          message: 'Health check error',
+          error: err instanceof Error ? err.message : 'Unknown error',
+        });
+      }
+    };
+
+    void runHealthCheck();
+  }, []);
 
   const handleSignOut = async () => {
     const mobileSupabase = getMobileSupabaseClient();
@@ -41,6 +82,54 @@ export function HomeScreen({ onGoToSettings }: HomeScreenProps) {
       <Text style={styles.title} testID="main-home-title">
         Welcome to ABStrack
       </Text>
+
+      {/* Health Check Status - only render once result is available */}
+      {healthCheck && (
+        <View
+          style={{
+            marginVertical: 12,
+            padding: 12,
+            borderRadius: 8,
+            borderWidth: 1,
+            borderColor: healthCheck.success ? '#16a34a' : '#dc2626',
+            backgroundColor: healthCheck.success ? '#f0fdf4' : '#fef2f2',
+          }}
+        >
+          <Text
+            style={{
+              fontSize: 14,
+              fontWeight: '600',
+              marginBottom: 4,
+              color: healthCheck.success ? '#15803d' : '#991b1b',
+            }}
+          >
+            {healthCheck.success
+              ? '✓ Health Check Passed'
+              : '✗ Health Check Failed'}
+          </Text>
+          <Text
+            style={{
+              fontSize: 12,
+              color: healthCheck.success ? '#166534' : '#7f1d1d',
+            }}
+          >
+            {healthCheck.message}
+          </Text>
+          {healthCheck.error && (
+            <Text
+              style={{
+                fontSize: 10,
+                marginTop: 8,
+                color: healthCheck.success ? '#166534' : '#7f1d1d',
+                fontFamily: 'monospace',
+              }}
+            >
+              Error: {healthCheck.error}
+            </Text>
+          )}
+        </View>
+      )}
+
       <Text style={styles.bodyText}>You are signed in.</Text>
       {signOutError ? (
         <Text style={styles.errorText} accessibilityRole="alert">
