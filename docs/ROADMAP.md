@@ -36,7 +36,7 @@
 
 ---
 
-## Week 3: March 30 - April 5 -- Patient Authentication and Security Baseline (COMPLETE)
+## Week 3: March 30-April 5 -- Patient Authentication and Security Baseline (COMPLETE)
 
 **Goal:** Implement patient-facing auth and session behavior so all future data flows use Supabase Auth + RLS (no application-layer PHI encryption or per-user DEK in this model).
 
