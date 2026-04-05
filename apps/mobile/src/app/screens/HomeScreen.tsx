@@ -17,6 +17,7 @@ type HomeScreenProps = {
 };
 
 export function HomeScreen({ onGoToSettings }: HomeScreenProps) {
+  const showHealthCheck = __DEV__;
   const isMountedRef = useRef(true);
   const [signOutBusy, setSignOutBusy] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
@@ -26,6 +27,12 @@ export function HomeScreen({ onGoToSettings }: HomeScreenProps) {
 
   useEffect(() => {
     isMountedRef.current = true;
+
+    if (!showHealthCheck) {
+      return () => {
+        isMountedRef.current = false;
+      };
+    }
 
     // Run health check on component mount to validate env, session, and RLS
     const runHealthCheck = async () => {
@@ -66,7 +73,7 @@ export function HomeScreen({ onGoToSettings }: HomeScreenProps) {
     return () => {
       isMountedRef.current = false;
     };
-  }, []);
+  }, [showHealthCheck]);
 
   const handleSignOut = async () => {
     const mobileSupabase = getMobileSupabaseClient();
@@ -97,7 +104,7 @@ export function HomeScreen({ onGoToSettings }: HomeScreenProps) {
       </Text>
 
       {/* Health Check Status - only render once result is available */}
-      {healthCheck && (
+      {showHealthCheck && healthCheck && (
         <View
           style={[
             styles.healthCheckContainer,
