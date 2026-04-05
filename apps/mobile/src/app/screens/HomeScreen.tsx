@@ -46,7 +46,7 @@ export function HomeScreen({ onGoToSettings }: HomeScreenProps) {
             setHealthCheck({
               success: true,
               message:
-                'Health check passed: env vars, session, and RLS are functional',
+                'Health check passed: profiles query executed without API error (empty rows may still indicate no profile or restrictive RLS).',
             });
           }
         }
@@ -99,43 +99,43 @@ export function HomeScreen({ onGoToSettings }: HomeScreenProps) {
       {/* Health Check Status - only render once result is available */}
       {healthCheck && (
         <View
-          style={{
-            marginVertical: 12,
-            padding: 12,
-            borderRadius: 8,
-            borderWidth: 1,
-            borderColor: healthCheck.success ? '#16a34a' : '#dc2626',
-            backgroundColor: healthCheck.success ? '#f0fdf4' : '#fef2f2',
-          }}
+          style={[
+            styles.healthCheckContainer,
+            healthCheck.success
+              ? styles.healthCheckContainerSuccess
+              : styles.healthCheckContainerFailure,
+          ]}
         >
           <Text
-            style={{
-              fontSize: 14,
-              fontWeight: '600',
-              marginBottom: 4,
-              color: healthCheck.success ? '#15803d' : '#991b1b',
-            }}
+            style={[
+              styles.healthCheckTitleText,
+              healthCheck.success
+                ? styles.healthCheckTitleTextSuccess
+                : styles.healthCheckTitleTextFailure,
+            ]}
           >
             {healthCheck.success
               ? '✓ Health Check Passed'
               : '✗ Health Check Failed'}
           </Text>
           <Text
-            style={{
-              fontSize: 12,
-              color: healthCheck.success ? '#166534' : '#7f1d1d',
-            }}
+            style={[
+              styles.healthCheckBodyText,
+              healthCheck.success
+                ? styles.healthCheckBodyTextSuccess
+                : styles.healthCheckBodyTextFailure,
+            ]}
           >
             {healthCheck.message}
           </Text>
           {healthCheck.error && (
             <Text
-              style={{
-                fontSize: 10,
-                marginTop: 8,
-                color: healthCheck.success ? '#166534' : '#7f1d1d',
-                fontFamily: 'monospace',
-              }}
+              style={[
+                styles.healthCheckErrorText,
+                healthCheck.success
+                  ? styles.healthCheckErrorTextSuccess
+                  : styles.healthCheckErrorTextFailure,
+              ]}
             >
               Error: {healthCheck.error}
             </Text>

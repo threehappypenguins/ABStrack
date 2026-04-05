@@ -38,7 +38,7 @@ export default async function DashboardPage() {
         healthCheck = {
           success: true,
           message:
-            'Health check passed: env vars, session, and RLS are functional',
+            'Health check passed: authenticated user found and profiles query executed without API error (empty rows may still indicate no profile or restrictive RLS).',
         };
       }
     } catch (err) {

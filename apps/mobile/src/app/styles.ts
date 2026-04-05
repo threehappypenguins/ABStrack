@@ -108,4 +108,49 @@ export const styles = StyleSheet.create({
     flex: 1,
     gap: 6,
   },
+  healthCheckContainer: {
+    marginVertical: 12,
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  healthCheckContainerSuccess: {
+    borderColor: '#16a34a',
+    backgroundColor: '#f0fdf4',
+  },
+  healthCheckContainerFailure: {
+    borderColor: '#dc2626',
+    backgroundColor: '#fef2f2',
+  },
+  healthCheckTitleText: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  healthCheckTitleTextSuccess: {
+    color: '#15803d',
+  },
+  healthCheckTitleTextFailure: {
+    color: '#991b1b',
+  },
+  healthCheckBodyText: {
+    fontSize: 12,
+  },
+  healthCheckBodyTextSuccess: {
+    color: '#166534',
+  },
+  healthCheckBodyTextFailure: {
+    color: '#7f1d1d',
+  },
+  healthCheckErrorText: {
+    fontSize: 10,
+    marginTop: 8,
+    fontFamily: 'monospace',
+  },
+  healthCheckErrorTextSuccess: {
+    color: '#166534',
+  },
+  healthCheckErrorTextFailure: {
+    color: '#7f1d1d',
+  },
 });
