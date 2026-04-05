@@ -1,7 +1,7 @@
 -- Episode media Storage (PRD §10, ROADMAP Week 2): private bucket + RLS on storage.objects.
 --
 -- Confidentiality: private bucket + RLS + TLS + platform encryption at rest — not app-layer DEK
--- wrapping of objects. Optional @abstrack/crypto does not encrypt blobs in this bucket for MVP.
+-- wrapping of objects.
 --
 -- Object key prefix (one term only): "{user_id}/..." — user_id is always public.episode_media.user_id
 -- (auth uid of the patient who owns the row). Do not use other placeholders (e.g. {patient_user_id}) in
