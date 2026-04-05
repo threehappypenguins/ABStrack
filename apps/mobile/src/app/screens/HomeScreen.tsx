@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { signOut, healthCheckProfilesLimit1 } from '@abstrack/supabase';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
@@ -17,6 +17,7 @@ type HomeScreenProps = {
 };
 
 export function HomeScreen({ onGoToSettings }: HomeScreenProps) {
+  const isMountedRef = useRef(true);
   const [signOutBusy, setSignOutBusy] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
   const [healthCheck, setHealthCheck] = useState<HealthCheckResult | null>(
@@ -24,6 +25,8 @@ export function HomeScreen({ onGoToSettings }: HomeScreenProps) {
   );
 
   useEffect(() => {
+    isMountedRef.current = true;
+
     // Run health check on component mount to validate env, session, and RLS
     const runHealthCheck = async () => {
       try {
@@ -31,28 +34,38 @@ export function HomeScreen({ onGoToSettings }: HomeScreenProps) {
         const result = await healthCheckProfilesLimit1(mobileSupabase);
 
         if (result.error) {
-          setHealthCheck({
-            success: false,
-            message: 'Health check failed',
-            error: result.error.message,
-          });
+          if (isMountedRef.current) {
+            setHealthCheck({
+              success: false,
+              message: 'Health check failed',
+              error: result.error.message,
+            });
+          }
         } else {
-          setHealthCheck({
-            success: true,
-            message:
-              'Health check passed: env vars, session, and RLS are functional',
-          });
+          if (isMountedRef.current) {
+            setHealthCheck({
+              success: true,
+              message:
+                'Health check passed: env vars, session, and RLS are functional',
+            });
+          }
         }
       } catch (err) {
-        setHealthCheck({
-          success: false,
-          message: 'Health check error',
-          error: err instanceof Error ? err.message : 'Unknown error',
-        });
+        if (isMountedRef.current) {
+          setHealthCheck({
+            success: false,
+            message: 'Health check error',
+            error: err instanceof Error ? err.message : 'Unknown error',
+          });
+        }
       }
     };
 
     void runHealthCheck();
+
+    return () => {
+      isMountedRef.current = false;
+    };
   }, []);
 
   const handleSignOut = async () => {
