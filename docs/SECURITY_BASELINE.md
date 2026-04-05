@@ -12,18 +12,18 @@ This document summarizes the repository security posture, points to implementati
 
 ## Security Posture at a Glance
 
-| Control                                                               | Current Status                 | Where Defined / Implemented                                                                                          |
-| --------------------------------------------------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| TLS for client to Supabase traffic                                    | Implemented                    | PRD security + architecture, Supabase platform/API model                                                             |
-| RLS for PHI tables                                                    | Implemented                    | `supabase/migrations/20260327130000_rls_policies.sql`                                                                |
-| Grant-table authorization (`practitioner_access`, `caretaker_access`) | Implemented                    | `supabase/migrations/20260327120000_abstrack_core_schema.sql`, `supabase/migrations/20260327130000_rls_policies.sql` |
-| Append-only `access_log` with trusted insert path                     | Implemented                    | `supabase/migrations/20260327120000_abstrack_core_schema.sql`, `supabase/migrations/20260327130000_rls_policies.sql` |
-| Auth (email/password, persistent session, password reset/change)      | Implemented                    | `packages/supabase/src/lib/auth.ts`, app auth screens/providers                                                      |
-| Practitioner MFA enforcement (fail-closed)                            | Planned (Week 5)               | PRD Authentication + Security sections; roadmap Week 5                                                               |
-| Media bucket privacy + `storage.objects` RLS                          | Implemented                    | `supabase/migrations/20260328100000_episode_media_storage_bucket.sql`                                                |
-| Media access via signed URLs                                          | Planned for app flow (Week 7)  | PRD Section 10 + roadmap Week 7                                                                                      |
-| Data model: plaintext PHI under RLS (no app-layer E2E encryption)     | Implemented as design baseline | PRD Security + data model sections; schema comments in core migration                                                |
-| PowerSync + SQLCipher offline protections                             | Planned (Week 7)               | PRD architecture/security and roadmap Week 7                                                                         |
+| Control                                                               | Current Status                 | Where Defined / Implemented                                                                                                                                                                            |
+| --------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| TLS for client to Supabase traffic                                    | Implemented                    | [PRD: Architecture](PRD.md#architecture-overview) + [Security](PRD.md#security-privacy-and-compliance), Supabase platform/API model                                                                    |
+| RLS for PHI tables                                                    | Implemented                    | `supabase/migrations/20260327130000_rls_policies.sql`                                                                                                                                                  |
+| Grant-table authorization (`practitioner_access`, `caretaker_access`) | Implemented                    | `supabase/migrations/20260327120000_abstrack_core_schema.sql`, `supabase/migrations/20260327130000_rls_policies.sql`                                                                                   |
+| Append-only `access_log` with trusted insert path                     | Implemented                    | `supabase/migrations/20260327120000_abstrack_core_schema.sql`, `supabase/migrations/20260327130000_rls_policies.sql`                                                                                   |
+| Auth (email/password, persistent session, password reset/change)      | Implemented                    | `packages/supabase/src/lib/auth.ts`, app auth screens/providers                                                                                                                                        |
+| Practitioner MFA enforcement (fail-closed)                            | Planned (Week 5)               | [PRD: Authentication](PRD.md#1-authentication) + [Security](PRD.md#security-privacy-and-compliance); [roadmap Week 5](ROADMAP.md#week-5-april-13-19----auth-completion-and-episode-logging-foundation) |
+| Media bucket privacy + `storage.objects` RLS                          | Implemented                    | `supabase/migrations/20260328100000_episode_media_storage_bucket.sql`                                                                                                                                  |
+| Media access via signed URLs                                          | Planned for app flow (Week 7)  | [PRD §10](PRD.md#10-video--photo-capture) + [roadmap Week 7](ROADMAP.md#week-7-april-27---may-3----media-capture-and-offline-sync)                                                                     |
+| Data model: plaintext PHI under RLS (no app-layer E2E encryption)     | Implemented as design baseline | [PRD: Security](PRD.md#security-privacy-and-compliance) + [data model](PRD.md#data-model-plaintext-phi-in-supabase-under-rls); schema comments in core migration                                       |
+| PowerSync + SQLCipher offline protections                             | Planned (Week 7)               | [PRD: Architecture](PRD.md#architecture-overview)/[Security](PRD.md#security-privacy-and-compliance) and [roadmap Week 7](ROADMAP.md#week-7-april-27---may-3----media-capture-and-offline-sync)        |
 
 ## Control Details
 
@@ -31,8 +31,8 @@ This document summarizes the repository security posture, points to implementati
 
 - Intent: all API/auth/storage traffic from clients to Supabase is over HTTPS/TLS.
 - PRD references:
-  - `docs/PRD.md` Architecture overview (web apps query Supabase over TLS)
-  - `docs/PRD.md` Security controls summary and technical safeguard baseline (TLS for API/storage)
+  - [PRD: Architecture overview](PRD.md#architecture-overview) (web apps query Supabase over TLS)
+  - [PRD: Security controls summary](PRD.md#security-controls-summary-technical-safeguards) and [technical safeguard baseline](PRD.md#technical-safeguard-baseline-hipaa-164312oriented) (TLS for API/storage)
 - Platform alignment (Supabase docs): API and Storage endpoints are HTTPS; production guidance requires HTTPS/TLS.
 - Status: Implemented baseline assumption for all deployed environments.
 
@@ -48,8 +48,8 @@ This document summarizes the repository security posture, points to implementati
   - Ownership hardening:
     - `enforce_phi_row_user_id_immutable` trigger blocks changing `user_id` on PHI rows except trusted paths.
 - PRD references:
-  - `docs/PRD.md` Security -> Authorized access + explicit RLS requirements table.
-  - `docs/PRD.md` Security controls summary and technical safeguard baseline.
+  - [PRD: Security — Authorized access](PRD.md#authorized-access-practitioners-and-caretakers-no-dek-sharing) + explicit RLS requirements table.
+  - [PRD: Security controls summary](PRD.md#security-controls-summary-technical-safeguards) and [technical safeguard baseline](PRD.md#technical-safeguard-baseline-hipaa-164312oriented).
 - Status: Implemented.
 
 ### 3) Grant tables: authorized sharing model
@@ -66,7 +66,7 @@ This document summarizes the repository security posture, points to implementati
     - Practitioners/caretakers can select rows relevant to themselves.
   - Helper functions `user_has_practitioner_access` and `user_is_caretaker_for_patient` are used across PHI and storage policies.
 - PRD references:
-  - `docs/PRD.md` Users & Roles, Authorized access section, and RLS requirements table.
+  - [PRD: Users & Roles](PRD.md#users--roles), [Authorized access](PRD.md#authorized-access-practitioners-and-caretakers-no-dek-sharing), and RLS requirements table.
 - Status: Implemented. Practitioner MFA check in the practitioner path is planned for Week 5.
 
 ### 4) `access_log`: append-only audit logging with trusted insert path
@@ -80,7 +80,7 @@ This document summarizes the repository security posture, points to implementati
   - Trigger `access_log_prevent_update_or_delete` blocks mutation/deletion (except FK nulling edge case).
   - RLS policies include explicit deny-update/deny-delete for authenticated users and service-role insert/select policies.
 - PRD references:
-  - `docs/PRD.md` Access logging (`access_log`) section and compliance-oriented checklist.
+  - [PRD: Access logging](PRD.md#access-logging-access_log) and [compliance-oriented checklist](PRD.md#compliance-oriented-engineering-checklist-non-exhaustive).
 - Status: Implemented.
 
 ### 5) Authentication baseline (Week 3)
@@ -105,8 +105,8 @@ This document summarizes the repository security posture, points to implementati
 - Planned:
   - Practitioner MFA fail-closed enforcement path (Week 5).
 - PRD references:
-  - `docs/PRD.md` Section 1 Authentication.
-  - `docs/PRD.md` Practitioner TOTP enforcement (fail-closed).
+  - [PRD §1: Authentication](PRD.md#1-authentication).
+  - [PRD: Practitioner TOTP enforcement (fail-closed)](PRD.md#two-factor-authentication-totp).
 - Status: Week 3 auth baseline implemented; practitioner MFA controls planned for Week 5.
 
 ### 6) Media storage security
@@ -119,8 +119,8 @@ This document summarizes the repository security posture, points to implementati
 - Planned:
   - End-user signed URL playback/download flow completion in app UX and offline queue workflow (Week 7).
 - PRD references:
-  - `docs/PRD.md` Media storage security section.
-  - `docs/PRD.md` Section 10 Video & Photo Capture (storage and signed URLs).
+  - [PRD: Media storage security](PRD.md#media-storage-security).
+  - [PRD §10: Video & Photo Capture](PRD.md#10-video--photo-capture) (storage and signed URLs).
 - Status: bucket + policy baseline implemented; Week 7 app flows planned.
 
 ### 7) Data model posture (plaintext PHI under RLS)
@@ -130,8 +130,8 @@ This document summarizes the repository security posture, points to implementati
   - Explicitly documented in schema migration header comments and PRD.
   - Enforced as architecture baseline across schema and access policy design.
 - PRD references:
-  - `docs/PRD.md` Data model: plaintext PHI in Supabase under RLS.
-  - `docs/PRD.md` Security controls summary and Section 10 media notes.
+  - [PRD: Data model — plaintext PHI in Supabase under RLS](PRD.md#data-model-plaintext-phi-in-supabase-under-rls).
+  - [PRD: Security controls summary](PRD.md#security-controls-summary-technical-safeguards) and [§10 media notes](PRD.md#10-video--photo-capture).
 - Status: Implemented baseline.
 
 ## Implemented vs Planned Summary
@@ -171,5 +171,5 @@ Core implementation artifacts:
 
 Primary design references:
 
-- `docs/PRD.md` (Security, Authentication, and Media sections)
-- `docs/ROADMAP.md` (Week 3, Week 5, Week 7)
+- [docs/PRD.md](PRD.md) (Security, Authentication, and Media sections)
+- [docs/ROADMAP.md](ROADMAP.md) (Week 3, Week 5, Week 7)
