@@ -1,16 +1,70 @@
 import { redirect } from 'next/navigation';
 import { createServerClient } from '@/lib/supabase/server-client';
+import { healthCheckProfilesLimit1 } from '@abstrack/supabase';
+
+interface HealthCheckResult {
+  success: boolean;
+  message: string;
+  error?: string;
+}
 
 export default async function DashboardPage() {
   // Get current user via server component
   const supabase = await createServerClient();
+  const showHealthCheck = process.env.NODE_ENV !== 'production';
   const {
     data: { user },
+    error: getUserError,
   } = await supabase.auth.getUser();
+  const allowDevAuthErrorDebugView = showHealthCheck && !!getUserError;
 
-  // This should not happen due to proxy, but as a safety check
-  if (!user) {
+  if (getUserError) {
+    console.error(
+      'Failed to fetch authenticated user for dashboard',
+      getUserError,
+    );
+  }
+
+  // Perform health check only in non-production to avoid leaking details.
+  let healthCheck: HealthCheckResult | null = null;
+
+  if (showHealthCheck && getUserError) {
+    healthCheck = {
+      success: false,
+      message: 'Health check failed during auth user lookup',
+      error: getUserError.message,
+    };
+  }
+
+  // Keep the page visible only for dev auth-error debugging; otherwise redirect.
+  if (!user && !allowDevAuthErrorDebugView) {
     redirect('/login');
+  }
+
+  if (showHealthCheck && user && !healthCheck) {
+    try {
+      const result = await healthCheckProfilesLimit1(supabase);
+
+      if (result.error) {
+        healthCheck = {
+          success: false,
+          message: 'Health check failed',
+          error: result.error.message,
+        };
+      } else {
+        healthCheck = {
+          success: true,
+          message:
+            'Health check passed: authenticated user found and profiles query executed without API error (empty rows may still indicate no profile or restrictive RLS).',
+        };
+      }
+    } catch (err) {
+      healthCheck = {
+        success: false,
+        message: 'Health check error',
+        error: err instanceof Error ? err.message : 'Unknown error',
+      };
+    }
   }
 
   return (
@@ -18,16 +72,64 @@ export default async function DashboardPage() {
       <div className="max-w-md mx-auto bg-white rounded-lg shadow-md p-8">
         <h1 className="text-2xl font-bold mb-4">Dashboard</h1>
 
-        <div className="space-y-4">
-          <div>
-            <p className="text-sm text-gray-600">Email</p>
-            <p className="font-medium">{user.email}</p>
+        {showHealthCheck && healthCheck && (
+          <div
+            className={`mb-6 p-4 rounded-md border ${
+              healthCheck.success
+                ? 'bg-green-50 border-green-200'
+                : 'bg-red-50 border-red-200'
+            }`}
+          >
+            <div
+              className={`font-semibold mb-2 ${
+                healthCheck.success ? 'text-green-800' : 'text-red-800'
+              }`}
+            >
+              {healthCheck.success
+                ? '✓ Health Check Passed'
+                : '✗ Health Check Failed'}
+            </div>
+            <p
+              className={`text-sm ${
+                healthCheck.success ? 'text-green-700' : 'text-red-700'
+              }`}
+            >
+              {healthCheck.message}
+            </p>
+            {healthCheck.error && (
+              <details className="mt-2 cursor-pointer">
+                <summary className="text-xs font-medium underline">
+                  Error Details
+                </summary>
+                <pre className="mt-2 text-xs overflow-auto bg-white p-2 rounded border">
+                  {healthCheck.error}
+                </pre>
+              </details>
+            )}
           </div>
+        )}
 
-          <div>
-            <p className="text-sm text-gray-600">User ID</p>
-            <p className="font-mono text-sm break-all">{user.id}</p>
-          </div>
+        <div className="space-y-4">
+          {user ? (
+            <>
+              <div>
+                <p className="text-sm text-gray-600">Email</p>
+                <p className="font-medium">{user.email}</p>
+              </div>
+
+              <div>
+                <p className="text-sm text-gray-600">User ID</p>
+                <p className="font-mono text-sm break-all">{user.id}</p>
+              </div>
+            </>
+          ) : (
+            <div>
+              <p className="text-sm text-gray-600">Authentication Status</p>
+              <p className="font-medium text-red-700">
+                No authenticated user available (development debug view)
+              </p>
+            </div>
+          )}
 
           <form action="/api/auth/logout" method="POST" className="mt-8">
             <button

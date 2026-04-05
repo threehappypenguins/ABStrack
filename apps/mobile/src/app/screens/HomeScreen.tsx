@@ -1,18 +1,101 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { signOut } from '@abstrack/supabase';
+import {
+  getAuthUser,
+  healthCheckProfilesLimit1,
+  signOut,
+} from '@abstrack/supabase';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { mapAuthError } from '../auth-helpers';
 import { ScreenShell } from '../components/ScreenShell';
 import { styles } from '../styles';
+
+interface HealthCheckResult {
+  success: boolean;
+  message: string;
+  error?: string;
+}
 
 type HomeScreenProps = {
   onGoToSettings: () => void;
 };
 
 export function HomeScreen({ onGoToSettings }: HomeScreenProps) {
+  const isTestEnv =
+    typeof process !== 'undefined' && process.env.NODE_ENV === 'test';
+  const showHealthCheck = __DEV__ && !isTestEnv;
+  const isMountedRef = useRef(true);
   const [signOutBusy, setSignOutBusy] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
+  const [healthCheck, setHealthCheck] = useState<HealthCheckResult | null>(
+    null,
+  );
+
+  useEffect(() => {
+    isMountedRef.current = true;
+
+    if (!showHealthCheck) {
+      return () => {
+        isMountedRef.current = false;
+      };
+    }
+
+    // Run health check on component mount to validate session + API query path.
+    const runHealthCheck = async () => {
+      try {
+        const mobileSupabase = getMobileSupabaseClient();
+        const {
+          data: { user },
+          error: userError,
+        } = await getAuthUser(mobileSupabase);
+
+        if (userError || !user) {
+          if (isMountedRef.current) {
+            setHealthCheck({
+              success: false,
+              message: 'Health check failed',
+              error: userError?.message ?? 'No authenticated user found',
+            });
+          }
+          return;
+        }
+
+        const result = await healthCheckProfilesLimit1(mobileSupabase);
+
+        if (result.error) {
+          if (isMountedRef.current) {
+            setHealthCheck({
+              success: false,
+              message: 'Health check failed',
+              error: result.error.message,
+            });
+          }
+        } else {
+          if (isMountedRef.current) {
+            setHealthCheck({
+              success: true,
+              message:
+                'Health check passed: authenticated user found and profiles query executed without API error (empty rows may still indicate no profile or restrictive RLS).',
+            });
+          }
+        }
+      } catch (err) {
+        if (isMountedRef.current) {
+          setHealthCheck({
+            success: false,
+            message: 'Health check error',
+            error: err instanceof Error ? err.message : 'Unknown error',
+          });
+        }
+      }
+    };
+
+    void runHealthCheck();
+
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, [showHealthCheck]);
 
   const handleSignOut = async () => {
     const mobileSupabase = getMobileSupabaseClient();
@@ -41,6 +124,54 @@ export function HomeScreen({ onGoToSettings }: HomeScreenProps) {
       <Text style={styles.title} testID="main-home-title">
         Welcome to ABStrack
       </Text>
+
+      {/* Health Check Status - only render once result is available */}
+      {showHealthCheck && healthCheck && (
+        <View
+          style={[
+            styles.healthCheckContainer,
+            healthCheck.success
+              ? styles.healthCheckContainerSuccess
+              : styles.healthCheckContainerFailure,
+          ]}
+        >
+          <Text
+            style={[
+              styles.healthCheckTitleText,
+              healthCheck.success
+                ? styles.healthCheckTitleTextSuccess
+                : styles.healthCheckTitleTextFailure,
+            ]}
+          >
+            {healthCheck.success
+              ? '✓ Health Check Passed'
+              : '✗ Health Check Failed'}
+          </Text>
+          <Text
+            style={[
+              styles.healthCheckBodyText,
+              healthCheck.success
+                ? styles.healthCheckBodyTextSuccess
+                : styles.healthCheckBodyTextFailure,
+            ]}
+          >
+            {healthCheck.message}
+          </Text>
+          {healthCheck.error && (
+            <Text
+              style={[
+                styles.healthCheckErrorText,
+                healthCheck.success
+                  ? styles.healthCheckErrorTextSuccess
+                  : styles.healthCheckErrorTextFailure,
+              ]}
+            >
+              Error: {healthCheck.error}
+            </Text>
+          )}
+        </View>
+      )}
+
       <Text style={styles.bodyText}>You are signed in.</Text>
       {signOutError ? (
         <Text style={styles.errorText} accessibilityRole="alert">
