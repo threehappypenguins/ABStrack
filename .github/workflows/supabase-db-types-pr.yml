@@ -57,5 +57,6 @@ jobs:
           awk '/^export type Json/{flag=1} flag' packages/supabase/src/lib/database.types.ts > /tmp/db-types.committed.ts
           supabase gen types typescript --local --schema public > /tmp/db-types.generated.ts
           pnpm exec prettier --config "$TYPES_PRETTIER" --write /tmp/db-types.committed.ts /tmp/db-types.generated.ts
+          perl -0pi -e 's/^  \/\/ Allows to automatically instantiate createClient with right options\n  \/\/ instead of createClient<Database, \{ PostgrestVersion: '\''XX'\'' \}>\(URL, KEY\)\n  __InternalSupabase: \{\n    PostgrestVersion: "14\.1"\n  \}\n//ms' /tmp/db-types.committed.ts /tmp/db-types.generated.ts
           perl -0pi -e 's/\n+\z/\n/' /tmp/db-types.committed.ts /tmp/db-types.generated.ts
           diff -u /tmp/db-types.committed.ts /tmp/db-types.generated.ts

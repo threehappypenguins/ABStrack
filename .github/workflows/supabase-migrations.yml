@@ -100,6 +100,7 @@ jobs:
           awk '/^export type Json/{flag=1} flag' packages/supabase/src/lib/database.types.ts > /tmp/db-types.committed.ts
           supabase gen types typescript --linked --schema public > /tmp/db-types.generated.ts
           pnpm exec prettier --config "$TYPES_PRETTIER" --write /tmp/db-types.committed.ts /tmp/db-types.generated.ts
+          perl -0pi -e 's/\n+\z/\n/' /tmp/db-types.committed.ts /tmp/db-types.generated.ts
           if diff -q /tmp/db-types.committed.ts /tmp/db-types.generated.ts >/dev/null; then
             echo "Database types match linked project."
             exit 0
