@@ -21,7 +21,9 @@ type HomeScreenProps = {
 };
 
 export function HomeScreen({ onGoToSettings }: HomeScreenProps) {
-  const showHealthCheck = __DEV__;
+  const isTestEnv =
+    typeof process !== 'undefined' && process.env.NODE_ENV === 'test';
+  const showHealthCheck = __DEV__ && !isTestEnv;
   const isMountedRef = useRef(true);
   const [signOutBusy, setSignOutBusy] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);

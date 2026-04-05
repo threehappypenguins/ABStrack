@@ -14,17 +14,37 @@ export default async function DashboardPage() {
   const showHealthCheck = process.env.NODE_ENV !== 'production';
   const {
     data: { user },
+    error: getUserError,
   } = await supabase.auth.getUser();
 
-  // This should not happen due to proxy, but as a safety check
-  if (!user) {
-    redirect('/login');
+  if (getUserError) {
+    console.error(
+      'Failed to fetch authenticated user for dashboard',
+      getUserError,
+    );
   }
 
   // Perform health check only in non-production to avoid leaking details.
   let healthCheck: HealthCheckResult | null = null;
 
-  if (showHealthCheck) {
+  if (showHealthCheck && getUserError) {
+    healthCheck = {
+      success: false,
+      message: 'Health check failed during auth user lookup',
+      error: getUserError.message,
+    };
+  }
+
+  // This should not happen due to proxy, but as a safety check
+  if (!user) {
+    if (showHealthCheck && getUserError) {
+      // Keep the page visible in development so auth/session failures are actionable.
+    } else {
+      redirect('/login');
+    }
+  }
+
+  if (showHealthCheck && user && !healthCheck) {
     try {
       const result = await healthCheckProfilesLimit1(supabase);
 
@@ -93,15 +113,26 @@ export default async function DashboardPage() {
         )}
 
         <div className="space-y-4">
-          <div>
-            <p className="text-sm text-gray-600">Email</p>
-            <p className="font-medium">{user.email}</p>
-          </div>
+          {user ? (
+            <>
+              <div>
+                <p className="text-sm text-gray-600">Email</p>
+                <p className="font-medium">{user.email}</p>
+              </div>
 
-          <div>
-            <p className="text-sm text-gray-600">User ID</p>
-            <p className="font-mono text-sm break-all">{user.id}</p>
-          </div>
+              <div>
+                <p className="text-sm text-gray-600">User ID</p>
+                <p className="font-mono text-sm break-all">{user.id}</p>
+              </div>
+            </>
+          ) : (
+            <div>
+              <p className="text-sm text-gray-600">Authentication Status</p>
+              <p className="font-medium text-red-700">
+                No authenticated user available (development debug view)
+              </p>
+            </div>
+          )}
 
           <form action="/api/auth/logout" method="POST" className="mt-8">
             <button
