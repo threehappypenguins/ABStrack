@@ -42,6 +42,8 @@ Use this when you add or change **`supabase/migrations/*.sql`** and want **`data
    pnpm exec prettier --write packages/supabase/src/lib/database.types.ts
    ```
 
+   **Important:** keep the redirect target exactly as shown above. Do **not** write to repo root (for example, `> database.types.ts`), because CI checks `packages/supabase/src/lib/database.types.ts`.
+
    The redirect overwrites the whole file. If you keep the docblock above `export type Json`, paste it back from the previous commit or merge only the generated body. CI compares from `export type Json` downward, so the header does not need to match the CLI output.
 
    **Prettier for this file:** `.prettierrc.cjs` overrides **`packages/supabase/src/lib/database.types.ts`** only, using options from **`prettier.database-types.json`** (`semi: false`, `singleQuote: false`) so formatting matches `supabase gen types`. GitHub Actions uses that same JSON with `--config` when formatting temp files for the diff.
