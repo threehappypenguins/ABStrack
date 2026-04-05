@@ -1,6 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { signOut, healthCheckProfilesLimit1 } from '@abstrack/supabase';
+import {
+  getAuthUser,
+  healthCheckProfilesLimit1,
+  signOut,
+} from '@abstrack/supabase';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { mapAuthError } from '../auth-helpers';
 import { ScreenShell } from '../components/ScreenShell';
@@ -34,10 +38,26 @@ export function HomeScreen({ onGoToSettings }: HomeScreenProps) {
       };
     }
 
-    // Run health check on component mount to validate env, session, and RLS
+    // Run health check on component mount to validate session + API query path.
     const runHealthCheck = async () => {
       try {
         const mobileSupabase = getMobileSupabaseClient();
+        const {
+          data: { user },
+          error: userError,
+        } = await getAuthUser(mobileSupabase);
+
+        if (userError || !user) {
+          if (isMountedRef.current) {
+            setHealthCheck({
+              success: false,
+              message: 'Health check failed',
+              error: userError?.message ?? 'No authenticated user found',
+            });
+          }
+          return;
+        }
+
         const result = await healthCheckProfilesLimit1(mobileSupabase);
 
         if (result.error) {
@@ -53,7 +73,7 @@ export function HomeScreen({ onGoToSettings }: HomeScreenProps) {
             setHealthCheck({
               success: true,
               message:
-                'Health check passed: profiles query executed without API error (empty rows may still indicate no profile or restrictive RLS).',
+                'Health check passed: authenticated user found and profiles query executed without API error (empty rows may still indicate no profile or restrictive RLS).',
             });
           }
         }
