@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import { Text } from 'react-native';
 import { Button } from './Button.js';
 
 describe('Button', () => {
@@ -25,5 +26,24 @@ describe('Button', () => {
       'aria-disabled',
       'true',
     );
+  });
+
+  it('does not set an empty aria-label when children are non-text and no label is given', () => {
+    render(
+      <Button onPress={vi.fn()}>
+        <Text>Custom</Text>
+      </Button>,
+    );
+    const el = screen.getByRole('button', { name: 'Custom' });
+    expect(el.getAttribute('aria-label')).toBeNull();
+  });
+
+  it('uses an explicit accessibilityLabel for non-text children', () => {
+    render(
+      <Button accessibilityLabel="Submit" onPress={vi.fn()}>
+        <Text>Custom</Text>
+      </Button>,
+    );
+    expect(screen.getByRole('button', { name: 'Submit' })).toBeInTheDocument();
   });
 });

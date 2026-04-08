@@ -16,7 +16,7 @@ import { useFocusRing } from './hooks/useFocusRing.js';
 import { defaultPalette, highContrastPalette } from './styles/theme.js';
 
 export type InputProps = Omit<TextInputProps, 'style'> & {
-  /** Visible label; drives default `accessibilityLabel` and `nativeID` when `inputId` is omitted. */
+  /** Visible label; used for native `accessibilityLabel` and web `aria-labelledby` by default. */
   label: string;
   /** Optional hint below the field. */
   hint?: ReactNode;
@@ -27,7 +27,10 @@ export type InputProps = Omit<TextInputProps, 'style'> & {
   minimumTouchTarget?: typeof MIN_TOUCH_TARGET_DP | 48 | false;
   /** Stronger borders and text for high-contrast presentation. */
   highContrast?: boolean;
-  /** Explicit id for linking label on web (`nativeID` / `id`). */
+  /**
+   * Stable id for the field (`TextInput` `nativeID`, DOM `id` on web). The visible label uses
+   * `${inputId}-label` so web can wire `aria-labelledby` → label node without duplicating the string in `aria-label`.
+   */
   inputId?: string;
   style?: StyleProp<TextStyle>;
   containerStyle?: StyleProp<ViewStyle>;
@@ -55,6 +58,7 @@ export function Input({
 }: InputProps) {
   const reactId = useId();
   const inputId = inputIdProp ?? `abstrack-input-${reactId.replace(/:/g, '')}`;
+  const labelNativeId = `${inputId}-label`;
   const { focused, onFocus, onBlur } = useFocusRing();
   const palette = highContrast ? highContrastPalette : defaultPalette;
 
@@ -72,9 +76,13 @@ export function Input({
         }
       : {};
 
+  const useWebLabelAssociation =
+    Platform.OS === 'web' && accessibilityLabelProp === undefined;
+
   return (
     <View style={[styles.field, containerStyle]}>
       <Text
+        nativeID={labelNativeId}
         {...(Platform.OS === 'web'
           ? { accessibilityRole: 'text' as const }
           : {})}
@@ -86,7 +94,12 @@ export function Input({
         {...rest}
         nativeID={inputId}
         editable={editable}
-        accessibilityLabel={accessibilityLabelProp ?? label}
+        accessibilityLabel={
+          useWebLabelAssociation ? undefined : (accessibilityLabelProp ?? label)
+        }
+        {...(useWebLabelAssociation
+          ? ({ 'aria-labelledby': labelNativeId } as object)
+          : {})}
         placeholderTextColor={rest.placeholderTextColor ?? palette.mutedText}
         onFocus={(e) => {
           onFocus(e);

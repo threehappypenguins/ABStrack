@@ -30,6 +30,10 @@ export type TextAreaProps = Omit<TextInputProps, 'style' | 'multiline'> & {
    */
   minimumTouchTarget?: typeof MIN_TOUCH_TARGET_DP | 48 | false;
   highContrast?: boolean;
+  /**
+   * Stable id for the field (`TextInput` `nativeID`, DOM `id` on web). The visible label uses
+   * `${inputId}-label` for web `aria-labelledby`.
+   */
   inputId?: string;
   style?: StyleProp<TextStyle>;
   containerStyle?: StyleProp<ViewStyle>;
@@ -58,6 +62,7 @@ export function TextArea({
 }: TextAreaProps) {
   const reactId = useId();
   const inputId = inputIdProp ?? `abstrack-textarea-${reactId.replace(/:/g, '')}`;
+  const labelNativeId = `${inputId}-label`;
   const { focused, onFocus, onBlur } = useFocusRing();
   const palette = highContrast ? highContrastPalette : defaultPalette;
 
@@ -75,9 +80,13 @@ export function TextArea({
         }
       : {};
 
+  const useWebLabelAssociation =
+    Platform.OS === 'web' && accessibilityLabelProp === undefined;
+
   return (
     <View style={[styles.field, containerStyle]}>
       <Text
+        nativeID={labelNativeId}
         {...(Platform.OS === 'web'
           ? { accessibilityRole: 'text' as const }
           : {})}
@@ -90,7 +99,12 @@ export function TextArea({
         multiline
         nativeID={inputId}
         editable={editable}
-        accessibilityLabel={accessibilityLabelProp ?? label}
+        accessibilityLabel={
+          useWebLabelAssociation ? undefined : (accessibilityLabelProp ?? label)
+        }
+        {...(useWebLabelAssociation
+          ? ({ 'aria-labelledby': labelNativeId } as object)
+          : {})}
         placeholderTextColor={rest.placeholderTextColor ?? palette.mutedText}
         textAlignVertical="top"
         onFocus={(e) => {

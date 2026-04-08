@@ -24,7 +24,11 @@ export type ButtonProps = Omit<
   PressableProps,
   'children' | 'style' | 'accessibilityRole'
 > & {
-  /** Visible label; also used as the default accessibility label. */
+  /**
+   * Button content. String or number children become the default `accessibilityLabel`.
+   * For other React nodes, set `accessibilityLabel` yourself or rely on labeled child content
+   * (do not pass an empty `accessibilityLabel`).
+   */
   children: ReactNode;
   /** Visual style variant. */
   variant?: ButtonVariant;
@@ -95,6 +99,24 @@ function variantColors(
 }
 
 /**
+ * Resolves `accessibilityLabel` for the pressable: explicit label wins; string/number
+ * children supply a default; otherwise returns `undefined` so the platform can derive
+ * a name from descendants (never forces an empty label).
+ */
+function resolveButtonAccessibilityLabel(
+  children: ReactNode,
+  accessibilityLabel: string | undefined,
+): string | undefined {
+  if (accessibilityLabel !== undefined) {
+    return accessibilityLabel.trim() === '' ? undefined : accessibilityLabel;
+  }
+  if (typeof children === 'string' || typeof children === 'number') {
+    return String(children);
+  }
+  return undefined;
+}
+
+/**
  * Accessible pressable button with a minimum touch target, visible focus ring on web,
  * and optional high-contrast palette.
  *
@@ -127,17 +149,17 @@ export function Button({
     };
   }, [minimumTouchTarget]);
 
-  const labelText =
-    typeof children === 'string' || typeof children === 'number'
-      ? String(children)
-      : accessibilityLabel ?? '';
+  const resolvedAccessibilityLabel = resolveButtonAccessibilityLabel(
+    children,
+    accessibilityLabel,
+  );
 
   return (
     <Pressable
       {...rest}
       accessibilityRole="button"
       accessibilityState={{ disabled: !!disabled }}
-      accessibilityLabel={accessibilityLabel ?? labelText}
+      accessibilityLabel={resolvedAccessibilityLabel}
       disabled={disabled}
       onPress={onPress}
       onFocus={(e) => {
