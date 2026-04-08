@@ -4,9 +4,13 @@ module.exports = {
   displayName: '@abstrack/mobile',
   preset: 'jest-expo',
   moduleFileExtensions: ['ts', 'js', 'html', 'tsx', 'jsx'],
-  setupFilesAfterEnv: ['<rootDir>/src/test-setup.ts'],
+  setupFilesAfterEnv: [
+    '<rootDir>/src/jest-rn-animation-setup.ts',
+    '<rootDir>/src/test-setup.ts',
+  ],
   moduleNameMapper: {
     '\\.svg$': '@nx/expo/plugins/jest/svg-mock',
+    '\\.css$': '<rootDir>/jest.css-mock.js',
   },
   transform: {
     '\\.[jt]sx?$': [
