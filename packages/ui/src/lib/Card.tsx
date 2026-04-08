@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import {
+  Platform,
   StyleSheet,
   View,
   type StyleProp,
@@ -11,8 +12,8 @@ import { defaultPalette, highContrastPalette } from './styles/theme.js';
 export type CardProps = ViewProps & {
   children: ReactNode;
   /**
-   * Optional title for the card. When set (or when `accessibilityLabel` is), the container uses
-   * `role="group"` so the name is exposed to assistive tech; unnamed cards stay presentational.
+   * Optional title for the card. When set (or when `accessibilityLabel` is), the container is
+   * focusable for assistive tech (`accessible`), labeled, and uses `role="group"` on web.
    */
   title?: string;
   /** Stronger borders for high-contrast presentation. */
@@ -22,7 +23,7 @@ export type CardProps = ViewProps & {
 
 /**
  * Grouped surface container with a clear border and padding.
- * With a `title` or `accessibilityLabel`, the container is exposed as a named `group`; otherwise it is presentational (`accessibilityRole="none"`).
+ * With a `title` or `accessibilityLabel`, the container is labeled and `accessible` on native; on web it uses `role="group"`. Otherwise it is presentational (`accessibilityRole="none"`).
  *
  * @param props - Card props.
  * @returns Card container view.
@@ -32,6 +33,7 @@ export function Card({
   title,
   highContrast = false,
   accessibilityLabel,
+  accessible,
   style,
   ...rest
 }: CardProps) {
@@ -45,7 +47,10 @@ export function Card({
       {...rest}
       accessibilityLabel={hasNamedRegion ? trimmed : undefined}
       accessibilityRole={hasNamedRegion ? undefined : 'none'}
-      role={hasNamedRegion ? 'group' : undefined}
+      accessible={hasNamedRegion ? true : accessible}
+      role={
+        hasNamedRegion && Platform.OS === 'web' ? 'group' : undefined
+      }
       style={[
         styles.card,
         {
