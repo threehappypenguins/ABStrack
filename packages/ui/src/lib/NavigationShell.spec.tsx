@@ -5,10 +5,7 @@ import { NavigationShell } from './NavigationShell.js';
 describe('NavigationShell', () => {
   it('renders header, main, and footer slots', () => {
     render(
-      <NavigationShell
-        header={<Text>Top</Text>}
-        footer={<Text>Bottom</Text>}
-      >
+      <NavigationShell header={<Text>Top</Text>} footer={<Text>Bottom</Text>}>
         <Text>Middle</Text>
       </NavigationShell>,
     );

@@ -64,22 +64,16 @@ export function useFocusRing(): {
     }
   }, []);
 
-  const onFocus = useCallback(
-    (_e: NativeSyntheticEvent<TargetedEvent>) => {
-      if (Platform.OS !== 'web') {
-        return;
-      }
-      setFocused(lastFocusFromKeyboard);
-    },
-    [],
-  );
+  const onFocus = useCallback((_e: NativeSyntheticEvent<TargetedEvent>) => {
+    if (Platform.OS !== 'web') {
+      return;
+    }
+    setFocused(lastFocusFromKeyboard);
+  }, []);
 
-  const onBlur = useCallback(
-    (_e: NativeSyntheticEvent<TargetedEvent>) => {
-      setFocused(false);
-    },
-    [],
-  );
+  const onBlur = useCallback((_e: NativeSyntheticEvent<TargetedEvent>) => {
+    setFocused(false);
+  }, []);
 
   return { focused, onFocus, onBlur };
 }

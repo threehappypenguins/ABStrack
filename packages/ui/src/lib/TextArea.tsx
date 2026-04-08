@@ -1,4 +1,3 @@
-import type { ReactNode } from 'react';
 import { useId } from 'react';
 import {
   Platform,
@@ -11,24 +10,25 @@ import {
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
-import { MIN_TOUCH_TARGET_DP } from './constants.js';
+import { MIN_TOUCH_TARGET_DP, type MinimumTouchTargetDp } from './constants.js';
 import { useFocusRing } from './hooks/useFocusRing.js';
 import { defaultPalette, highContrastPalette } from './styles/theme.js';
 
 export type TextAreaProps = Omit<TextInputProps, 'style' | 'multiline'> & {
   /** Visible label; drives default `accessibilityLabel`. */
   label: string;
-  hint?: ReactNode;
+  /** Optional hint below the field (plain text only; rendered in a `Text` node). */
+  hint?: string | number;
   /**
    * Minimum height of the multiline control in dp (also floored by touch-target guidance).
    * @default `120`
    */
   minHeight?: number;
   /**
-   * Minimum interactive height in dp; combined with `minHeight` using `Math.max`.
-   * @default `44`
+   * Minimum interactive height in **dp**; combined with `minHeight` using `Math.max` (see {@link MinimumTouchTargetDp}).
+   * @default {@link MIN_TOUCH_TARGET_DP}
    */
-  minimumTouchTarget?: typeof MIN_TOUCH_TARGET_DP | 48 | false;
+  minimumTouchTarget?: MinimumTouchTargetDp;
   highContrast?: boolean;
   /**
    * Stable id for the field (`TextInput` `nativeID`, DOM `id` on web). The visible label uses
@@ -61,7 +61,8 @@ export function TextArea({
   ...rest
 }: TextAreaProps) {
   const reactId = useId();
-  const inputId = inputIdProp ?? `abstrack-textarea-${reactId.replace(/:/g, '')}`;
+  const inputId =
+    inputIdProp ?? `abstrack-textarea-${reactId.replace(/:/g, '')}`;
   const labelNativeId = `${inputId}-label`;
   const { focused, onFocus, onBlur } = useFocusRing();
   const palette = highContrast ? highContrastPalette : defaultPalette;
@@ -69,7 +70,7 @@ export function TextArea({
   const combinedMinHeight =
     minimumTouchTarget === false
       ? minHeight
-      : Math.max(minHeight, minimumTouchTarget);
+      : Math.max(minHeight, Math.max(0, minimumTouchTarget));
 
   const focusStyle: TextStyle =
     Platform.OS === 'web' && focused

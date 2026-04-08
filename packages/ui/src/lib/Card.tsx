@@ -1,5 +1,11 @@
 import type { ReactNode } from 'react';
-import { StyleSheet, View, type StyleProp, type ViewProps, type ViewStyle } from 'react-native';
+import {
+  StyleSheet,
+  View,
+  type StyleProp,
+  type ViewProps,
+  type ViewStyle,
+} from 'react-native';
 import { defaultPalette, highContrastPalette } from './styles/theme.js';
 
 export type CardProps = ViewProps & {

@@ -1,4 +1,3 @@
-import type { ReactNode } from 'react';
 import { useId } from 'react';
 import {
   Platform,
@@ -11,20 +10,20 @@ import {
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
-import { MIN_TOUCH_TARGET_DP } from './constants.js';
+import { MIN_TOUCH_TARGET_DP, type MinimumTouchTargetDp } from './constants.js';
 import { useFocusRing } from './hooks/useFocusRing.js';
 import { defaultPalette, highContrastPalette } from './styles/theme.js';
 
 export type InputProps = Omit<TextInputProps, 'style'> & {
   /** Visible label; used for native `accessibilityLabel` and web `aria-labelledby` by default. */
   label: string;
-  /** Optional hint below the field. */
-  hint?: ReactNode;
+  /** Optional hint below the field (plain text only; rendered in a `Text` node). */
+  hint?: string | number;
   /**
-   * Enforces a minimum height for the field in dp (touch-friendly default).
-   * @default `44`
+   * Enforces a minimum height for the field in **dp** (see {@link MinimumTouchTargetDp}).
+   * @default {@link MIN_TOUCH_TARGET_DP}
    */
-  minimumTouchTarget?: typeof MIN_TOUCH_TARGET_DP | 48 | false;
+  minimumTouchTarget?: MinimumTouchTargetDp;
   /** Stronger borders and text for high-contrast presentation. */
   highContrast?: boolean;
   /**
@@ -65,7 +64,7 @@ export function Input({
   const minHeightStyle =
     minimumTouchTarget === false
       ? undefined
-      : { minHeight: minimumTouchTarget };
+      : { minHeight: Math.max(0, minimumTouchTarget) };
 
   const focusStyle: TextStyle =
     Platform.OS === 'web' && focused

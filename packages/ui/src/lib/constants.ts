@@ -16,6 +16,14 @@ export const MIN_TOUCH_TARGET_DP = 44;
 export const COMFORTABLE_TOUCH_TARGET_DP = 48;
 
 /**
+ * Minimum touch-target edge length in **density-independent points (dp)**, or `false` to skip
+ * enforcing a minimum (only when surrounding layout guarantees an adequate hit area).
+ * Common values include {@link MIN_TOUCH_TARGET_DP} and {@link COMFORTABLE_TOUCH_TARGET_DP}; larger
+ * values (e.g. 56) are valid when product guidance requires them.
+ */
+export type MinimumTouchTargetDp = number | false;
+
+/**
  * Preset for {@link MIN_TOUCH_TARGET_DP} vs {@link COMFORTABLE_TOUCH_TARGET_DP}.
  */
 export type TouchTargetPreset = 'minimum' | 'comfortable';

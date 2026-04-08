@@ -12,9 +12,9 @@ describe('TextArea', () => {
     render(
       <TextArea label="Notes" value="" onChangeText={vi.fn()} minHeight={32} />,
     );
-    expect(screen.getByLabelText('Notes', { selector: 'textarea' })).toHaveStyle(
-      { minHeight: '44px' },
-    );
+    expect(
+      screen.getByLabelText('Notes', { selector: 'textarea' }),
+    ).toHaveStyle({ minHeight: '44px' });
   });
 
   it('forwards text changes', () => {

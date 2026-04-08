@@ -79,7 +79,9 @@ export function Dialog({
             accessibilityLabel={title}
           >
             {title ? (
-              <Text style={[styles.title, { color: palette.text }]}>{title}</Text>
+              <Text style={[styles.title, { color: palette.text }]}>
+                {title}
+              </Text>
             ) : null}
             <View style={styles.body}>{children}</View>
           </View>

@@ -8,17 +8,18 @@ import {
   type PressableProps,
   type ViewStyle,
 } from 'react-native';
-import { MIN_TOUCH_TARGET_DP } from './constants.js';
+import { MIN_TOUCH_TARGET_DP, type MinimumTouchTargetDp } from './constants.js';
 import { useFocusRing } from './hooks/useFocusRing.js';
-import { defaultPalette, highContrastPalette, type UiPalette } from './styles/theme.js';
+import {
+  defaultPalette,
+  highContrastPalette,
+  type UiPalette,
+} from './styles/theme.js';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost';
 
-/**
- * Minimum touch target size enforced by default. Pass `false` only when an equivalent
- * hit region is guaranteed by surrounding layout (document in app code).
- */
-export type TouchTargetMinimum = typeof MIN_TOUCH_TARGET_DP | 48 | false;
+/** Alias for {@link MinimumTouchTargetDp}. */
+export type TouchTargetMinimum = MinimumTouchTargetDp;
 
 export type ButtonProps = Omit<
   PressableProps,
@@ -33,10 +34,10 @@ export type ButtonProps = Omit<
   /** Visual style variant. */
   variant?: ButtonVariant;
   /**
-   * Enforces a minimum interactive size in dp on both axes (WCAG-friendly default).
-   * @default `44`
+   * Enforces a minimum interactive size in **dp** on both axes (see {@link MinimumTouchTargetDp}).
+   * @default {@link MIN_TOUCH_TARGET_DP}
    */
-  minimumTouchTarget?: TouchTargetMinimum;
+  minimumTouchTarget?: MinimumTouchTargetDp;
   /** When `true` or when the user prefers high contrast, use stronger borders and fills. */
   highContrast?: boolean;
   /** Optional extra style for the outer pressable (supports Pressable style callbacks). */
@@ -143,9 +144,10 @@ export function Button({
     if (minimumTouchTarget === false) {
       return undefined;
     }
+    const dp = Math.max(0, minimumTouchTarget);
     return {
-      minWidth: minimumTouchTarget,
-      minHeight: minimumTouchTarget,
+      minWidth: dp,
+      minHeight: dp,
     };
   }, [minimumTouchTarget]);
 
