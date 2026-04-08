@@ -26,6 +26,7 @@ export type NavigationShellProps = ViewProps & {
 /**
  * Column layout for app chrome: optional header, main region, optional footer.
  * Intended to sit under a safe-area provider in consuming apps.
+ * Root `ViewProps` (e.g. `accessibilityRole`, `accessibilityLabel`) apply to the outer container.
  *
  * @param props - Shell props.
  * @returns Layout container.
@@ -39,6 +40,7 @@ export function NavigationShell({
   headerStyle,
   mainStyle,
   footerStyle,
+  accessibilityRole,
   ...rest
 }: NavigationShellProps) {
   const palette = highContrast ? highContrastPalette : defaultPalette;
@@ -46,7 +48,7 @@ export function NavigationShell({
   return (
     <View
       {...rest}
-      accessibilityRole="none"
+      accessibilityRole={accessibilityRole}
       style={[styles.root, { backgroundColor: palette.background }, style]}
     >
       {header ? (

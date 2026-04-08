@@ -10,7 +10,10 @@ import { defaultPalette, highContrastPalette } from './styles/theme.js';
 
 export type CardProps = ViewProps & {
   children: ReactNode;
-  /** Optional title announced with the card when `accessibilityLabel` is not provided. */
+  /**
+   * Optional title for the card. When set (or when `accessibilityLabel` is), the container uses
+   * `role="group"` so the name is exposed to assistive tech; unnamed cards stay presentational.
+   */
   title?: string;
   /** Stronger borders for high-contrast presentation. */
   highContrast?: boolean;
@@ -19,6 +22,7 @@ export type CardProps = ViewProps & {
 
 /**
  * Grouped surface container with a clear border and padding.
+ * With a `title` or `accessibilityLabel`, the container is exposed as a named `group`; otherwise it is presentational (`accessibilityRole="none"`).
  *
  * @param props - Card props.
  * @returns Card container view.
@@ -33,12 +37,15 @@ export function Card({
 }: CardProps) {
   const palette = highContrast ? highContrastPalette : defaultPalette;
   const label = accessibilityLabel ?? title;
+  const trimmed = label?.trim() ?? '';
+  const hasNamedRegion = trimmed.length > 0;
 
   return (
     <View
       {...rest}
-      accessibilityRole="none"
-      accessibilityLabel={label}
+      accessibilityLabel={hasNamedRegion ? trimmed : undefined}
+      accessibilityRole={hasNamedRegion ? undefined : 'none'}
+      role={hasNamedRegion ? 'group' : undefined}
       style={[
         styles.card,
         {

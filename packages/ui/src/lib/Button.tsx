@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { MIN_TOUCH_TARGET_DP, type MinimumTouchTargetDp } from './constants.js';
 import { useFocusRing } from './hooks/useFocusRing.js';
+import { usePrefersHighContrast } from './hooks/usePrefersHighContrast.js';
 import {
   defaultPalette,
   highContrastPalette,
@@ -38,7 +39,10 @@ export type ButtonProps = Omit<
    * @default {@link MIN_TOUCH_TARGET_DP}
    */
   minimumTouchTarget?: MinimumTouchTargetDp;
-  /** When `true` or when the user prefers high contrast, use stronger borders and fills. */
+  /**
+   * High-contrast palette: `true` always on; `false` always off (ignores system preference on web);
+   * omit to follow `prefers-contrast: more` on web and default styling on native.
+   */
   highContrast?: boolean;
   /** Optional extra style for the outer pressable (supports Pressable style callbacks). */
   style?: PressableProps['style'];
@@ -119,7 +123,7 @@ function resolveButtonAccessibilityLabel(
 
 /**
  * Accessible pressable button with a minimum touch target, visible focus ring on web,
- * and optional high-contrast palette.
+ * and high-contrast palette when requested or when the user prefers high contrast (web).
  *
  * @param props - Button props.
  * @returns Pressable button element.
@@ -128,7 +132,7 @@ export function Button({
   children,
   variant = 'primary',
   minimumTouchTarget = MIN_TOUCH_TARGET_DP,
-  highContrast = false,
+  highContrast,
   disabled,
   accessibilityLabel,
   style,
@@ -138,7 +142,10 @@ export function Button({
   ...rest
 }: ButtonProps) {
   const { focused, onFocus, onBlur } = useFocusRing();
-  const palette = resolvePalette(highContrast);
+  const prefersHighContrast = usePrefersHighContrast();
+  const useHighContrastPalette =
+    highContrast === true || (highContrast !== false && prefersHighContrast);
+  const palette = resolvePalette(useHighContrastPalette);
 
   const minSizeStyle = useMemo<ViewStyle | undefined>(() => {
     if (minimumTouchTarget === false) {

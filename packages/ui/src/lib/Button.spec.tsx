@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Text } from 'react-native';
 import { Button } from './Button.js';
 
@@ -45,5 +45,62 @@ describe('Button', () => {
       </Button>,
     );
     expect(screen.getByRole('button', { name: 'Submit' })).toBeInTheDocument();
+  });
+});
+
+describe('Button high contrast', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function mockPrefersHighContrast(matches: boolean) {
+    vi.spyOn(window, 'matchMedia').mockImplementation((query: string) => ({
+      matches: query === '(prefers-contrast: more)' ? matches : false,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+  }
+
+  it('uses high-contrast primary fill when the system prefers high contrast and the prop is omitted', async () => {
+    mockPrefersHighContrast(true);
+    render(<Button onPress={vi.fn()}>Save</Button>);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Save' })).toHaveStyle({
+        backgroundColor: 'rgb(255, 255, 255)',
+      });
+    });
+  });
+
+  it('keeps the default primary fill when highContrast is false even if the system prefers high contrast', async () => {
+    mockPrefersHighContrast(true);
+    render(
+      <Button highContrast={false} onPress={vi.fn()}>
+        Save
+      </Button>,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Save' })).toHaveStyle({
+        backgroundColor: 'rgb(29, 78, 216)',
+      });
+    });
+  });
+
+  it('uses high-contrast primary fill when highContrast is true regardless of system preference', async () => {
+    mockPrefersHighContrast(false);
+    render(
+      <Button highContrast onPress={vi.fn()}>
+        Save
+      </Button>,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Save' })).toHaveStyle({
+        backgroundColor: 'rgb(255, 255, 255)',
+      });
+    });
   });
 });

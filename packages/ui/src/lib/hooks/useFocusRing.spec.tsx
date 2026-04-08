@@ -1,17 +1,25 @@
 import { act, renderHook } from '@testing-library/react';
+import { vi } from 'vitest';
 import { useFocusRing } from './useFocusRing.js';
 
-describe('useFocusRing', () => {
-  beforeEach(() => {
-    act(() => {
-      window.dispatchEvent(
-        new MouseEvent('mousedown', { bubbles: true, cancelable: true }),
-      );
-    });
+/**
+ * Mounts the hook (so window modality listeners are registered), then dispatches
+ * `mousedown` so shared `lastFocusFromKeyboard` state starts in the pointer path.
+ * Must run after `renderHook` — a pre-hook `mousedown` does not reach the module listeners.
+ */
+function renderUseFocusRing() {
+  const rendered = renderHook(() => useFocusRing());
+  act(() => {
+    window.dispatchEvent(
+      new MouseEvent('mousedown', { bubbles: true, cancelable: true }),
+    );
   });
+  return rendered;
+}
 
+describe('useFocusRing', () => {
   it('sets focused when focus follows Tab', () => {
-    const { result } = renderHook(() => useFocusRing());
+    const { result } = renderUseFocusRing();
 
     act(() => {
       window.dispatchEvent(
@@ -26,7 +34,7 @@ describe('useFocusRing', () => {
   });
 
   it('does not set focused when focus follows a pointer interaction', () => {
-    const { result } = renderHook(() => useFocusRing());
+    const { result } = renderUseFocusRing();
 
     act(() => {
       window.dispatchEvent(
@@ -41,7 +49,7 @@ describe('useFocusRing', () => {
   });
 
   it('clears focused on blur', () => {
-    const { result } = renderHook(() => useFocusRing());
+    const { result } = renderUseFocusRing();
 
     act(() => {
       window.dispatchEvent(
@@ -57,5 +65,30 @@ describe('useFocusRing', () => {
       result.current.onBlur({} as never);
     });
     expect(result.current.focused).toBe(false);
+  });
+
+  it('removes window modality listeners on unmount', () => {
+    const remove = vi.spyOn(window, 'removeEventListener');
+    const { unmount } = renderHook(() => useFocusRing());
+    unmount();
+
+    expect(remove).toHaveBeenCalledWith('keydown', expect.any(Function), true);
+    expect(remove).toHaveBeenCalledWith(
+      'pointerdown',
+      expect.any(Function),
+      true,
+    );
+    expect(remove).toHaveBeenCalledWith(
+      'mousedown',
+      expect.any(Function),
+      true,
+    );
+    expect(remove).toHaveBeenCalledWith(
+      'touchstart',
+      expect.any(Function),
+      true,
+    );
+
+    remove.mockRestore();
   });
 });

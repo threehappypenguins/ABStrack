@@ -8,39 +8,67 @@ import type { NativeSyntheticEvent, TargetedEvent } from 'react-native';
  */
 let lastFocusFromKeyboard = false;
 
-let modalityListenersAttached = false;
+/** Active `useFocusRing` instances on web; listeners stay mounted while count is positive. */
+let modalitySubscriberCount = 0;
 
-function attachFocusVisibleModalityListeners(): void {
-  if (typeof window === 'undefined' || modalityListenersAttached) {
-    return;
+let keydownHandler: ((e: KeyboardEvent) => void) | undefined;
+let pointerLikeDownHandler: (() => void) | undefined;
+
+/** Subscribes to shared window modality listeners; return value removes this subscriber. */
+function attachFocusVisibleModalityListeners(): () => void {
+  if (typeof window === 'undefined') {
+    return () => undefined;
   }
-  modalityListenersAttached = true;
 
-  const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key === 'Tab') {
-      lastFocusFromKeyboard = true;
+  modalitySubscriberCount += 1;
+
+  if (modalitySubscriberCount === 1) {
+    keydownHandler = (e: KeyboardEvent) => {
+      if (e.key === 'Tab') {
+        lastFocusFromKeyboard = true;
+        return;
+      }
+      if (
+        e.key === 'ArrowDown' ||
+        e.key === 'ArrowUp' ||
+        e.key === 'ArrowLeft' ||
+        e.key === 'ArrowRight'
+      ) {
+        lastFocusFromKeyboard = true;
+      }
+    };
+
+    pointerLikeDownHandler = () => {
+      lastFocusFromKeyboard = false;
+    };
+
+    window.addEventListener('keydown', keydownHandler, true);
+    window.addEventListener('pointerdown', pointerLikeDownHandler, true);
+    /** jsdom omits `PointerEvent`; `mousedown` covers mouse-driven focus. */
+    window.addEventListener('mousedown', pointerLikeDownHandler, true);
+    /** Touch taps without pointer events (older engines). */
+    window.addEventListener('touchstart', pointerLikeDownHandler, true);
+  }
+
+  return () => {
+    if (typeof window === 'undefined') {
       return;
     }
+    modalitySubscriberCount -= 1;
     if (
-      e.key === 'ArrowDown' ||
-      e.key === 'ArrowUp' ||
-      e.key === 'ArrowLeft' ||
-      e.key === 'ArrowRight'
+      modalitySubscriberCount === 0 &&
+      keydownHandler &&
+      pointerLikeDownHandler
     ) {
-      lastFocusFromKeyboard = true;
+      window.removeEventListener('keydown', keydownHandler, true);
+      window.removeEventListener('pointerdown', pointerLikeDownHandler, true);
+      window.removeEventListener('mousedown', pointerLikeDownHandler, true);
+      window.removeEventListener('touchstart', pointerLikeDownHandler, true);
+      keydownHandler = undefined;
+      pointerLikeDownHandler = undefined;
+      lastFocusFromKeyboard = false;
     }
   };
-
-  const onPointerLikeDown = () => {
-    lastFocusFromKeyboard = false;
-  };
-
-  window.addEventListener('keydown', onKeyDown, true);
-  window.addEventListener('pointerdown', onPointerLikeDown, true);
-  /** jsdom omits `PointerEvent`; `mousedown` covers mouse-driven focus. */
-  window.addEventListener('mousedown', onPointerLikeDown, true);
-  /** Touch taps without pointer events (older engines). */
-  window.addEventListener('touchstart', onPointerLikeDown, true);
 }
 
 /**
@@ -60,18 +88,19 @@ export function useFocusRing(): {
 
   useEffect(() => {
     if (Platform.OS === 'web') {
-      attachFocusVisibleModalityListeners();
+      return attachFocusVisibleModalityListeners();
     }
+    return undefined;
   }, []);
 
-  const onFocus = useCallback((_e: NativeSyntheticEvent<TargetedEvent>) => {
+  const onFocus = useCallback(() => {
     if (Platform.OS !== 'web') {
       return;
     }
     setFocused(lastFocusFromKeyboard);
   }, []);
 
-  const onBlur = useCallback((_e: NativeSyntheticEvent<TargetedEvent>) => {
+  const onBlur = useCallback(() => {
     setFocused(false);
   }, []);
 
