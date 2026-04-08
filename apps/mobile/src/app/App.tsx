@@ -15,7 +15,6 @@ import { SettingsScreen } from './screens/SettingsScreen';
 import { SignupScreen } from './screens/SignupScreen';
 import { UpdatePasswordScreen } from './screens/UpdatePasswordScreen';
 import { getRequireReauthOnOpenPreference } from './reauth-preference';
-import { styles } from './styles';
 
 type AuthStackParamList = {
   Login: undefined;
@@ -338,7 +337,7 @@ export function App() {
   if (initializing) {
     return (
       <AppProviders>
-        <SafeAreaView style={styles.loadingContainer}>
+        <SafeAreaView className="flex-1 items-center justify-center">
           <ActivityIndicator size="large" />
         </SafeAreaView>
       </AppProviders>

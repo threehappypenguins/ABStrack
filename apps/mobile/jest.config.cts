@@ -7,6 +7,7 @@ module.exports = {
   setupFilesAfterEnv: ['<rootDir>/src/test-setup.ts'],
   moduleNameMapper: {
     '\\.svg$': '@nx/expo/plugins/jest/svg-mock',
+    '\\.css$': '<rootDir>/jest.css-mock.js',
   },
   transform: {
     '\\.[jt]sx?$': [

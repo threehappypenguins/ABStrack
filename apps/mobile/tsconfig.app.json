@@ -10,7 +10,10 @@
     "noUnusedLocals": false,
     "tsBuildInfoFile": "dist/tsconfig.app.tsbuildinfo"
   },
-  "files": ["../../node_modules/@nx/expo/typings/svg.d.ts"],
+  "files": [
+    "../../node_modules/@nx/expo/typings/svg.d.ts",
+    "./nativewind-env.d.ts"
+  ],
   "exclude": [
     "out-tsc",
     "dist",
