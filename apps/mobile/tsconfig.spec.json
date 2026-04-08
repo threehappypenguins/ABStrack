@@ -8,7 +8,7 @@
     "moduleResolution": "bundler",
     "noUnusedLocals": false
   },
-  "files": ["src/test-setup.ts"],
+  "files": ["src/test-setup.ts", "src/jest-rn-animation-setup.ts"],
   "include": [
     "jest.config.ts",
     "jest.config.cts",

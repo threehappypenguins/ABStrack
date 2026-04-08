@@ -26,6 +26,7 @@
     "**/*.test.jsx",
     "**/*.spec.jsx",
     "src/test-setup.ts",
+    "src/jest-rn-animation-setup.ts",
     "jest.config.ts",
     "jest.config.cts",
     "src/**/*.spec.ts",
