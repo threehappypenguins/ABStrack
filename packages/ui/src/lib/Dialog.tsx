@@ -60,10 +60,7 @@ export function Dialog({
           onPress={onRequestClose}
           style={styles.backdrop}
         />
-        <View
-          style={[styles.center, styles.centerPointer]}
-          accessibilityRole="none"
-        >
+        <View style={styles.center} accessibilityRole="none">
           <View
             style={[
               styles.sheet,
@@ -104,8 +101,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 16,
-  },
-  centerPointer: {
     pointerEvents: 'box-none',
   },
   sheet: {

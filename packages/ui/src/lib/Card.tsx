@@ -48,9 +48,7 @@ export function Card({
       accessibilityLabel={hasNamedRegion ? trimmed : undefined}
       accessibilityRole={hasNamedRegion ? undefined : 'none'}
       accessible={hasNamedRegion ? true : accessible}
-      role={
-        hasNamedRegion && Platform.OS === 'web' ? 'group' : undefined
-      }
+      role={hasNamedRegion && Platform.OS === 'web' ? 'group' : undefined}
       style={[
         styles.card,
         {
