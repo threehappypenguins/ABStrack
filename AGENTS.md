@@ -34,3 +34,14 @@ If a step needs **her** terminal, **dashboard**, or **GitHub** settings, say so 
 ## Before changing automation
 
 Do **not** change `.github/workflows/*` deployment, permissions, or secrets without **asking Sarah first**.
+
+## MCP servers (documentation and APIs)
+
+This workspace has **MCP servers** (for example Context7 for library and framework docs, Nx, Supabase, Next.js devtools, and the in-editor browser). **Use them** to pull **current** documentation and API details instead of relying only on training data. That helps avoid **deprecated** patterns, outdated APIs, and wrong version-specific behavior.
+
+## Documentation (Typedoc / JSDoc)
+
+**Typedoc** is used for API documentation. Maintain it as you work:
+
+- Every **exported** function, **public** component, **hook**, and **exported** type should have a **JSDoc** comment.
+- Each comment should describe **purpose**, **parameters** (`@param` where applicable), and **return value** (`@returns` where applicable), following existing project conventions.
