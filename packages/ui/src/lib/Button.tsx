@@ -11,6 +11,7 @@ import {
 import { MIN_TOUCH_TARGET_DP, type MinimumTouchTargetDp } from './constants.js';
 import { useFocusRing } from './hooks/useFocusRing.js';
 import { usePrefersHighContrast } from './hooks/usePrefersHighContrast.js';
+import { mergeButtonAccessibilityState } from './mergeButtonAccessibilityState.js';
 import {
   defaultPalette,
   highContrastPalette,
@@ -124,6 +125,7 @@ function resolveButtonAccessibilityLabel(
 /**
  * Accessible pressable button with a minimum touch target, visible focus ring on web,
  * and high-contrast palette when requested or when the user prefers high contrast (web).
+ * `accessibilityState` from props is merged with `disabled` derived from the `disabled` prop.
  *
  * @param props - Button props.
  * @returns Pressable button element.
@@ -135,6 +137,7 @@ export function Button({
   highContrast,
   disabled,
   accessibilityLabel,
+  accessibilityState,
   style,
   onPress,
   onFocus: onFocusProp,
@@ -163,11 +166,16 @@ export function Button({
     accessibilityLabel,
   );
 
+  const mergedAccessibilityState = mergeButtonAccessibilityState(
+    accessibilityState,
+    disabled,
+  );
+
   return (
     <Pressable
       {...rest}
       accessibilityRole="button"
-      accessibilityState={{ disabled: !!disabled }}
+      accessibilityState={mergedAccessibilityState}
       accessibilityLabel={resolvedAccessibilityLabel}
       disabled={disabled}
       onPress={onPress}

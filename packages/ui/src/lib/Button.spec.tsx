@@ -46,6 +46,22 @@ describe('Button', () => {
     );
     expect(screen.getByRole('button', { name: 'Submit' })).toBeInTheDocument();
   });
+
+  it('sets aria-disabled from the disabled prop even when accessibilityState.disabled is false', () => {
+    render(
+      <Button
+        disabled
+        accessibilityState={{ disabled: false }}
+        onPress={vi.fn()}
+      >
+        Tab
+      </Button>,
+    );
+    expect(screen.getByRole('button', { name: 'Tab' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+  });
 });
 
 describe('Button high contrast', () => {

@@ -1,4 +1,3 @@
-import path from 'node:path';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig(() => ({
@@ -6,10 +5,7 @@ export default defineConfig(() => ({
   cacheDir: '../../node_modules/.vite/packages/ui',
   resolve: {
     alias: {
-      'react-native': path.resolve(
-        __dirname,
-        '../../node_modules/react-native-web',
-      ),
+      'react-native': 'react-native-web',
     },
   },
   test: {
