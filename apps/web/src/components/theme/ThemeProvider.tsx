@@ -21,7 +21,7 @@ import {
 type ThemeContextValue = {
   /** Current user preference (system means follow OS). */
   preference: ThemePreference;
-  /** Updates preference, persists when not system, and applies to the document. */
+  /** Updates preference, persists, and applies to the document immediately (before the next paint). */
   setPreference: (pref: ThemePreference) => void;
 };
 
@@ -34,6 +34,9 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
  * before paint (needed for SSR hydration where state may start as `system`) so we never run
  * `applyThemeToDocument('system')` after the init script has already set `dark` from stored
  * preference.
+ *
+ * User-driven changes call {@link applyThemeToDocument} inside `setPreference` so the class on
+ * `<html>` updates immediately; the `[preference]` effect still reconciles other update paths.
  *
  * @param props - Props.
  * @returns Provider tree.
@@ -52,8 +55,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const setPreference = useCallback((pref: ThemePreference) => {
     setPreferenceState(pref);
     writeStoredTheme(pref);
+    applyThemeToDocument(pref);
   }, []);
 
+  /** Keeps the DOM aligned when `preference` changes without `setPreference` (e.g. `storage`). */
   useEffect(() => {
     applyThemeToDocument(preference);
   }, [preference]);

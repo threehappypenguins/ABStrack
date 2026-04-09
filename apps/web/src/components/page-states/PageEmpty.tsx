@@ -1,4 +1,6 @@
-import type { ReactNode } from 'react';
+'use client';
+
+import { useId, type ReactNode } from 'react';
 
 export type PageEmptyProps = {
   /** Primary heading inside the card. */
@@ -16,13 +18,15 @@ export type PageEmptyProps = {
  * @returns Empty-state section.
  */
 export function PageEmpty({ title, description, children }: PageEmptyProps) {
+  const headingId = useId();
+
   return (
     <section
       className="rounded-2xl border border-app-border/90 bg-app-surface p-6 shadow-soft ring-1 ring-[color:var(--app-ring-slate)]"
-      aria-labelledby="page-empty-heading"
+      aria-labelledby={headingId}
     >
       <h2
-        id="page-empty-heading"
+        id={headingId}
         className="text-lg font-semibold tracking-tight text-app-ink"
       >
         {title}

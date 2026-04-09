@@ -1,5 +1,7 @@
 'use client';
 
+import { useId } from 'react';
+
 export type PageErrorProps = {
   /** Short heading for the error panel. */
   title: string;
@@ -16,13 +18,15 @@ export type PageErrorProps = {
  * @returns Error section.
  */
 export function PageError({ title, message, onRetry }: PageErrorProps) {
+  const headingId = useId();
+
   return (
     <section
       className="rounded-2xl border border-red-300/80 bg-red-50/50 p-6 shadow-soft ring-1 ring-red-900/10 dark:border-red-800/80 dark:bg-red-950/35 dark:ring-red-900/30"
-      aria-labelledby="page-error-heading"
+      aria-labelledby={headingId}
     >
       <h2
-        id="page-error-heading"
+        id={headingId}
         className="text-lg font-semibold tracking-tight text-red-950 dark:text-red-100"
       >
         {title}

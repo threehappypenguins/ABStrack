@@ -30,7 +30,8 @@
     --app-shadow-header: 0 1px 0 rgba(15, 23, 42, 0.06);
   }
 
-  .dark {
+  /* Scope to document root only; `class="dark"` on descendants must not override tokens. */
+  html.dark {
     --app-bg: 15 23 42;
     --app-surface: 30 41 59;
     --app-border: 51 65 85;
