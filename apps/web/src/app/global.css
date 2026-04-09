@@ -2,31 +2,83 @@
 @tailwind components;
 @tailwind utilities;
 
-html {
-  -webkit-text-size-adjust: 100%;
-  font-family:
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    Segoe UI,
-    Roboto,
-    Helvetica Neue,
-    Arial,
-    Noto Sans,
-    sans-serif,
-    Apple Color Emoji,
-    Segoe UI Emoji,
-    Segoe UI Symbol,
-    Noto Color Emoji;
-  line-height: 1.5;
-  tab-size: 4;
-  scroll-behavior: smooth;
-}
-body {
-  font-family: inherit;
-  line-height: inherit;
-  margin: 0;
+/* Semantic colors: toggled via `html.dark` (Tailwind `darkMode: 'class'`).
+ * RGB channel tokens (space-separated) pair with Tailwind `rgb(var(--app-*) / <alpha-value>)`
+ * so opacity modifiers (e.g. `border-app-border/90`) resolve correctly. */
+@layer base {
+  :root {
+    --app-bg: 244 247 251;
+    --app-surface: 255 255 255;
+    --app-border: 226 232 240;
+    --app-muted: 100 116 139;
+    --app-ink: 15 23 42;
+    --app-primary: 29 78 216;
+    --app-primary-soft: 219 234 254;
+    --app-ring: 37 99 235;
+    --app-header-bg: rgba(255, 255, 255, 0.92);
+    --app-header-border: rgba(226, 232, 240, 0.95);
+    --app-nav-hover-bg: #f1f5f9;
+    --app-ring-slate: rgba(15, 23, 42, 0.06);
+    --app-gradient: linear-gradient(
+      180deg,
+      #f1f5f9 0%,
+      #f8fafc 45%,
+      #f1f5f9 100%
+    );
+    --app-shadow-soft:
+      0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px -4px rgba(15, 23, 42, 0.08);
+    --app-shadow-header: 0 1px 0 rgba(15, 23, 42, 0.06);
+  }
+
+  /* Scope to document root only; `class="dark"` on descendants must not override tokens. */
+  html.dark {
+    --app-bg: 15 23 42;
+    --app-surface: 30 41 59;
+    --app-border: 51 65 85;
+    --app-muted: 148 163 184;
+    --app-ink: 241 245 249;
+    --app-primary: 96 165 250;
+    /* Opaque fill uses `dark:bg-app-primary-soft/28` where applied. */
+    --app-primary-soft: 37 99 235;
+    --app-ring: 147 197 253;
+    --app-header-bg: rgba(15, 23, 42, 0.92);
+    --app-header-border: rgba(51, 65, 85, 0.95);
+    --app-nav-hover-bg: #334155;
+    --app-ring-slate: rgba(241, 245, 249, 0.08);
+    --app-gradient: linear-gradient(
+      180deg,
+      #0f172a 0%,
+      #1e293b 45%,
+      #0f172a 100%
+    );
+    --app-shadow-soft:
+      0 1px 2px rgba(0, 0, 0, 0.25), 0 8px 24px -4px rgba(0, 0, 0, 0.35);
+    --app-shadow-header: 0 1px 0 rgba(0, 0, 0, 0.35);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    line-height: 1.5;
+    tab-size: 4;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    margin: 0;
+    font-family: inherit;
+    line-height: inherit;
+    color: rgb(var(--app-ink) / 1);
+    background-color: rgb(var(--app-bg) / 1);
+    background-image: var(--app-gradient);
+    min-height: 100vh;
+    text-rendering: optimizeLegibility;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
 }
 h1,
 h2,

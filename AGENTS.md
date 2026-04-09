@@ -35,6 +35,10 @@ If a step needs **her** terminal, **dashboard**, or **GitHub** settings, say so 
 
 Do **not** change `.github/workflows/*` deployment, permissions, or secrets without **asking Sarah first**.
 
+## Naming and structure
+
+Do **not** add **`week_`** (or other week-number-style prefixes) to **code, identifiers, or file/folder paths**. Use **feature- or domain-based** names instead (for example `page-states`, not `week4`).
+
 ## MCP servers (documentation and APIs)
 
 This workspace has **MCP servers** (for example Context7 for library and framework docs, Nx, Supabase, Next.js devtools, and the in-editor browser). **Use them** to pull **current** documentation and API details instead of relying only on training data. That helps avoid **deprecated** patterns, outdated APIs, and wrong version-specific behavior.

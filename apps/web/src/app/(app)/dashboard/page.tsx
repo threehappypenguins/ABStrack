@@ -8,8 +8,13 @@ interface HealthCheckResult {
   error?: string;
 }
 
+/**
+ * Patient dashboard: dev-only Supabase health check and account summary. Auth and shell come from
+ * the parent `(app)` layout.
+ *
+ * @returns Dashboard content.
+ */
 export default async function DashboardPage() {
-  // Get current user via server component
   const supabase = await createServerClient();
   const showHealthCheck = process.env.NODE_ENV !== 'production';
   const {
@@ -25,7 +30,6 @@ export default async function DashboardPage() {
     );
   }
 
-  // Perform health check only in non-production to avoid leaking details.
   let healthCheck: HealthCheckResult | null = null;
 
   if (showHealthCheck && getUserError) {
@@ -36,7 +40,6 @@ export default async function DashboardPage() {
     };
   }
 
-  // Keep the page visible only for dev auth-error debugging; otherwise redirect.
   if (!user && !allowDevAuthErrorDebugView) {
     redirect('/login');
   }
@@ -68,21 +71,30 @@ export default async function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md mx-auto bg-white rounded-lg shadow-md p-8">
-        <h1 className="text-2xl font-bold mb-4">Dashboard</h1>
+    <div className="w-full space-y-8">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight text-app-ink">
+          Dashboard
+        </h1>
+        <p className="mt-1 text-sm text-app-muted">
+          Account overview and development health checks.
+        </p>
+      </div>
 
+      <div className="rounded-2xl border border-app-border/90 bg-app-surface p-6 shadow-soft ring-1 ring-[color:var(--app-ring-slate)] sm:p-8">
         {showHealthCheck && healthCheck && (
           <div
-            className={`mb-6 p-4 rounded-md border ${
+            className={`mb-6 rounded-lg border p-4 ${
               healthCheck.success
-                ? 'bg-green-50 border-green-200'
-                : 'bg-red-50 border-red-200'
+                ? 'border-green-200 bg-green-50 dark:border-green-800/60 dark:bg-green-950/35'
+                : 'border-red-200 bg-red-50 dark:border-red-800/60 dark:bg-red-950/35'
             }`}
           >
             <div
-              className={`font-semibold mb-2 ${
-                healthCheck.success ? 'text-green-800' : 'text-red-800'
+              className={`mb-2 font-semibold ${
+                healthCheck.success
+                  ? 'text-green-800 dark:text-green-200'
+                  : 'text-red-800 dark:text-red-200'
               }`}
             >
               {healthCheck.success
@@ -91,7 +103,9 @@ export default async function DashboardPage() {
             </div>
             <p
               className={`text-sm ${
-                healthCheck.success ? 'text-green-700' : 'text-red-700'
+                healthCheck.success
+                  ? 'text-green-700 dark:text-green-300/95'
+                  : 'text-red-700 dark:text-red-300/95'
               }`}
             >
               {healthCheck.message}
@@ -101,7 +115,7 @@ export default async function DashboardPage() {
                 <summary className="text-xs font-medium underline">
                   Error Details
                 </summary>
-                <pre className="mt-2 text-xs overflow-auto bg-white p-2 rounded border">
+                <pre className="mt-2 overflow-auto rounded border border-app-border bg-app-bg p-2 text-xs text-app-ink">
                   {healthCheck.error}
                 </pre>
               </details>
@@ -113,32 +127,25 @@ export default async function DashboardPage() {
           {user ? (
             <>
               <div>
-                <p className="text-sm text-gray-600">Email</p>
-                <p className="font-medium">{user.email}</p>
+                <p className="text-sm text-app-muted">Email</p>
+                <p className="font-medium text-app-ink">{user.email}</p>
               </div>
 
               <div>
-                <p className="text-sm text-gray-600">User ID</p>
-                <p className="font-mono text-sm break-all">{user.id}</p>
+                <p className="text-sm text-app-muted">User ID</p>
+                <p className="break-all font-mono text-sm text-app-ink">
+                  {user.id}
+                </p>
               </div>
             </>
           ) : (
             <div>
-              <p className="text-sm text-gray-600">Authentication Status</p>
-              <p className="font-medium text-red-700">
+              <p className="text-sm text-app-muted">Authentication Status</p>
+              <p className="font-medium text-red-700 dark:text-red-300">
                 No authenticated user available (development debug view)
               </p>
             </div>
           )}
-
-          <form action="/api/auth/logout" method="POST" className="mt-8">
-            <button
-              type="submit"
-              className="w-full bg-red-600 text-white py-2 px-4 rounded-md hover:bg-red-700 transition-colors"
-            >
-              Logout
-            </button>
-          </form>
         </div>
       </div>
     </div>
