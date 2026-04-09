@@ -81,7 +81,7 @@ export default async function DashboardPage() {
         </p>
       </div>
 
-      <div className="rounded-2xl border border-app-border/90 bg-app-surface p-6 shadow-soft ring-1 ring-[var(--app-ring-slate)] sm:p-8">
+      <div className="rounded-2xl border border-app-border/90 bg-app-surface p-6 shadow-soft ring-1 ring-[color:var(--app-ring-slate)] sm:p-8">
         {showHealthCheck && healthCheck && (
           <div
             className={`mb-6 rounded-lg border p-4 ${

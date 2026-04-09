@@ -1,10 +1,10 @@
-import { Week4PageLoading } from '@/components/week4/PageStates';
+import { PageLoading } from '@/components/page-states/PageLoading';
 
 /**
- * Route-level loading UI for symptom presets (Week 4).
+ * Route-level loading UI for symptom presets.
  *
  * @returns Loading fallback.
  */
 export default function SymptomPresetsLoading() {
-  return <Week4PageLoading title="Symptom presets" />;
+  return <PageLoading title="Symptom presets" />;
 }

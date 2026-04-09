@@ -23,7 +23,7 @@ export default function Index() {
   if (session) {
     return (
       <div className="min-h-screen bg-app-bg bg-app-gradient px-4 py-12 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-md rounded-2xl border border-app-border/90 bg-app-surface p-8 shadow-soft ring-1 ring-[var(--app-ring-slate)]">
+        <div className="mx-auto max-w-md rounded-2xl border border-app-border/90 bg-app-surface p-8 shadow-soft ring-1 ring-[color:var(--app-ring-slate)]">
           <h1 className="text-2xl font-bold tracking-tight text-app-ink">
             Welcome to ABStrack
           </h1>
@@ -67,7 +67,7 @@ export default function Index() {
 
   return (
     <div className="min-h-screen bg-app-bg bg-app-gradient px-4 py-12 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-md rounded-2xl border border-app-border/90 bg-app-surface p-8 shadow-soft ring-1 ring-[var(--app-ring-slate)]">
+      <div className="mx-auto max-w-md rounded-2xl border border-app-border/90 bg-app-surface p-8 shadow-soft ring-1 ring-[color:var(--app-ring-slate)]">
         <h1 className="text-center text-3xl font-bold tracking-tight text-app-ink">
           ABStrack
         </h1>

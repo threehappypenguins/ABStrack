@@ -6,14 +6,25 @@ import {
 } from './theme-storage';
 
 describe('theme-storage', () => {
+  const originalMatchMedia = window.matchMedia;
+
   beforeEach(() => {
     localStorage.clear();
     document.documentElement.classList.remove('dark');
+    window.matchMedia = originalMatchMedia;
   });
 
   it('readStoredTheme returns system when unset', () => {
     expect(readStoredTheme()).toBe('system');
   });
+
+  it.each([[''], ['not-a-theme'], ['LIGHT'], ['system']])(
+    'readStoredTheme returns system when storage is invalid (%s)',
+    (stored) => {
+      localStorage.setItem(THEME_STORAGE_KEY, stored);
+      expect(readStoredTheme()).toBe('system');
+    },
+  );
 
   it('writeStoredTheme persists light and dark', () => {
     writeStoredTheme('light');
@@ -33,5 +44,35 @@ describe('theme-storage', () => {
     expect(document.documentElement.classList.contains('dark')).toBe(false);
     applyThemeToDocument('dark');
     expect(document.documentElement.classList.contains('dark')).toBe(true);
+  });
+
+  it('applyThemeToDocument(system) adds dark when prefers-color-scheme dark', () => {
+    window.matchMedia = jest.fn().mockImplementation((query: string) => ({
+      matches: query === '(prefers-color-scheme: dark)',
+      media: query,
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+    }));
+
+    applyThemeToDocument('system');
+
+    expect(window.matchMedia).toHaveBeenCalledWith(
+      '(prefers-color-scheme: dark)',
+    );
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+  });
+
+  it('applyThemeToDocument(system) removes dark when prefers-color-scheme light', () => {
+    document.documentElement.classList.add('dark');
+    window.matchMedia = jest.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+    }));
+
+    applyThemeToDocument('system');
+
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
   });
 });

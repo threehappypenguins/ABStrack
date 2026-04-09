@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { Week4PageError } from '@/components/week4/PageStates';
+import { PageError } from '@/components/page-states/PageError';
 
 /**
  * Segment error boundary for symptom presets routes.
@@ -21,7 +21,7 @@ export default function SymptomPresetsError({
   }, [error]);
 
   return (
-    <Week4PageError
+    <PageError
       title="Could not load symptom presets"
       message={error.message}
       onRetry={reset}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { Week4PageError } from '@/components/week4/PageStates';
+import { PageError } from '@/components/page-states/PageError';
 
 /**
  * Segment error boundary for health marker presets routes.
@@ -21,7 +21,7 @@ export default function HealthMarkerPresetsError({
   }, [error]);
 
   return (
-    <Week4PageError
+    <PageError
       title="Could not load health marker presets"
       message={error.message}
       onRetry={reset}
