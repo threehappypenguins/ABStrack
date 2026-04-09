@@ -1,0 +1,128 @@
+{
+  "name": "@abstrack/web",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "sourceRoot": "apps/web/src",
+  "tags": ["npm:private"],
+  "targets": {
+    "lint": {
+      "cache": true,
+      "options": {
+        "cwd": "apps/web",
+        "command": "eslint ."
+      },
+      "inputs": [
+        "default",
+        "^default",
+        "{workspaceRoot}/eslint.config.mjs",
+        "{workspaceRoot}/apps/web/eslint.config.mjs",
+        "{workspaceRoot}/tools/eslint-rules/**/*",
+        { "externalDependencies": ["eslint"] }
+      ],
+      "outputs": ["{options.outputFile}"],
+      "metadata": {
+        "technologies": ["eslint"],
+        "description": "Runs ESLint on project"
+      },
+      "executor": "nx:run-commands",
+      "configurations": {},
+      "parallelism": true
+    },
+    "test": {
+      "options": {
+        "cwd": "apps/web",
+        "env": {
+          "TS_NODE_COMPILER_OPTIONS": "{\"moduleResolution\":\"node10\",\"module\":\"commonjs\",\"customConditions\":null}"
+        },
+        "command": "jest"
+      },
+      "metadata": {
+        "technologies": ["jest"],
+        "description": "Run Jest Tests"
+      },
+      "cache": true,
+      "inputs": [
+        "default",
+        "^production",
+        { "externalDependencies": ["jest"] }
+      ],
+      "outputs": [],
+      "executor": "nx:run-commands",
+      "configurations": {},
+      "parallelism": true,
+      "dependsOn": ["^build"]
+    },
+    "build": {
+      "options": {
+        "cwd": "apps/web",
+        "tty": false,
+        "command": "next build --webpack"
+      },
+      "dependsOn": ["^build"],
+      "cache": true,
+      "inputs": [
+        "default",
+        "^production",
+        { "externalDependencies": ["next"] }
+      ],
+      "outputs": [
+        "{workspaceRoot}/apps/web/.next/!(cache)/**/*",
+        "{workspaceRoot}/apps/web/.next/!(cache)"
+      ],
+      "syncGenerators": ["@nx/js:typescript-sync"],
+      "executor": "nx:run-commands",
+      "configurations": {},
+      "parallelism": true
+    },
+    "dev": {
+      "continuous": true,
+      "options": {
+        "cwd": "apps/web",
+        "command": "next dev --webpack"
+      },
+      "syncGenerators": ["@nx/js:typescript-sync"],
+      "executor": "nx:run-commands",
+      "configurations": {},
+      "parallelism": true
+    },
+    "start": {
+      "continuous": true,
+      "options": {
+        "cwd": "apps/web",
+        "command": "next start"
+      },
+      "dependsOn": ["build"],
+      "executor": "nx:run-commands",
+      "configurations": {},
+      "parallelism": true
+    },
+    "serve-static": {
+      "continuous": true,
+      "options": {
+        "cwd": "apps/web",
+        "command": "next start"
+      },
+      "dependsOn": ["build"],
+      "executor": "nx:run-commands",
+      "configurations": {},
+      "parallelism": true
+    },
+    "build-deps": {
+      "dependsOn": ["^build"],
+      "configurations": {},
+      "options": {},
+      "parallelism": true,
+      "executor": "nx:noop"
+    },
+    "watch-deps": {
+      "continuous": true,
+      "dependsOn": ["build-deps"],
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec nx watch --projects @abstrack/web --includeDependentProjects -- pnpm exec nx build-deps @abstrack/web"
+      },
+      "configurations": {},
+      "parallelism": true
+    }
+  }
+}

@@ -41,12 +41,14 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-100">
-      <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
-        <h1 className="text-2xl font-bold mb-6 text-center">Login</h1>
+    <div className="flex min-h-screen items-center justify-center bg-app-bg bg-app-gradient px-4">
+      <div className="w-full max-w-md rounded-2xl border border-app-border/90 bg-app-surface p-8 shadow-soft ring-1 ring-[color:var(--app-ring-slate)]">
+        <h1 className="mb-6 text-center text-2xl font-bold text-app-ink">
+          Login
+        </h1>
 
         {error && (
-          <div className="mb-4 p-4 bg-red-50 text-red-700 rounded border border-red-200">
+          <div className="mb-4 rounded border border-red-200 bg-red-50 p-4 text-red-700 dark:border-red-800/60 dark:bg-red-950/35 dark:text-red-200">
             {error}
           </div>
         )}
@@ -55,7 +57,7 @@ export default function LoginPage() {
           <div>
             <label
               htmlFor="email"
-              className="block text-sm font-medium text-gray-700"
+              className="block text-sm font-medium text-app-muted"
             >
               Email
             </label>
@@ -65,7 +67,7 @@ export default function LoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              className="mt-1 block w-full rounded-md border border-app-border bg-app-bg px-3 py-2 text-app-ink shadow-sm focus:border-app-primary focus:outline-none focus:ring-2 focus:ring-app-ring"
               placeholder="you@example.com"
             />
           </div>
@@ -73,7 +75,7 @@ export default function LoginPage() {
           <div>
             <label
               htmlFor="password"
-              className="block text-sm font-medium text-gray-700"
+              className="block text-sm font-medium text-app-muted"
             >
               Password
             </label>
@@ -83,13 +85,13 @@ export default function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              className="mt-1 block w-full rounded-md border border-app-border bg-app-bg px-3 py-2 text-app-ink shadow-sm focus:border-app-primary focus:outline-none focus:ring-2 focus:ring-app-ring"
               placeholder="••••••••"
             />
             <div className="mt-2 text-right">
               <Link
                 href="/forgot-password"
-                className="text-sm text-blue-600 hover:underline"
+                className="text-sm text-app-primary hover:underline"
               >
                 Forgot password?
               </Link>
@@ -99,15 +101,15 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:bg-gray-400 transition-colors"
+            className="w-full rounded-md bg-app-primary px-4 py-2 text-white transition hover:brightness-105 disabled:opacity-50"
           >
             {loading ? 'Logging in...' : 'Login'}
           </button>
         </form>
 
-        <p className="mt-4 text-center text-sm text-gray-600">
-          Don't have an account?{' '}
-          <a href="/signup" className="text-blue-600 hover:underline">
+        <p className="mt-4 text-center text-sm text-app-muted">
+          Don&apos;t have an account?{' '}
+          <a href="/signup" className="text-app-primary hover:underline">
             Sign up
           </a>
         </p>

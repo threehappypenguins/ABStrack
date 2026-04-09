@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from './lib/supabase/server-client';
 
 // Protected routes that require authentication
-const protectedRoutes = ['/dashboard'];
+const protectedRoutes = ['/dashboard', '/presets'];
 
 // Public auth routes that redirect authenticated users
 const authRoutes = ['/login', '/signup', '/forgot-password'];

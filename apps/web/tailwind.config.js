@@ -11,13 +11,50 @@
 
 /** @type {import('tailwindcss').Config} */
 module.exports = {
+  darkMode: 'class',
   content: [
     './{src,pages,components,app}/**/*.{ts,tsx,js,jsx,html}',
     '!./{src,pages,components,app}/**/*.{stories,spec}.{ts,tsx,js,jsx,html}',
     //     ...createGlobPatternsForDependencies(__dirname)
   ],
   theme: {
-    extend: {},
+    extend: {
+      fontFamily: {
+        sans: [
+          'var(--font-app-sans)',
+          'ui-sans-serif',
+          'system-ui',
+          'Segoe UI',
+          'Roboto',
+          'Helvetica Neue',
+          'Arial',
+          'sans-serif',
+        ],
+      },
+      colors: {
+        /** Semantic tokens (see global.css `:root` / `.dark`) */
+        app: {
+          bg: 'var(--app-bg)',
+          surface: 'var(--app-surface)',
+          border: 'var(--app-border)',
+          muted: 'var(--app-muted)',
+          ink: 'var(--app-ink)',
+          primary: 'var(--app-primary)',
+          'primary-soft': 'var(--app-primary-soft)',
+          ring: 'var(--app-ring)',
+        },
+      },
+      ringOffsetColor: {
+        app: 'var(--app-bg)',
+      },
+      boxShadow: {
+        soft: 'var(--app-shadow-soft)',
+        header: 'var(--app-shadow-header)',
+      },
+      backgroundImage: {
+        'app-gradient': 'var(--app-gradient)',
+      },
+    },
   },
   plugins: [],
 };
