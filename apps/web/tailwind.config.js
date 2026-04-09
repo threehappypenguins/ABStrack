@@ -44,8 +44,11 @@ module.exports = {
           ring: 'rgb(var(--app-ring) / <alpha-value>)',
         },
       },
+      /** Mirrors `colors.app.bg` so `ring-offset-app-bg` resolves (flat `app` would break nested keys). */
       ringOffsetColor: {
-        app: 'rgb(var(--app-bg) / <alpha-value>)',
+        app: {
+          bg: 'rgb(var(--app-bg) / <alpha-value>)',
+        },
       },
       boxShadow: {
         soft: 'var(--app-shadow-soft)',
