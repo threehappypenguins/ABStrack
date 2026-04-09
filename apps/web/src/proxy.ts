@@ -4,6 +4,14 @@ import { createServerClient } from './lib/supabase/server-client';
 // Protected routes that require authentication
 const protectedRoutes = ['/dashboard', '/presets'];
 
+/**
+ * True when `pathname` is exactly `route` or a nested path under it (e.g. `/presets/x`), not
+ * false prefixes like `/presets-foo` from naive `startsWith(route)`.
+ */
+function isProtectedPath(pathname: string, route: string): boolean {
+  return pathname === route || pathname.startsWith(`${route}/`);
+}
+
 // Public auth routes that redirect authenticated users
 const authRoutes = ['/login', '/signup', '/forgot-password'];
 
@@ -40,7 +48,7 @@ export default async function proxy(req: NextRequest) {
 
   // Check if current route is protected
   const isProtectedRoute = protectedRoutes.some((route) =>
-    pathname.startsWith(route),
+    isProtectedPath(pathname, route),
   );
 
   // Check if current route is an auth route

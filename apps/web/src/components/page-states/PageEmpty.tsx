@@ -1,6 +1,4 @@
-'use client';
-
-import { useId, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 
 export type PageEmptyProps = {
   /** Primary heading inside the card. */
@@ -13,12 +11,13 @@ export type PageEmptyProps = {
 
 /**
  * Standard empty state for list pages before data exists or CRUD is wired.
+ * Server Component: unique heading id per render via `crypto.randomUUID()` (no `'use client'`).
  *
  * @param props - Props.
  * @returns Empty-state section.
  */
 export function PageEmpty({ title, description, children }: PageEmptyProps) {
-  const headingId = useId();
+  const headingId = crypto.randomUUID();
 
   return (
     <section

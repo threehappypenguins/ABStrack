@@ -165,6 +165,25 @@ describe('web auth proxy', () => {
     );
   });
 
+  it('does not treat lookalike paths as protected (e.g. /presets-foo)', async () => {
+    const getUser = jest.fn(async () => ({ data: { user: null } }));
+
+    createServerClientMock.mockReturnValue(
+      Promise.resolve({
+        auth: { getUser },
+      } as unknown as ServerClient),
+    );
+
+    const result = await proxy(makeRequest('/presets-foo'));
+
+    expect(getUser).toHaveBeenCalledTimes(1);
+    expect(result).toEqual(
+      expect.objectContaining({
+        type: 'next',
+      }),
+    );
+  });
+
   it('refreshes session via getUser and allows request when route is public', async () => {
     const getUser = jest.fn(async () => ({ data: { user: null } }));
 
