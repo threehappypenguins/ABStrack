@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { PageError } from '@/components/page-states/PageError';
+import { getPublicErrorBoundaryMessage } from '@/lib/public-error-message';
 
 /**
  * Segment error boundary for symptom presets routes.
@@ -23,7 +24,7 @@ export default function SymptomPresetsError({
   return (
     <PageError
       title="Could not load symptom presets"
-      message={error.message}
+      message={getPublicErrorBoundaryMessage(error)}
       onRetry={reset}
     />
   );

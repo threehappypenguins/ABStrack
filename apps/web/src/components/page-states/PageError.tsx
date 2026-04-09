@@ -3,7 +3,7 @@
 export type PageErrorProps = {
   /** Short heading for the error panel. */
   title: string;
-  /** Error detail (avoid leaking secrets; caller should sanitize if needed). */
+  /** User-facing detail; route `error.tsx` should use `getPublicErrorBoundaryMessage` in production. */
   message: string;
   /** Optional retry action (e.g. Next.js `error.tsx` `reset`). */
   onRetry?: () => void;

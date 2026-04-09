@@ -2,17 +2,19 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Semantic colors: toggled via `html.dark` (Tailwind `darkMode: 'class'`) */
+/* Semantic colors: toggled via `html.dark` (Tailwind `darkMode: 'class'`).
+ * RGB channel tokens (space-separated) pair with Tailwind `rgb(var(--app-*) / <alpha-value>)`
+ * so opacity modifiers (e.g. `border-app-border/90`) resolve correctly. */
 @layer base {
   :root {
-    --app-bg: #f4f7fb;
-    --app-surface: #ffffff;
-    --app-border: #e2e8f0;
-    --app-muted: #64748b;
-    --app-ink: #0f172a;
-    --app-primary: #1d4ed8;
-    --app-primary-soft: #dbeafe;
-    --app-ring: #2563eb;
+    --app-bg: 244 247 251;
+    --app-surface: 255 255 255;
+    --app-border: 226 232 240;
+    --app-muted: 100 116 139;
+    --app-ink: 15 23 42;
+    --app-primary: 29 78 216;
+    --app-primary-soft: 219 234 254;
+    --app-ring: 37 99 235;
     --app-header-bg: rgba(255, 255, 255, 0.92);
     --app-header-border: rgba(226, 232, 240, 0.95);
     --app-nav-hover-bg: #f1f5f9;
@@ -29,14 +31,15 @@
   }
 
   .dark {
-    --app-bg: #0f172a;
-    --app-surface: #1e293b;
-    --app-border: #334155;
-    --app-muted: #94a3b8;
-    --app-ink: #f1f5f9;
-    --app-primary: #60a5fa;
-    --app-primary-soft: rgba(37, 99, 235, 0.28);
-    --app-ring: #93c5fd;
+    --app-bg: 15 23 42;
+    --app-surface: 30 41 59;
+    --app-border: 51 65 85;
+    --app-muted: 148 163 184;
+    --app-ink: 241 245 249;
+    --app-primary: 96 165 250;
+    /* Opaque fill uses `dark:bg-app-primary-soft/28` where applied. */
+    --app-primary-soft: 37 99 235;
+    --app-ring: 147 197 253;
     --app-header-bg: rgba(15, 23, 42, 0.92);
     --app-header-border: rgba(51, 65, 85, 0.95);
     --app-nav-hover-bg: #334155;
@@ -63,8 +66,8 @@
     margin: 0;
     font-family: inherit;
     line-height: inherit;
-    color: var(--app-ink);
-    background-color: var(--app-bg);
+    color: rgb(var(--app-ink) / 1);
+    background-color: rgb(var(--app-bg) / 1);
     background-image: var(--app-gradient);
     min-height: 100vh;
     text-rendering: optimizeLegibility;

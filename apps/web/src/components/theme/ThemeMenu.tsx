@@ -34,7 +34,8 @@ const OPTIONS: {
 /**
  * Theme preference control: disclosure button plus a popup implemented as a **radiogroup**
  * (mutually exclusive options) with arrow / Home / End keyboard navigation per the WAI-ARIA
- * Radio Group pattern—not a full application menu.
+ * Radio Group pattern—not a full application menu. Closing the popup restores focus to the
+ * trigger so focus is not lost when the radios unmount.
  *
  * @returns Theme picker UI.
  */
@@ -42,7 +43,9 @@ export function ThemeMenu() {
   const { preference, setPreference } = useTheme();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const wasOpenRef = useRef(false);
   const groupId = useId();
 
   const TriggerIcon =
@@ -65,6 +68,15 @@ export function ThemeMenu() {
     });
     return () => cancelAnimationFrame(id);
   }, [open, preference]);
+
+  useEffect(() => {
+    if (wasOpenRef.current && !open) {
+      requestAnimationFrame(() => {
+        triggerRef.current?.focus();
+      });
+    }
+    wasOpenRef.current = open;
+  }, [open]);
 
   useEffect(() => {
     if (!open) {
@@ -127,6 +139,7 @@ export function ThemeMenu() {
   return (
     <div ref={rootRef} className="relative">
       <button
+        ref={triggerRef}
         type="button"
         className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-app-border bg-app-surface text-app-ink shadow-sm transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
         aria-label="Theme"

@@ -18,6 +18,16 @@ describe('theme-storage', () => {
     expect(readStoredTheme()).toBe('system');
   });
 
+  it('readStoredTheme returns system when localStorage.getItem throws', () => {
+    const spy = jest
+      .spyOn(Storage.prototype, 'getItem')
+      .mockImplementation(() => {
+        throw new DOMException('Access denied');
+      });
+    expect(readStoredTheme()).toBe('system');
+    spy.mockRestore();
+  });
+
   it.each([[''], ['not-a-theme'], ['LIGHT'], ['system']])(
     'readStoredTheme returns system when storage is invalid (%s)',
     (stored) => {
@@ -37,6 +47,16 @@ describe('theme-storage', () => {
     localStorage.setItem(THEME_STORAGE_KEY, 'dark');
     writeStoredTheme('system');
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBeNull();
+  });
+
+  it('writeStoredTheme does not throw when localStorage.setItem throws', () => {
+    const spy = jest
+      .spyOn(Storage.prototype, 'setItem')
+      .mockImplementation(() => {
+        throw new DOMException('Access denied');
+      });
+    expect(() => writeStoredTheme('dark')).not.toThrow();
+    spy.mockRestore();
   });
 
   it('applyThemeToDocument toggles dark class', () => {

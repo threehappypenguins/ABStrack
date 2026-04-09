@@ -32,20 +32,20 @@ module.exports = {
         ],
       },
       colors: {
-        /** Semantic tokens (see global.css `:root` / `.dark`) */
+        /** Semantic tokens: global.css holds R G B channels; opacity modifiers use /alpha */
         app: {
-          bg: 'var(--app-bg)',
-          surface: 'var(--app-surface)',
-          border: 'var(--app-border)',
-          muted: 'var(--app-muted)',
-          ink: 'var(--app-ink)',
-          primary: 'var(--app-primary)',
-          'primary-soft': 'var(--app-primary-soft)',
-          ring: 'var(--app-ring)',
+          bg: 'rgb(var(--app-bg) / <alpha-value>)',
+          surface: 'rgb(var(--app-surface) / <alpha-value>)',
+          border: 'rgb(var(--app-border) / <alpha-value>)',
+          muted: 'rgb(var(--app-muted) / <alpha-value>)',
+          ink: 'rgb(var(--app-ink) / <alpha-value>)',
+          primary: 'rgb(var(--app-primary) / <alpha-value>)',
+          'primary-soft': 'rgb(var(--app-primary-soft) / <alpha-value>)',
+          ring: 'rgb(var(--app-ring) / <alpha-value>)',
         },
       },
       ringOffsetColor: {
-        app: 'var(--app-bg)',
+        app: 'rgb(var(--app-bg) / <alpha-value>)',
       },
       boxShadow: {
         soft: 'var(--app-shadow-soft)',

@@ -9,7 +9,7 @@ export const THEME_STORAGE_KEY = 'abstrack-theme';
 export type ThemePreference = 'light' | 'dark' | 'system';
 
 /**
- * Reads the stored preference, or `system` when unset or invalid.
+ * Reads the stored preference, or `system` when unset, invalid, or storage is unavailable.
  *
  * @returns Resolved preference from storage.
  */
@@ -17,23 +17,32 @@ export function readStoredTheme(): ThemePreference {
   if (typeof window === 'undefined') {
     return 'system';
   }
-  const v = localStorage.getItem(THEME_STORAGE_KEY);
-  if (v === 'light' || v === 'dark') {
-    return v;
+  try {
+    const v = localStorage.getItem(THEME_STORAGE_KEY);
+    if (v === 'light' || v === 'dark') {
+      return v;
+    }
+  } catch {
+    // `localStorage` can throw when blocked, in some privacy modes, or when quota is exceeded.
   }
   return 'system';
 }
 
 /**
  * Persists explicit light/dark only; `system` clears storage so the default applies.
+ * Swallows storage errors so a blocked `localStorage` does not break the app.
  *
  * @param pref - Preference to store.
  */
 export function writeStoredTheme(pref: ThemePreference): void {
-  if (pref === 'system') {
-    localStorage.removeItem(THEME_STORAGE_KEY);
-  } else {
-    localStorage.setItem(THEME_STORAGE_KEY, pref);
+  try {
+    if (pref === 'system') {
+      localStorage.removeItem(THEME_STORAGE_KEY);
+    } else {
+      localStorage.setItem(THEME_STORAGE_KEY, pref);
+    }
+  } catch {
+    // Same environments that block reads often block writes; in-memory theme still applies.
   }
 }
 

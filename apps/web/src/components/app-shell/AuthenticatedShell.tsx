@@ -99,7 +99,7 @@ export function AuthenticatedShell({
                       aria-current={active ? 'page' : undefined}
                       className={
                         active
-                          ? 'inline-flex min-h-[44px] items-center rounded-full bg-app-primary-soft px-4 py-2 text-sm font-semibold text-app-primary shadow-sm ring-1 ring-app-primary/25 transition outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg'
+                          ? 'inline-flex min-h-[44px] items-center rounded-full bg-app-primary-soft px-4 py-2 text-sm font-semibold text-app-primary shadow-sm ring-1 ring-app-primary/25 transition outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg dark:bg-app-primary-soft/28'
                           : 'inline-flex min-h-[44px] items-center rounded-full px-4 py-2 text-sm font-medium text-app-muted transition outline-none hover:bg-[var(--app-nav-hover-bg)] hover:text-app-ink focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg'
                       }
                     >
