@@ -1,15 +1,36 @@
 import React from 'react';
 import { StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
 import { HomeScreen } from '../screens/HomeScreen';
 import { HealthMarkerPresetsScreen } from '../screens/HealthMarkerPresetsScreen';
 import { SymptomPresetsScreen } from '../screens/SymptomPresetsScreen';
 import { useAppTheme } from '../theme/AppThemeContext';
-import type { MainTabParamList } from './types';
+import type { MainStackParamList, MainTabParamList } from './types';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
+
+/**
+ * Home tab lives under {@link MainStackParamList} `MainTabs`; opens stack `Settings`.
+ * Invariant: tab navigator is always nested in that stack — missing parent is a programmer error.
+ *
+ * @param navigation - Home tab navigation object.
+ */
+function navigateFromHomeTabToSettings(
+  navigation: BottomTabNavigationProp<MainTabParamList, 'Home'>,
+) {
+  const stackNavigation =
+    navigation.getParent<NativeStackNavigationProp<MainStackParamList>>();
+  if (stackNavigation == null) {
+    throw new Error(
+      'MainTabNavigator: expected native stack parent (MainStack) to open Settings.',
+    );
+  }
+  stackNavigation.navigate('Settings');
+}
 
 type IonName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -64,7 +85,7 @@ export function MainTabNavigator() {
         {({ navigation }) => (
           <HomeScreen
             onGoToSettings={() => {
-              navigation.getParent()?.navigate('Settings');
+              navigateFromHomeTabToSettings(navigation);
             }}
           />
         )}

@@ -1,6 +1,7 @@
 /**
- * Semantic colors aligned with `apps/web/src/app/global.css` (`--app-*` RGB tokens).
- * Used for React Native `StyleSheet` theming; manual preference will plug into the same shape later.
+ * Semantic colors aligned with web (`apps/web/src/app/global.css`) and mobile NativeWind
+ * (`apps/mobile/global.css` CSS variables for `className`). Keep light/dark hex values in sync
+ * with those `--app-*` channels when they change.
  */
 export type AppThemeColors = {
   bg: string;
