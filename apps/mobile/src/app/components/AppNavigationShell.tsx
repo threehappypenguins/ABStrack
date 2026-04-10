@@ -5,7 +5,7 @@ import { NavigationShell } from '@abstrack/ui/native';
 import { useAppTheme } from '../theme/AppThemeContext';
 
 export type AppNavigationShellProps = {
-  /** Visible screen title (also used for accessibility on the header region). */
+  /** Visible screen title; header semantics come from {@link NavigationShell}'s header container. */
   title: string;
   children: React.ReactNode;
 };
@@ -41,7 +41,6 @@ export function AppNavigationShell({
         header={
           <Text
             style={[shellStyles.headerTitle, { color: colors.ink }]}
-            accessibilityRole="header"
             maxFontSizeMultiplier={2}
           >
             {title}

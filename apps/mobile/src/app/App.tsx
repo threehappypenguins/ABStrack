@@ -9,6 +9,7 @@ import { getMobileSupabaseClient } from '../lib/supabase-wiring';
 import { AppProviders } from './components/AppProviders';
 import { ForgotPasswordScreen } from './screens/ForgotPasswordScreen';
 import { MainTabNavigator } from './navigation/MainTabNavigator';
+import type { MainStackParamList } from './navigation/types';
 import { LoginScreen } from './screens/LoginScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { SignupScreen } from './screens/SignupScreen';
@@ -21,11 +22,6 @@ type AuthStackParamList = {
   Signup: undefined;
   ForgotPassword: undefined;
   UpdatePassword: undefined;
-};
-
-type MainStackParamList = {
-  MainTabs: undefined;
-  Settings: undefined;
 };
 
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
