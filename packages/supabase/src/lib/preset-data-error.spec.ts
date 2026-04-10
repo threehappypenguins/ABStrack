@@ -94,9 +94,29 @@ describe('mapSupabaseErrorToPresetDataError', () => {
     expect(mapSupabaseErrorToPresetDataError('string')).toBeNull();
     expect(mapSupabaseErrorToPresetDataError(null)).toBeNull();
   });
+
+  it('maps fetch-style TypeError to network_error (no PostgREST code)', () => {
+    for (const message of [
+      'Failed to fetch',
+      'NetworkError when attempting to fetch resource.',
+      'Load failed',
+      'Network request failed',
+    ]) {
+      const mapped = mapSupabaseErrorToPresetDataError(new TypeError(message));
+      expect(mapped?.code).toBe('network_error');
+      expect(mapped?.message).toMatch(/connection/i);
+    }
+  });
 });
 
 describe('toPresetDataError', () => {
+  it('maps fetch TypeError to friendly network copy (not raw message)', () => {
+    const err = toPresetDataError(new TypeError('Failed to fetch'));
+    expect(err.code).toBe('network_error');
+    expect(err.message).toMatch(/connection/i);
+    expect(err.message).not.toMatch(/failed to fetch/i);
+  });
+
   it('wraps arbitrary Errors', () => {
     const err = toPresetDataError(new Error('boom'));
     expect(err).toBeInstanceOf(PresetDataError);

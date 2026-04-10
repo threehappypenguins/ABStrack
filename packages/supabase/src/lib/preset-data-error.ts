@@ -44,6 +44,37 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
+/**
+ * Detects browser/React-Native fetch failures that are not PostgREST-shaped.
+ * (e.g. `TypeError: Failed to fetch` has no `code` field.)
+ */
+function isLikelyNetworkTransportError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+  if ('name' in error) {
+    const name = (error as { name?: string }).name;
+    if (name === 'AbortError') {
+      return true;
+    }
+    if (typeof name === 'string' && name.includes('Network')) {
+      return true;
+    }
+  }
+  if (error instanceof TypeError) {
+    const m = error.message.toLowerCase();
+    if (
+      m.includes('failed to fetch') ||
+      m.includes('networkerror when attempting') ||
+      m.includes('load failed') ||
+      m.includes('network request failed')
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function asPostgrestLike(error: unknown): MaybePostgrestLike | null {
   if (error instanceof Error) {
     const e = error as Error & { code?: string; details?: unknown };
@@ -80,18 +111,12 @@ function asPostgrestLike(error: unknown): MaybePostgrestLike | null {
 export function mapSupabaseErrorToPresetDataError(
   error: unknown,
 ): PresetDataError | null {
-  if (typeof error === 'object' && error !== null && 'name' in error) {
-    const name = (error as { name?: string }).name;
-    if (
-      name === 'AbortError' ||
-      (typeof name === 'string' && name.includes('Network'))
-    ) {
-      return new PresetDataError(
-        'network_error',
-        'Could not reach the server. Check your connection and try again.',
-        error,
-      );
-    }
+  if (isLikelyNetworkTransportError(error)) {
+    return new PresetDataError(
+      'network_error',
+      'Could not reach the server. Check your connection and try again.',
+      error,
+    );
   }
 
   const pg = asPostgrestLike(error);
