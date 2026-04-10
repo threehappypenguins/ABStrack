@@ -195,9 +195,15 @@ export function mapSupabaseErrorToPresetDataError(
  * Wraps any unknown failure as {@link PresetDataError}, using {@link mapSupabaseErrorToPresetDataError}
  * when possible.
  *
+ * Idempotent: an existing {@link PresetDataError} is returned unchanged so callers may safely wrap
+ * any caught value without losing `code`, message, or `cause`.
+ *
  * @param error - Caught rejection or Supabase `error` object.
  */
 export function toPresetDataError(error: unknown): PresetDataError {
+  if (error instanceof PresetDataError) {
+    return error;
+  }
   return (
     mapSupabaseErrorToPresetDataError(error) ??
     new PresetDataError(

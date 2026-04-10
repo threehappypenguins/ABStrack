@@ -111,6 +111,16 @@ describe('mapSupabaseErrorToPresetDataError', () => {
 });
 
 describe('toPresetDataError', () => {
+  it('returns PresetDataError instances unchanged', () => {
+    const original = new PresetDataError(
+      'validation_error',
+      'already mapped',
+      new Error('cause'),
+    );
+    expect(toPresetDataError(original)).toBe(original);
+    expect(toPresetDataError(original).code).toBe('validation_error');
+  });
+
   it('maps fetch TypeError to friendly network copy (not raw message)', () => {
     const err = toPresetDataError(new TypeError('Failed to fetch'));
     expect(err.code).toBe('network_error');
