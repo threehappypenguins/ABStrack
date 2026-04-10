@@ -8,7 +8,7 @@ CREATE OR REPLACE FUNCTION public.reorder_preset_symptoms (
 RETURNS void
 LANGUAGE plpgsql
 SECURITY INVOKER
-SET search_path = public
+SET search_path = pg_catalog, public
 AS $$
 DECLARE
   n int;
@@ -122,7 +122,7 @@ CREATE OR REPLACE FUNCTION public.reorder_preset_health_markers (
 RETURNS void
 LANGUAGE plpgsql
 SECURITY INVOKER
-SET search_path = public
+SET search_path = pg_catalog, public
 AS $$
 DECLARE
   n int;
