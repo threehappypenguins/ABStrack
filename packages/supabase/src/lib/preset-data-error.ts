@@ -129,7 +129,8 @@ export function mapSupabaseErrorToPresetDataError(
   if (
     combined.includes('abstrack_preset_reorder_count_mismatch') ||
     combined.includes('abstrack_preset_reorder_duplicate_id') ||
-    combined.includes('abstrack_preset_reorder_unknown_line')
+    combined.includes('abstrack_preset_reorder_unknown_line') ||
+    combined.includes('abstrack_preset_reorder_update_count_mismatch')
   ) {
     return new PresetDataError(
       'validation_error',

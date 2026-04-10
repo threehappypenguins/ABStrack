@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { PresetSymptomRow } from '@abstrack/types';
+import type { PresetHealthMarkerRow, PresetSymptomRow } from '@abstrack/types';
 import {
+  deleteSymptomPreset,
+  reorderPresetHealthMarkers,
   reorderPresetSymptoms,
   validateReorderLineIds,
 } from './preset-data.js';
@@ -128,5 +130,148 @@ describe('reorderPresetSymptoms', () => {
       expect(result.error.code).toBe('validation_error');
     }
     expect(rpc).not.toHaveBeenCalled();
+  });
+});
+
+describe('reorderPresetHealthMarkers', () => {
+  it('calls reorder RPC with validated ids after listing lines', async () => {
+    const rows: PresetHealthMarkerRow[] = [
+      {
+        id: 'hm-1',
+        preset_id: 'preset-hm-1',
+        sort_order: 0,
+        marker_kind: 'weight',
+        custom_name: null,
+        custom_unit: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+      {
+        id: 'hm-2',
+        preset_id: 'preset-hm-1',
+        sort_order: 1,
+        marker_kind: 'bac',
+        custom_name: null,
+        custom_unit: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    ];
+
+    const rpc = vi.fn(async () => ({ data: null, error: null }));
+
+    const from = vi.fn((table: string) => {
+      if (table !== 'preset_health_markers') {
+        throw new Error(`unexpected table ${table}`);
+      }
+      return {
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            order: vi.fn(() => ({
+              order: vi.fn(async () => ({ data: rows, error: null })),
+            })),
+          })),
+        })),
+      };
+    });
+
+    const client = { from, rpc } as unknown as AbstrackSupabaseClient;
+
+    const result = await reorderPresetHealthMarkers(client, 'preset-hm-1', [
+      'hm-2',
+      'hm-1',
+    ]);
+
+    expect(result.ok).toBe(true);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith('reorder_preset_health_markers', {
+      p_preset_id: 'preset-hm-1',
+      p_ordered_ids: ['hm-2', 'hm-1'],
+    });
+  });
+
+  it('returns validation_error without calling RPC when order is invalid', async () => {
+    const rows: PresetHealthMarkerRow[] = [
+      {
+        id: 'hm-1',
+        preset_id: 'preset-hm-1',
+        sort_order: 0,
+        marker_kind: 'heart_rate',
+        custom_name: null,
+        custom_unit: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    ];
+
+    const rpc = vi.fn();
+
+    const from = vi.fn(() => ({
+      select: vi.fn(() => ({
+        eq: vi.fn(() => ({
+          order: vi.fn(() => ({
+            order: vi.fn(async () => ({ data: rows, error: null })),
+          })),
+        })),
+      })),
+    }));
+
+    const client = { from, rpc } as unknown as AbstrackSupabaseClient;
+
+    const result = await reorderPresetHealthMarkers(client, 'preset-hm-1', []);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('validation_error');
+    }
+    expect(rpc).not.toHaveBeenCalled();
+  });
+});
+
+describe('deleteSymptomPreset', () => {
+  function mockDeleteChain(result: {
+    data: { id: string } | null;
+    error: { code: string; message: string } | null;
+  }) {
+    const single = vi.fn(async () => result);
+    return {
+      from: vi.fn(() => ({
+        delete: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            select: vi.fn(() => ({
+              single,
+            })),
+          })),
+        })),
+      })),
+    };
+  }
+
+  it('returns ok when one row is deleted (returning representation)', async () => {
+    const client = mockDeleteChain({
+      data: { id: 'preset-a' },
+      error: null,
+    }) as unknown as AbstrackSupabaseClient;
+
+    const result = await deleteSymptomPreset(client, 'preset-a');
+
+    expect(result.ok).toBe(true);
+  });
+
+  it('returns not_found when delete matches 0 rows', async () => {
+    const client = mockDeleteChain({
+      data: null,
+      error: {
+        code: 'PGRST116',
+        message: 'JSON object requested, multiple (or no) rows returned',
+      },
+    }) as unknown as AbstrackSupabaseClient;
+
+    const result = await deleteSymptomPreset(client, 'missing-id');
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('not_found');
+    }
   });
 });

@@ -47,6 +47,7 @@ describe('mapSupabaseErrorToPresetDataError', () => {
       'abstrack_preset_reorder_count_mismatch',
       'abstrack_preset_reorder_duplicate_id',
       'abstrack_preset_reorder_unknown_line',
+      'abstrack_preset_reorder_update_count_mismatch',
     ]) {
       const mapped = mapSupabaseErrorToPresetDataError({
         code: 'P0001',

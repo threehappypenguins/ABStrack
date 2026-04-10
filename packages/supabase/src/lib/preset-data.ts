@@ -60,6 +60,32 @@ async function wrapVoid(
 }
 
 /**
+ * DELETE with a returning row so 0-row deletes surface as PostgREST errors (e.g. PGRST116) instead of silent success.
+ */
+async function wrapDeleteExpectOne(
+  run: () => Promise<{ data: unknown; error: unknown }>,
+): Promise<PresetDataResult<void>> {
+  try {
+    const { data, error } = await run();
+    if (error) {
+      return { ok: false, error: toPresetDataError(error) };
+    }
+    if (data === null || data === undefined) {
+      return {
+        ok: false,
+        error: new PresetDataError(
+          'not_found',
+          'We could not find that item. It may have been removed.',
+        ),
+      };
+    }
+    return { ok: true, data: undefined };
+  } catch (caught) {
+    return { ok: false, error: toPresetDataError(caught) };
+  }
+}
+
+/**
  * Validates that `orderedIds` is a permutation of `existingIds` (same length, no duplicates, no extras).
  *
  * @param existingIds - Line ids currently stored for the preset.
@@ -195,6 +221,7 @@ export async function updateSymptomPreset(
 
 /**
  * Deletes a symptom preset (cascade removes its lines).
+ * If no row matched (or RLS hides it), returns `{ ok: false, error }` with `not_found` or `permission_denied`, not a silent success.
  *
  * @param client - Supabase client.
  * @param id - `symptom_presets.id`.
@@ -203,9 +230,14 @@ export async function deleteSymptomPreset(
   client: AbstrackSupabaseClient,
   id: string,
 ): Promise<PresetDataResult<void>> {
-  return wrapVoid(async () => {
-    const r = await client.from('symptom_presets').delete().eq('id', id);
-    return { error: r.error };
+  return wrapDeleteExpectOne(async () => {
+    const r = await client
+      .from('symptom_presets')
+      .delete()
+      .eq('id', id)
+      .select('id')
+      .single();
+    return { data: r.data, error: r.error };
   });
 }
 
@@ -286,6 +318,7 @@ export async function updatePresetSymptom(
 
 /**
  * Deletes one preset symptom line.
+ * If no row matched (or RLS hides it), returns `{ ok: false, error }` — see {@link deleteSymptomPreset}.
  *
  * @param client - Supabase client.
  * @param id - `preset_symptoms.id`.
@@ -294,9 +327,14 @@ export async function deletePresetSymptom(
   client: AbstrackSupabaseClient,
   id: string,
 ): Promise<PresetDataResult<void>> {
-  return wrapVoid(async () => {
-    const r = await client.from('preset_symptoms').delete().eq('id', id);
-    return { error: r.error };
+  return wrapDeleteExpectOne(async () => {
+    const r = await client
+      .from('preset_symptoms')
+      .delete()
+      .eq('id', id)
+      .select('id')
+      .single();
+    return { data: r.data, error: r.error };
   });
 }
 
@@ -429,6 +467,7 @@ export async function updateHealthMarkerPreset(
 
 /**
  * Deletes a health marker preset (cascade removes its lines).
+ * If no row matched (or RLS hides it), returns `{ ok: false, error }` — see {@link deleteSymptomPreset}.
  *
  * @param client - Supabase client.
  * @param id - `health_marker_presets.id`.
@@ -437,9 +476,14 @@ export async function deleteHealthMarkerPreset(
   client: AbstrackSupabaseClient,
   id: string,
 ): Promise<PresetDataResult<void>> {
-  return wrapVoid(async () => {
-    const r = await client.from('health_marker_presets').delete().eq('id', id);
-    return { error: r.error };
+  return wrapDeleteExpectOne(async () => {
+    const r = await client
+      .from('health_marker_presets')
+      .delete()
+      .eq('id', id)
+      .select('id')
+      .single();
+    return { data: r.data, error: r.error };
   });
 }
 
@@ -520,6 +564,7 @@ export async function updatePresetHealthMarker(
 
 /**
  * Deletes one preset health marker line.
+ * If no row matched (or RLS hides it), returns `{ ok: false, error }` — see {@link deleteSymptomPreset}.
  *
  * @param client - Supabase client.
  * @param id - `preset_health_markers.id`.
@@ -528,9 +573,14 @@ export async function deletePresetHealthMarker(
   client: AbstrackSupabaseClient,
   id: string,
 ): Promise<PresetDataResult<void>> {
-  return wrapVoid(async () => {
-    const r = await client.from('preset_health_markers').delete().eq('id', id);
-    return { error: r.error };
+  return wrapDeleteExpectOne(async () => {
+    const r = await client
+      .from('preset_health_markers')
+      .delete()
+      .eq('id', id)
+      .select('id')
+      .single();
+    return { data: r.data, error: r.error };
   });
 }
 

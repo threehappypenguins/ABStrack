@@ -14,6 +14,7 @@ DECLARE
   n int;
   actual int;
   max_so int;
+  updated int;
 BEGIN
   -- Serialize reorder for this preset (pairs with parent FOR UPDATE when n > 0).
   PERFORM pg_advisory_xact_lock(
@@ -66,6 +67,12 @@ BEGIN
     RETURN;
   END IF;
 
+  -- Lock all line rows for this preset so concurrent UPDATE/DELETE on those rows cannot interleave.
+  PERFORM 1
+  FROM public.preset_symptoms
+  WHERE preset_id = p_preset_id
+  FOR UPDATE;
+
   SELECT COALESCE(MAX(ps.sort_order), -1)
   INTO max_so
   FROM public.preset_symptoms ps
@@ -81,6 +88,12 @@ BEGIN
   WHERE ps.id = ord.id
     AND ps.preset_id = p_preset_id;
 
+  GET DIAGNOSTICS updated = ROW_COUNT;
+  IF updated <> n THEN
+    RAISE EXCEPTION 'abstrack_preset_reorder_update_count_mismatch'
+      USING ERRCODE = 'P0001';
+  END IF;
+
   -- Phase 2: assign final 0..n-1 order (one statement).
   UPDATE public.preset_symptoms ps
   SET sort_order = ord.pos - 1
@@ -90,6 +103,12 @@ BEGIN
   ) ord
   WHERE ps.id = ord.id
     AND ps.preset_id = p_preset_id;
+
+  GET DIAGNOSTICS updated = ROW_COUNT;
+  IF updated <> n THEN
+    RAISE EXCEPTION 'abstrack_preset_reorder_update_count_mismatch'
+      USING ERRCODE = 'P0001';
+  END IF;
 END;
 $$;
 
@@ -109,6 +128,7 @@ DECLARE
   n int;
   actual int;
   max_so int;
+  updated int;
 BEGIN
   -- Serialize reorder for this preset (pairs with parent FOR UPDATE when n > 0).
   PERFORM pg_advisory_xact_lock(
@@ -161,6 +181,12 @@ BEGIN
     RETURN;
   END IF;
 
+  -- Lock all line rows for this preset (same pattern as reorder_preset_symptoms).
+  PERFORM 1
+  FROM public.preset_health_markers
+  WHERE preset_id = p_preset_id
+  FOR UPDATE;
+
   SELECT COALESCE(MAX(ph.sort_order), -1)
   INTO max_so
   FROM public.preset_health_markers ph
@@ -176,6 +202,12 @@ BEGIN
   WHERE ph.id = ord.id
     AND ph.preset_id = p_preset_id;
 
+  GET DIAGNOSTICS updated = ROW_COUNT;
+  IF updated <> n THEN
+    RAISE EXCEPTION 'abstrack_preset_reorder_update_count_mismatch'
+      USING ERRCODE = 'P0001';
+  END IF;
+
   UPDATE public.preset_health_markers ph
   SET sort_order = ord.pos - 1
   FROM (
@@ -184,6 +216,12 @@ BEGIN
   ) ord
   WHERE ph.id = ord.id
     AND ph.preset_id = p_preset_id;
+
+  GET DIAGNOSTICS updated = ROW_COUNT;
+  IF updated <> n THEN
+    RAISE EXCEPTION 'abstrack_preset_reorder_update_count_mismatch'
+      USING ERRCODE = 'P0001';
+  END IF;
 END;
 $$;
 
