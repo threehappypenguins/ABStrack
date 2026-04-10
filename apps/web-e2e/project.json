@@ -1,0 +1,14 @@
+{
+  "name": "@abstrack/web-e2e",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "sourceRoot": "apps/web-e2e/src",
+  "targets": {
+    "e2e": {
+      "dependsOn": [],
+      "metadata": {
+        "description": "Playwright starts @abstrack/web via playwright.config.ts webServer. A separate Nx dependency on web:dev was removed so teardown does not report a false failure when the dev process is SIGTERM’d."
+      }
+    }
+  }
+}

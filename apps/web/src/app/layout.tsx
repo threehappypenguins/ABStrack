@@ -34,7 +34,9 @@ export default function RootLayout({
               <ThemeMenu />
             </div>
           </div>
-          <AuthProvider>{children}</AuthProvider>
+          <AuthProvider>
+            <main>{children}</main>
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>

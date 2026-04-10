@@ -13,9 +13,13 @@ const baseURL = process.env['BASE_URL'] || 'http://localhost:3000';
 
 /**
  * See https://playwright.dev/docs/test-configuration.
+ *
+ * Timeouts are generous: the first request to `next dev` can spend a long time compiling.
  */
 export default defineConfig({
   ...nxE2EPreset(__filename, { testDir: './src' }),
+  timeout: 120_000,
+  expect: { timeout: 15_000 },
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     baseURL,
@@ -26,8 +30,9 @@ export default defineConfig({
   webServer: {
     command: 'pnpm exec nx run @abstrack/web:dev',
     url: 'http://localhost:3000',
-    reuseExistingServer: true,
+    reuseExistingServer: !process.env.CI,
     cwd: workspaceRoot,
+    timeout: 180_000,
   },
   projects: [
     {
