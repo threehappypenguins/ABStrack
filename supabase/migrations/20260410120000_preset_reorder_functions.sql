@@ -13,8 +13,23 @@ AS $$
 DECLARE
   n int;
   actual int;
+  max_so int;
 BEGIN
+  -- Serialize reorder for this preset (pairs with parent FOR UPDATE when n > 0).
+  PERFORM pg_advisory_xact_lock(
+    hashtext('abstrack:reorder_preset_symptoms'),
+    hashtext(p_preset_id::text)
+  );
+
   n := coalesce(cardinality(p_ordered_ids), 0);
+
+  IF n > 0 THEN
+    -- Blocks concurrent child line inserts (FK) and other writers on this header until commit.
+    PERFORM 1
+    FROM public.symptom_presets
+    WHERE id = p_preset_id
+    FOR UPDATE;
+  END IF;
 
   SELECT COUNT(*)::int INTO actual
   FROM public.preset_symptoms
@@ -51,9 +66,14 @@ BEGIN
     RETURN;
   END IF;
 
-  -- Phase 1: move all lines to a non-colliding sort_order band (one statement).
+  SELECT COALESCE(MAX(ps.sort_order), -1)
+  INTO max_so
+  FROM public.preset_symptoms ps
+  WHERE ps.preset_id = p_preset_id;
+
+  -- Phase 1: temporary band strictly above current max(sort_order) to avoid UNIQUE conflicts mid-statement.
   UPDATE public.preset_symptoms ps
-  SET sort_order = 1000000 + ord.pos - 1
+  SET sort_order = max_so + ord.pos
   FROM (
     SELECT u.id, u.ordinality::int AS pos
     FROM unnest(p_ordered_ids) WITH ORDINALITY AS u(id, ordinality)
@@ -88,8 +108,23 @@ AS $$
 DECLARE
   n int;
   actual int;
+  max_so int;
 BEGIN
+  -- Serialize reorder for this preset (pairs with parent FOR UPDATE when n > 0).
+  PERFORM pg_advisory_xact_lock(
+    hashtext('abstrack:reorder_preset_health_markers'),
+    hashtext(p_preset_id::text)
+  );
+
   n := coalesce(cardinality(p_ordered_ids), 0);
+
+  IF n > 0 THEN
+    -- Blocks concurrent child line inserts (FK) and other writers on this header until commit.
+    PERFORM 1
+    FROM public.health_marker_presets
+    WHERE id = p_preset_id
+    FOR UPDATE;
+  END IF;
 
   SELECT COUNT(*)::int INTO actual
   FROM public.preset_health_markers
@@ -126,8 +161,14 @@ BEGIN
     RETURN;
   END IF;
 
+  SELECT COALESCE(MAX(ph.sort_order), -1)
+  INTO max_so
+  FROM public.preset_health_markers ph
+  WHERE ph.preset_id = p_preset_id;
+
+  -- Phase 1: same dynamic band as reorder_preset_symptoms (strictly above max(sort_order)).
   UPDATE public.preset_health_markers ph
-  SET sort_order = 1000000 + ord.pos - 1
+  SET sort_order = max_so + ord.pos
   FROM (
     SELECT u.id, u.ordinality::int AS pos
     FROM unnest(p_ordered_ids) WITH ORDINALITY AS u(id, ordinality)
