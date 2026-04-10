@@ -40,6 +40,7 @@
     }
   },
   "dependencies": {
+    "@abstrack/types": "workspace:*",
     "@supabase/ssr": "^0.6.1",
     "@supabase/supabase-js": "^2.100.1",
     "tslib": "^2.3.0"

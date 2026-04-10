@@ -7,6 +7,8 @@ This project uses **Supabase Cloud** as the development database.
 1. **GitHub Actions** still runs **`supabase db push`** when changes land on **`main`**—so merged code and cloud stay aligned even if you forget a manual step.
 2. **You manually** run **`db push`** from your laptop **when needed** (usually **before merge**, on your feature branch) so cloud has the new migration **before** you run **`gen types typescript --linked`**. That lets you put **migration SQL + `database.types.ts` in one PR** without waiting for merge.
 
+**Wait to `db push` until the migration is stable (e.g. after Copilot / PR review).** Review tools often suggest edits to the same `supabase/migrations/*.sql` file. If you **`db push` too early**, cloud records that migration version as **already applied**; changing the file in git does **not** automatically re-apply it. Safer habit: keep migration work in the PR, finish review-driven SQL tweaks, **then** run **`db push`** once, **`gen types --linked`**, commit `database.types.ts`, and merge. See **[Revising a migration already pushed to cloud (development)](#revising-a-migration-already-pushed-to-cloud-development)** if you jumped the gun.
+
 **There is no requirement to run a local Supabase Docker stack** for this path—only the Supabase **CLI** (login + link + `db push` + `gen types`).
 
 ---
@@ -27,13 +29,15 @@ Use this when you add or change **`supabase/migrations/*.sql`** and want **`data
 
 1. **Supabase CLI once per machine:** `pnpm dlx supabase login` and `pnpm dlx supabase link --project-ref <project-ref>` (see [DEV_SETUP.md §4](DEV_SETUP.md#4-supabase-database-migrations-cloud-cli-and-ci)).
 2. **Commit** your new/edited migration file(s) on your branch.
-3. **Apply migrations to cloud from your laptop** (same linked project as production/dev cloud):
+3. **When the SQL is ready to land** (after any Copilot or human review you care about), **apply migrations to cloud** from your laptop (same linked project as production/dev cloud):
 
    ```bash
    pnpm dlx supabase db push
    ```
 
    Optional: `pnpm dlx supabase db push --dry-run` first.
+
+   **Avoid pushing too early** if you expect more edits to the same migration file—see the note at the top of this doc and **[Revising a migration already pushed to cloud (development)](#revising-a-migration-already-pushed-to-cloud-development)** below.
 
 4. **Regenerate types** (cloud now matches your migration):
 
@@ -54,6 +58,28 @@ Use this when you add or change **`supabase/migrations/*.sql`** and want **`data
 **Why manual `db push` before merge?** So cloud is updated **before** `--linked` typegen. If you only relied on CI `db push` after merge, `--linked` could not reflect the new schema until after merge—splitting migration and types across PRs.
 
 **You still keep GitHub Actions** so **`main`** stays the source of truth: merges you make without a local `db push` (e.g. hotfix) still apply pending migrations from git to cloud.
+
+---
+
+## Revising a migration already pushed to cloud (development)
+
+Supabase records **which migration versions** have been applied. **Deleting rows in your app tables does not “undo” a migration** or let you re-run the same file from git.
+
+- **What changed?** Know whether the migration created **tables/data** or only **functions / policies / triggers**. Many migrations only add or replace objects; there may be nothing useful to delete in user data.
+- **Same file, new SQL, already `db push`’d:** `db push` will **not** re-apply that version. Practical options on a **throwaway dev** project with **no production data** you care about:
+  1. **Preferred for teams / shared history:** add a **new** migration that applies the fix (e.g. `CREATE OR REPLACE FUNCTION ...`).
+  2. **Solo dev, empty DB:** use the CLI to mark the version **reverted** on the remote, then **`db push`** again so the updated file applies. Example (use your migration’s timestamp from the filename):
+
+     ```bash
+     pnpm dlx supabase migration repair 20260410120000 --status reverted
+     pnpm dlx supabase db push
+     ```
+
+     Use the timestamp from your migration filename (without the rest of the name). Confirm flags with `pnpm dlx supabase migration repair --help`. **Do not use this on production** unless you fully understand the impact on migration history.
+
+  3. **Quick one-off:** run the corrected SQL (e.g. `CREATE OR REPLACE FUNCTION ...`) in the **Supabase SQL editor** on that project. Your git migration file and cloud can still match **if** the final SQL in git is what you ran; avoid leaving cloud and repo diverged.
+
+- **Local Docker only:** `supabase db reset` reapplies **all** migrations from scratch; it does **not** affect cloud.
 
 ---
 
@@ -116,7 +142,7 @@ For the whole workspace (closer to CI), see [DEV_SETUP.md §5](DEV_SETUP.md#5-ve
 
 1. **Assume Supabase Cloud** for development—not `supabase start` on Sarah’s laptop unless she says so.
 
-2. **Recommended migration flow for Sarah:** when changing **`supabase/migrations/`**, tell her—in the **same message**—to run **`db push`** to cloud **then** **`gen types --linked`** + Prettier **then** commit **both** migration and `packages/supabase/src/lib/database.types.ts` **before** or as part of merge (see **Recommended workflow** above). **GitHub Actions** still runs `db push` on `main` as a backstop.
+2. **Recommended migration flow for Sarah:** when changing **`supabase/migrations/`**, tell her—in the **same message**—to **`db push`** to cloud **only when the migration SQL is stable** (e.g. after Copilot/PR review), **then** **`gen types --linked`** + Prettier **then** commit **both** migration and `packages/supabase/src/lib/database.types.ts` **before** or as part of merge (see **Recommended workflow** and **Revising a migration already pushed** above). **GitHub Actions** still runs `db push` on `main` as a backstop. **Do not** imply she must `db push` immediately on first draft if reviews may rewrite the same file.
 
 3. **Never imply `supabase db reset` affects cloud.** Local Docker only (or CI-only).
 
