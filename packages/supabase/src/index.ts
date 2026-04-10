@@ -28,3 +28,33 @@ export {
   fetchProfileByUserId,
   healthCheckProfilesLimit1,
 } from './lib/queries.js';
+export type { PresetDataErrorCode } from './lib/preset-data-error.js';
+export {
+  PresetDataError,
+  mapSupabaseErrorToPresetDataError,
+  toPresetDataError,
+} from './lib/preset-data-error.js';
+export type { PresetDataResult } from './lib/preset-data.js';
+export {
+  createHealthMarkerPreset,
+  createPresetHealthMarker,
+  createPresetSymptom,
+  createSymptomPreset,
+  deleteHealthMarkerPreset,
+  deletePresetHealthMarker,
+  deletePresetSymptom,
+  deleteSymptomPreset,
+  getHealthMarkerPresetById,
+  getSymptomPresetById,
+  listHealthMarkerPresets,
+  listPresetHealthMarkersForPreset,
+  listPresetSymptomsForPreset,
+  listSymptomPresets,
+  reorderPresetHealthMarkers,
+  reorderPresetSymptoms,
+  updateHealthMarkerPreset,
+  updatePresetHealthMarker,
+  updatePresetSymptom,
+  updateSymptomPreset,
+  validateReorderLineIds,
+} from './lib/preset-data.js';

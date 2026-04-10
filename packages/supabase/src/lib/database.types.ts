@@ -534,6 +534,14 @@ export type Database = {
         Returns: string
       }
       profiles_trusted_session_for_app_role: { Args: never; Returns: boolean }
+      reorder_preset_health_markers: {
+        Args: { p_ordered_ids: string[]; p_preset_id: string }
+        Returns: undefined
+      }
+      reorder_preset_symptoms: {
+        Args: { p_ordered_ids: string[]; p_preset_id: string }
+        Returns: undefined
+      }
       user_has_practitioner_access: {
         Args: { p_patient_user_id: string }
         Returns: boolean
