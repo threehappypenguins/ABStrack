@@ -10,6 +10,11 @@ export type AppThemeColors = {
   muted: string;
   ink: string;
   primary: string;
+  /**
+   * Opaque fill for `--app-primary-soft` RGB channels (same as web/mobile `global.css`).
+   * For translucent chips or overlays, set opacity on the view or use a separate alpha at the call site
+   * (web uses utilities like `bg-app-primary-soft/28` instead of baking alpha into the token).
+   */
   primarySoft: string;
   primaryOnSoft: string;
   onPrimary: string;
@@ -63,7 +68,7 @@ export const darkAppColors: AppThemeColors = {
   muted: '#94a3b8',
   ink: '#f1f5f9',
   primary: '#60a5fa',
-  primarySoft: 'rgba(37, 99, 235, 0.35)',
+  primarySoft: '#2563eb',
   primaryOnSoft: '#93c5fd',
   onPrimary: '#0f172a',
   error: '#f87171',

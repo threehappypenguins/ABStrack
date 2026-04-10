@@ -46,8 +46,8 @@ function buildNavigationTheme(
 }
 
 /**
- * Provides semantic colors from the active color scheme (defaults to system via
- * {@link useColorScheme}).
+ * Provides semantic colors from the active color scheme (follows system appearance via React Native's
+ * {@link https://reactnative.dev/docs/usecolorscheme | useColorScheme}).
  *
  * @param props - React children.
  * @returns Context provider.
