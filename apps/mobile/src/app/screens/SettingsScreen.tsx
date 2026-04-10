@@ -5,9 +5,12 @@ import {
   setRequireReauthOnOpenPreference,
 } from '../reauth-preference';
 import { ScreenShell } from '../components/ScreenShell';
-import { styles } from '../styles';
+import { useAppStyles } from '../styles';
+import { useAppTheme } from '../theme/AppThemeContext';
 
 export function SettingsScreen() {
+  const styles = useAppStyles();
+  const { colors } = useAppTheme();
   const isMountedRef = useRef(true);
   const [requireReauth, setRequireReauth] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -82,6 +85,7 @@ export function SettingsScreen() {
           value={requireReauth}
           onValueChange={onTogglePreference}
           disabled={loading || saving}
+          trackColor={{ false: colors.border, true: colors.primary }}
         />
       </View>
       {errorMessage ? (

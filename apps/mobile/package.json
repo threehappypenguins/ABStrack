@@ -8,8 +8,11 @@
     "ios": "expo run:ios"
   },
   "dependencies": {
+    "@abstrack/ui": "workspace:*",
     "@abstrack/supabase": "workspace:*",
+    "@react-navigation/bottom-tabs": "*",
     "@expo/metro-config": "*",
+    "@expo/vector-icons": "*",
     "@react-navigation/native": "*",
     "@react-navigation/native-stack": "*",
     "@testing-library/react-native": "*",
@@ -23,6 +26,7 @@
     "metro-config": "*",
     "metro-resolver": "*",
     "nativewind": "^4.2.3",
+    "react-native-css-interop": "0.2.3",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.5",

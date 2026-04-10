@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import {
   getAuthUser,
   healthCheckProfilesLimit1,
@@ -7,8 +7,8 @@ import {
 } from '@abstrack/supabase';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { mapAuthError } from '../auth-helpers';
-import { ScreenShell } from '../components/ScreenShell';
-import { styles } from '../styles';
+import { AppNavigationShell } from '../components/AppNavigationShell';
+import { useAppStyles } from '../styles';
 
 interface HealthCheckResult {
   success: boolean;
@@ -21,6 +21,7 @@ type HomeScreenProps = {
 };
 
 export function HomeScreen({ onGoToSettings }: HomeScreenProps) {
+  const styles = useAppStyles();
   const isTestEnv =
     typeof process !== 'undefined' && process.env.NODE_ENV === 'test';
   const showHealthCheck = __DEV__ && !isTestEnv;
@@ -120,91 +121,98 @@ export function HomeScreen({ onGoToSettings }: HomeScreenProps) {
   };
 
   return (
-    <ScreenShell>
-      <Text style={styles.title} testID="main-home-title">
-        Welcome to ABStrack
-      </Text>
+    <AppNavigationShell title="Home">
+      <ScrollView
+        contentContainerStyle={styles.homeScrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.card}>
+          <Text style={styles.title} testID="main-home-title">
+            Welcome to ABStrack
+          </Text>
 
-      {/* Health Check Status - only render once result is available */}
-      {showHealthCheck && healthCheck && (
-        <View
-          style={[
-            styles.healthCheckContainer,
-            healthCheck.success
-              ? styles.healthCheckContainerSuccess
-              : styles.healthCheckContainerFailure,
-          ]}
-        >
-          <Text
-            style={[
-              styles.healthCheckTitleText,
-              healthCheck.success
-                ? styles.healthCheckTitleTextSuccess
-                : styles.healthCheckTitleTextFailure,
-            ]}
-          >
-            {healthCheck.success
-              ? '✓ Health Check Passed'
-              : '✗ Health Check Failed'}
-          </Text>
-          <Text
-            style={[
-              styles.healthCheckBodyText,
-              healthCheck.success
-                ? styles.healthCheckBodyTextSuccess
-                : styles.healthCheckBodyTextFailure,
-            ]}
-          >
-            {healthCheck.message}
-          </Text>
-          {healthCheck.error && (
-            <Text
+          {/* Health Check Status - only render once result is available */}
+          {showHealthCheck && healthCheck && (
+            <View
               style={[
-                styles.healthCheckErrorText,
+                styles.healthCheckContainer,
                 healthCheck.success
-                  ? styles.healthCheckErrorTextSuccess
-                  : styles.healthCheckErrorTextFailure,
+                  ? styles.healthCheckContainerSuccess
+                  : styles.healthCheckContainerFailure,
               ]}
             >
-              Error: {healthCheck.error}
-            </Text>
+              <Text
+                style={[
+                  styles.healthCheckTitleText,
+                  healthCheck.success
+                    ? styles.healthCheckTitleTextSuccess
+                    : styles.healthCheckTitleTextFailure,
+                ]}
+              >
+                {healthCheck.success
+                  ? '✓ Health Check Passed'
+                  : '✗ Health Check Failed'}
+              </Text>
+              <Text
+                style={[
+                  styles.healthCheckBodyText,
+                  healthCheck.success
+                    ? styles.healthCheckBodyTextSuccess
+                    : styles.healthCheckBodyTextFailure,
+                ]}
+              >
+                {healthCheck.message}
+              </Text>
+              {healthCheck.error && (
+                <Text
+                  style={[
+                    styles.healthCheckErrorText,
+                    healthCheck.success
+                      ? styles.healthCheckErrorTextSuccess
+                      : styles.healthCheckErrorTextFailure,
+                  ]}
+                >
+                  Error: {healthCheck.error}
+                </Text>
+              )}
+            </View>
           )}
+
+          <Text style={styles.bodyText}>You are signed in.</Text>
+          {signOutError ? (
+            <Text style={styles.errorText} accessibilityRole="alert">
+              {signOutError}
+            </Text>
+          ) : null}
+          <View style={styles.spacer} />
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Go to settings"
+            onPress={onGoToSettings}
+            style={styles.secondaryButton}
+          >
+            <Text style={styles.secondaryButtonText}>Settings</Text>
+          </Pressable>
+
+          <View style={styles.spacer} />
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={signOutBusy ? 'Signing out...' : 'Sign out'}
+            onPress={handleSignOut}
+            disabled={signOutBusy}
+            style={[
+              styles.primaryButton,
+              signOutBusy ? styles.primaryButtonDisabled : null,
+            ]}
+          >
+            <Text style={styles.primaryButtonText}>
+              {signOutBusy ? 'Signing out...' : 'Sign out'}
+            </Text>
+          </Pressable>
         </View>
-      )}
-
-      <Text style={styles.bodyText}>You are signed in.</Text>
-      {signOutError ? (
-        <Text style={styles.errorText} accessibilityRole="alert">
-          {signOutError}
-        </Text>
-      ) : null}
-      <View style={styles.spacer} />
-
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Go to settings"
-        onPress={onGoToSettings}
-        style={styles.secondaryButton}
-      >
-        <Text style={styles.secondaryButtonText}>Settings</Text>
-      </Pressable>
-
-      <View style={styles.spacer} />
-
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={signOutBusy ? 'Signing out...' : 'Sign out'}
-        onPress={handleSignOut}
-        disabled={signOutBusy}
-        style={[
-          styles.primaryButton,
-          signOutBusy ? styles.primaryButtonDisabled : null,
-        ]}
-      >
-        <Text style={styles.primaryButtonText}>
-          {signOutBusy ? 'Signing out...' : 'Sign out'}
-        </Text>
-      </Pressable>
-    </ScreenShell>
+      </ScrollView>
+    </AppNavigationShell>
   );
 }
