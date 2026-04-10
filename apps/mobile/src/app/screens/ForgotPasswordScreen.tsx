@@ -4,7 +4,8 @@ import { resetPasswordForEmail } from '@abstrack/supabase';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { mapAuthError } from '../auth-helpers';
 import { ScreenShell } from '../components/ScreenShell';
-import { styles } from '../styles';
+import { useAppStyles } from '../styles';
+import { useAppTheme } from '../theme/AppThemeContext';
 
 const MOBILE_RESET_REDIRECT_URL = 'abstrack:///update-password';
 
@@ -13,6 +14,8 @@ export function ForgotPasswordScreen({
 }: {
   onGoToLogin: () => void;
 }) {
+  const styles = useAppStyles();
+  const { colors } = useAppTheme();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -75,6 +78,7 @@ export function ForgotPasswordScreen({
         value={email}
         onChangeText={setEmail}
         placeholder="you@example.com"
+        placeholderTextColor={colors.inputPlaceholder}
         style={styles.input}
         accessibilityLabel="Email address"
         accessibilityHint="Enter your account email"

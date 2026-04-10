@@ -1,0 +1,92 @@
+import React from 'react';
+import { StyleSheet } from 'react-native';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { Ionicons } from '@expo/vector-icons';
+import { COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
+import { HomeScreen } from '../screens/HomeScreen';
+import { HealthMarkerPresetsScreen } from '../screens/HealthMarkerPresetsScreen';
+import { SymptomPresetsScreen } from '../screens/SymptomPresetsScreen';
+import { useAppTheme } from '../theme/AppThemeContext';
+import type { MainTabParamList } from './types';
+
+const Tab = createBottomTabNavigator<MainTabParamList>();
+
+type IonName = React.ComponentProps<typeof Ionicons>['name'];
+
+/**
+ * @param name - Ionicons glyph name.
+ * @returns Tab bar icon render function for React Navigation.
+ */
+function tabBarIonIcon(name: IonName) {
+  return function TabBarIon({ color, size }: { color: string; size: number }) {
+    return <Ionicons name={name} size={size} color={color} />;
+  };
+}
+
+/**
+ * Primary signed-in navigation: home plus preset entry points with a bottom tab bar sized for
+ * comfortable touch targets.
+ *
+ * @returns Tab navigator element.
+ */
+export function MainTabNavigator() {
+  const { colors } = useAppTheme();
+
+  return (
+    <Tab.Navigator
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.muted,
+        tabBarLabelPosition: 'below-icon',
+        tabBarShowLabel: true,
+        tabBarStyle: {
+          paddingTop: 4,
+          paddingBottom: 6,
+          minHeight: COMFORTABLE_TOUCH_TARGET_DP + 28,
+          backgroundColor: colors.surface,
+          borderTopColor: colors.border,
+          borderTopWidth: StyleSheet.hairlineWidth,
+        },
+        tabBarItemStyle: {
+          paddingVertical: 4,
+        },
+      }}
+    >
+      <Tab.Screen
+        name="Home"
+        options={{
+          tabBarLabel: 'Home',
+          tabBarAccessibilityLabel: 'Home',
+          tabBarIcon: tabBarIonIcon('home-outline'),
+        }}
+      >
+        {({ navigation }) => (
+          <HomeScreen
+            onGoToSettings={() => {
+              navigation.getParent()?.navigate('Settings');
+            }}
+          />
+        )}
+      </Tab.Screen>
+      <Tab.Screen
+        name="SymptomPresets"
+        component={SymptomPresetsScreen}
+        options={{
+          tabBarLabel: 'Symptoms',
+          tabBarAccessibilityLabel: 'Symptom presets',
+          tabBarIcon: tabBarIonIcon('medkit-outline'),
+        }}
+      />
+      <Tab.Screen
+        name="HealthMarkerPresets"
+        component={HealthMarkerPresetsScreen}
+        options={{
+          tabBarLabel: 'Markers',
+          tabBarAccessibilityLabel: 'Health marker presets',
+          tabBarIcon: tabBarIonIcon('pulse-outline'),
+        }}
+      />
+    </Tab.Navigator>
+  );
+}

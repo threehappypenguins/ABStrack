@@ -1,7 +1,8 @@
 import React, { useRef } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import { ScreenShell } from './ScreenShell';
-import { styles } from '../styles';
+import { useAppStyles } from '../styles';
+import { useAppTheme } from '../theme/AppThemeContext';
 
 export type AuthFormProps = {
   title: string;
@@ -44,6 +45,8 @@ export function AuthForm({
   onAlternateAction,
   onTertiaryAction,
 }: AuthFormProps) {
+  const styles = useAppStyles();
+  const { colors } = useAppTheme();
   const passwordInputRef = useRef<TextInput>(null);
   const primaryDisabled = loading || Boolean(submitDisabled);
   const handleSubmit = () => {
@@ -67,6 +70,7 @@ export function AuthForm({
         value={email}
         onChangeText={onEmailChange}
         placeholder="you@example.com"
+        placeholderTextColor={colors.inputPlaceholder}
         style={styles.input}
         accessibilityLabel="Email address"
         accessibilityHint="Enter your account email"
@@ -86,6 +90,7 @@ export function AuthForm({
         value={password}
         onChangeText={onPasswordChange}
         placeholder="Password"
+        placeholderTextColor={colors.inputPlaceholder}
         style={styles.input}
         accessibilityLabel="Password"
         accessibilityHint="Enter your account password"

@@ -473,6 +473,48 @@ describe('mobile auth state sync', () => {
     expect(signOut).toHaveBeenCalledTimes(1);
   });
 
+  test('navigates to symptom and health marker preset screens from tabs', async () => {
+    const signedInSession = {
+      access_token: 'access',
+      refresh_token: 'refresh',
+      token_type: 'bearer',
+      expires_in: 3600,
+      expires_at: 9999999999,
+      user: { id: 'user-1' },
+    } as unknown as Session;
+
+    const mockClient = {
+      auth: {
+        getSession: jest.fn(async () => ({
+          data: { session: signedInSession },
+        })),
+        signOut: jest.fn(async () => ({ error: null })),
+        onAuthStateChange: jest.fn(() => ({
+          data: {
+            subscription: {
+              unsubscribe: jest.fn(),
+            },
+          },
+        })),
+      },
+    } as unknown as AbstrackSupabaseClient;
+
+    jest.mocked(SecureStore.getItemAsync).mockResolvedValue('false');
+    jest.mocked(getMobileSupabaseClient).mockReturnValue(mockClient);
+
+    const { findByText, findByLabelText, findByTestId } = render(<App />);
+
+    expect(await findByText('Welcome to ABStrack')).toBeTruthy();
+
+    fireEvent.press(await findByLabelText('Symptom presets'));
+    expect(await findByTestId('symptom-presets-placeholder')).toBeTruthy();
+
+    fireEvent.press(await findByLabelText('Health marker presets'));
+    expect(
+      await findByTestId('health-marker-presets-placeholder'),
+    ).toBeTruthy();
+  });
+
   test('exposes the re-authentication toggle in settings', async () => {
     const signedInSession = {
       access_token: 'access',

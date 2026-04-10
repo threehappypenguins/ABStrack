@@ -4,7 +4,8 @@ import { signOut, updatePassword } from '@abstrack/supabase';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { mapAuthError, validateSignupPassword } from '../auth-helpers';
 import { ScreenShell } from '../components/ScreenShell';
-import { styles } from '../styles';
+import { useAppStyles } from '../styles';
+import { useAppTheme } from '../theme/AppThemeContext';
 
 export function UpdatePasswordScreen({
   recoveryError,
@@ -15,6 +16,8 @@ export function UpdatePasswordScreen({
   onGoToLogin: () => void;
   onPasswordUpdated: () => void;
 }) {
+  const styles = useAppStyles();
+  const { colors } = useAppTheme();
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -104,6 +107,7 @@ export function UpdatePasswordScreen({
         value={password}
         onChangeText={setPassword}
         placeholder="New password"
+        placeholderTextColor={colors.inputPlaceholder}
         style={styles.input}
         accessibilityLabel="New password"
         testID="update-password-new"
@@ -119,6 +123,7 @@ export function UpdatePasswordScreen({
         value={confirmPassword}
         onChangeText={setConfirmPassword}
         placeholder="Confirm new password"
+        placeholderTextColor={colors.inputPlaceholder}
         style={styles.input}
         accessibilityLabel="Confirm new password"
         testID="update-password-confirm"

@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
 
+import { AppThemeProvider } from '../theme/AppThemeContext';
 import { UpdatePasswordScreen } from './UpdatePasswordScreen';
 
 jest.mock('../../lib/supabase-wiring', () => ({
@@ -12,11 +13,13 @@ describe('UpdatePasswordScreen', () => {
     const onGoToLogin = jest.fn();
 
     const { getByLabelText, getByText } = render(
-      <UpdatePasswordScreen
-        recoveryError="This reset link is invalid or expired. Request a new one."
-        onGoToLogin={onGoToLogin}
-        onPasswordUpdated={jest.fn()}
-      />,
+      <AppThemeProvider>
+        <UpdatePasswordScreen
+          recoveryError="This reset link is invalid or expired. Request a new one."
+          onGoToLogin={onGoToLogin}
+          onPasswordUpdated={jest.fn()}
+        />
+      </AppThemeProvider>,
     );
 
     const updateButton = getByLabelText('Update password');
