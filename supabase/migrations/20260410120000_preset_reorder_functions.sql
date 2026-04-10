@@ -51,17 +51,25 @@ BEGIN
     RETURN;
   END IF;
 
-  FOR i IN 1..n LOOP
-    UPDATE public.preset_symptoms
-    SET sort_order = 1000000 + i - 1
-    WHERE id = p_ordered_ids[i] AND preset_id = p_preset_id;
-  END LOOP;
+  -- Phase 1: move all lines to a non-colliding sort_order band (one statement).
+  UPDATE public.preset_symptoms ps
+  SET sort_order = 1000000 + ord.pos - 1
+  FROM (
+    SELECT u.id, u.ordinality::int AS pos
+    FROM unnest(p_ordered_ids) WITH ORDINALITY AS u(id, ordinality)
+  ) ord
+  WHERE ps.id = ord.id
+    AND ps.preset_id = p_preset_id;
 
-  FOR i IN 1..n LOOP
-    UPDATE public.preset_symptoms
-    SET sort_order = i - 1
-    WHERE id = p_ordered_ids[i] AND preset_id = p_preset_id;
-  END LOOP;
+  -- Phase 2: assign final 0..n-1 order (one statement).
+  UPDATE public.preset_symptoms ps
+  SET sort_order = ord.pos - 1
+  FROM (
+    SELECT u.id, u.ordinality::int AS pos
+    FROM unnest(p_ordered_ids) WITH ORDINALITY AS u(id, ordinality)
+  ) ord
+  WHERE ps.id = ord.id
+    AND ps.preset_id = p_preset_id;
 END;
 $$;
 
@@ -118,17 +126,23 @@ BEGIN
     RETURN;
   END IF;
 
-  FOR i IN 1..n LOOP
-    UPDATE public.preset_health_markers
-    SET sort_order = 1000000 + i - 1
-    WHERE id = p_ordered_ids[i] AND preset_id = p_preset_id;
-  END LOOP;
+  UPDATE public.preset_health_markers ph
+  SET sort_order = 1000000 + ord.pos - 1
+  FROM (
+    SELECT u.id, u.ordinality::int AS pos
+    FROM unnest(p_ordered_ids) WITH ORDINALITY AS u(id, ordinality)
+  ) ord
+  WHERE ph.id = ord.id
+    AND ph.preset_id = p_preset_id;
 
-  FOR i IN 1..n LOOP
-    UPDATE public.preset_health_markers
-    SET sort_order = i - 1
-    WHERE id = p_ordered_ids[i] AND preset_id = p_preset_id;
-  END LOOP;
+  UPDATE public.preset_health_markers ph
+  SET sort_order = ord.pos - 1
+  FROM (
+    SELECT u.id, u.ordinality::int AS pos
+    FROM unnest(p_ordered_ids) WITH ORDINALITY AS u(id, ordinality)
+  ) ord
+  WHERE ph.id = ord.id
+    AND ph.preset_id = p_preset_id;
 END;
 $$;
 

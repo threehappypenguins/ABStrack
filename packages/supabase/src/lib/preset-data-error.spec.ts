@@ -1,4 +1,3 @@
-import { PostgrestError } from '@supabase/supabase-js';
 import { describe, expect, it } from 'vitest';
 import {
   PresetDataError,
@@ -26,14 +25,12 @@ describe('mapSupabaseErrorToPresetDataError', () => {
     expect(mapped?.message).toMatch(/conflict/i);
   });
 
-  it('maps Supabase PostgrestError instances', () => {
-    const pg = new PostgrestError({
-      message: 'duplicate',
-      details: '',
-      hint: '',
+  it('maps Error instances with PostgREST-shaped fields (no PostgrestError constructor)', () => {
+    const err = Object.assign(new Error('duplicate'), {
       code: '23505',
+      details: '',
     });
-    const mapped = mapSupabaseErrorToPresetDataError(pg);
+    const mapped = mapSupabaseErrorToPresetDataError(err);
     expect(mapped?.code).toBe('conflict');
   });
 
