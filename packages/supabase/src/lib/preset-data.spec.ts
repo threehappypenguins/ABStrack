@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type {
   HealthMarkerPresetRow,
+  PresetHealthMarkerRow,
   PresetSymptomRow,
   SymptomPresetRow,
 } from '@abstrack/types';
