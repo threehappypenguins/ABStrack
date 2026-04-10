@@ -1,9 +1,21 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { PresetHealthMarkerRow, PresetSymptomRow } from '@abstrack/types';
+import type {
+  HealthMarkerPresetRow,
+  PresetSymptomRow,
+  SymptomPresetRow,
+} from '@abstrack/types';
 import {
+  createHealthMarkerPreset,
+  createPresetSymptom,
+  createSymptomPreset,
   deleteSymptomPreset,
+  getSymptomPresetById,
+  listHealthMarkerPresets,
+  listPresetSymptomsForPreset,
+  listSymptomPresets,
   reorderPresetHealthMarkers,
   reorderPresetSymptoms,
+  updateSymptomPreset,
   validateReorderLineIds,
 } from './preset-data.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
@@ -35,6 +47,227 @@ describe('validateReorderLineIds', () => {
 
   it('accepts empty preset and empty order', () => {
     expect(validateReorderLineIds([], [])).toBeNull();
+  });
+});
+
+describe('preset CRUD helpers (mocked client)', () => {
+  const symptomPresetRow: SymptomPresetRow = {
+    id: 'sp-1',
+    user_id: 'user-1',
+    name: 'Morning',
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  };
+
+  const healthMarkerPresetRow: HealthMarkerPresetRow = {
+    id: 'hmp-1',
+    user_id: 'user-1',
+    name: 'Default',
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  };
+
+  it('listSymptomPresets returns rows from ordered select', async () => {
+    const from = vi.fn(() => ({
+      select: vi.fn(() => ({
+        order: vi.fn(() => ({
+          order: vi.fn(async () => ({
+            data: [symptomPresetRow],
+            error: null,
+          })),
+        })),
+      })),
+    }));
+    const client = { from } as unknown as AbstrackSupabaseClient;
+
+    const result = await listSymptomPresets(client);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toEqual([symptomPresetRow]);
+    }
+    expect(from).toHaveBeenCalledWith('symptom_presets');
+  });
+
+  it('getSymptomPresetById returns row when maybeSingle succeeds', async () => {
+    const from = vi.fn(() => ({
+      select: vi.fn(() => ({
+        eq: vi.fn(() => ({
+          maybeSingle: vi.fn(async () => ({
+            data: symptomPresetRow,
+            error: null,
+          })),
+        })),
+      })),
+    }));
+    const client = { from } as unknown as AbstrackSupabaseClient;
+
+    const result = await getSymptomPresetById(client, 'sp-1');
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toEqual(symptomPresetRow);
+    }
+  });
+
+  it('createSymptomPreset returns inserted row', async () => {
+    const from = vi.fn(() => ({
+      insert: vi.fn(() => ({
+        select: vi.fn(() => ({
+          single: vi.fn(async () => ({
+            data: symptomPresetRow,
+            error: null,
+          })),
+        })),
+      })),
+    }));
+    const client = { from } as unknown as AbstrackSupabaseClient;
+
+    const result = await createSymptomPreset(client, {
+      user_id: 'user-1',
+      name: 'Morning',
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.id).toBe('sp-1');
+    }
+  });
+
+  it('updateSymptomPreset maps PostgREST unique violation to conflict', async () => {
+    const from = vi.fn(() => ({
+      update: vi.fn(() => ({
+        eq: vi.fn(() => ({
+          select: vi.fn(() => ({
+            single: vi.fn(async () => ({
+              data: null,
+              error: {
+                code: '23505',
+                message: 'duplicate key value violates unique constraint',
+              },
+            })),
+          })),
+        })),
+      })),
+    }));
+    const client = { from } as unknown as AbstrackSupabaseClient;
+
+    const result = await updateSymptomPreset(client, 'sp-1', { name: 'X' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('conflict');
+    }
+  });
+
+  it('listPresetSymptomsForPreset returns lines for preset_id', async () => {
+    const line: PresetSymptomRow = {
+      id: 'ps-1',
+      preset_id: 'sp-1',
+      sort_order: 0,
+      symptom_name: 'Fatigue',
+      response_type: 'yes_no',
+      prompt_instruction: null,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    };
+    const from = vi.fn(() => ({
+      select: vi.fn(() => ({
+        eq: vi.fn(() => ({
+          order: vi.fn(() => ({
+            order: vi.fn(async () => ({ data: [line], error: null })),
+          })),
+        })),
+      })),
+    }));
+    const client = { from } as unknown as AbstrackSupabaseClient;
+
+    const result = await listPresetSymptomsForPreset(client, 'sp-1');
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toEqual([line]);
+    }
+    expect(from).toHaveBeenCalledWith('preset_symptoms');
+  });
+
+  it('createPresetSymptom returns inserted line', async () => {
+    const line: PresetSymptomRow = {
+      id: 'ps-new',
+      preset_id: 'sp-1',
+      sort_order: 0,
+      symptom_name: 'Nausea',
+      response_type: 'free_text',
+      prompt_instruction: null,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    };
+    const from = vi.fn(() => ({
+      insert: vi.fn(() => ({
+        select: vi.fn(() => ({
+          single: vi.fn(async () => ({ data: line, error: null })),
+        })),
+      })),
+    }));
+    const client = { from } as unknown as AbstrackSupabaseClient;
+
+    const result = await createPresetSymptom(client, {
+      preset_id: 'sp-1',
+      sort_order: 0,
+      symptom_name: 'Nausea',
+      response_type: 'free_text',
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.id).toBe('ps-new');
+    }
+  });
+
+  it('listHealthMarkerPresets returns rows', async () => {
+    const from = vi.fn(() => ({
+      select: vi.fn(() => ({
+        order: vi.fn(() => ({
+          order: vi.fn(async () => ({
+            data: [healthMarkerPresetRow],
+            error: null,
+          })),
+        })),
+      })),
+    }));
+    const client = { from } as unknown as AbstrackSupabaseClient;
+
+    const result = await listHealthMarkerPresets(client);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toEqual([healthMarkerPresetRow]);
+    }
+    expect(from).toHaveBeenCalledWith('health_marker_presets');
+  });
+
+  it('createHealthMarkerPreset returns inserted row', async () => {
+    const from = vi.fn(() => ({
+      insert: vi.fn(() => ({
+        select: vi.fn(() => ({
+          single: vi.fn(async () => ({
+            data: healthMarkerPresetRow,
+            error: null,
+          })),
+        })),
+      })),
+    }));
+    const client = { from } as unknown as AbstrackSupabaseClient;
+
+    const result = await createHealthMarkerPreset(client, {
+      user_id: 'user-1',
+      name: 'Default',
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.id).toBe('hmp-1');
+    }
   });
 });
 
