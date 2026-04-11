@@ -96,9 +96,13 @@ export function SettingsScreen() {
     try {
       await setThemePreference(next);
     } catch {
-      setThemeError('Unable to save your theme choice. Try again.');
+      if (isMountedRef.current) {
+        setThemeError('Unable to save your theme choice. Try again.');
+      }
     } finally {
-      setThemeSaving(false);
+      if (isMountedRef.current) {
+        setThemeSaving(false);
+      }
     }
   };
 

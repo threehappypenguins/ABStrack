@@ -4,6 +4,7 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import {
@@ -81,11 +82,16 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
   const { colorScheme: nwScheme } = useNativeWindColorScheme();
   const [themePreference, setThemePreferenceState] =
     useState<ThemePreference>('system');
+  /**
+   * When the user changes theme from Settings (or elsewhere), late completion of the
+   * initial `getThemePreference()` read must not overwrite their choice.
+   */
+  const userChosePreferenceRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
     void getThemePreference().then((stored) => {
-      if (cancelled) {
+      if (cancelled || userChosePreferenceRef.current) {
         return;
       }
       nativeWindColorScheme.set(stored);
@@ -101,9 +107,15 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
 
   const setThemePreference = useCallback(
     async (preference: ThemePreference) => {
-      await persistThemePreference(preference);
-      nativeWindColorScheme.set(preference);
-      setThemePreferenceState(preference);
+      userChosePreferenceRef.current = true;
+      try {
+        await persistThemePreference(preference);
+        nativeWindColorScheme.set(preference);
+        setThemePreferenceState(preference);
+      } catch (error) {
+        userChosePreferenceRef.current = false;
+        throw error;
+      }
     },
     [],
   );
