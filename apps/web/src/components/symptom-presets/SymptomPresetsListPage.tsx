@@ -10,7 +10,9 @@ import { useAuth } from '@/lib/auth-provider';
 import { ConfirmDialog } from './ConfirmDialog';
 
 /**
- * Authenticated list of symptom presets with navigation to create and edit routes, and delete.
+ * List of symptom presets with navigation to create and edit routes, and delete.
+ * When there is no session after auth finishes loading, shows sign-in instead of an
+ * endless loading state (e.g. after client-side sign-out).
  *
  * @returns Symptom presets management landing content.
  */
@@ -68,7 +70,37 @@ export function SymptomPresetsListPage() {
     }
   };
 
-  if (authLoading || (loadState === 'loading' && presets.length === 0)) {
+  if (authLoading) {
+    return (
+      <div className="w-full space-y-4">
+        <h1 className="text-2xl font-bold tracking-tight text-app-ink">
+          Symptom presets
+        </h1>
+        <p className="text-sm text-app-muted">Loading…</p>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div className="w-full space-y-4">
+        <h1 className="text-2xl font-bold tracking-tight text-app-ink">
+          Symptom presets
+        </h1>
+        <p className="text-sm text-app-muted" role="status">
+          You need to be signed in to view and manage symptom presets.
+        </p>
+        <Link
+          href="/login"
+          className="inline-flex min-h-[44px] items-center justify-center rounded-full bg-app-primary px-5 text-sm font-semibold text-white shadow-sm transition hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+        >
+          Sign in
+        </Link>
+      </div>
+    );
+  }
+
+  if (loadState === 'loading' && presets.length === 0) {
     return (
       <div className="w-full space-y-4">
         <h1 className="text-2xl font-bold tracking-tight text-app-ink">

@@ -63,6 +63,8 @@ export function SymptomPresetEditorPage({
   const [newResponseType, setNewResponseType] =
     useState<SymptomResponseType>('yes_no');
   const [adding, setAdding] = useState(false);
+  /** True while `refreshQuiet` refetches preset lines (avoids reorder/edit against stale `lines`). */
+  const [linesSyncing, setLinesSyncing] = useState(false);
 
   const [pendingAction, setPendingAction] = useState(false);
   const [deletePresetOpen, setDeletePresetOpen] = useState(false);
@@ -102,7 +104,12 @@ export function SymptomPresetEditorPage({
   );
 
   const refreshQuiet = useCallback(async () => {
-    await refreshAll('quiet');
+    setLinesSyncing(true);
+    try {
+      await refreshAll('quiet');
+    } finally {
+      setLinesSyncing(false);
+    }
   }, [refreshAll]);
 
   useEffect(() => {
@@ -146,23 +153,26 @@ export function SymptomPresetEditorPage({
       return;
     }
     setAdding(true);
-    const supabase = createBrowserClient();
-    const sortOrder = computeNextSortOrder(lines);
-    const result = await createPresetSymptom(supabase, {
-      preset_id: presetId,
-      sort_order: sortOrder,
-      symptom_name: trimmed,
-      response_type: newResponseType,
-    });
-    setAdding(false);
-    if (!result.ok) {
-      announce(result.error.message, { politeness: 'assertive' });
-      return;
+    try {
+      const supabase = createBrowserClient();
+      const sortOrder = computeNextSortOrder(lines);
+      const result = await createPresetSymptom(supabase, {
+        preset_id: presetId,
+        sort_order: sortOrder,
+        symptom_name: trimmed,
+        response_type: newResponseType,
+      });
+      if (!result.ok) {
+        announce(result.error.message, { politeness: 'assertive' });
+        return;
+      }
+      setNewSymptomName('');
+      setNewResponseType('yes_no');
+      await refreshQuiet();
+      announce('Symptom added to preset.', { politeness: 'polite' });
+    } finally {
+      setAdding(false);
     }
-    setNewSymptomName('');
-    setNewResponseType('yes_no');
-    await refreshQuiet();
-    announce('Symptom added to preset.', { politeness: 'polite' });
   };
 
   const handleResponseTypeChange = async (
@@ -349,6 +359,8 @@ export function SymptomPresetEditorPage({
   }
 
   const datalistId = 'abs-symptom-suggestions';
+  const lineControlsLocked = pendingAction || adding || linesSyncing;
+  const addFormLocked = adding || linesSyncing;
 
   return (
     <div className="w-full space-y-8">
@@ -435,12 +447,13 @@ export function SymptomPresetEditorPage({
                 list={datalistId}
                 type="text"
                 value={newSymptomName}
+                disabled={addFormLocked}
                 onChange={(e) => {
                   setNewSymptomName(e.target.value);
                 }}
                 autoComplete="off"
                 placeholder="e.g. Vertigo or custom text"
-                className="min-h-[44px] w-full rounded-lg border border-app-border bg-app-bg px-3 text-app-ink shadow-inner outline-none transition placeholder:text-app-muted focus-visible:ring-2 focus-visible:ring-app-ring"
+                className="min-h-[44px] w-full rounded-lg border border-app-border bg-app-bg px-3 text-app-ink shadow-inner outline-none transition placeholder:text-app-muted focus-visible:ring-2 focus-visible:ring-app-ring disabled:opacity-60"
               />
             </div>
             <div className="space-y-2">
@@ -453,10 +466,11 @@ export function SymptomPresetEditorPage({
               <select
                 id="new-symptom-response"
                 value={newResponseType}
+                disabled={addFormLocked}
                 onChange={(e) => {
                   setNewResponseType(e.target.value as SymptomResponseType);
                 }}
-                className="min-h-[44px] w-full rounded-lg border border-app-border bg-app-bg px-3 text-app-ink shadow-inner outline-none focus-visible:ring-2 focus-visible:ring-app-ring"
+                className="min-h-[44px] w-full rounded-lg border border-app-border bg-app-bg px-3 text-app-ink shadow-inner outline-none focus-visible:ring-2 focus-visible:ring-app-ring disabled:opacity-60"
               >
                 {SYMPTOM_RESPONSE_TYPES.map((t) => (
                   <option key={t} value={t}>
@@ -468,10 +482,10 @@ export function SymptomPresetEditorPage({
           </div>
           <button
             type="submit"
-            disabled={adding || pendingAction}
+            disabled={addFormLocked || pendingAction}
             className="inline-flex min-h-[44px] items-center justify-center rounded-full bg-app-primary px-5 text-sm font-semibold text-white shadow-sm transition hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:opacity-60"
           >
-            {adding ? 'Adding…' : 'Add to preset'}
+            {adding ? 'Adding…' : linesSyncing ? 'Updating…' : 'Add to preset'}
           </button>
         </form>
       </section>
@@ -489,6 +503,12 @@ export function SymptomPresetEditorPage({
           order.
         </p>
 
+        {linesSyncing ? (
+          <p className="mt-4 text-sm text-app-muted" aria-live="polite">
+            Updating symptom list…
+          </p>
+        ) : null}
+
         {lines.length === 0 ? (
           <p className="mt-4 rounded-xl border border-dashed border-app-border/90 bg-app-bg/50 p-6 text-sm text-app-muted">
             No symptoms yet. Add at least one using the form above.
@@ -501,7 +521,7 @@ export function SymptomPresetEditorPage({
                 line={line}
                 index={index}
                 total={lines.length}
-                disabled={pendingAction}
+                disabled={lineControlsLocked}
                 onMove={(dir) => {
                   void handleMove(index, dir);
                 }}
