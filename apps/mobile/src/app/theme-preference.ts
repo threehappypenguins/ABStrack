@@ -23,6 +23,9 @@ export async function getThemePreference(): Promise<ThemePreference> {
 /**
  * Persists the user’s theme choice for the next app launch.
  *
+ * On failure, throws an Error with a stable message for the UI; the underlying error is preserved on
+ * `cause` for diagnostics (logs, crash reports).
+ *
  * @param preference - Theme to store.
  */
 export async function setThemePreference(
@@ -30,7 +33,7 @@ export async function setThemePreference(
 ): Promise<void> {
   try {
     await SecureStore.setItemAsync(THEME_PREFERENCE_KEY, preference);
-  } catch {
-    throw new Error('Unable to save theme preference.');
+  } catch (error) {
+    throw new Error('Unable to save theme preference.', { cause: error });
   }
 }

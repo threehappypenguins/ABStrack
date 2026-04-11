@@ -1,9 +1,14 @@
 /**
- * Semantic colors aligned with web (`apps/web/src/app/global.css`) and NativeWind tokens in
- * `apps/mobile/global.css`. Keep light/dark hex values in sync with those `--app-*` RGB channels when they change.
+ * Semantic colors for React Navigation and other non-`className` APIs; align with web
+ * (`apps/web/src/app/global.css`).
  *
- * Health panel fills match the solid `--app-health-*-bg` variables (no baked-in alpha). For translucent
- * overlays, apply opacity on the view or use Tailwind `/opacity` on web — same idea as `primarySoft`.
+ * **NativeWind** resolves `bg-app-*` and `dark:` utilities from `theme.extend.colors.app` in
+ * `apps/mobile/tailwind.config.js` (static `rgb()` values) — that file is the RN runtime source of truth.
+ * `apps/mobile/global.css` keeps matching `--app-*` channels for web parity and tooling; update both when
+ * tokens change.
+ *
+ * Health panel fills match solid `--app-health-*-bg` channels (no baked-in alpha). For translucent overlays,
+ * apply opacity on the view or use Tailwind `/opacity` on web — same idea as `primarySoft`.
  */
 export type AppThemeColors = {
   bg: string;
@@ -13,9 +18,9 @@ export type AppThemeColors = {
   ink: string;
   primary: string;
   /**
-   * Opaque fill for `--app-primary-soft` RGB channels (same as web/mobile `global.css`).
-   * For translucent chips or overlays, set opacity on the view or use a separate alpha at the call site
-   * (web uses utilities like `bg-app-primary-soft/28` instead of baking alpha into the token).
+   * Opaque fill aligned with `app.primary-soft` / `app.primary-soft-dark` in `tailwind.config.js` and
+   * `--app-primary-soft` in `global.css`. For translucent chips or overlays, set opacity on the view or
+   * use a separate alpha at the call site (web uses utilities like `bg-app-primary-soft/28`).
    */
   primarySoft: string;
   primaryOnSoft: string;
@@ -62,7 +67,7 @@ export const lightAppColors: AppThemeColors = {
   healthFailureBody: '#7f1d1d',
 };
 
-/** Mirrors `html.dark` in global.css. */
+/** Dark appearance: matches `theme.colors.app.*-dark` in `tailwind.config.js` and dark `--app-*` in `global.css`. */
 export const darkAppColors: AppThemeColors = {
   bg: '#0f172a',
   surface: '#1e293b',

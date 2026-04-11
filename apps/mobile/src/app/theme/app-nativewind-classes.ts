@@ -6,8 +6,7 @@
 export const nw = {
   screenBg: 'bg-app-bg dark:bg-app-bg-dark',
   card: 'border border-app-border bg-app-surface dark:border-app-border-dark dark:bg-app-surface-dark',
-  cardShadow:
-    'shadow-soft shadow-black/10 dark:shadow-soft-dark dark:shadow-black/20',
+  cardShadow: 'shadow-soft dark:shadow-soft-dark',
   textInk: 'text-app-ink dark:text-app-ink-dark',
   textMuted: 'text-app-muted dark:text-app-muted-dark',
   textError: 'text-app-error dark:text-app-error-dark',
