@@ -51,3 +51,9 @@ jobs:
       # - run: pnpm exec nx record -- echo Hello World
       - run: pnpm exec nx run-many -t lint test typecheck
       - run: pnpm exec nx run-many -t build --exclude=@abstrack/mobile
+
+      - name: Install Playwright (Chromium — @a11y tests run on Chromium only)
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Accessibility (axe-core via Playwright)
+        run: pnpm a11y:e2e

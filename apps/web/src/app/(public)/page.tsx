@@ -1,6 +1,6 @@
 'use client';
 
-import { useAuth } from '../lib/auth-provider';
+import { useAuth } from '../../lib/auth-provider';
 import Link from 'next/link';
 
 export default function Index() {
