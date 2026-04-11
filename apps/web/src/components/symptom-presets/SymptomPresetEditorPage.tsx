@@ -63,18 +63,33 @@ export function SymptomPresetEditorPage({
   const [newResponseType, setNewResponseType] =
     useState<SymptomResponseType>('yes_no');
   const [adding, setAdding] = useState(false);
-  /** True while `refreshQuiet` refetches preset lines (avoids reorder/edit against stale `lines`). */
+  /** True while `refreshQuiet` refetches lines only (does not reset the preset name draft). */
   const [linesSyncing, setLinesSyncing] = useState(false);
 
   const [pendingAction, setPendingAction] = useState(false);
   const [deletePresetOpen, setDeletePresetOpen] = useState(false);
+  const [deleteLineTarget, setDeleteLineTarget] =
+    useState<PresetSymptomRow | null>(null);
 
   const refreshAll = useCallback(
     async (mode: 'full' | 'quiet' = 'full') => {
-      if (mode === 'full') {
-        setPageStatus('loading');
-      }
       const supabase = createBrowserClient();
+
+      if (mode === 'quiet') {
+        const linesResult = await listPresetSymptomsForPreset(
+          supabase,
+          presetId,
+        );
+        if (!linesResult.ok) {
+          setPageStatus('error');
+          setLoadError(linesResult.error.message);
+          return;
+        }
+        setLines(linesResult.data);
+        return;
+      }
+
+      setPageStatus('loading');
       const [presetResult, linesResult] = await Promise.all([
         getSymptomPresetById(supabase, presetId),
         listPresetSymptomsForPreset(supabase, presetId),
@@ -265,17 +280,22 @@ export function SymptomPresetEditorPage({
     announce('Symptom order updated.', { politeness: 'polite' });
   };
 
-  const handleDeleteLine = async (line: PresetSymptomRow) => {
+  const handleDeleteLine = async (
+    line: PresetSymptomRow,
+  ): Promise<void | false> => {
     setPendingAction(true);
-    const supabase = createBrowserClient();
-    const result = await deletePresetSymptom(supabase, line.id);
-    setPendingAction(false);
-    if (!result.ok) {
-      announce(result.error.message, { politeness: 'assertive' });
-      return;
+    try {
+      const supabase = createBrowserClient();
+      const result = await deletePresetSymptom(supabase, line.id);
+      if (!result.ok) {
+        announce(result.error.message, { politeness: 'assertive' });
+        return false;
+      }
+      await refreshQuiet();
+      announce('Symptom removed from preset.', { politeness: 'polite' });
+    } finally {
+      setPendingAction(false);
     }
-    await refreshQuiet();
-    announce('Symptom removed from preset.', { politeness: 'polite' });
   };
 
   const handleDeletePreset = async (): Promise<void | false> => {
@@ -359,8 +379,10 @@ export function SymptomPresetEditorPage({
   }
 
   const datalistId = 'abs-symptom-suggestions';
-  const lineControlsLocked = pendingAction || adding || linesSyncing;
-  const addFormLocked = adding || linesSyncing;
+  const deleteDialogOpen = deletePresetOpen || deleteLineTarget !== null;
+  const lineControlsLocked =
+    pendingAction || adding || linesSyncing || deleteDialogOpen;
+  const addFormLocked = adding || linesSyncing || deleteDialogOpen;
 
   return (
     <div className="w-full space-y-8">
@@ -380,7 +402,7 @@ export function SymptomPresetEditorPage({
               id="edit-preset-name"
               type="text"
               value={nameDraft}
-              disabled={pendingAction}
+              disabled={pendingAction || deleteDialogOpen}
               onChange={(e) => {
                 setNameDraft(e.target.value);
               }}
@@ -397,7 +419,7 @@ export function SymptomPresetEditorPage({
           <button
             type="button"
             className="inline-flex min-h-[44px] shrink-0 items-center justify-center rounded-full border border-red-200 bg-red-50 px-4 text-sm font-semibold text-red-800 shadow-sm transition hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:opacity-60 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200 dark:hover:bg-red-950/60"
-            disabled={pendingAction}
+            disabled={pendingAction || deleteLineTarget !== null}
             onClick={() => {
               setDeletePresetOpen(true);
             }}
@@ -525,8 +547,8 @@ export function SymptomPresetEditorPage({
                 onMove={(dir) => {
                   void handleMove(index, dir);
                 }}
-                onDelete={() => {
-                  void handleDeleteLine(line);
+                onRequestRemove={() => {
+                  setDeleteLineTarget(line);
                 }}
                 onResponseTypeChange={(next) => {
                   void handleResponseTypeChange(line, next);
@@ -554,6 +576,28 @@ export function SymptomPresetEditorPage({
           setDeletePresetOpen(false);
         }}
       />
+
+      <ConfirmDialog
+        open={deleteLineTarget !== null}
+        title="Remove this symptom?"
+        description={
+          deleteLineTarget
+            ? `“${deleteLineTarget.symptom_name}” will be removed from this preset. This cannot be undone.`
+            : undefined
+        }
+        confirmLabel="Remove symptom"
+        cancelLabel="Keep symptom"
+        confirmBusyLabel="Removing…"
+        onConfirm={async () => {
+          if (!deleteLineTarget) {
+            return false;
+          }
+          return handleDeleteLine(deleteLineTarget);
+        }}
+        onClose={() => {
+          setDeleteLineTarget(null);
+        }}
+      />
     </div>
   );
 }
@@ -564,7 +608,8 @@ type SymptomLineEditorProps = {
   total: number;
   disabled: boolean;
   onMove: (direction: -1 | 1) => void;
-  onDelete: () => void;
+  /** User chose to remove this line; parent opens a confirmation dialog. */
+  onRequestRemove: () => void;
   onResponseTypeChange: (next: SymptomResponseType) => void;
   onNameBlur: (draft: string) => void;
   onPromptBlur: (draft: string | null) => void;
@@ -583,7 +628,7 @@ function SymptomLineEditor({
   total,
   disabled,
   onMove,
-  onDelete,
+  onRequestRemove,
   onResponseTypeChange,
   onNameBlur,
   onPromptBlur,
@@ -712,7 +757,7 @@ function SymptomLineEditor({
             disabled={disabled}
             className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-red-200 bg-red-50 px-3 text-sm font-semibold text-red-800 shadow-sm transition hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:opacity-60 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200 dark:hover:bg-red-950/60"
             onClick={() => {
-              onDelete();
+              onRequestRemove();
             }}
           >
             Remove symptom
