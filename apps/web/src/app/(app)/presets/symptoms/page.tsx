@@ -1,15 +1,10 @@
-import { PageEmpty } from '@/components/page-states/PageEmpty';
+import { SymptomPresetsListPage } from '@/components/symptom-presets/SymptomPresetsListPage';
 
 /**
- * Symptom presets landing route. CRUD and Supabase wiring are out of scope for this shell.
+ * Symptom presets list: create, open editor, delete.
  *
- * @returns Placeholder empty state.
+ * @returns List route content.
  */
 export default function SymptomPresetsPage() {
-  return (
-    <PageEmpty
-      title="Symptom presets"
-      description="You have not created any symptom presets yet. When this feature is connected, you will define named lists of symptoms and response types for episode logging."
-    />
-  );
+  return <SymptomPresetsListPage />;
 }
