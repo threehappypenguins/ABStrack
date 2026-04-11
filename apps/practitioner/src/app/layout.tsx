@@ -1,4 +1,5 @@
 import './global.css';
+import { LiveAnnouncerRoot } from '../components/a11y/LiveAnnouncerRoot';
 
 export const metadata = {
   title: 'Welcome to practitioner',
@@ -13,7 +14,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <main>{children}</main>
+        <LiveAnnouncerRoot>
+          <main>{children}</main>
+        </LiveAnnouncerRoot>
       </body>
     </html>
   );

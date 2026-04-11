@@ -4,6 +4,7 @@ import Script from 'next/script';
 import { ThemeMenu } from '../components/theme/ThemeMenu';
 import { ThemeProvider } from '../components/theme/ThemeProvider';
 import { THEME_INIT_SCRIPT } from '../lib/theme-init-script';
+import { LiveAnnouncerRoot } from '../components/a11y/LiveAnnouncerRoot';
 import { AuthProvider } from '../lib/auth-provider';
 
 const fontSans = Plus_Jakarta_Sans({
@@ -34,7 +35,9 @@ export default function RootLayout({
               <ThemeMenu />
             </div>
           </div>
-          <AuthProvider>{children}</AuthProvider>
+          <AuthProvider>
+            <LiveAnnouncerRoot>{children}</LiveAnnouncerRoot>
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>

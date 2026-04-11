@@ -43,6 +43,18 @@ Do **not** add **`week_`** (or other week-number-style prefixes) to **code, iden
 
 This workspace has **MCP servers** (for example Context7 for library and framework docs, Nx, Supabase, Next.js devtools, and the in-editor browser). **Use them** to pull **current** documentation and API details instead of relying only on training data. That helps avoid **deprecated** patterns, outdated APIs, and wrong version-specific behavior.
 
+## Accessibility & screen readers
+
+ABStrack is **accessibility-first** (see **[docs/PRD.md](docs/PRD.md)**). Treat **screen reader**, **keyboard**, and **large-target** support as **default requirements** for interactive UI—not a polish pass at the end.
+
+- **Conventions:** Follow **[docs/A11Y.md](docs/A11Y.md)** for live announcements, forms, dialogs, and charts.
+- **User & practitioner web:** Root layouts mount `LiveAnnouncerProvider` (via `LiveAnnouncerRoot`). In client components, use **`useAnnounce()`** from **`@abstrack/ui/a11y-web`** (or the same exports from `@abstrack/ui` where the full package is already used) for transient status (polite vs assertive per `docs/A11Y.md`). Prefer **`@abstrack/ui/a11y-web`** in Next.js when you only need announcements, to avoid pulling the React Native–based UI barrel into server/client graphs unnecessarily.
+- **Mobile:** Use **`announce()`** from `@abstrack/ui/native` for short spoken feedback; use **`accessibilityLabel`**, **`accessibilityRole`**, **`accessibilityState`**, and **`accessibilityLiveRegion`** (Android) as appropriate for persistent UI.
+- **Semantics:** Prefer native HTML semantics and labels; use ARIA only when semantics are missing or insufficient. Do not rely on **color alone** for meaning.
+- **Dynamic feedback:** Ensure important changes are available to assistive tech (live regions / `announce`), not only visually.
+- **Charts:** Avoid visual-only insights; provide a **text summary** or structured alternative for chart data where the PRD calls for charts.
+- **Verification:** When changing UI, keep **eslint** / **axe** checks green where they apply; call out **manual** screen reader smoke tests for new critical flows when automation cannot cover them.
+
 ## Documentation (Typedoc / JSDoc)
 
 **Typedoc** is used for API documentation. Maintain it as you work:

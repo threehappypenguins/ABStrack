@@ -2,6 +2,8 @@
  * React Native–safe entry: shared layout shell and design tokens without DOM-only hooks.
  */
 
+export * from './lib/a11y/types.js';
+export * from './lib/a11y/announceNative.js';
 export * from './lib/constants.js';
 export * from './lib/NavigationShell.js';
 export {
