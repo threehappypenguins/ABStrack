@@ -22,6 +22,7 @@ describe('SettingsScreen', () => {
     mockSetThemePreference.mockReset();
     mockSetThemePreference.mockResolvedValue(undefined);
     jest.mocked(useAppTheme).mockReturnValue({
+      colorScheme: 'light',
       colors: lightAppColors,
       themePreference: 'system',
       setThemePreference: mockSetThemePreference,

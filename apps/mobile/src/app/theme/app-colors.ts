@@ -1,6 +1,9 @@
 /**
  * Semantic colors aligned with web (`apps/web/src/app/global.css`) and NativeWind tokens in
- * `apps/mobile/global.css`. Keep light/dark hex values in sync with those `--app-*` channels when they change.
+ * `apps/mobile/global.css`. Keep light/dark hex values in sync with those `--app-*` RGB channels when they change.
+ *
+ * Health panel fills match the solid `--app-health-*-bg` variables (no baked-in alpha). For translucent
+ * overlays, apply opacity on the view or use Tailwind `/opacity` on web — same idea as `primarySoft`.
  */
 export type AppThemeColors = {
   bg: string;
@@ -76,11 +79,11 @@ export const darkAppColors: AppThemeColors = {
   inputPlaceholder: '#9ca3af',
   shadow: '#000000',
   shadowOpacity: 0.35,
-  healthSuccessBg: 'rgba(22, 101, 52, 0.35)',
+  healthSuccessBg: '#166534',
   healthSuccessBorder: '#22c55e',
   healthSuccessTitle: '#86efac',
   healthSuccessBody: '#bbf7d0',
-  healthFailureBg: 'rgba(185, 28, 28, 0.35)',
+  healthFailureBg: '#b91c1c',
   healthFailureBorder: '#f87171',
   healthFailureTitle: '#fecaca',
   healthFailureBody: '#fecaca',

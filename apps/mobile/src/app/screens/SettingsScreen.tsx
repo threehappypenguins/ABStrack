@@ -137,7 +137,7 @@ export function SettingsScreen() {
               className={`min-h-[52px] justify-center rounded-xl border px-4 py-3 ${
                 selected
                   ? `border-2 border-app-primary bg-app-primary-soft dark:border-app-primary-dark dark:bg-app-primary-soft-dark ${nw.textInk}`
-                  : `border border-app-border ${nw.textInk}`
+                  : `border border-app-border bg-app-surface dark:border-app-border-dark dark:bg-app-surface-dark ${nw.textInk}`
               } ${themeSaving ? 'opacity-60' : ''}`}
             >
               <Text className={`text-base font-semibold ${nw.textInk}`}>
