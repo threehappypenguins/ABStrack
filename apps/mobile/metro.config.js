@@ -1,19 +1,22 @@
-const { withNxMetro } = require('@nx/expo');
 const { getDefaultConfig } = require('@expo/metro-config');
 const { mergeConfig } = require('metro-config');
 const { withNativeWind } = require('nativewind/metro');
 
-const defaultConfig = getDefaultConfig(__dirname);
-const { assetExts, sourceExts } = defaultConfig.resolver;
-
 /**
- * Metro configuration
- * https://reactnative.dev/docs/metro
+ * Metro for Expo + NativeWind v4.
+ *
+ * Do **not** wrap with `withNxMetro` from `@nx/expo` here: `pnpm mobile` runs `expo start` with cwd
+ * `apps/mobile`, and that wrapper has broken NativeWind’s pipeline in this repo (Metro/config not
+ * applying `withNativeWind` correctly). If you need Nx-style `watchFolders` for workspace packages,
+ * add explicit `watchFolders` / `resolver.nodeModulesPaths` instead of `withNxMetro`.
  *
  * @type {import('metro-config').MetroConfig}
  */
+const defaultConfig = getDefaultConfig(__dirname);
+const { assetExts, sourceExts } = defaultConfig.resolver;
+
 const customConfig = {
-  cacheVersion: '@abstrack/mobile',
+  cacheVersion: '@abstrack/mobile-theme-class',
   transformer: {
     babelTransformerPath: require.resolve('react-native-svg-transformer'),
   },
@@ -25,14 +28,7 @@ const customConfig = {
 
 const mergedConfig = mergeConfig(defaultConfig, customConfig);
 
-const withWind = withNativeWind(mergedConfig, {
+module.exports = withNativeWind(mergedConfig, {
   input: './global.css',
-  /** Types are checked in via committed `nativewind-env.d.ts`. */
   disableTypeScriptGeneration: true,
-});
-
-module.exports = withNxMetro(withWind, {
-  debug: false,
-  extensions: [],
-  watchFolders: [],
 });

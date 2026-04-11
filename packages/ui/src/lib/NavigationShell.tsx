@@ -28,6 +28,9 @@ export type NavigationShellProps = ViewProps & {
  * Intended to sit under a safe-area provider in consuming apps.
  * Root `ViewProps` (e.g. `accessibilityRole`, `accessibilityLabel`) apply to the outer container.
  *
+ * Host apps that use NativeWind should style this component via `style` / `headerStyle` / `mainStyle`
+ * (not `className`): prebuilt packages are not processed by the app’s NativeWind Babel pass.
+ *
  * @param props - Shell props.
  * @returns Layout container.
  */

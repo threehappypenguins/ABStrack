@@ -3,7 +3,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppThemeProvider } from '../theme/AppThemeContext';
 
 /**
- * Global providers: safe area and app theme (system light/dark by default).
+ * Global providers: safe area and app theme (NativeWind `colorScheme` + persisted theme preference).
  *
  * @param props - React children.
  * @returns Provider tree.

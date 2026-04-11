@@ -1,7 +1,6 @@
 /**
- * Semantic colors aligned with web (`apps/web/src/app/global.css`) and mobile NativeWind
- * (`apps/mobile/global.css` CSS variables for `className`). Keep light/dark hex values in sync
- * with those `--app-*` channels when they change.
+ * Semantic colors aligned with web (`apps/web/src/app/global.css`) and NativeWind tokens in
+ * `apps/mobile/global.css`. Keep light/dark hex values in sync with those `--app-*` channels when they change.
  */
 export type AppThemeColors = {
   bg: string;

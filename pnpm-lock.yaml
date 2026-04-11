@@ -301,7 +301,7 @@ importers:
         specifier: 0.81.5
         version: 0.81.5(@babel/core@7.29.0)(@react-native/metro-config@0.85.0(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0)
       react-native-css-interop:
-        specifier: 0.2.3
+        specifier: ^0.2.3
         version: 0.2.3(d24f11dbc2a9123b6c6039fb3b3d0720)
       react-native-reanimated:
         specifier: ~4.1.7

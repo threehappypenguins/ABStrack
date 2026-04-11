@@ -4,8 +4,9 @@ import { signOut, updatePassword } from '@abstrack/supabase';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { mapAuthError, validateSignupPassword } from '../auth-helpers';
 import { ScreenShell } from '../components/ScreenShell';
-import { useAppStyles } from '../styles';
-import { useAppTheme } from '../theme/AppThemeContext';
+import { nw } from '../theme/app-nativewind-classes';
+
+const inputClassName = `min-h-[52px] rounded-lg px-3 py-2.5 text-base ${nw.input}`;
 
 export function UpdatePasswordScreen({
   recoveryError,
@@ -16,8 +17,6 @@ export function UpdatePasswordScreen({
   onGoToLogin: () => void;
   onPasswordUpdated: () => void;
 }) {
-  const styles = useAppStyles();
-  const { colors } = useAppTheme();
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -96,8 +95,12 @@ export function UpdatePasswordScreen({
 
   return (
     <ScreenShell>
-      <Text style={styles.title}>Set new password</Text>
-      <Text style={styles.labelText}>New password</Text>
+      <Text className={`text-[22px] font-semibold ${nw.textInk}`}>
+        Set new password
+      </Text>
+      <Text className={`text-base font-semibold ${nw.textInk}`}>
+        New password
+      </Text>
       <TextInput
         secureTextEntry
         autoCapitalize="none"
@@ -107,13 +110,14 @@ export function UpdatePasswordScreen({
         value={password}
         onChangeText={setPassword}
         placeholder="New password"
-        placeholderTextColor={colors.inputPlaceholder}
-        style={styles.input}
+        className={inputClassName}
         accessibilityLabel="New password"
         testID="update-password-new"
       />
 
-      <Text style={styles.labelText}>Confirm new password</Text>
+      <Text className={`text-base font-semibold ${nw.textInk}`}>
+        Confirm new password
+      </Text>
       <TextInput
         secureTextEntry
         autoCapitalize="none"
@@ -123,20 +127,19 @@ export function UpdatePasswordScreen({
         value={confirmPassword}
         onChangeText={setConfirmPassword}
         placeholder="Confirm new password"
-        placeholderTextColor={colors.inputPlaceholder}
-        style={styles.input}
+        className={inputClassName}
         accessibilityLabel="Confirm new password"
         testID="update-password-confirm"
       />
 
       {errorMessage ? (
-        <Text style={styles.errorText} accessibilityRole="alert">
+        <Text className={`text-sm ${nw.textError}`} accessibilityRole="alert">
           {errorMessage}
         </Text>
       ) : null}
 
       {statusMessage ? (
-        <Text style={styles.infoText} accessibilityRole="alert">
+        <Text className={`text-sm ${nw.textInfo}`} accessibilityRole="alert">
           {statusMessage}
         </Text>
       ) : null}
@@ -148,12 +151,9 @@ export function UpdatePasswordScreen({
         }
         onPress={handleUpdatePassword}
         disabled={isSubmitDisabled}
-        style={[
-          styles.primaryButton,
-          isSubmitDisabled ? styles.primaryButtonDisabled : null,
-        ]}
+        className={`min-h-[52px] items-center justify-center rounded-[10px] px-4 ${nw.btnPrimary} ${isSubmitDisabled ? 'opacity-60' : ''}`}
       >
-        <Text style={styles.primaryButtonText}>
+        <Text className={`text-lg font-bold ${nw.textOnPrimary}`}>
           {loading ? 'Updating password...' : 'Update password'}
         </Text>
       </Pressable>
@@ -164,9 +164,13 @@ export function UpdatePasswordScreen({
           accessibilityLabel="Back to login"
           onPress={onGoToLogin}
           disabled={loading}
-          style={styles.secondaryButton}
+          className={`min-h-[52px] items-center justify-center rounded-[10px] px-4 ${nw.btnSecondary}`}
         >
-          <Text style={styles.secondaryButtonText}>Back to login</Text>
+          <Text
+            className={`text-center text-[17px] font-semibold ${nw.textPrimary}`}
+          >
+            Back to login
+          </Text>
         </Pressable>
       ) : null}
     </ScreenShell>

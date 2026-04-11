@@ -4,18 +4,17 @@ import { resetPasswordForEmail } from '@abstrack/supabase';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { mapAuthError } from '../auth-helpers';
 import { ScreenShell } from '../components/ScreenShell';
-import { useAppStyles } from '../styles';
-import { useAppTheme } from '../theme/AppThemeContext';
+import { nw } from '../theme/app-nativewind-classes';
 
 const MOBILE_RESET_REDIRECT_URL = 'abstrack:///update-password';
+
+const inputClassName = `min-h-[52px] rounded-lg px-3 py-2.5 text-base ${nw.input}`;
 
 export function ForgotPasswordScreen({
   onGoToLogin,
 }: {
   onGoToLogin: () => void;
 }) {
-  const styles = useAppStyles();
-  const { colors } = useAppTheme();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -67,8 +66,10 @@ export function ForgotPasswordScreen({
 
   return (
     <ScreenShell>
-      <Text style={styles.title}>Forgot password</Text>
-      <Text style={styles.labelText}>Email</Text>
+      <Text className={`text-[22px] font-semibold ${nw.textInk}`}>
+        Forgot password
+      </Text>
+      <Text className={`text-base font-semibold ${nw.textInk}`}>Email</Text>
       <TextInput
         autoCapitalize="none"
         autoComplete="email"
@@ -78,21 +79,20 @@ export function ForgotPasswordScreen({
         value={email}
         onChangeText={setEmail}
         placeholder="you@example.com"
-        placeholderTextColor={colors.inputPlaceholder}
-        style={styles.input}
+        className={inputClassName}
         accessibilityLabel="Email address"
         accessibilityHint="Enter your account email"
         testID="forgot-password-email"
       />
 
       {errorMessage ? (
-        <Text style={styles.errorText} accessibilityRole="alert">
+        <Text className={`text-sm ${nw.textError}`} accessibilityRole="alert">
           {errorMessage}
         </Text>
       ) : null}
 
       {statusMessage ? (
-        <Text style={styles.infoText} accessibilityRole="alert">
+        <Text className={`text-sm ${nw.textInfo}`} accessibilityRole="alert">
           {statusMessage}
         </Text>
       ) : null}
@@ -104,12 +104,9 @@ export function ForgotPasswordScreen({
         }
         onPress={handleForgotPassword}
         disabled={loading || !email.trim()}
-        style={[
-          styles.primaryButton,
-          loading || !email.trim() ? styles.primaryButtonDisabled : null,
-        ]}
+        className={`min-h-[52px] items-center justify-center rounded-[10px] px-4 ${nw.btnPrimary} ${loading || !email.trim() ? 'opacity-60' : ''}`}
       >
-        <Text style={styles.primaryButtonText}>
+        <Text className={`text-lg font-bold ${nw.textOnPrimary}`}>
           {loading ? 'Sending reset email...' : 'Send reset email'}
         </Text>
       </Pressable>
@@ -118,9 +115,13 @@ export function ForgotPasswordScreen({
         accessibilityLabel="Back to login"
         onPress={onGoToLogin}
         disabled={loading}
-        style={styles.secondaryButton}
+        className={`min-h-[52px] items-center justify-center rounded-[10px] px-4 ${nw.btnSecondary}`}
       >
-        <Text style={styles.secondaryButtonText}>Back to login</Text>
+        <Text
+          className={`text-center text-[17px] font-semibold ${nw.textPrimary}`}
+        >
+          Back to login
+        </Text>
       </Pressable>
     </ScreenShell>
   );

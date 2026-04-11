@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render } from '@testing-library/react-native';
 
 import { AppThemeProvider } from '../theme/AppThemeContext';
 import { UpdatePasswordScreen } from './UpdatePasswordScreen';
@@ -8,8 +8,15 @@ jest.mock('../../lib/supabase-wiring', () => ({
   getMobileSupabaseClient: jest.fn(),
 }));
 
+/** Flush microtasks + next macrotask so AppThemeProvider’s async theme hydration runs inside `act`. */
+function flushAsyncThemeHydration(): Promise<void> {
+  return new Promise((resolve) => {
+    setImmediate(resolve);
+  });
+}
+
 describe('UpdatePasswordScreen', () => {
-  test('disables submission and shows back to login when recovery link is invalid', () => {
+  test('disables submission and shows back to login when recovery link is invalid', async () => {
     const onGoToLogin = jest.fn();
 
     const { getByLabelText, getByText } = render(
@@ -21,6 +28,10 @@ describe('UpdatePasswordScreen', () => {
         />
       </AppThemeProvider>,
     );
+
+    await act(async () => {
+      await flushAsyncThemeHydration();
+    });
 
     const updateButton = getByLabelText('Update password');
 

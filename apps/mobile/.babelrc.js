@@ -2,11 +2,13 @@ module.exports = function (api) {
   api.cache(true);
   return {
     presets: [
-      'babel-preset-expo',
       /**
-       * `nativewind/babel` → `react-native-css-interop/babel`, which returns a **preset**
-       * object `{ plugins: [...] }`, not a single plugin. It belongs in `presets` so Babel merges
-       * those plugins; listing it under `plugins` fails validation (`.plugins is not a valid Plugin property`).
+       * `jsxImportSource: "nativewind"` is required for NativeWind v4 + Expo so JSX uses NativeWind’s
+       * runtime (see https://www.nativewind.dev/docs/getting-started/installation).
+       */
+      ['babel-preset-expo', { jsxImportSource: 'nativewind' }],
+      /**
+       * `nativewind/babel` → `react-native-css-interop/babel` (preset object). Must stay in `presets`.
        */
       'nativewind/babel',
     ],

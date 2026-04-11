@@ -1,52 +1,26 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAppTheme } from '../theme/AppThemeContext';
+import { nw } from '../theme/app-nativewind-classes';
 
 /**
  * Auth and form screens: safe area, centered layout, card surface aligned with web app shell.
+ *
+ * Semantic colors use static `rgb()` tokens from `tailwind.config.js` with `dark:` pairs
+ * (`nw` in `app-nativewind-classes.ts`).
  *
  * @param props - Child content inside the card.
  * @returns Themed shell layout.
  */
 export function ScreenShell({ children }: { children: React.ReactNode }) {
-  const { colors } = useAppTheme();
-
   return (
     <SafeAreaView
-      style={[styles.outer, { backgroundColor: colors.bg }]}
+      className={`flex-1 justify-center p-4 ${nw.screenBg}`}
       edges={['top', 'left', 'right', 'bottom']}
     >
-      <View
-        style={[
-          styles.card,
-          {
-            backgroundColor: colors.surface,
-            borderColor: colors.border,
-            shadowColor: colors.shadow,
-            shadowOpacity: colors.shadowOpacity,
-          },
-        ]}
-      >
+      <View className={`gap-3 rounded-xl p-4 ${nw.card} ${nw.cardShadow}`}>
         {children}
       </View>
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  outer: {
-    flex: 1,
-    justifyContent: 'center',
-    padding: 16,
-  },
-  card: {
-    gap: 12,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: 16,
-    shadowOffset: { width: 0, height: 1 },
-    shadowRadius: 4,
-    elevation: 2,
-  },
-});

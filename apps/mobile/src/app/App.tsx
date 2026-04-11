@@ -16,6 +16,7 @@ import { SignupScreen } from './screens/SignupScreen';
 import { UpdatePasswordScreen } from './screens/UpdatePasswordScreen';
 import { getRequireReauthOnOpenPreference } from './reauth-preference';
 import { useAppTheme } from './theme/AppThemeContext';
+import { nw } from './theme/app-nativewind-classes';
 
 type AuthStackParamList = {
   Login: undefined;
@@ -356,15 +357,10 @@ function AppBootstrap() {
 
   if (initializing) {
     return (
-      <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      <View className={`flex-1 ${nw.screenBg}`}>
         <StatusBar style={statusBarStyle} />
         <SafeAreaView
-          style={{
-            flex: 1,
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: colors.bg,
-          }}
+          className={`flex-1 items-center justify-center ${nw.screenBg}`}
         >
           <ActivityIndicator size="large" color={colors.primary} />
         </SafeAreaView>
@@ -373,7 +369,7 @@ function AppBootstrap() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+    <View className={`flex-1 ${nw.screenBg}`}>
       <StatusBar style={statusBarStyle} />
       <NavigationContainer theme={navigationTheme}>
         {showAuthStack ? (

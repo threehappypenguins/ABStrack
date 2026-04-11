@@ -1,8 +1,7 @@
 import React, { useRef } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import { ScreenShell } from './ScreenShell';
-import { useAppStyles } from '../styles';
-import { useAppTheme } from '../theme/AppThemeContext';
+import { nw } from '../theme/app-nativewind-classes';
 
 export type AuthFormProps = {
   title: string;
@@ -25,6 +24,8 @@ export type AuthFormProps = {
   onTertiaryAction?: () => void;
 };
 
+const inputClassName = `min-h-[52px] rounded-lg px-3 py-2.5 text-base ${nw.input}`;
+
 export function AuthForm({
   title,
   email,
@@ -45,8 +46,6 @@ export function AuthForm({
   onAlternateAction,
   onTertiaryAction,
 }: AuthFormProps) {
-  const styles = useAppStyles();
-  const { colors } = useAppTheme();
   const passwordInputRef = useRef<TextInput>(null);
   const primaryDisabled = loading || Boolean(submitDisabled);
   const handleSubmit = () => {
@@ -59,8 +58,8 @@ export function AuthForm({
 
   return (
     <ScreenShell>
-      <Text style={styles.title}>{title}</Text>
-      <Text style={styles.labelText}>Email</Text>
+      <Text className={`text-[22px] font-semibold ${nw.textInk}`}>{title}</Text>
+      <Text className={`text-base font-semibold ${nw.textInk}`}>Email</Text>
       <TextInput
         autoCapitalize="none"
         autoComplete="email"
@@ -70,8 +69,7 @@ export function AuthForm({
         value={email}
         onChangeText={onEmailChange}
         placeholder="you@example.com"
-        placeholderTextColor={colors.inputPlaceholder}
-        style={styles.input}
+        className={inputClassName}
         accessibilityLabel="Email address"
         accessibilityHint="Enter your account email"
         returnKeyType="next"
@@ -79,7 +77,7 @@ export function AuthForm({
         onSubmitEditing={() => passwordInputRef.current?.focus()}
         testID={emailTestId}
       />
-      <Text style={styles.labelText}>Password</Text>
+      <Text className={`text-base font-semibold ${nw.textInk}`}>Password</Text>
       <TextInput
         ref={passwordInputRef}
         secureTextEntry
@@ -90,8 +88,7 @@ export function AuthForm({
         value={password}
         onChangeText={onPasswordChange}
         placeholder="Password"
-        placeholderTextColor={colors.inputPlaceholder}
-        style={styles.input}
+        className={inputClassName}
         accessibilityLabel="Password"
         accessibilityHint="Enter your account password"
         returnKeyType="done"
@@ -100,13 +97,13 @@ export function AuthForm({
       />
 
       {errorMessage ? (
-        <Text style={styles.errorText} accessibilityRole="alert">
+        <Text className={`text-sm ${nw.textError}`} accessibilityRole="alert">
           {errorMessage}
         </Text>
       ) : null}
 
       {statusMessage ? (
-        <Text style={styles.infoText} accessibilityRole="alert">
+        <Text className={`text-sm ${nw.textInfo}`} accessibilityRole="alert">
           {statusMessage}
         </Text>
       ) : null}
@@ -116,39 +113,42 @@ export function AuthForm({
         accessibilityLabel={loading ? loadingSubmitLabel : idleSubmitLabel}
         onPress={handleSubmit}
         disabled={primaryDisabled}
-        style={[
-          styles.primaryButton,
-          primaryDisabled ? styles.primaryButtonDisabled : null,
-        ]}
+        className={`min-h-[52px] items-center justify-center rounded-[10px] px-4 ${nw.btnPrimary} ${primaryDisabled ? 'opacity-60' : ''}`}
       >
-        <Text style={styles.primaryButtonText}>
+        <Text className={`text-lg font-bold ${nw.textOnPrimary}`}>
           {loading ? loadingSubmitLabel : idleSubmitLabel}
         </Text>
       </Pressable>
 
-      <View style={styles.spacer} />
+      <View className="h-2" />
       {tertiaryLabel && onTertiaryAction ? (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={tertiaryLabel}
           onPress={onTertiaryAction}
           disabled={loading}
-          style={styles.tertiaryButton}
+          className="min-h-8 items-center justify-center"
         >
-          <Text style={styles.tertiaryButtonText}>{tertiaryLabel}</Text>
+          <Text
+            className={`text-center text-[15px] font-medium ${nw.textPrimary}`}
+          >
+            {tertiaryLabel}
+          </Text>
         </Pressable>
       ) : null}
-      {tertiaryLabel && onTertiaryAction ? (
-        <View style={styles.spacer} />
-      ) : null}
+      {tertiaryLabel && onTertiaryAction ? <View className="h-2" /> : null}
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={alternateLabel}
         onPress={onAlternateAction}
         disabled={loading}
-        style={styles.secondaryButton}
+        className={`min-h-[52px] items-center justify-center rounded-[10px] px-4 ${nw.btnSecondary}`}
       >
-        <Text style={styles.secondaryButtonText}>{alternateLabel}</Text>
+        <Text
+          className={`text-center text-[17px] font-semibold ${nw.textPrimary}`}
+        >
+          {alternateLabel}
+        </Text>
       </Pressable>
     </ScreenShell>
   );
