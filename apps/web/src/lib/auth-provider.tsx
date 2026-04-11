@@ -41,9 +41,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Get initial session and always clear loading, even on failure.
     const initializeSession = async () => {
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
       try {
-        const timeout = new Promise<never>((_, reject) => {
-          setTimeout(() => {
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => {
             reject(new Error('session_bootstrap_timeout'));
           }, SESSION_BOOTSTRAP_TIMEOUT_MS);
         });
@@ -51,21 +52,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const {
           data: { session: nextSession },
           error,
-        } = await Promise.race([supabase.auth.getSession(), timeout]).catch(
-          async (raceError: unknown) => {
-            if (
-              raceError instanceof Error &&
-              raceError.message === 'session_bootstrap_timeout'
-            ) {
-              console.warn(
-                'Auth session bootstrap timed out; clearing local session',
-              );
-              await supabase.auth.signOut();
-              return { data: { session: null }, error: null };
-            }
-            throw raceError;
-          },
-        );
+        } = await Promise.race([
+          supabase.auth.getSession(),
+          timeoutPromise,
+        ]).catch(async (raceError: unknown) => {
+          if (
+            raceError instanceof Error &&
+            raceError.message === 'session_bootstrap_timeout'
+          ) {
+            console.warn(
+              'Auth session bootstrap timed out; clearing local session',
+            );
+            await supabase.auth.signOut();
+            return { data: { session: null }, error: null };
+          }
+          throw raceError;
+        });
 
         if (error) {
           console.error('Failed to load auth session', error);
@@ -87,6 +89,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           await supabase.auth.signOut();
         }
       } finally {
+        if (timeoutId !== undefined) {
+          clearTimeout(timeoutId);
+        }
         if (mounted) {
           setLoading(false);
         }

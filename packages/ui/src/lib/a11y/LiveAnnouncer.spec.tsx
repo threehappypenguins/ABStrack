@@ -64,9 +64,14 @@ describe('LiveAnnouncerProvider', () => {
     function Demo() {
       const { announce } = useAnnounce();
       return (
-        <button type="button" onClick={() => announce('   ')}>
-          Go
-        </button>
+        <>
+          <button type="button" onClick={() => announce('Prior message')}>
+            Set prior
+          </button>
+          <button type="button" onClick={() => announce('   ')}>
+            Whitespace only
+          </button>
+        </>
       );
     }
 
@@ -76,7 +81,13 @@ describe('LiveAnnouncerProvider', () => {
       </LiveAnnouncerProvider>,
     );
 
-    expect(screen.getByRole('status')).toHaveTextContent('');
+    fireEvent.click(screen.getByRole('button', { name: 'Set prior' }));
+    expect(screen.getByRole('status')).toHaveTextContent('Prior message');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Whitespace only' }));
+
+    expect(screen.getByRole('status')).toHaveTextContent('Prior message');
+    expect(screen.getByRole('alert')).toHaveTextContent('');
   });
 });
 

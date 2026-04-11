@@ -12,10 +12,9 @@ import type { AnnounceOptions } from './types.js';
  * `AccessibilityInfo.announceForAccessibility`.
  *
  * @param message - Message to announce; whitespace-only strings are ignored.
- * @param options - Optional settings (e.g. `politeness` for parity with web).
+ * @param _options - Optional settings (e.g. `politeness` for parity with web); not used on RN yet.
  */
-export function announce(message: string, options?: AnnounceOptions): void {
-  void options;
+export function announce(message: string, _options?: AnnounceOptions): void {
   const trimmed = message.trim();
   if (!trimmed) {
     return;
