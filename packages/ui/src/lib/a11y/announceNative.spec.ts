@@ -1,13 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { announce } from './announceNative.js';
 
-const mockAnnounce = vi.fn();
+const { mockAnnounce } = vi.hoisted(() => ({
+  mockAnnounce: vi.fn(),
+}));
 
 vi.mock('react-native', () => ({
   AccessibilityInfo: {
-    announceForAccessibility: (msg: string) => mockAnnounce(msg),
+    announceForAccessibility: mockAnnounce,
   },
 }));
+
+import { announce } from './announceNative.js';
 
 describe('announce (native)', () => {
   beforeEach(() => {
