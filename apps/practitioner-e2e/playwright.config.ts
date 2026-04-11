@@ -7,8 +7,10 @@ import { workspaceRoot } from '@nx/devkit';
  * suites sequentially — otherwise Playwright can reuse the wrong dev server.
  */
 const practitionerDevPort = 3001;
-const baseURL =
-  process.env['BASE_URL'] || `http://localhost:${practitionerDevPort}`;
+const localBaseURL = `http://localhost:${practitionerDevPort}`;
+/** When set (e.g. deployed preview), tests hit this origin and `webServer` is not started. */
+const isRemote = Boolean(process.env['BASE_URL']);
+const baseURL = process.env['BASE_URL'] || localBaseURL;
 
 /**
  * Read environment variables from file.
@@ -31,14 +33,18 @@ export default defineConfig({
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
   },
-  /* Run your local dev server before starting the tests */
-  webServer: {
-    command: `pnpm exec nx run @abstrack/practitioner:dev -- --port ${practitionerDevPort}`,
-    url: baseURL,
-    reuseExistingServer: !process.env.CI,
-    cwd: workspaceRoot,
-    timeout: 180_000,
-  },
+  /* Local runs only: remote `BASE_URL` implies a deployed target — do not start `next dev`. */
+  ...(isRemote
+    ? {}
+    : {
+        webServer: {
+          command: `pnpm exec nx run @abstrack/practitioner:dev -- --port ${practitionerDevPort}`,
+          url: localBaseURL,
+          reuseExistingServer: !process.env.CI,
+          cwd: workspaceRoot,
+          timeout: 180_000,
+        },
+      }),
   projects: [
     {
       name: 'chromium',

@@ -2,8 +2,10 @@ import { defineConfig, devices } from '@playwright/test';
 import { nxE2EPreset } from '@nx/playwright/preset';
 import { workspaceRoot } from '@nx/devkit';
 
-// For CI, you may want to set BASE_URL to the deployed application.
-const baseURL = process.env['BASE_URL'] || 'http://localhost:3000';
+const localBaseURL = 'http://localhost:3000';
+/** When set (e.g. deployed preview), tests hit this origin and `webServer` is not started. */
+const isRemote = Boolean(process.env['BASE_URL']);
+const baseURL = process.env['BASE_URL'] || localBaseURL;
 
 /**
  * Read environment variables from file.
@@ -26,14 +28,18 @@ export default defineConfig({
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
   },
-  /* Run your local dev server before starting the tests */
-  webServer: {
-    command: 'pnpm exec nx run @abstrack/web:dev',
-    url: 'http://localhost:3000',
-    reuseExistingServer: !process.env.CI,
-    cwd: workspaceRoot,
-    timeout: 180_000,
-  },
+  /* Local runs only: remote `BASE_URL` implies a deployed target — do not start `next dev`. */
+  ...(isRemote
+    ? {}
+    : {
+        webServer: {
+          command: 'pnpm exec nx run @abstrack/web:dev',
+          url: localBaseURL,
+          reuseExistingServer: !process.env.CI,
+          cwd: workspaceRoot,
+          timeout: 180_000,
+        },
+      }),
   projects: [
     {
       name: 'chromium',
