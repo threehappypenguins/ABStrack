@@ -1,5 +1,16 @@
-import React, { createContext, useContext, useMemo } from 'react';
-import { useColorScheme as useRNColorScheme } from 'react-native';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import {
+  colorScheme as nativeWindColorScheme,
+  useColorScheme as useNativeWindColorScheme,
+} from 'nativewind';
 import {
   DarkTheme,
   DefaultTheme,
@@ -10,12 +21,26 @@ import {
   lightAppColors,
   type AppThemeColors,
 } from './app-colors';
+import {
+  getThemePreference,
+  setThemePreference as persistThemePreference,
+  type ThemePreference,
+} from '../theme-preference';
 
 export type AppColorScheme = 'light' | 'dark';
 
 export type AppThemeContextValue = {
-  /** Resolved appearance (`null` from RN is treated as light). */
+  /** Effective UI appearance used for Navigation, StatusBar, and `dark:` classes. */
   colorScheme: AppColorScheme;
+  /** Stored user choice; applied with NativeWind `colorScheme.set`. */
+  themePreference: ThemePreference;
+  /**
+   * Persists preference and applies it via NativeWind `colorScheme.set` (requires
+   * `darkMode: 'class'` in `tailwind.config.js`).
+   *
+   * @param preference - `system` follows the device; `light` / `dark` override it.
+   */
+  setThemePreference: (preference: ThemePreference) => Promise<void>;
   colors: AppThemeColors;
   /** React Navigation container theme (cards, headers, tab chrome). */
   navigationTheme: NavigationTheme;
@@ -46,25 +71,65 @@ function buildNavigationTheme(
 }
 
 /**
- * Provides semantic colors from the active color scheme (follows system appearance via React Native's
- * {@link https://reactnative.dev/docs/usecolorscheme | useColorScheme}).
+ * Provides semantic colors and NativeWind appearance. Loads persisted
+ * {@link ThemePreference} on mount and applies it with `colorScheme` from `nativewind`
+ * (`darkMode: 'class'` in `tailwind.config.js`).
  *
  * @param props - React children.
  * @returns Context provider.
  */
 export function AppThemeProvider({ children }: { children: React.ReactNode }) {
-  const rnScheme = useRNColorScheme();
-  const colorScheme: AppColorScheme = rnScheme === 'dark' ? 'dark' : 'light';
+  const { colorScheme: nwScheme } = useNativeWindColorScheme();
+  const [themePreference, setThemePreferenceState] =
+    useState<ThemePreference>('system');
+  /**
+   * When the user changes theme from Settings (or elsewhere), late completion of the
+   * initial `getThemePreference()` read must not overwrite their choice.
+   */
+  const userChosePreferenceRef = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getThemePreference().then((stored) => {
+      if (cancelled || userChosePreferenceRef.current) {
+        return;
+      }
+      nativeWindColorScheme.set(stored);
+      setThemePreferenceState(stored);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const colorScheme: AppColorScheme = nwScheme === 'dark' ? 'dark' : 'light';
   const colors = colorScheme === 'dark' ? darkAppColors : lightAppColors;
+
+  const setThemePreference = useCallback(
+    async (preference: ThemePreference) => {
+      userChosePreferenceRef.current = true;
+      try {
+        await persistThemePreference(preference);
+        nativeWindColorScheme.set(preference);
+        setThemePreferenceState(preference);
+      } catch (error) {
+        userChosePreferenceRef.current = false;
+        throw error;
+      }
+    },
+    [],
+  );
 
   const value = useMemo((): AppThemeContextValue => {
     return {
       colorScheme,
+      themePreference,
+      setThemePreference,
       colors,
       navigationTheme: buildNavigationTheme(colors, colorScheme),
       statusBarStyle: colorScheme === 'dark' ? 'light' : 'dark',
     };
-  }, [colorScheme, colors]);
+  }, [colorScheme, colors, setThemePreference, themePreference]);
 
   return (
     <AppThemeContext.Provider value={value}>
@@ -74,7 +139,7 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * @returns Active app theme (system-driven until a manual preference exists).
+ * @returns Active app theme and NativeWind-backed theme preference.
  */
 export function useAppTheme(): AppThemeContextValue {
   const ctx = useContext(AppThemeContext);

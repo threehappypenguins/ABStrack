@@ -607,10 +607,18 @@ describe('mobile auth state sync', () => {
     } as unknown as AbstrackSupabaseClient;
 
     jest.mocked(getMobileSupabaseClient).mockReturnValue(mockClient);
-    jest
-      .mocked(SecureStore.getItemAsync)
-      .mockResolvedValueOnce('false')
-      .mockResolvedValueOnce('true');
+    let reauthPreferenceReads = 0;
+    jest.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => {
+      if (key === 'abstrack.theme_preference') {
+        return null;
+      }
+      if (key === 'abstrack.require_reauth_on_open') {
+        reauthPreferenceReads += 1;
+        // Bootstrap read: off so the user stays signed in; second read (foreground): on.
+        return reauthPreferenceReads >= 2 ? 'true' : 'false';
+      }
+      return null;
+    });
 
     const { findByText } = render(<App />);
 

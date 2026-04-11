@@ -23,7 +23,7 @@
     "mobile": "cd apps/mobile && pnpm expo start",
     "mobile:lint": "nx lint mobile",
     "mobile:test": "nx test mobile",
-    "mobile:typecheck": "tsc --noEmit -p apps/mobile/tsconfig.app.json",
+    "mobile:typecheck": "nx typecheck mobile",
     "mobile:validate": "pnpm mobile:lint && pnpm mobile:test",
     "supabase:lint": "nx lint @abstrack/supabase",
     "supabase:test": "nx test @abstrack/supabase",
@@ -32,7 +32,7 @@
     "lint": "nx run-many -t lint",
     "test": "nx run-many -t test",
     "build": "nx run-many -t build -p web,practitioner && pnpm mobile:typecheck && pnpm supabase:typecheck",
-    "typecheck": "tsc --noEmit -p apps/mobile/tsconfig.app.json",
+    "typecheck": "nx typecheck mobile",
     "validate": "nx run-many -t lint test",
     "android": "cd apps/mobile && pnpm expo run:android",
     "ios": "cd apps/mobile && pnpm expo run:ios"

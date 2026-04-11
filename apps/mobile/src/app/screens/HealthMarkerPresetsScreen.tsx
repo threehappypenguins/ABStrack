@@ -1,8 +1,8 @@
 import React from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, Text, View } from 'react-native';
 import { AppNavigationShell } from '../components/AppNavigationShell';
 import { AsyncScreenContainer } from '../components/AsyncScreenContainer';
-import { useAppTheme } from '../theme/AppThemeContext';
+import { nw } from '../theme/app-nativewind-classes';
 
 /**
  * Health marker presets landing screen. CRUD and Supabase wiring are out of scope; shows
@@ -11,26 +11,20 @@ import { useAppTheme } from '../theme/AppThemeContext';
  * @returns Screen scaffold.
  */
 export function HealthMarkerPresetsScreen() {
-  const { colors } = useAppTheme();
-
   return (
     <AppNavigationShell title="Health marker presets">
       <AsyncScreenContainer status="ready">
         <ScrollView
-          contentContainerStyle={markerStyles.scrollContent}
+          className="flex-1"
+          contentContainerStyle={{
+            flexGrow: 1,
+            padding: 16,
+          }}
           keyboardShouldPersistTaps="handled"
         >
-          <View
-            style={[
-              markerStyles.panel,
-              {
-                borderColor: colors.border,
-                backgroundColor: colors.surface,
-              },
-            ]}
-          >
+          <View className={`rounded-xl p-4 ${nw.card}`}>
             <Text
-              style={[markerStyles.lead, { color: colors.muted }]}
+              className={`text-base leading-6 ${nw.textMuted}`}
               maxFontSizeMultiplier={2}
               testID="health-marker-presets-placeholder"
             >
@@ -44,19 +38,3 @@ export function HealthMarkerPresetsScreen() {
     </AppNavigationShell>
   );
 }
-
-const markerStyles = StyleSheet.create({
-  scrollContent: {
-    flexGrow: 1,
-    padding: 16,
-  },
-  panel: {
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: 16,
-  },
-  lead: {
-    fontSize: 16,
-    lineHeight: 24,
-  },
-});

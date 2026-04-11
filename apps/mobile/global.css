@@ -5,10 +5,9 @@
 /**
  * Semantic app colors (space-separated RGB channels). Aligned with `apps/web/src/app/global.css`.
  *
- * Web toggles dark via `html.dark` + `darkMode: 'class'`. Mobile uses `@media (prefers-color-scheme: dark)`
- * on `:root` so `tailwind.config.js` `colors.app.*` utilities follow system appearance (same as
- * `AppThemeProvider` / Expo `userInterfaceStyle: automatic`). Use `bg-app-bg`, not `dark:bg-app-bg`,
- * for these tokens—they already respond to light/dark.
+ * **React Native / NativeWind:** `tailwind.config.js` mirrors these tokens as static `rgb()` plus
+ * `*-dark` keys with `dark:` utilities (`darkMode: 'class'` + `colorScheme.set` from `nativewind`).
+ * Opacity plugins stay off for RN (see config). Variables here stay aligned for tooling and web parity.
  */
 @layer base {
   :root {
@@ -33,6 +32,18 @@
     --app-shadow-soft:
       0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px -4px rgba(15, 23, 42, 0.08);
     --app-shadow-header: 0 1px 0 rgba(15, 23, 42, 0.06);
+    --app-error: 185 28 28;
+    --app-on-primary: 255 255 255;
+    --app-info: 29 78 216;
+    --app-input-placeholder: 100 116 139;
+    --app-health-success-bg: 240 253 244;
+    --app-health-success-border: 22 163 74;
+    --app-health-success-title: 21 128 61;
+    --app-health-success-body: 22 101 52;
+    --app-health-failure-bg: 254 242 242;
+    --app-health-failure-border: 220 38 38;
+    --app-health-failure-title: 153 27 27;
+    --app-health-failure-body: 127 29 29;
   }
 
   @media (prefers-color-scheme: dark) {
@@ -58,6 +69,18 @@
       --app-shadow-soft:
         0 1px 2px rgba(0, 0, 0, 0.25), 0 8px 24px -4px rgba(0, 0, 0, 0.35);
       --app-shadow-header: 0 1px 0 rgba(0, 0, 0, 0.35);
+      --app-error: 248 113 113;
+      --app-on-primary: 15 23 42;
+      --app-info: 96 165 250;
+      --app-input-placeholder: 156 163 175;
+      --app-health-success-bg: 22 101 52;
+      --app-health-success-border: 34 197 94;
+      --app-health-success-title: 134 239 172;
+      --app-health-success-body: 187 247 208;
+      --app-health-failure-bg: 185 28 28;
+      --app-health-failure-border: 248 113 113;
+      --app-health-failure-title: 254 202 202;
+      --app-health-failure-body: 254 202 202;
     }
   }
 }

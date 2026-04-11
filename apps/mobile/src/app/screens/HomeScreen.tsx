@@ -8,7 +8,7 @@ import {
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { mapAuthError } from '../auth-helpers';
 import { AppNavigationShell } from '../components/AppNavigationShell';
-import { useAppStyles } from '../styles';
+import { nw } from '../theme/app-nativewind-classes';
 
 interface HealthCheckResult {
   success: boolean;
@@ -21,7 +21,6 @@ type HomeScreenProps = {
 };
 
 export function HomeScreen({ onGoToSettings }: HomeScreenProps) {
-  const styles = useAppStyles();
   const isTestEnv =
     typeof process !== 'undefined' && process.env.NODE_ENV === 'test';
   const showHealthCheck = __DEV__ && !isTestEnv;
@@ -41,7 +40,6 @@ export function HomeScreen({ onGoToSettings }: HomeScreenProps) {
       };
     }
 
-    // Run health check on component mount to validate session + API query path.
     const runHealthCheck = async () => {
       try {
         const mobileSupabase = getMobileSupabaseClient();
@@ -123,54 +121,57 @@ export function HomeScreen({ onGoToSettings }: HomeScreenProps) {
   return (
     <AppNavigationShell title="Home">
       <ScrollView
-        contentContainerStyle={styles.homeScrollContent}
+        className="flex-1"
+        contentContainerStyle={{
+          flexGrow: 1,
+          padding: 16,
+          justifyContent: 'center',
+        }}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.card}>
-          <Text style={styles.title} testID="main-home-title">
+        <View className={`gap-3 rounded-xl p-4 ${nw.card} ${nw.cardShadow}`}>
+          <Text
+            className={`text-[22px] font-semibold ${nw.textInk}`}
+            testID="main-home-title"
+          >
             Welcome to ABStrack
           </Text>
 
-          {/* Health Check Status - only render once result is available */}
           {showHealthCheck && healthCheck && (
             <View
-              style={[
-                styles.healthCheckContainer,
+              className={`my-3 rounded-lg p-3 ${
                 healthCheck.success
-                  ? styles.healthCheckContainerSuccess
-                  : styles.healthCheckContainerFailure,
-              ]}
+                  ? nw.healthSuccessPanel
+                  : nw.healthFailurePanel
+              }`}
             >
               <Text
-                style={[
-                  styles.healthCheckTitleText,
+                className={`mb-1 text-sm font-semibold ${
                   healthCheck.success
-                    ? styles.healthCheckTitleTextSuccess
-                    : styles.healthCheckTitleTextFailure,
-                ]}
+                    ? nw.healthSuccessTitle
+                    : nw.healthFailureTitle
+                }`}
               >
                 {healthCheck.success
                   ? '✓ Health Check Passed'
                   : '✗ Health Check Failed'}
               </Text>
               <Text
-                style={[
-                  styles.healthCheckBodyText,
+                className={`text-xs ${
                   healthCheck.success
-                    ? styles.healthCheckBodyTextSuccess
-                    : styles.healthCheckBodyTextFailure,
-                ]}
+                    ? nw.healthSuccessBody
+                    : nw.healthFailureBody
+                }`}
               >
                 {healthCheck.message}
               </Text>
               {healthCheck.error && (
                 <Text
-                  style={[
-                    styles.healthCheckErrorText,
+                  className={`mt-2 font-mono text-[10px] ${
                     healthCheck.success
-                      ? styles.healthCheckErrorTextSuccess
-                      : styles.healthCheckErrorTextFailure,
-                  ]}
+                      ? nw.healthSuccessBody
+                      : nw.healthFailureBody
+                  }`}
                 >
                   Error: {healthCheck.error}
                 </Text>
@@ -178,36 +179,42 @@ export function HomeScreen({ onGoToSettings }: HomeScreenProps) {
             </View>
           )}
 
-          <Text style={styles.bodyText}>You are signed in.</Text>
+          <Text className={`text-base ${nw.textMuted}`}>
+            You are signed in.
+          </Text>
           {signOutError ? (
-            <Text style={styles.errorText} accessibilityRole="alert">
+            <Text
+              className={`text-sm ${nw.textError}`}
+              accessibilityRole="alert"
+            >
               {signOutError}
             </Text>
           ) : null}
-          <View style={styles.spacer} />
+          <View className="h-2" />
 
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Go to settings"
             onPress={onGoToSettings}
-            style={styles.secondaryButton}
+            className={`min-h-[52px] items-center justify-center rounded-[10px] px-4 ${nw.btnSecondary}`}
           >
-            <Text style={styles.secondaryButtonText}>Settings</Text>
+            <Text
+              className={`text-center text-[17px] font-semibold ${nw.textPrimary}`}
+            >
+              Settings
+            </Text>
           </Pressable>
 
-          <View style={styles.spacer} />
+          <View className="h-2" />
 
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={signOutBusy ? 'Signing out...' : 'Sign out'}
             onPress={handleSignOut}
             disabled={signOutBusy}
-            style={[
-              styles.primaryButton,
-              signOutBusy ? styles.primaryButtonDisabled : null,
-            ]}
+            className={`min-h-[52px] items-center justify-center rounded-[10px] px-4 ${nw.btnPrimary} ${signOutBusy ? 'opacity-60' : ''}`}
           >
-            <Text style={styles.primaryButtonText}>
+            <Text className={`text-lg font-bold ${nw.textOnPrimary}`}>
               {signOutBusy ? 'Signing out...' : 'Sign out'}
             </Text>
           </Pressable>

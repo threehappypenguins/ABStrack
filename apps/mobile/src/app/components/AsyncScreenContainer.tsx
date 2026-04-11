@@ -1,13 +1,8 @@
 import React from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { MIN_TOUCH_TARGET_DP } from '@abstrack/ui/native';
 import { useAppTheme } from '../theme/AppThemeContext';
+import { nw } from '../theme/app-nativewind-classes';
 
 /**
  * Async UI phase for preset (and similar) screens before data is wired.
@@ -48,7 +43,7 @@ export function AsyncScreenContainer({
   if (status === 'loading') {
     return (
       <View
-        style={asyncStyles.centered}
+        className="flex-1 items-center justify-center"
         accessibilityLabel={loadingAccessibilityLabel}
         accessibilityRole="progressbar"
       >
@@ -59,15 +54,18 @@ export function AsyncScreenContainer({
 
   if (status === 'error') {
     return (
-      <View style={asyncStyles.centered} accessibilityRole="alert">
+      <View
+        className="flex-1 items-center justify-center gap-3 px-6"
+        accessibilityRole="alert"
+      >
         <Text
-          style={[asyncStyles.errorTitle, { color: colors.ink }]}
+          className={`text-center text-lg font-semibold ${nw.textInk}`}
           maxFontSizeMultiplier={2}
         >
           {errorTitle}
         </Text>
         <Text
-          style={[asyncStyles.errorBody, { color: colors.muted }]}
+          className={`text-center text-base ${nw.textMuted}`}
           maxFontSizeMultiplier={2}
         >
           {errorMessage}
@@ -77,13 +75,13 @@ export function AsyncScreenContainer({
             accessibilityRole="button"
             accessibilityLabel="Try again"
             onPress={onRetry}
-            style={({ pressed }) => [
-              asyncStyles.retryButton,
-              { backgroundColor: colors.primary },
-              pressed ? asyncStyles.retryButtonPressed : null,
-            ]}
+            className={`mt-2 items-center justify-center rounded-[10px] px-5 active:opacity-90 ${nw.btnPrimary}`}
+            style={{
+              minHeight: MIN_TOUCH_TARGET_DP,
+              minWidth: MIN_TOUCH_TARGET_DP * 3,
+            }}
           >
-            <Text style={[asyncStyles.retryLabel, { color: colors.onPrimary }]}>
+            <Text className={`text-[17px] font-semibold ${nw.textOnPrimary}`}>
               Try again
             </Text>
           </Pressable>
@@ -92,43 +90,5 @@ export function AsyncScreenContainer({
     );
   }
 
-  return <View style={asyncStyles.readyRoot}>{children}</View>;
+  return <View className="flex-1">{children}</View>;
 }
-
-const asyncStyles = StyleSheet.create({
-  readyRoot: {
-    flex: 1,
-  },
-  centered: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-    gap: 12,
-  },
-  errorTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  errorBody: {
-    fontSize: 16,
-    textAlign: 'center',
-  },
-  retryButton: {
-    marginTop: 8,
-    minHeight: MIN_TOUCH_TARGET_DP,
-    minWidth: MIN_TOUCH_TARGET_DP * 3,
-    paddingHorizontal: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 10,
-  },
-  retryButtonPressed: {
-    opacity: 0.85,
-  },
-  retryLabel: {
-    fontSize: 17,
-    fontWeight: '600',
-  },
-});
