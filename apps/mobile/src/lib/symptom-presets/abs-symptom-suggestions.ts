@@ -1,9 +1,9 @@
 /**
- * PRD §2 “Common ABS Symptom Suggestions” — used to seed preset setup pick lists and datalist
- * hints (web symptom preset management).
+ * PRD “Common ABS Symptom Suggestions” — same strings as web preset management; used for mobile
+ * quick-pick cards when adding a symptom line.
  */
 
-/** Built-in ABS symptom suggestion strings for datalist / quick-pick UIs. */
+/** Built-in ABS symptom suggestion strings for suggestion-picker UIs. */
 export const COMMON_ABS_SYMPTOM_SUGGESTIONS = [
   'Nausea',
   'Vomiting',

@@ -488,6 +488,10 @@ describe('mobile auth state sync', () => {
         getSession: jest.fn(async () => ({
           data: { session: signedInSession },
         })),
+        getUser: jest.fn(async () => ({
+          data: { user: { id: 'user-1' } },
+          error: null,
+        })),
         signOut: jest.fn(async () => ({ error: null })),
         onAuthStateChange: jest.fn(() => ({
           data: {
@@ -497,6 +501,26 @@ describe('mobile auth state sync', () => {
           },
         })),
       },
+      from: jest.fn((table: string) => {
+        if (table === 'symptom_presets') {
+          return {
+            select: jest.fn(() => ({
+              order: jest.fn(() => ({
+                order: jest.fn(() =>
+                  Promise.resolve({ data: [], error: null }),
+                ),
+              })),
+            })),
+          };
+        }
+        return {
+          select: jest.fn(() => ({
+            order: jest.fn(() => ({
+              order: jest.fn(() => Promise.resolve({ data: [], error: null })),
+            })),
+          })),
+        };
+      }),
     } as unknown as AbstrackSupabaseClient;
 
     jest.mocked(SecureStore.getItemAsync).mockResolvedValue('false');
@@ -507,7 +531,7 @@ describe('mobile auth state sync', () => {
     expect(await findByText('Welcome to ABStrack')).toBeTruthy();
 
     fireEvent.press(await findByLabelText('Symptom presets'));
-    expect(await findByTestId('symptom-presets-placeholder')).toBeTruthy();
+    expect(await findByTestId('symptom-preset-list-screen')).toBeTruthy();
 
     fireEvent.press(await findByLabelText('Health marker presets'));
     expect(
