@@ -2,6 +2,7 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import { AuthProvider, useAuth } from './auth-provider';
 
 const getSessionMock = jest.fn();
+const signOutMock = jest.fn().mockResolvedValue({ error: null });
 const onAuthStateChangeMock = jest.fn();
 const unsubscribeMock = jest.fn();
 
@@ -16,6 +17,7 @@ jest.mock('./supabase/browser-client', () => ({
   createBrowserClient: () => ({
     auth: {
       getSession: (...args: unknown[]) => getSessionMock(...args),
+      signOut: (...args: unknown[]) => signOutMock(...args),
       onAuthStateChange: (handler: typeof authStateChangeHandler) => {
         authStateChangeHandler = handler;
         return onAuthStateChangeMock(handler);
@@ -125,5 +127,28 @@ describe('AuthProvider', () => {
     unmount();
 
     expect(unsubscribeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears invalid refresh tokens via signOut and still finishes loading', async () => {
+    getSessionMock.mockResolvedValue({
+      data: { session: null },
+      error: {
+        code: 'refresh_token_not_found',
+        message: 'Invalid Refresh Token: Refresh Token Not Found',
+      },
+    });
+
+    render(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => {
+      expect(readAuthState().loading).toBe(false);
+    });
+
+    expect(signOutMock).toHaveBeenCalledTimes(1);
+    expect(readAuthState().userId).toBeNull();
   });
 });

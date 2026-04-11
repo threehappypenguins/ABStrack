@@ -14,6 +14,12 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./a11y-web": {
+      "@abstrack/source": "./src/a11y-web.ts",
+      "types": "./dist/a11y-web.d.ts",
+      "import": "./dist/a11y-web.js",
+      "default": "./dist/a11y-web.js"
+    },
     "./native": {
       "@abstrack/source": "./src/native.ts",
       "types": "./dist/native.d.ts",

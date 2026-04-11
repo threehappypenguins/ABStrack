@@ -10,6 +10,27 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+/** Avoid infinite loading if `getSession` never settles (e.g. bad refresh cookie edge cases). */
+const SESSION_BOOTSTRAP_TIMEOUT_MS = 8_000;
+
+function isRefreshTokenFailure(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+  const e = error as { code?: string; message?: string };
+  if (e.code === 'refresh_token_not_found') {
+    return true;
+  }
+  if (
+    typeof e.message === 'string' &&
+    /refresh token/i.test(e.message) &&
+    /invalid|not found|revoked|expired/i.test(e.message)
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<AuthContextType['session']>(null);
   const [loading, setLoading] = useState(true);
@@ -21,13 +42,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Get initial session and always clear loading, even on failure.
     const initializeSession = async () => {
       try {
+        const timeout = new Promise<never>((_, reject) => {
+          setTimeout(() => {
+            reject(new Error('session_bootstrap_timeout'));
+          }, SESSION_BOOTSTRAP_TIMEOUT_MS);
+        });
+
         const {
-          data: { session },
+          data: { session: nextSession },
           error,
-        } = await supabase.auth.getSession();
+        } = await Promise.race([supabase.auth.getSession(), timeout]).catch(
+          async (raceError: unknown) => {
+            if (
+              raceError instanceof Error &&
+              raceError.message === 'session_bootstrap_timeout'
+            ) {
+              console.warn(
+                'Auth session bootstrap timed out; clearing local session',
+              );
+              await supabase.auth.signOut();
+              return { data: { session: null }, error: null };
+            }
+            throw raceError;
+          },
+        );
 
         if (error) {
           console.error('Failed to load auth session', error);
+          if (isRefreshTokenFailure(error)) {
+            await supabase.auth.signOut();
+          }
           if (mounted) {
             setSession(null);
           }
@@ -35,10 +79,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (mounted) {
-          setSession(session);
+          setSession(nextSession);
         }
       } catch (error) {
         console.error('Failed to load auth session', error);
+        if (isRefreshTokenFailure(error)) {
+          await supabase.auth.signOut();
+        }
       } finally {
         if (mounted) {
           setLoading(false);

@@ -1,3 +1,5 @@
+export * from './lib/a11y/types.js';
+export * from './lib/a11y/LiveAnnouncer.js';
 export * from './lib/constants.js';
 export * from './lib/Button.js';
 export * from './lib/Input.js';
