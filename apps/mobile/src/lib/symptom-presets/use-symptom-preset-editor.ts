@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert } from 'react-native';
 import type {
   PresetSymptomRow,
@@ -33,10 +33,14 @@ function computeNextSortOrder(lines: PresetSymptomRow[]): number {
  * Loads and mutates one symptom preset (header + lines): rename, add lines, reorder,
  * update response types and prompts, remove lines. Consumed by `SymptomPresetEditorScreen`.
  *
+ * After each `await`, handlers consult an `isMountedRef` (same pattern as `HomeScreen` /
+ * `SettingsScreen`) so state updates are skipped once the screen unmounts.
+ *
  * @param presetId - `symptom_presets.id` from navigation.
  * @returns Screen state, async handlers, and derived lock flags.
  */
 export function useSymptomPresetEditor(presetId: string) {
+  const isMountedRef = useRef(true);
   const [pageStatus, setPageStatus] =
     useState<SymptomPresetEditorPageStatus>('loading');
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -56,6 +60,9 @@ export function useSymptomPresetEditor(presetId: string) {
     async (mode: 'full' | 'quiet' = 'full') => {
       if (mode === 'quiet') {
         const linesResult = await fetchPresetSymptoms(presetId);
+        if (!isMountedRef.current) {
+          return;
+        }
         if (!linesResult.ok) {
           setPageStatus('error');
           setLoadError(linesResult.error.message);
@@ -70,6 +77,9 @@ export function useSymptomPresetEditor(presetId: string) {
         fetchSymptomPresetById(presetId),
         fetchPresetSymptoms(presetId),
       ]);
+      if (!isMountedRef.current) {
+        return;
+      }
 
       if (!presetResult.ok) {
         setPageStatus('error');
@@ -99,12 +109,18 @@ export function useSymptomPresetEditor(presetId: string) {
     try {
       await refreshAll('quiet');
     } finally {
-      setLinesSyncing(false);
+      if (isMountedRef.current) {
+        setLinesSyncing(false);
+      }
     }
   }, [refreshAll]);
 
   useEffect(() => {
+    isMountedRef.current = true;
     void refreshAll();
+    return () => {
+      isMountedRef.current = false;
+    };
   }, [refreshAll]);
 
   const handleNameBlur = async () => {
@@ -118,6 +134,9 @@ export function useSymptomPresetEditor(presetId: string) {
     }
     setPendingAction(true);
     const result = await saveSymptomPresetName(preset.id, { name: trimmed });
+    if (!isMountedRef.current) {
+      return;
+    }
     setPendingAction(false);
     if (!result.ok) {
       announce(result.error.message);
@@ -144,6 +163,9 @@ export function useSymptomPresetEditor(presetId: string) {
         symptom_name: trimmed,
         response_type: newResponseType,
       });
+      if (!isMountedRef.current) {
+        return;
+      }
       if (!result.ok) {
         announce(result.error.message);
         return;
@@ -151,9 +173,14 @@ export function useSymptomPresetEditor(presetId: string) {
       setNewSymptomName('');
       setNewResponseType('yes_no');
       await refreshQuiet();
+      if (!isMountedRef.current) {
+        return;
+      }
       announce('Symptom added to preset.');
     } finally {
-      setAdding(false);
+      if (isMountedRef.current) {
+        setAdding(false);
+      }
     }
   };
 
@@ -166,6 +193,9 @@ export function useSymptomPresetEditor(presetId: string) {
     }
     setPendingAction(true);
     const result = await savePresetSymptom(line.id, { response_type: next });
+    if (!isMountedRef.current) {
+      return;
+    }
     setPendingAction(false);
     if (!result.ok) {
       announce(result.error.message);
@@ -186,6 +216,9 @@ export function useSymptomPresetEditor(presetId: string) {
     }
     setPendingAction(true);
     const result = await savePresetSymptom(line.id, { symptom_name: trimmed });
+    if (!isMountedRef.current) {
+      return;
+    }
     setPendingAction(false);
     if (!result.ok) {
       announce(result.error.message);
@@ -209,6 +242,9 @@ export function useSymptomPresetEditor(presetId: string) {
     const result = await savePresetSymptom(line.id, {
       prompt_instruction: nextVal,
     });
+    if (!isMountedRef.current) {
+      return;
+    }
     setPendingAction(false);
     if (!result.ok) {
       announce(result.error.message);
@@ -229,6 +265,9 @@ export function useSymptomPresetEditor(presetId: string) {
     orderedIds.splice(nextIndex, 0, moved);
     setPendingAction(true);
     const result = await savePresetSymptomOrder(presetId, orderedIds);
+    if (!isMountedRef.current) {
+      return;
+    }
     setPendingAction(false);
     if (!result.ok) {
       announce(result.error.message);
@@ -236,6 +275,9 @@ export function useSymptomPresetEditor(presetId: string) {
       return;
     }
     await refreshQuiet();
+    if (!isMountedRef.current) {
+      return;
+    }
     announce('Symptom order updated.');
   };
 
@@ -252,12 +294,18 @@ export function useSymptomPresetEditor(presetId: string) {
             void (async () => {
               setPendingAction(true);
               const result = await removePresetSymptom(line.id);
+              if (!isMountedRef.current) {
+                return;
+              }
               setPendingAction(false);
               if (!result.ok) {
                 announce(result.error.message);
                 return;
               }
               await refreshQuiet();
+              if (!isMountedRef.current) {
+                return;
+              }
               announce('Symptom removed from preset.');
             })();
           },

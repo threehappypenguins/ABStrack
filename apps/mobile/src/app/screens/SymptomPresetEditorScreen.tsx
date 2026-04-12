@@ -10,9 +10,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
+import { ALL_ABS_SYMPTOM_SUGGESTIONS } from '@abstrack/types';
 import { announce } from '@abstrack/ui/native';
 import { COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
-import { ALL_ABS_SYMPTOM_SUGGESTIONS } from '../../lib/symptom-presets/abs-symptom-suggestions';
 import { useSymptomPresetEditor } from '../../lib/symptom-presets/use-symptom-preset-editor';
 import { AsyncScreenContainer } from '../components/AsyncScreenContainer';
 import { SymptomLineCard } from '../components/symptom-presets/SymptomLineCard';

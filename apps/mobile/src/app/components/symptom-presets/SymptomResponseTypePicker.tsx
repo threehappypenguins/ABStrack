@@ -63,6 +63,8 @@ export function SymptomResponseTypePicker({
                 name="checkmark-circle"
                 size={22}
                 color={colors.primary}
+                accessibilityElementsHidden
+                importantForAccessibility="no"
               />
             ) : null}
           </Pressable>

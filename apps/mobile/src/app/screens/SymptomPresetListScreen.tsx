@@ -16,6 +16,9 @@ import type { SymptomPresetsStackParamList } from '../navigation/types';
 import { useAppTheme } from '../theme/AppThemeContext';
 import { nw } from '../theme/app-nativewind-classes';
 
+/** Token for focus-scoped list loads; `useFocusEffect` cleanup sets `cancelled`. */
+type FocusLoadCancel = { cancelled: boolean };
+
 type ListNav = NativeStackNavigationProp<
   SymptomPresetsStackParamList,
   'SymptomPresetList'
@@ -35,10 +38,15 @@ export function SymptomPresetListScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [rows, setRows] = useState<SymptomPresetRow[]>([]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (focusCancel?: FocusLoadCancel) => {
+    const stale = () => focusCancel?.cancelled === true;
+
     setStatus('loading');
     setErrorMessage(null);
     const authResult = await getCurrentUserId();
+    if (stale()) {
+      return;
+    }
     if (!authResult.ok) {
       setErrorMessage(authResult.error.message);
       setStatus('error');
@@ -50,6 +58,9 @@ export function SymptomPresetListScreen() {
       return;
     }
     const result = await fetchSymptomPresets();
+    if (stale()) {
+      return;
+    }
     if (!result.ok) {
       setErrorMessage(result.error.message);
       setStatus('error');
@@ -61,7 +72,11 @@ export function SymptomPresetListScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      void load();
+      const focusCancel: FocusLoadCancel = { cancelled: false };
+      void load(focusCancel);
+      return () => {
+        focusCancel.cancelled = true;
+      };
     }, [load]),
   );
 

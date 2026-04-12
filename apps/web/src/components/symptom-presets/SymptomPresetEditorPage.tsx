@@ -8,7 +8,10 @@ import type {
   SymptomPresetRow,
   SymptomResponseType,
 } from '@abstrack/types';
-import { SYMPTOM_RESPONSE_TYPES } from '@abstrack/types';
+import {
+  ALL_ABS_SYMPTOM_SUGGESTIONS,
+  SYMPTOM_RESPONSE_TYPES,
+} from '@abstrack/types';
 import {
   createPresetSymptom,
   deletePresetSymptom,
@@ -22,7 +25,6 @@ import {
 import { useAnnounce } from '@abstrack/ui/a11y-web';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
 import { useAuth } from '@/lib/auth-provider';
-import { ALL_ABS_SYMPTOM_SUGGESTIONS } from '@/lib/symptom-presets/abs-symptom-suggestions';
 import { getSymptomResponseTypeLabel } from '@/lib/symptom-presets/response-type-labels';
 import { ConfirmDialog } from './ConfirmDialog';
 
