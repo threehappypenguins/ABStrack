@@ -1,6 +1,6 @@
 # User story: Episode logging vs standalone vitals (symptom + health marker presets)
 
-**Status:** Draft (product intent; schedule on [ROADMAP.md](../ROADMAP.md) — **Week 5:** migrations (`health_marker_preset_id` + episode templates table), template settings UI, **I’m having an episode** + template picker; **Week 6:** full symptom + marker prompt flow, standalone vitals, food diary, wellness)  
+**Status:** Draft (product intent; schedule on [ROADMAP.md](../ROADMAP.md) — **Week 5:** migrations (`health_marker_preset_id` + episode templates table), template settings UI, **I'm having an episode** + template picker; **Week 6:** full symptom + marker prompt flow, standalone vitals, food diary, wellness)  
 **Related PRD:** [PRD.md](../PRD.md) — §3 Health Marker Presets, §4 Episode Logging, §5 General Wellness Logging
 
 This document expands the **user-facing flows** for:
@@ -14,7 +14,7 @@ The PRD states the **order** of prompts (symptoms first, then health markers). T
 
 ## Accessibility intent: one clear choice, then a linear flow
 
-Episode templates exist so that **configuration complexity** (symptom list + health marker list + how they pair) lives in **settings**, not at the moment someone taps **“I’m having an episode.”**
+Episode templates exist so that **configuration complexity** (symptom list + health marker list + how they pair) lives in **settings**, not at the moment someone taps **“I'm having an episode.”**
 
 At episode start, the experience is: **pick what kind of episode this is** using **one** large, high-contrast choice per row (e.g. **“ABS Episode”**, **“CVS Episode”**) — each label is an **episode template** that already points at the right symptom preset **and** health marker preset. After that single decision, the app runs **one linear prompt flow** (symptoms in order, then markers in order). There is **no** separate “pick symptom preset” and “pick health marker preset” step during an episode; pairing is **only** done ahead of time when editing templates in settings.
 
@@ -46,7 +46,7 @@ Naming a symptom preset and a health marker preset the same string does **not** 
 
 ### When Eric is having an episode
 
-1. Eric taps **“I’m having an episode”** (large target, high contrast).
+1. Eric taps **“I'm having an episode”** (large target, high contrast).
 2. Eric chooses **one episode template** — e.g. **“ABS Episode”** or **“CVS Episode”** — **one choice**, not a wizard of separate preset pickers.
 3. The app runs **all symptom prompts** for that template in order, then **all health marker prompts** in order, then extras / episode type / notes per [PRD](../PRD.md).
 
@@ -65,7 +65,7 @@ Naming a symptom preset and a health marker preset the same string does **not** 
 
 ### When Eric feels fine but wants numbers
 
-1. Eric taps something like **“Log vitals”** / **“Health markers”** from home (**not** “I’m having an episode”).
+1. Eric taps something like **“Log vitals”** / **“Health markers”** from home (**not** “I'm having an episode”).
 2. Eric picks **one health marker preset** only.
 3. The app walks **only** those markers in preset order and saves readings **without** symptom prompts and **without** an episode template.
 

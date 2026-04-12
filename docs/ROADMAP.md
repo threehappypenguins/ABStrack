@@ -92,7 +92,7 @@
 - [ ] Prompt flow skeleton: step through symptoms one at a time, render correct input type per symptom
 - [ ] Episode data wired to Supabase: plaintext columns under RLS (no client-side field encryption)
 
-**Why this week:** The first half wraps up auth (config + server-mediated MFA verification). The second half lays episode logging foundation: schema for both preset IDs **and** templates, settings to define templates, then **I’m having an episode** → template picker → prompt skeleton.
+**Why this week:** The first half wraps up auth (config + server-mediated MFA verification). The second half lays episode logging foundation: schema for both preset IDs **and** templates, settings to define templates, then **I'm having an episode** → template picker → prompt skeleton.
 
 ---
 
@@ -252,7 +252,7 @@ graph TD
 
 ## Notes (constraints, not scope cuts)
 
-- **Episode + health marker presets:** Week 5 ships migrations for `episodes.health_marker_preset_id`, the **episode preset templates** table, template **settings** UI, and **I’m having an episode** → template picker → insert with both preset IDs. Week 6 completes the full prompt flow (symptoms + markers), wellness, and standalone vitals—see week checkboxes and [user story](user-stories/episode-and-health-marker-flows.md).
+- **Episode + health marker presets:** Week 5 ships migrations for `episodes.health_marker_preset_id`, the **episode preset templates** table, template **settings** UI, and **I'm having an episode** → template picker → insert with both preset IDs. Week 6 completes the full prompt flow (symptoms + markers), wellness, and standalone vitals—see week checkboxes and [user story](user-stories/episode-and-health-marker-flows.md).
 - **PowerSync + RLS consistency:** Sync Rules must mirror grant logic (patient / caretaker / practitioner). Treat RLS as authoritative for API access; validate rule changes in tests ([PRD](PRD.md) Architecture). Week 7 delivers online media upload and the offline queue + PowerSync work as listed in that week’s tasks.
 - **Practitioner MFA fail-closed:** Use an Edge Function (or equivalent) that verifies MFA before returning patient data; do not rely on JWT hooks alone if they can omit claims. This is part of Week 5’s practitioner MFA work, not a downgrade path.
 - **SQLCipher / offline queue:** Week 7 pairs media and offline sync. Device-bound encryption for queued blobs matches the PRD; it is separate from server-side PHI encryption and does not involve sharing keys between users.
