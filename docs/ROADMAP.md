@@ -85,12 +85,14 @@
 
 **Second half (April 16-19, school finished):**
 
+- [ ] Database: migrations for (1) `episodes.health_marker_preset_id` (nullable FK to `health_marker_presets`, same-owner pattern as `symptom_preset_id`) and (2) **episode preset templates** table (bundle: one symptom preset + one health marker preset per template) + RLS; regenerate `database.types.ts` and clients per [SUPABASE_CLOUD_DEVELOPER.md](SUPABASE_CLOUD_DEVELOPER.md). Template rows must exist **before** the episode-start template picker can list choices ([PRD](PRD.md) §4, [user story](user-stories/episode-and-health-marker-flows.md))
+- [ ] **Settings:** UI to create/edit **episode templates** (pair a symptom preset with a health marker preset under one name, e.g. ABS vs CVS)—done when the user is well, so episode start stays one-tap
 - [ ] "I'm having an episode" button on home screen
-- [ ] Episode creation: select symptom preset, begin prompt flow
+- [ ] Episode start: user selects **one episode template** per session; insert episode with both `symptom_preset_id` and `health_marker_preset_id` resolved from that template ([user story](user-stories/episode-and-health-marker-flows.md))
 - [ ] Prompt flow skeleton: step through symptoms one at a time, render correct input type per symptom
 - [ ] Episode data wired to Supabase: plaintext columns under RLS (no client-side field encryption)
 
-**Why this week:** The first half wraps up auth (config + server-mediated MFA verification). The second half pivots to the most important feature once school pressure lifts.
+**Why this week:** The first half wraps up auth (config + server-mediated MFA verification). The second half lays episode logging foundation: schema for both preset IDs **and** templates, settings to define templates, then **I’m having an episode** → template picker → prompt skeleton.
 
 ---
 
@@ -102,7 +104,7 @@
 
 - [ ] Complete episode prompt flow:
   - All symptom input types functioning (yes/no, severity 1-5, free text)
-  - Health marker entry after symptoms
+  - Health marker entry **after** symptoms, using the **health marker preset** stored on the episode row (`health_marker_preset_id`) ([PRD](PRD.md) §4)
   - "Add additional symptoms/markers" free-text entry at end
   - Episode type selection (ABS / Other) with custom label
   - Episode notes
@@ -113,10 +115,9 @@
   - Food entry during episode prompt (at end of flow)
   - Free text note + meal tag (Breakfast/Lunch/Dinner/Snack/Other) + timestamp
   - Stored as plaintext in PostgreSQL under RLS (`food_diary_entries.food_note` per [PRD](PRD.md))
-- [ ] General wellness logging:
-  - "How are you feeling" mood/wellness entry with a notes field
-  - Ad-hoc symptom logging (without starting a full episode)
-  - Ad-hoc health marker capture
+- [ ] General wellness: "How are you feeling" mood/wellness entry with optional notes
+- [ ] Ad-hoc symptom logging without starting a full episode
+- [ ] **Standalone vitals:** home or wellness entry to log health markers using **one health marker preset only** (asymptomatic; no symptom preset, no episode)—separate from episode flow ([PRD](PRD.md) §5, [user story](user-stories/episode-and-health-marker-flows.md))
 
 ---
 
@@ -251,6 +252,7 @@ graph TD
 
 ## Notes (constraints, not scope cuts)
 
+- **Episode + health marker presets:** Week 5 ships migrations for `episodes.health_marker_preset_id`, the **episode preset templates** table, template **settings** UI, and **I’m having an episode** → template picker → insert with both preset IDs. Week 6 completes the full prompt flow (symptoms + markers), wellness, and standalone vitals—see week checkboxes and [user story](user-stories/episode-and-health-marker-flows.md).
 - **PowerSync + RLS consistency:** Sync Rules must mirror grant logic (patient / caretaker / practitioner). Treat RLS as authoritative for API access; validate rule changes in tests ([PRD](PRD.md) Architecture). Week 7 delivers online media upload and the offline queue + PowerSync work as listed in that week’s tasks.
 - **Practitioner MFA fail-closed:** Use an Edge Function (or equivalent) that verifies MFA before returning patient data; do not rely on JWT hooks alone if they can omit claims. This is part of Week 5’s practitioner MFA work, not a downgrade path.
 - **SQLCipher / offline queue:** Week 7 pairs media and offline sync. Device-bound encryption for queued blobs matches the PRD; it is separate from server-side PHI encryption and does not involve sharing keys between users.

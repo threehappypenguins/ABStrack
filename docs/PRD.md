@@ -1,9 +1,9 @@
 # ABStrack — Product Requirements Document
 
-**Version:** 1.1  
+**Version:** 1.2  
 **Author:** Sarah (NSCC SPRINT Scholar)  
 **Status:** Draft  
-**Last Updated:** March 2026
+**Last Updated:** April 2026
 
 ---
 
@@ -21,6 +21,7 @@
    - [Symptom Presets](#2-symptom-presets)
    - [Health Marker Presets](#3-health-marker-presets)
    - [Episode Logging](#4-episode-logging)
+   - [Episode & vitals flows (detailed user story)](user-stories/episode-and-health-marker-flows.md)
    - [General Wellness Logging](#5-general-wellness-logging)
    - [Food Diary](#6-food-diary)
    - [Caretaker Account](#7-caretaker-account)
@@ -417,6 +418,10 @@ Health marker presets allow the user to pre-configure the health measurements th
 - BACtrac Bluetooth API integration
 - Dexcom G7 CGM API integration
 
+#### Independence from episodes
+
+Health marker presets are **first-class** configuration: the user may maintain **multiple** named presets, reuse the same preset in different contexts, and use a preset **without** starting an episode (see [General Wellness Logging](#5-general-wellness-logging) and the [Episode & vitals flows](user-stories/episode-and-health-marker-flows.md) user story). During an episode, the app must still resolve **which** health marker preset applies when more than one exists—see **Episode Logging** below.
+
 ---
 
 ### 4. Episode Logging
@@ -429,13 +434,14 @@ An "episode" or "flare" is a discrete event where the user experiences ABS-relat
 
 - A prominent "I'm having an episode" button is available on the home screen.
 - The UI during an episode must be designed for impaired users: large text, large touch targets, minimal cognitive load, high contrast.
-- The user selects which symptom preset to use.
+- The user selects which **symptom preset** to use **and** which **health marker preset** to use for the post-symptom marker prompts. The product must **not** infer the health marker preset when the user has more than one—selection is explicit. **At episode start,** that explicit choice is **one episode template** (e.g. “ABS Episode”, “CVS Episode”) that references **both** presets; the user does **not** pick symptom and health marker presets separately during an episode. Pairing is configured in settings (when the user is well) by defining templates. Naming a symptom preset and a health marker preset the same display name does **not** link them; the **episode template** row does.
+- The episode record **must persist both** identifiers (`symptom_preset_id` and `health_marker_preset_id`) once the schema supports the latter—see implementation roadmap. This preserves auditability and correct history when reviewing past episodes.
 
 #### Episode Prompt Flow
 
 1. The app prompts through each symptom in the selected preset, one at a time.
 2. For video/photo symptoms, the camera is launched inline with instructions shown on screen.
-3. After all preset symptoms, the app prompts through health marker preset items.
+3. After all preset symptoms, the app prompts through the **selected** health marker preset’s items (same preset as recorded on the episode row once `health_marker_preset_id` exists in the schema).
 4. At the end of the preset prompts, the user is offered the option to **add additional symptoms or health markers** not in their preset (free text entry).
 5. The user can flag the episode type:
    - **ABS** (manually, or automatically suggested if BAC reading is above 0.00)
@@ -457,7 +463,7 @@ An "episode" or "flare" is a discrete event where the user experiences ABS-relat
 When not in an active episode, the user can:
 
 - Log a **"How are you feeling"** entry with a mood/wellness rating and optional notes.
-- Capture health markers at any time using their preset.
+- Capture health markers at any time using **a health marker preset only** (asymptomatic vitals)—no symptom preset and no episode template required; see [Episode & vitals flows](user-stories/episode-and-health-marker-flows.md).
 - Add ad-hoc symptoms without starting a full episode.
 
 ---
