@@ -152,9 +152,9 @@ If you copied the full `.env.example` into `apps/mobile/.env`, that file also co
 2. Remove or comment out variables you do not use yet; **uncomment and set** at minimum:
    - **Next apps:** `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (or legacy `NEXT_PUBLIC_SUPABASE_ANON_KEY` if you have not migrated).
    - **Mobile:** only the **`EXPO_PUBLIC_*`** pair above (after trimming any copied `NEXT_PUBLIC_*` lines — see previous subsection).
-3. Optional server-only **`SUPABASE_SECRET_KEY`** (`sb_secret_...`) belongs only in **server** contexts (e.g. Next Route Handlers), never in `EXPO_PUBLIC_*` or client bundles. `@abstrack/supabase/admin` does not use legacy JWT `service_role` env vars.
+3. Optional server-only **`SUPABASE_SECRET_KEY`** (`sb_secret_...`) belongs only in **server** contexts (e.g. Next Route Handlers), never in `EXPO_PUBLIC_*` or client bundles. `@abstrack/supabase/admin` does not use legacy JWT `service_role` env vars. In the [Supabase dashboard](https://supabase.com/dashboard), the secret key is listed under **Settings → API Keys** (secret key, not publishable).
 
-Get URLs and keys from the [Supabase dashboard](https://supabase.com/dashboard): **Project Settings → API** / **API Keys**, or **Integrations → Data API** for the API URL. For Email/password auth (PRD), enable **Authentication → Providers → Email**.
+Get URLs and publishable keys from the [Supabase dashboard](https://supabase.com/dashboard): **Settings → API Keys**, or **Integrations → Data API** for the API URL. For Email/password auth (PRD), enable **Authentication → Providers → Email**.
 
 ### Sanity check
 

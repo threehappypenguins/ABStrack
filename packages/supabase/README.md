@@ -8,11 +8,11 @@ Use [Supabase hosted API keys](https://supabase.com/docs/guides/api/api-keys) as
 
 ### What to copy from the dashboard
 
-| Env variable                                                                    | Dashboard source                                                                                           | Value shape                                            |
-| ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| `NEXT_PUBLIC_SUPABASE_URL` (Next) / `EXPO_PUBLIC_SUPABASE_URL` (Expo)           | **Project Settings → API** (“Project URL”), **Connect** dialog, or **Integrations → Data API** (“API Url”) | `https://<project-ref>.supabase.co` (no trailing path) |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` / `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | **Project Settings → API Keys** → publishable key                                                          | `sb_publishable_...`                                   |
-| `SUPABASE_SECRET_KEY`                                                           | **Project Settings → API Keys** → secret key (server-only)                                                 | `sb_secret_...`                                        |
+| Env variable                                                                    | Dashboard source                                                                                   | Value shape                                            |
+| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `NEXT_PUBLIC_SUPABASE_URL` (Next) / `EXPO_PUBLIC_SUPABASE_URL` (Expo)           | **Settings → API** (“Project URL”), **Connect** dialog, or **Integrations → Data API** (“API Url”) | `https://<project-ref>.supabase.co` (no trailing path) |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` / `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | **Settings → API Keys** → publishable key                                                          | `sb_publishable_...`                                   |
+| `SUPABASE_SECRET_KEY`                                                           | **Settings → API Keys** → secret key (server-only)                                                 | `sb_secret_...`                                        |
 
 Pass **URL + publishable key** (or legacy anon) into browser, SSR, and mobile clients. Use **`SUPABASE_SECRET_KEY`** (`sb_secret_...`) only in trusted server code — import **`@abstrack/supabase/admin`**, never the main entry, from route handlers or scripts. **`@abstrack/supabase/admin` does not read legacy JWT `service_role` keys.**
 

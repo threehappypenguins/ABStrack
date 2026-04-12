@@ -85,7 +85,19 @@
   ],
   "targetDefaults": {
     "test": {
-      "dependsOn": ["^build"]
+      "dependsOn": ["^build"],
+      "inputs": [
+        "default",
+        "^production",
+        { "env": "SUPABASE_SECRET_KEY" },
+        { "env": "NEXT_PUBLIC_SUPABASE_URL" },
+        { "env": "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY" },
+        { "env": "NEXT_PUBLIC_SUPABASE_ANON_KEY" },
+        { "env": "EXPO_PUBLIC_SUPABASE_URL" },
+        { "env": "EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY" },
+        { "env": "EXPO_PUBLIC_SUPABASE_ANON_KEY" },
+        { "env": "SUPABASE_URL" }
+      ]
     }
   },
   "generators": {

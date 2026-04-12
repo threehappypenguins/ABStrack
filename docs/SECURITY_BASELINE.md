@@ -51,6 +51,7 @@ This document summarizes the repository security posture, points to implementati
   - [PRD: Security — Authorized access](PRD.md#authorized-access-practitioners-and-caretakers-no-dek-sharing) + explicit RLS requirements table.
   - [PRD: Security controls summary](PRD.md#security-controls-summary-technical-safeguards) and [technical safeguard baseline](PRD.md#technical-safeguard-baseline-hipaa-164312oriented).
 - Status: Implemented.
+- Automated checks: Vitest integration suite [`packages/supabase/src/preset-flows.integration.spec.ts`](../packages/supabase/src/preset-flows.integration.spec.ts) validates owner vs other-user access for **symptom** and **health marker** presets against Supabase Cloud when `SUPABASE_SECRET_KEY` is configured (see [SUPABASE_CLOUD_DEVELOPER.md — Preset RLS integration tests](SUPABASE_CLOUD_DEVELOPER.md#preset-rls-integration-tests)). It does not exercise **caretaker** or **practitioner** grant paths (those require grant fixtures and are a coverage gap until covered elsewhere).
 
 ### 3) Grant tables: authorized sharing model
 

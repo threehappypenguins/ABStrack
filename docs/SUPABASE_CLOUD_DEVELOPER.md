@@ -124,6 +124,33 @@ pnpm exec nx run supabase:build
 
 For the whole workspace (closer to CI), see [DEV_SETUP.md §5](DEV_SETUP.md#5-verify-the-workspace).
 
+### Preset RLS integration tests
+
+[`packages/supabase/src/preset-flows.integration.spec.ts`](../packages/supabase/src/preset-flows.integration.spec.ts) exercises **symptom** and **health marker** preset CRUD, reorder RPCs, and cross-user denial against your **Supabase Cloud** project (same env model as the apps: publishable URL + key for user clients, secret key only for provisioning disposable test users). It **skips** when `SUPABASE_SECRET_KEY` is unset or public URL/key are missing, so default CI and local runs without secrets stay green.
+
+**Local (linked cloud):** Vitest runs in Node and **does not** load `apps/web/.env.local`, `apps/practitioner/.env.local`, `apps/mobile/.env`, or a `packages/supabase/.env` file. Those files are for each app’s bundler; the test process only sees variables already in the environment (or what CI injects).
+
+Put the same values you use in development into your shell, then run the tests—for example from the repo root. The secret key value comes from the Supabase UI under **Settings → API Keys** (secret key row; server-only).
+
+```bash
+export SUPABASE_SECRET_KEY='sb_secret_...'
+export NEXT_PUBLIC_SUPABASE_URL='https://YOUR_PROJECT_REF.supabase.co'
+export NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY='sb_publishable_...'
+pnpm exec nx test @abstrack/supabase
+```
+
+(You can paste the three lines into a **gitignored** file such as a personal `~/abstrack-test.env` and run `set -a && source ~/abstrack-test.env && set +a` before the command if you prefer not to type them each time.)
+
+`.env.example` documents `SUPABASE_SECRET_KEY` for server-only use; there is **no** requirement to create a dedicated `.env` inside `packages/supabase/`.
+
+**How to tell it ran:** In the Vitest output, `preset-flows.integration.spec.ts` should show **passed** tests (not “skipped”). If the suite is **skipped**, the integration env was incomplete—`ABSTRACK_PRESET_INTEGRATION_LOG=1` on the same command prints a short reason. The suite **creates two Auth users and deletes them in `afterAll`**, so they usually disappear in seconds; refreshing **Authentication → Users** during the run will often show **nothing** because deletion already ran. **Do not** rely on the dashboard alone—use the terminal output and the `console.info` lines that list the disposable user emails.
+
+**Nx cache:** `nx test` results are cached. If you once ran without `SUPABASE_SECRET_KEY` (integration skipped), a later run **with** the secret could still replay that cached “skipped” result until the cache key changes. The workspace `nx.json` includes Supabase-related env vars in the **test** task hash so skip vs run is distinguished. If you still see a stale result, run **`pnpm exec nx reset`** or **`NX_SKIP_NX_CACHE=true pnpm exec nx test @abstrack/supabase`** once.
+
+**CI:** add repository secret **`SUPABASE_SECRET_KEY`** with the same secret key string shown in the Supabase UI under **Settings → API Keys** (**secret** / legacy **service_role** — server-only, never client bundles). [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) passes it **only** to the **Test @abstrack/supabase** step (`env: SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}`), not to the whole job, so other steps and actions do not see it. Integration tests run when the secret is present. Fork PRs do not receive secrets, so those jobs skip integration and still pass.
+
+**Security note:** the suite confirms **plaintext PHI under RLS** (values readable with the secret client match what the patient wrote); it does **not** add encryption. It does **not** cover caretaker or practitioner grant paths (those need grant rows and role fixtures).
+
 ---
 
 ## PR check (Supabase in Docker on GitHub runners only)

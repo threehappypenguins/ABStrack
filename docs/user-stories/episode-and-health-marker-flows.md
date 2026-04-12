@@ -24,7 +24,7 @@ At episode start, the experience is: **pick what kind of episode this is** using
 
 **Eric** lives with **ABS** and also has **an unknown vomiting condition**. He can feel the difference between:
 
-- An **ABS-related** flare (where BAC and ABS-specific markers matter to his workflow), and  
+- An **ABS-related** flare (where BAC and ABS-specific markers matter to his workflow), and
 - A **CVS-like** bout — vertigo, nausea, vomiting **without** it being an ABS episode for him.
 
 So Eric needs **more than one named episode type** at start — not more complexity on one screen. He should see a **short list of big buttons** (or an equally accessible control), e.g. **“ABS Episode”** and **“CVS Episode”**, each backed by its own episode template (different symptom lines, different marker lines, or both). One tap → into the combined flow.
@@ -39,7 +39,7 @@ Eric also wants to log glucose or other markers on a **good day** without starti
 
 1. Eric (or a caretaker) builds **symptom presets** and **health marker presets** as separate lists — the data model keeps those concerns separate.
 2. Eric creates **episode templates** that **pair** one symptom preset with one health marker preset under a **single name** he will recognize when impaired:
-   - e.g. **“ABS Episode”** → symptom list A + marker list A  
+   - e.g. **“ABS Episode”** → symptom list A + marker list A
    - e.g. **“CVS Episode”** → symptom list B + marker list B (vertigo / nausea / vomiting focus, without implying ABS-specific markers he does not need for that path)
 
 Naming a symptom preset and a health marker preset the same string does **not** link them in the database; the **episode template** row is what ties them together.
@@ -78,13 +78,13 @@ Naming a symptom preset and a health marker preset the same string does **not** 
 
 ## Design principles (summary)
 
-| Principle | Detail |
-|-----------|--------|
-| **Minimal choices when impaired** | Episode start favors **one template choice** (or a very small list of named templates), not multiple preset pickers. |
+| Principle                              | Detail                                                                                                                                               |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Minimal choices when impaired**      | Episode start favors **one template choice** (or a very small list of named templates), not multiple preset pickers.                                 |
 | **Independent preset lists in the DB** | Symptom presets and health marker presets remain separate editable lists; **templates** are how we pair them for logging without cognitive overload. |
-| **Explicit pairing** | The app must not guess; the **episode template** resolves which marker list goes with which symptom list. |
-| **Persist both IDs on the episode** | For auditability, the episode row should store both `symptom_preset_id` and `health_marker_preset_id` once the schema supports it. |
-| **Standalone vitals** | Separate entry point; health marker preset only. |
+| **Explicit pairing**                   | The app must not guess; the **episode template** resolves which marker list goes with which symptom list.                                            |
+| **Persist both IDs on the episode**    | For auditability, the episode row should store both `symptom_preset_id` and `health_marker_preset_id` once the schema supports it.                   |
+| **Standalone vitals**                  | Separate entry point; health marker preset only.                                                                                                     |
 
 ---
 
