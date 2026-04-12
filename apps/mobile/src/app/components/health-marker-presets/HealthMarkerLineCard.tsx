@@ -4,7 +4,6 @@ import type {
   PresetHealthMarkerKind,
   PresetHealthMarkerRow,
 } from '@abstrack/types';
-import { announce } from '@abstrack/ui/native';
 import { COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
 import { useAppTheme } from '../../theme/AppThemeContext';
 import { nw } from '../../theme/app-nativewind-classes';
@@ -101,16 +100,7 @@ export function HealthMarkerLineCard({
               editable={!disabled}
               onChangeText={setNameDraft}
               onBlur={() => {
-                const trimmed = nameDraft.trim();
-                if (!trimmed) {
-                  setNameDraft(line.custom_name ?? '');
-                  announce('Name cannot be empty. Restored previous value.');
-                  return;
-                }
-                if (trimmed !== nameDraft) {
-                  setNameDraft(trimmed);
-                }
-                onCustomFieldsCommit(line, trimmed, unitDraft);
+                void onCustomFieldsCommit(line, nameDraft, unitDraft);
               }}
               placeholder="e.g. Ketones"
               placeholderTextColor={colors.inputPlaceholder}
@@ -132,16 +122,7 @@ export function HealthMarkerLineCard({
               editable={!disabled}
               onChangeText={setUnitDraft}
               onBlur={() => {
-                const trimmed = unitDraft.trim();
-                if (!trimmed) {
-                  setUnitDraft(line.custom_unit ?? '');
-                  announce('Unit cannot be empty. Restored previous value.');
-                  return;
-                }
-                if (trimmed !== unitDraft) {
-                  setUnitDraft(trimmed);
-                }
-                onCustomFieldsCommit(line, nameDraft, trimmed);
+                void onCustomFieldsCommit(line, nameDraft, unitDraft);
               }}
               placeholder="e.g. mmol/L"
               placeholderTextColor={colors.inputPlaceholder}
