@@ -49,7 +49,6 @@ export function SymptomPresetListScreen() {
       setStatus('error');
       return;
     }
-    const userId = authResult.data;
     const result = await fetchSymptomPresets();
     if (!result.ok) {
       setErrorMessage(result.error.message);

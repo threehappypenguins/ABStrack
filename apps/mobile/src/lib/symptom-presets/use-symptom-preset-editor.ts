@@ -125,6 +125,7 @@ export function useSymptomPresetEditor(presetId: string) {
       return;
     }
     setPreset(result.data);
+    setNameDraft(result.data.name);
     announce('Preset name saved.');
   };
 
