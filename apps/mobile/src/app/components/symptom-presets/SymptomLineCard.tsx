@@ -82,7 +82,10 @@ export function SymptomLineCard({
               announce('Symptom name cannot be empty. Restored previous name.');
               return;
             }
-            onNameCommit(nameDraft);
+            if (trimmed !== nameDraft) {
+              setNameDraft(trimmed);
+            }
+            onNameCommit(trimmed);
           }}
           className={`rounded-[10px] px-3 py-3 text-[17px] ${nw.input}`}
           style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
@@ -121,7 +124,11 @@ export function SymptomLineCard({
             editable={!disabled}
             onChangeText={setPromptDraft}
             onBlur={() => {
-              onPromptCommit(promptDraft);
+              const trimmed = promptDraft.trim();
+              if (trimmed !== promptDraft) {
+                setPromptDraft(trimmed);
+              }
+              onPromptCommit(trimmed === '' ? null : trimmed);
             }}
             placeholder='e.g. "Say: The early bird catches the worm"'
             placeholderTextColor={colors.inputPlaceholder}
