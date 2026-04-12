@@ -19,23 +19,34 @@ import {
   listPresetSymptomsForPreset,
   listSymptomPresets,
   reorderPresetSymptoms,
+  toPresetDataError,
   updatePresetSymptom,
   updateSymptomPreset,
 } from '@abstrack/supabase';
 import { getMobileSupabaseClient } from '../supabase-wiring';
 
 /**
- * @returns Current user id when signed in, or `null`.
+ * Resolves the signed-in user id, or distinguishes “no session” from {@link getAuthUser} failures
+ * (network, Supabase outage, etc.) so UIs can show an accurate message and offer retry.
+ *
+ * @returns `{ ok: true, data: id }` when signed in; `{ ok: true, data: null }` when signed out with
+ * no auth error; `{ ok: false, error }` when the auth lookup failed.
  */
-export async function getCurrentUserId(): Promise<string | null> {
-  const {
-    data: { user },
-    error,
-  } = await getAuthUser(getMobileSupabaseClient());
-  if (error || !user) {
-    return null;
+export async function getCurrentUserId(): Promise<
+  PresetDataResult<string | null>
+> {
+  try {
+    const {
+      data: { user },
+      error,
+    } = await getAuthUser(getMobileSupabaseClient());
+    if (error) {
+      return { ok: false, error: toPresetDataError(error) };
+    }
+    return { ok: true, data: user?.id ?? null };
+  } catch (caught) {
+    return { ok: false, error: toPresetDataError(caught) };
   }
-  return user.id;
 }
 
 /**

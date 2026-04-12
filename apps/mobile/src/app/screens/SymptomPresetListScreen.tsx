@@ -38,12 +38,18 @@ export function SymptomPresetListScreen() {
   const load = useCallback(async () => {
     setStatus('loading');
     setErrorMessage(null);
-    const userId = await getCurrentUserId();
-    if (!userId) {
+    const authResult = await getCurrentUserId();
+    if (!authResult.ok) {
+      setErrorMessage(authResult.error.message);
+      setStatus('error');
+      return;
+    }
+    if (authResult.data === null) {
       setErrorMessage('You need to be signed in to manage symptom presets.');
       setStatus('error');
       return;
     }
+    const userId = authResult.data;
     const result = await fetchSymptomPresets();
     if (!result.ok) {
       setErrorMessage(result.error.message);

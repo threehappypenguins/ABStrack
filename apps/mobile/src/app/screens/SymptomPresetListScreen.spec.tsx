@@ -3,6 +3,7 @@ import { Alert } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { DefaultTheme } from '@react-navigation/native';
 import { useNavigation } from '@react-navigation/native';
+import { PresetDataError } from '@abstrack/supabase';
 import type { SymptomPresetRow } from '@abstrack/types';
 
 import {
@@ -73,7 +74,9 @@ describe('SymptomPresetListScreen', () => {
       statusBarStyle: 'dark',
     });
 
-    jest.mocked(getCurrentUserId).mockResolvedValue('user-1');
+    jest
+      .mocked(getCurrentUserId)
+      .mockResolvedValue({ ok: true, data: 'user-1' });
     jest.mocked(fetchSymptomPresets).mockResolvedValue({ ok: true, data: [] });
     jest
       .mocked(removeSymptomPreset)
@@ -99,14 +102,36 @@ describe('SymptomPresetListScreen', () => {
     expect(fetchSymptomPresets).toHaveBeenCalled();
   });
 
-  test('shows signed-out error when getCurrentUserId returns null', async () => {
-    jest.mocked(getCurrentUserId).mockResolvedValue(null);
+  test('shows signed-out error when getCurrentUserId returns no user', async () => {
+    jest.mocked(getCurrentUserId).mockResolvedValue({ ok: true, data: null });
 
     const screen = render(<SymptomPresetListScreen />);
 
     await waitFor(() => {
       expect(
         screen.getByText('You need to be signed in to manage symptom presets.'),
+      ).toBeTruthy();
+    });
+
+    expect(fetchSymptomPresets).not.toHaveBeenCalled();
+  });
+
+  test('shows auth error message when getCurrentUserId fails', async () => {
+    jest.mocked(getCurrentUserId).mockResolvedValue({
+      ok: false,
+      error: new PresetDataError(
+        'network_error',
+        'Could not reach the server. Check your connection and try again.',
+      ),
+    });
+
+    const screen = render(<SymptomPresetListScreen />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          'Could not reach the server. Check your connection and try again.',
+        ),
       ).toBeTruthy();
     });
 

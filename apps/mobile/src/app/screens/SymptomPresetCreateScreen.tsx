@@ -36,11 +36,16 @@ export function SymptomPresetCreateScreen() {
     }
     setBusy(true);
     try {
-      const userId = await getCurrentUserId();
-      if (!userId) {
+      const authResult = await getCurrentUserId();
+      if (!authResult.ok) {
+        announce(authResult.error.message);
+        return;
+      }
+      if (authResult.data === null) {
         announce('You need to be signed in to create a preset.');
         return;
       }
+      const userId = authResult.data;
       const result = await saveNewSymptomPreset({
         user_id: userId,
         name: trimmed,
