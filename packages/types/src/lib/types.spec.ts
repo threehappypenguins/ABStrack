@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { PresetHealthMarkerRow } from './types.js';
 import {
   ACCESS_LOG_ACTOR_ROLES,
   APP_ROLES,
@@ -6,8 +7,10 @@ import {
   HEALTH_MARKER_KINDS,
   MEDIA_TYPES,
   MEAL_TAGS,
+  PRESET_HEALTH_MARKER_KIND_LABELS,
   PRESET_HEALTH_MARKER_KINDS,
   SYMPTOM_RESPONSE_TYPES,
+  describePresetHealthMarkerLine,
   isAccessLogActorRole,
   isAppRole,
   isEpisodeType,
@@ -16,6 +19,7 @@ import {
   isMediaType,
   isPresetHealthMarkerKind,
   isSymptomResponseType,
+  validatePresetHealthMarkerCustomFields,
 } from './types.js';
 
 /** Schema CHECK lists — keep in sync with 20260327120000_abstrack_core_schema.sql */
@@ -138,5 +142,52 @@ describe('type guards', () => {
   it('isAccessLogActorRole', () => {
     expect(isAccessLogActorRole('service')).toBe(true);
     expect(isAccessLogActorRole('admin')).toBe(false);
+  });
+
+  it('describePresetHealthMarkerLine', () => {
+    const base = {
+      id: 'line-1',
+      preset_id: 'preset-1',
+      sort_order: 0,
+      created_at: '2020-01-01T00:00:00.000Z',
+      updated_at: '2020-01-01T00:00:00.000Z',
+    };
+    expect(
+      describePresetHealthMarkerLine({
+        ...base,
+        marker_kind: 'bac',
+        custom_name: null,
+        custom_unit: null,
+      } as PresetHealthMarkerRow),
+    ).toBe(PRESET_HEALTH_MARKER_KIND_LABELS.bac);
+    expect(
+      describePresetHealthMarkerLine({
+        ...base,
+        marker_kind: 'custom',
+        custom_name: '  Iron ',
+        custom_unit: ' mg ',
+      } as PresetHealthMarkerRow),
+    ).toBe('Iron (mg)');
+    expect(
+      describePresetHealthMarkerLine({
+        ...base,
+        marker_kind: 'custom',
+        custom_name: null,
+        custom_unit: null,
+      } as PresetHealthMarkerRow),
+    ).toContain('Custom');
+  });
+
+  it('validatePresetHealthMarkerCustomFields', () => {
+    expect(validatePresetHealthMarkerCustomFields('bac', '', '')).toBeNull();
+    expect(validatePresetHealthMarkerCustomFields('custom', '', 'mg')).toBe(
+      'Enter a name for this custom marker.',
+    );
+    expect(validatePresetHealthMarkerCustomFields('custom', 'Iron', '')).toBe(
+      'Enter a unit (e.g. mg/dL, lb, bpm).',
+    );
+    expect(
+      validatePresetHealthMarkerCustomFields('custom', 'Iron', 'mg'),
+    ).toBeNull();
   });
 });

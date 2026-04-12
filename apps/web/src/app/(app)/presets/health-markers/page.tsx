@@ -1,15 +1,10 @@
-import { PageEmpty } from '@/components/page-states/PageEmpty';
+import { HealthMarkerPresetsListPage } from '@/components/health-marker-presets/HealthMarkerPresetsListPage';
 
 /**
- * Health marker presets landing route. CRUD and Supabase wiring are out of scope for this shell.
+ * Health marker presets list: create, open editor, delete.
  *
- * @returns Placeholder empty state.
+ * @returns List route content.
  */
 export default function HealthMarkerPresetsPage() {
-  return (
-    <PageEmpty
-      title="Health marker presets"
-      description="You have not created any health marker presets yet. When this feature is connected, you will configure the markers you track alongside episodes."
-    />
-  );
+  return <HealthMarkerPresetsListPage />;
 }
