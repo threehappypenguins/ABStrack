@@ -240,6 +240,9 @@ importers:
       '@abstrack/supabase':
         specifier: workspace:*
         version: link:../../packages/supabase
+      '@abstrack/types':
+        specifier: workspace:*
+        version: link:../../packages/types
       '@abstrack/ui':
         specifier: workspace:*
         version: link:../../packages/ui

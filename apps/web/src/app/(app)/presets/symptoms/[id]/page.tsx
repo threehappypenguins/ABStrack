@@ -1,7 +1,8 @@
 import { SymptomPresetEditorPage } from '@/components/symptom-presets/SymptomPresetEditorPage';
 
 type PageProps = {
-  params: { id: string };
+  /** Next.js 16 passes dynamic route params as a Promise (await before use). */
+  params: Promise<{ id: string }>;
 };
 
 /**
@@ -10,6 +11,7 @@ type PageProps = {
  * @param props - Next.js route params.
  * @returns Editor route content.
  */
-export default function SymptomPresetDetailPage({ params }: PageProps) {
-  return <SymptomPresetEditorPage presetId={params.id} />;
+export default async function SymptomPresetDetailPage({ params }: PageProps) {
+  const { id } = await params;
+  return <SymptomPresetEditorPage presetId={id} />;
 }

@@ -2,6 +2,13 @@
  * Param lists for authenticated mobile navigation (tabs + stack overlays).
  */
 
+/** Stack inside the Symptom presets tab: list, create, edit. */
+export type SymptomPresetsStackParamList = {
+  SymptomPresetList: undefined;
+  SymptomPresetCreate: undefined;
+  SymptomPresetEdit: { presetId: string };
+};
+
 export type MainTabParamList = {
   Home: undefined;
   SymptomPresets: undefined;

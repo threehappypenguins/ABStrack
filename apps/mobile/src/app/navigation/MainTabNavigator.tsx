@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
 import { HomeScreen } from '../screens/HomeScreen';
 import { HealthMarkerPresetsScreen } from '../screens/HealthMarkerPresetsScreen';
-import { SymptomPresetsScreen } from '../screens/SymptomPresetsScreen';
+import { SymptomPresetsNavigator } from './SymptomPresetsNavigator';
 import { useAppTheme } from '../theme/AppThemeContext';
 import type { MainStackParamList, MainTabParamList } from './types';
 
@@ -92,7 +92,7 @@ export function MainTabNavigator() {
       </Tab.Screen>
       <Tab.Screen
         name="SymptomPresets"
-        component={SymptomPresetsScreen}
+        component={SymptomPresetsNavigator}
         options={{
           tabBarLabel: 'Symptoms',
           tabBarAccessibilityLabel: 'Symptom presets',

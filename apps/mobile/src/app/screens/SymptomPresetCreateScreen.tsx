@@ -1,0 +1,120 @@
+import React, { useState } from 'react';
+import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { announce } from '@abstrack/ui/native';
+import { COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
+import {
+  getCurrentUserId,
+  saveNewSymptomPreset,
+} from '../../lib/symptom-presets/symptom-preset-service';
+import type { SymptomPresetsStackParamList } from '../navigation/types';
+import { useAppTheme } from '../theme/AppThemeContext';
+import { nw } from '../theme/app-nativewind-classes';
+
+type CreateNav = NativeStackNavigationProp<
+  SymptomPresetsStackParamList,
+  'SymptomPresetCreate'
+>;
+
+/**
+ * Creates an empty symptom preset header, then opens the editor for lines and response types.
+ *
+ * @returns Create preset screen.
+ */
+export function SymptomPresetCreateScreen() {
+  const navigation = useNavigation<CreateNav>();
+  const { colors } = useAppTheme();
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const onCreate = async () => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      announce('Enter a name for this preset.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const authResult = await getCurrentUserId();
+      if (!authResult.ok) {
+        announce(authResult.error.message);
+        return;
+      }
+      if (authResult.data === null) {
+        announce('You need to be signed in to create a preset.');
+        return;
+      }
+      const userId = authResult.data;
+      const result = await saveNewSymptomPreset({
+        user_id: userId,
+        name: trimmed,
+      });
+      if (!result.ok) {
+        announce(result.error.message);
+        return;
+      }
+      navigation.replace('SymptomPresetEdit', { presetId: result.data.id });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <ScrollView
+      className="flex-1"
+      contentContainerStyle={{
+        flexGrow: 1,
+        padding: 16,
+        paddingBottom: 24,
+      }}
+      keyboardShouldPersistTaps="handled"
+    >
+      <View className="gap-2">
+        <Text className={`text-base ${nw.textMuted}`} maxFontSizeMultiplier={2}>
+          Name your preset. You will add symptoms and response types on the next
+          screen.
+        </Text>
+        <Text
+          accessibilityRole="text"
+          className={`text-base font-semibold ${nw.textInk}`}
+          maxFontSizeMultiplier={2}
+        >
+          Preset name
+        </Text>
+        <TextInput
+          value={name}
+          onChangeText={setName}
+          editable={!busy}
+          placeholder="e.g. Morning episodes"
+          placeholderTextColor={colors.inputPlaceholder}
+          className={`rounded-[10px] px-3 py-3 text-[17px] ${nw.input}`}
+          style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+          autoCapitalize="sentences"
+          autoCorrect
+          maxFontSizeMultiplier={2}
+          accessibilityLabel="Preset name"
+        />
+      </View>
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Create preset and continue"
+        accessibilityState={{ disabled: busy }}
+        disabled={busy}
+        onPress={() => {
+          void onCreate();
+        }}
+        className={`mt-6 items-center justify-center rounded-[12px] px-4 active:opacity-90 ${nw.btnPrimary}`}
+        style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+      >
+        <Text
+          className={`text-[17px] font-semibold ${nw.textOnPrimary}`}
+          maxFontSizeMultiplier={2}
+        >
+          {busy ? 'Creating…' : 'Create and edit symptoms'}
+        </Text>
+      </Pressable>
+    </ScrollView>
+  );
+}
