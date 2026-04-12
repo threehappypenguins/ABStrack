@@ -11,7 +11,7 @@
  * `console.info` lines, not the dashboard. Optional: `ABSTRACK_PRESET_INTEGRATION_LOG=1` logs why
  * the suite skipped when env is incomplete.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './lib/database.types.js';
 import { getSupabasePublishableKey, getSupabaseUrl } from './lib/env-public.js';
@@ -66,9 +66,37 @@ if (
   );
 }
 
+/**
+ * Deletes disposable Auth users and surfaces `auth.admin.deleteUser` failures (rate limits,
+ * network, etc.) so the suite does not silently leak users.
+ */
+async function deleteDisposableAuthUsers(
+  adminClient: ReturnType<typeof getSupabaseAdminClient>,
+  users: ReadonlyArray<{ id: string; label: string; email: string }>,
+): Promise<void> {
+  const failures: string[] = [];
+  for (const { id, label, email } of users) {
+    const { error } = await adminClient.auth.admin.deleteUser(id);
+    if (error) {
+      failures.push(`${label} id=${id} (${email}): ${error.message}`);
+    }
+  }
+  if (failures.length > 0) {
+    throw new Error(
+      `[preset-flows.integration] auth.admin.deleteUser failed — disposable users may remain in Auth:\n${failures.join('\n')}`,
+    );
+  }
+  console.info(
+    '[preset-flows.integration] Deleted disposable Auth users for this run.',
+  );
+}
+
 describe.skipIf(!presetIntegrationReady)(
   'preset flows — RLS integration (Supabase Cloud)',
   () => {
+    // Default per-test timeout is 5s; Supabase Cloud + CI need more headroom (scoped to this file).
+    vi.setConfig({ hookTimeout: 120_000, testTimeout: 120_000 });
+
     const password = 'PresetIt!2345678';
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     const emailA = `preset-it-a-${suffix}@example.com`;
@@ -142,32 +170,37 @@ describe.skipIf(!presetIntegrationReady)(
     afterAll(async () => {
       await clientA?.auth.signOut();
       await clientB?.auth.signOut();
+      if (!admin) {
+        return;
+      }
+      const disposable: { id: string; label: string; email: string }[] = [];
       if (userAId) {
-        await admin.auth.admin.deleteUser(userAId);
+        disposable.push({ id: userAId, label: 'userA', email: emailA });
       }
       if (userBId) {
-        await admin.auth.admin.deleteUser(userBId);
+        disposable.push({ id: userBId, label: 'userB', email: emailB });
       }
-      console.info(
-        '[preset-flows.integration] Deleted disposable Auth users for this run.',
-      );
+      if (disposable.length > 0) {
+        await deleteDisposableAuthUsers(admin, disposable);
+      }
     }, 120_000);
 
     describe.sequential(
       'symptom preset — create, edit, delete, reorder',
       () => {
-        let presetId: string;
-        let line1Id: string;
-        let line2Id: string;
+        let presetId: string | undefined;
+        let line1Id: string | undefined;
+        let line2Id: string | undefined;
 
-        it('creates preset and two lines', async () => {
+        beforeAll(async () => {
           const createPreset = await createSymptomPreset(clientA, {
             user_id: userAId,
             name: `RLS symptom ${suffix}`,
           });
-          expect(createPreset.ok).toBe(true);
           if (!createPreset.ok) {
-            return;
+            throw new Error(
+              `createSymptomPreset: ${createPreset.error.message}`,
+            );
           }
           presetId = createPreset.data.id;
 
@@ -177,9 +210,10 @@ describe.skipIf(!presetIntegrationReady)(
             symptom_name: 'Nausea',
             response_type: 'yes_no',
           });
-          expect(line1.ok).toBe(true);
           if (!line1.ok) {
-            return;
+            throw new Error(
+              `createPresetSymptom (line 1): ${line1.error.message}`,
+            );
           }
           line1Id = line1.data.id;
 
@@ -189,20 +223,28 @@ describe.skipIf(!presetIntegrationReady)(
             symptom_name: 'Fatigue',
             response_type: 'free_text',
           });
-          expect(line2.ok).toBe(true);
           if (!line2.ok) {
-            return;
+            throw new Error(
+              `createPresetSymptom (line 2): ${line2.error.message}`,
+            );
           }
           line2Id = line2.data.id;
         });
 
+        afterAll(async () => {
+          if (presetId === undefined) {
+            return;
+          }
+          await deleteSymptomPreset(clientA, presetId);
+        });
+
         it('updates header and a line', async () => {
-          const up = await updateSymptomPreset(clientA, presetId, {
+          const up = await updateSymptomPreset(clientA, presetId!, {
             name: `RLS symptom updated ${suffix}`,
           });
           expect(up.ok).toBe(true);
 
-          const lineUp = await updatePresetSymptom(clientA, line1Id, {
+          const lineUp = await updatePresetSymptom(clientA, line1Id!, {
             symptom_name: 'Nausea (edited)',
           });
           expect(lineUp.ok).toBe(true);
@@ -212,30 +254,31 @@ describe.skipIf(!presetIntegrationReady)(
           const { data, error } = await admin
             .from('symptom_presets')
             .select('name')
-            .eq('id', presetId)
+            .eq('id', presetId!)
             .single();
           expect(error).toBeNull();
           expect(data?.name).toContain('RLS symptom updated');
         });
 
         it('reorders lines via RPC', async () => {
-          const re = await reorderPresetSymptoms(clientA, presetId, [
-            line2Id,
-            line1Id,
+          const re = await reorderPresetSymptoms(clientA, presetId!, [
+            line2Id!,
+            line1Id!,
           ]);
           expect(re.ok).toBe(true);
-          const list = await listPresetSymptomsForPreset(clientA, presetId);
-          expect(list.ok).toBe(true);
+          const list = await listPresetSymptomsForPreset(clientA, presetId!);
           if (!list.ok) {
-            return;
+            throw new Error(
+              `listPresetSymptomsForPreset: ${list.error.message}`,
+            );
           }
-          expect(list.data.map((r) => r.id)).toEqual([line2Id, line1Id]);
+          expect(list.data.map((r) => r.id)).toEqual([line2Id!, line1Id!]);
         });
 
         it('deletes one line then the preset (cascade removes remaining lines)', async () => {
-          const delLine = await deletePresetSymptom(clientA, line2Id);
+          const delLine = await deletePresetSymptom(clientA, line2Id!);
           expect(delLine.ok).toBe(true);
-          const delPreset = await deleteSymptomPreset(clientA, presetId);
+          const delPreset = await deleteSymptomPreset(clientA, presetId!);
           expect(delPreset.ok).toBe(true);
         });
       },
@@ -254,12 +297,18 @@ describe.skipIf(!presetIntegrationReady)(
           throw new Error('setup victim preset failed');
         }
         victimPresetId = created.data.id;
-        await createPresetSymptom(clientA, {
+        const victimLine = await createPresetSymptom(clientA, {
           preset_id: victimPresetId,
           sort_order: 0,
           symptom_name: 'Secret',
           response_type: 'yes_no',
         });
+        expect(victimLine.ok).toBe(true);
+        if (!victimLine.ok) {
+          throw new Error(
+            `setup victim preset line (createPresetSymptom): ${victimLine.error.message}`,
+          );
+        }
       });
 
       it('hides other user preset from select by id', async () => {
@@ -317,18 +366,19 @@ describe.skipIf(!presetIntegrationReady)(
     describe.sequential(
       'health marker preset — create, edit, delete, reorder',
       () => {
-        let hPresetId: string;
-        let hm1: string;
-        let hm2: string;
+        let hPresetId: string | undefined;
+        let hm1: string | undefined;
+        let hm2: string | undefined;
 
-        it('creates preset and two lines', async () => {
+        beforeAll(async () => {
           const createPreset = await createHealthMarkerPreset(clientA, {
             user_id: userAId,
             name: `RLS markers ${suffix}`,
           });
-          expect(createPreset.ok).toBe(true);
           if (!createPreset.ok) {
-            return;
+            throw new Error(
+              `createHealthMarkerPreset: ${createPreset.error.message}`,
+            );
           }
           hPresetId = createPreset.data.id;
 
@@ -337,9 +387,10 @@ describe.skipIf(!presetIntegrationReady)(
             sort_order: 0,
             marker_kind: 'weight',
           });
-          expect(a.ok).toBe(true);
           if (!a.ok) {
-            return;
+            throw new Error(
+              `createPresetHealthMarker (line 1): ${a.error.message}`,
+            );
           }
           hm1 = a.data.id;
 
@@ -348,20 +399,28 @@ describe.skipIf(!presetIntegrationReady)(
             sort_order: 1,
             marker_kind: 'bac',
           });
-          expect(b.ok).toBe(true);
           if (!b.ok) {
-            return;
+            throw new Error(
+              `createPresetHealthMarker (line 2): ${b.error.message}`,
+            );
           }
           hm2 = b.data.id;
         });
 
+        afterAll(async () => {
+          if (hPresetId === undefined) {
+            return;
+          }
+          await deleteHealthMarkerPreset(clientA, hPresetId);
+        });
+
         it('updates header and a line', async () => {
-          const up = await updateHealthMarkerPreset(clientA, hPresetId, {
+          const up = await updateHealthMarkerPreset(clientA, hPresetId!, {
             name: `RLS markers updated ${suffix}`,
           });
           expect(up.ok).toBe(true);
 
-          const lineUp = await updatePresetHealthMarker(clientA, hm1, {
+          const lineUp = await updatePresetHealthMarker(clientA, hm1!, {
             marker_kind: 'custom',
             custom_name: 'Steps',
             custom_unit: 'count',
@@ -373,33 +432,34 @@ describe.skipIf(!presetIntegrationReady)(
           const { data, error } = await admin
             .from('health_marker_presets')
             .select('name')
-            .eq('id', hPresetId)
+            .eq('id', hPresetId!)
             .single();
           expect(error).toBeNull();
           expect(data?.name).toContain('RLS markers updated');
         });
 
         it('reorders lines via RPC', async () => {
-          const re = await reorderPresetHealthMarkers(clientA, hPresetId, [
-            hm2,
-            hm1,
+          const re = await reorderPresetHealthMarkers(clientA, hPresetId!, [
+            hm2!,
+            hm1!,
           ]);
           expect(re.ok).toBe(true);
           const list = await listPresetHealthMarkersForPreset(
             clientA,
-            hPresetId,
+            hPresetId!,
           );
-          expect(list.ok).toBe(true);
           if (!list.ok) {
-            return;
+            throw new Error(
+              `listPresetHealthMarkersForPreset: ${list.error.message}`,
+            );
           }
-          expect(list.data.map((r) => r.id)).toEqual([hm2, hm1]);
+          expect(list.data.map((r) => r.id)).toEqual([hm2!, hm1!]);
         });
 
         it('deletes one line then the preset', async () => {
-          const delLine = await deletePresetHealthMarker(clientA, hm2);
+          const delLine = await deletePresetHealthMarker(clientA, hm2!);
           expect(delLine.ok).toBe(true);
-          const delPreset = await deleteHealthMarkerPreset(clientA, hPresetId);
+          const delPreset = await deleteHealthMarkerPreset(clientA, hPresetId!);
           expect(delPreset.ok).toBe(true);
         });
       },
@@ -418,11 +478,17 @@ describe.skipIf(!presetIntegrationReady)(
           throw new Error('setup victim HM preset failed');
         }
         victimHId = created.data.id;
-        await createPresetHealthMarker(clientA, {
+        const victimHmLine = await createPresetHealthMarker(clientA, {
           preset_id: victimHId,
           sort_order: 0,
           marker_kind: 'heart_rate',
         });
+        expect(victimHmLine.ok).toBe(true);
+        if (!victimHmLine.ok) {
+          throw new Error(
+            `setup victim HM preset line (createPresetHealthMarker): ${victimHmLine.error.message}`,
+          );
+        }
       });
 
       it('hides other user preset from select by id', async () => {
