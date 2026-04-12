@@ -17,7 +17,5 @@ export const COMMON_ABS_SYMPTOM_SUGGESTIONS = [
   'Anxiety',
 ] as const;
 
-/** Alias for pick lists (same as {@link COMMON_ABS_SYMPTOM_SUGGESTIONS}). */
-export const ALL_ABS_SYMPTOM_SUGGESTIONS: readonly string[] = [
-  ...COMMON_ABS_SYMPTOM_SUGGESTIONS,
-];
+/** Same reference as {@link COMMON_ABS_SYMPTOM_SUGGESTIONS} for pick lists / datalist. */
+export const ALL_ABS_SYMPTOM_SUGGESTIONS = COMMON_ABS_SYMPTOM_SUGGESTIONS;
