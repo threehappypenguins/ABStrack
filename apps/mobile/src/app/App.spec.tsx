@@ -534,9 +534,7 @@ describe('mobile auth state sync', () => {
     expect(await findByTestId('symptom-preset-list-screen')).toBeTruthy();
 
     fireEvent.press(await findByLabelText('Health marker presets'));
-    expect(
-      await findByTestId('health-marker-presets-placeholder'),
-    ).toBeTruthy();
+    expect(await findByTestId('health-marker-preset-list-screen')).toBeTruthy();
   });
 
   test('exposes the re-authentication toggle in settings', async () => {

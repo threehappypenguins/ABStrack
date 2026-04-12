@@ -60,6 +60,21 @@ export const PRESET_HEALTH_MARKER_KINDS = [
 export type PresetHealthMarkerKind =
   (typeof PRESET_HEALTH_MARKER_KINDS)[number];
 
+/**
+ * Short labels for {@link PresetHealthMarkerKind} values (list rows, selects, summaries).
+ */
+export const PRESET_HEALTH_MARKER_KIND_LABELS: Record<
+  PresetHealthMarkerKind,
+  string
+> = {
+  bac: 'BAC',
+  blood_glucose: 'Glucose',
+  blood_pressure: 'Blood pressure',
+  heart_rate: 'Heart rate',
+  weight: 'Weight',
+  custom: 'Custom',
+};
+
 /** Rows in `health_markers` (includes wellness-only kind). */
 export const HEALTH_MARKER_KINDS = [
   ...PRESET_HEALTH_MARKER_KINDS,
@@ -270,6 +285,51 @@ export type PresetHealthMarkerUpdate = Partial<
     'sort_order' | 'marker_kind' | 'custom_name' | 'custom_unit'
   >
 >;
+
+/**
+ * User-facing summary for one line in a health marker preset (ordered list and editor).
+ *
+ * @param line - Row from `preset_health_markers`.
+ * @returns Display string (includes custom name/unit when `marker_kind` is `custom`).
+ */
+export function describePresetHealthMarkerLine(
+  line: PresetHealthMarkerRow,
+): string {
+  if (line.marker_kind === 'custom') {
+    const name = line.custom_name?.trim() ?? '';
+    const unit = line.custom_unit?.trim() ?? '';
+    if (name && unit) {
+      return `${name} (${unit})`;
+    }
+    return `${PRESET_HEALTH_MARKER_KIND_LABELS.custom} (add name and unit)`;
+  }
+  return PRESET_HEALTH_MARKER_KIND_LABELS[line.marker_kind];
+}
+
+/**
+ * Validates custom marker name and unit when {@link PresetHealthMarkerKind} is `custom`.
+ *
+ * @param markerKind - Selected marker kind.
+ * @param customName - Draft name (trimmed inside).
+ * @param customUnit - Draft unit (trimmed inside).
+ * @returns User-facing error message, or `null` when valid / not applicable.
+ */
+export function validatePresetHealthMarkerCustomFields(
+  markerKind: PresetHealthMarkerKind,
+  customName: string,
+  customUnit: string,
+): string | null {
+  if (markerKind !== 'custom') {
+    return null;
+  }
+  if (!customName.trim()) {
+    return 'Enter a name for this custom marker.';
+  }
+  if (!customUnit.trim()) {
+    return 'Enter a unit (e.g. mg/dL, lb, bpm).';
+  }
+  return null;
+}
 
 export interface EpisodeRow {
   id: Uuid;

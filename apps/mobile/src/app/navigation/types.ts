@@ -9,6 +9,13 @@ export type SymptomPresetsStackParamList = {
   SymptomPresetEdit: { presetId: string };
 };
 
+/** Stack inside the Health marker presets tab: list, create, edit. */
+export type HealthMarkerPresetsStackParamList = {
+  HealthMarkerPresetList: undefined;
+  HealthMarkerPresetCreate: undefined;
+  HealthMarkerPresetEdit: { presetId: string };
+};
+
 export type MainTabParamList = {
   Home: undefined;
   SymptomPresets: undefined;

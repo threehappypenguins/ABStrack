@@ -6,7 +6,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
 import { HomeScreen } from '../screens/HomeScreen';
-import { HealthMarkerPresetsScreen } from '../screens/HealthMarkerPresetsScreen';
+import { HealthMarkerPresetsNavigator } from './HealthMarkerPresetsNavigator';
 import { SymptomPresetsNavigator } from './SymptomPresetsNavigator';
 import { useAppTheme } from '../theme/AppThemeContext';
 import type { MainStackParamList, MainTabParamList } from './types';
@@ -101,7 +101,7 @@ export function MainTabNavigator() {
       />
       <Tab.Screen
         name="HealthMarkerPresets"
-        component={HealthMarkerPresetsScreen}
+        component={HealthMarkerPresetsNavigator}
         options={{
           tabBarLabel: 'Markers',
           tabBarAccessibilityLabel: 'Health marker presets',
