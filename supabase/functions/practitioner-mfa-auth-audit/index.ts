@@ -13,8 +13,9 @@
  *   not a practitioner; MFA audit does not apply (distinct from 204 so clients can detect wrong
  *   role or mis-scoped calls).
  * - **400** — invalid optional `patient_user_id` in JSON body (malformed UUID).
- * - **401** — missing/invalid Bearer session or JWT payload.
- * - **405** — not POST.
+ * - **401** — missing/invalid Bearer session or JWT payload; includes `WWW-Authenticate: Bearer`
+ *   (RFC 6750) for OAuth2-style challenge detection.
+ * - **405** — not POST; includes `Allow: POST, OPTIONS` (RFC 9110).
  * - **500** — server misconfiguration or unexpected DB failure on insert.
  *
  * Deploy: `pnpm dlx supabase functions deploy practitioner-mfa-auth-audit` (secrets from project).
@@ -31,6 +32,32 @@ const CORS_HEADERS: Record<string, string> = {
     'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
+
+/** RFC 9110: 405 responses list allowed methods on this resource. */
+const ALLOW_POST_OPTIONS = 'POST, OPTIONS';
+
+/** RFC 6750 `WWW-Authenticate` values; `invalid_token` when a Bearer token was sent but rejected. */
+const WWW_AUTHENTICATE_BEARER = 'Bearer';
+
+const WWW_AUTHENTICATE_INVALID_TOKEN =
+  'Bearer error="invalid_token", error_description="Session could not be validated"';
+
+const WWW_AUTHENTICATE_INVALID_JWT =
+  'Bearer error="invalid_token", error_description="Access token payload could not be read"';
+
+/**
+ * JSON 401 response headers including Bearer challenge (RFC 6750) and CORS expose for browsers.
+ *
+ * @param wwwAuthenticate - Full `WWW-Authenticate` field value.
+ */
+function unauthorizedJsonHeaders(wwwAuthenticate: string): Record<string, string> {
+  return {
+    ...CORS_HEADERS,
+    'Content-Type': 'application/json',
+    'WWW-Authenticate': wwwAuthenticate,
+    'Access-Control-Expose-Headers': 'WWW-Authenticate',
+  };
+}
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -135,7 +162,11 @@ Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'method_not_allowed' }), {
       status: 405,
-      headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+      headers: {
+        ...CORS_HEADERS,
+        'Content-Type': 'application/json',
+        Allow: ALLOW_POST_OPTIONS,
+      },
     });
   }
 
@@ -143,7 +174,7 @@ Deno.serve(async (req: Request) => {
   if (token == null) {
     return new Response(JSON.stringify({ error: 'missing_authorization' }), {
       status: 401,
-      headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+      headers: unauthorizedJsonHeaders(WWW_AUTHENTICATE_BEARER),
     });
   }
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
@@ -164,7 +195,7 @@ Deno.serve(async (req: Request) => {
   if (userErr || !userData.user) {
     return new Response(JSON.stringify({ error: 'invalid_session' }), {
       status: 401,
-      headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+      headers: unauthorizedJsonHeaders(WWW_AUTHENTICATE_INVALID_TOKEN),
     });
   }
 
@@ -198,7 +229,7 @@ Deno.serve(async (req: Request) => {
   } catch {
     return new Response(JSON.stringify({ error: 'invalid_jwt_payload' }), {
       status: 401,
-      headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+      headers: unauthorizedJsonHeaders(WWW_AUTHENTICATE_INVALID_JWT),
     });
   }
 
