@@ -92,8 +92,10 @@ function parsePatientUserIdField(value: unknown): PatientUserIdField {
 }
 
 /**
- * Resolves whether a patient id may be stored on `access_log`: user must exist in Auth and share an
- * active practitioner grant; otherwise returns null to satisfy FK and avoid bogus attribution.
+ * Resolves whether a patient id may be stored on `access_log`: requires an active
+ * `practitioner_access` row for this practitioner and candidate patient. That row’s
+ * `patient_user_id` FK to `auth.users` already implies the user exists, so no Auth Admin lookup is
+ * needed. Returns null when absent or on lookup error (fail closed on attribution).
  *
  * @param admin - Service-role Supabase client.
  * @param practitionerUserId - Authenticated practitioner (`sub`).
@@ -109,12 +111,6 @@ async function resolveAuditPatientUserId(
     return null;
   }
   const candidate = field.uuid;
-
-  const { data: authData, error: authErr } =
-    await admin.auth.admin.getUserById(candidate);
-  if (authErr || !authData?.user) {
-    return null;
-  }
 
   const { data: grant, error: grantErr } = await admin
     .from('practitioner_access')
@@ -160,13 +156,6 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  let body: { patient_user_id?: unknown };
-  try {
-    body = (await req.json()) as { patient_user_id?: unknown };
-  } catch {
-    body = {};
-  }
-
   const admin = createClient(supabaseUrl, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
@@ -202,6 +191,32 @@ Deno.serve(async (req: Request) => {
     );
   }
 
+  let aal: string | undefined;
+  try {
+    const claims = decodeJwt(token) as { aal?: string };
+    aal = claims.aal;
+  } catch {
+    return new Response(JSON.stringify({ error: 'invalid_jwt_payload' }), {
+      status: 401,
+      headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+    });
+  }
+
+  if (aal === 'aal2') {
+    return new Response(null, {
+      status: 204,
+      headers: CORS_HEADERS,
+    });
+  }
+
+  // Below: audit insert only — defer body read and grant lookup until we know MFA failed.
+  let body: { patient_user_id?: unknown };
+  try {
+    body = (await req.json()) as { patient_user_id?: unknown };
+  } catch {
+    body = {};
+  }
+
   const patientField = parsePatientUserIdField(body?.patient_user_id);
   if (patientField.kind === 'invalid') {
     return new Response(
@@ -221,24 +236,6 @@ Deno.serve(async (req: Request) => {
     userData.user.id,
     patientField,
   );
-
-  let aal: string | undefined;
-  try {
-    const claims = decodeJwt(token) as { aal?: string };
-    aal = claims.aal;
-  } catch {
-    return new Response(JSON.stringify({ error: 'invalid_jwt_payload' }), {
-      status: 401,
-      headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-    });
-  }
-
-  if (aal === 'aal2') {
-    return new Response(null, {
-      status: 204,
-      headers: CORS_HEADERS,
-    });
-  }
 
   const { error: insertErr } = await admin.from('access_log').insert({
     actor_user_id: userData.user.id,
