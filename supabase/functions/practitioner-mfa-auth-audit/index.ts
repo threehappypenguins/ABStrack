@@ -126,6 +126,8 @@ function parsePatientUserIdField(value: unknown): PatientUserIdField {
  * `practitioner_access` row for this practitioner and candidate patient. That row’s
  * `patient_user_id` FK to `auth.users` already implies the user exists, so no Auth Admin lookup is
  * needed. Returns null when absent or on lookup error (fail closed on attribution).
+ * SELECT uses the service-role client; `practitioner_access_service_role_select` RLS policy allows
+ * this read when `service_role` is not BYPASSRLS (see migration).
  *
  * @param admin - Service-role Supabase client.
  * @param practitionerUserId - Authenticated practitioner (`sub`).
