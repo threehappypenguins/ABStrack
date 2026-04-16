@@ -6,6 +6,17 @@
  * RLS on PHI tables remains the primary enforcement; this function provides an append-only audit
  * path in a separate transaction (RLS denial via RAISE does not persist `access_log` rows).
  *
+ * HTTP contract (callers should handle each):
+ * - **204** — `profiles.app_role` is `practitioner` and JWT `aal` is `aal2` (nothing to audit).
+ * - **403** — practitioner and `aal` is not `aal2`; `access_log` row inserted (`auth_failure`).
+ * - **200** + `{ ok: true, audited: false, reason: "not_practitioner" }` — authenticated user is
+ *   not a practitioner; MFA audit does not apply (distinct from 204 so clients can detect wrong
+ *   role or mis-scoped calls).
+ * - **400** — invalid optional `patient_user_id` in JSON body (malformed UUID).
+ * - **401** — missing/invalid Bearer session or JWT payload.
+ * - **405** — not POST.
+ * - **500** — server misconfiguration or unexpected DB failure on insert.
+ *
  * Deploy: `pnpm dlx supabase functions deploy practitioner-mfa-auth-audit` (secrets from project).
  */
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
@@ -23,6 +34,27 @@ const CORS_HEADERS: Record<string, string> = {
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** RFC 9110: auth scheme is case-insensitive; capture token after one or more spaces. */
+const BEARER_AUTH_RE = /^\s*Bearer\s+(.*)$/i;
+
+/**
+ * Parses a Bearer token from the `Authorization` header (case-insensitive scheme).
+ *
+ * @param authorization - Raw `Authorization` header value, or null if absent.
+ * @returns The token string, or null if missing, empty, or not a Bearer credential.
+ */
+function parseBearerToken(authorization: string | null): string | null {
+  if (authorization == null || authorization === '') {
+    return null;
+  }
+  const m = authorization.match(BEARER_AUTH_RE);
+  if (!m) {
+    return null;
+  }
+  const raw = m[1]?.trim() ?? '';
+  return raw.length > 0 ? raw : null;
+}
 
 /** Parsed `patient_user_id` body field: omitted, syntactically invalid, or valid UUID string. */
 type PatientUserIdField =
@@ -111,15 +143,13 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  const authHeader = req.headers.get('Authorization');
-  if (!authHeader?.startsWith('Bearer ')) {
+  const token = parseBearerToken(req.headers.get('Authorization'));
+  if (token == null) {
     return new Response(JSON.stringify({ error: 'missing_authorization' }), {
       status: 401,
       headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
     });
   }
-
-  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
