@@ -368,6 +368,11 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+# Practitioner MFA audit: validates JWT + profile in-handler; writes access_log on AAL failure (403).
+# verify_jwt false so OPTIONS preflight succeeds; POST still requires a valid Bearer session.
+[functions.practitioner-mfa-auth-audit]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327
