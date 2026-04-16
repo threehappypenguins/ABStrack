@@ -373,7 +373,10 @@ export default function Index() {
 
   if (!isAuthenticated) {
     return (
-      <main className="min-h-screen bg-app-bg bg-app-gradient px-4 py-12 sm:px-6 lg:px-8">
+      <div
+        id="practitioner-home"
+        className="min-h-screen bg-app-bg bg-app-gradient px-4 py-12 sm:px-6 lg:px-8"
+      >
         <div className="mx-auto max-w-md rounded-2xl border border-app-border/90 bg-app-surface p-8 shadow-soft ring-1 ring-[color:var(--app-ring-slate)]">
           <h1 className="text-center text-3xl font-bold tracking-tight text-app-ink">
             ABStrack Practitioner
@@ -391,12 +394,12 @@ export default function Index() {
             </Link>
           </div>
         </div>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="mx-auto max-w-2xl px-4 py-8 sm:px-6">
+    <div id="practitioner-home" className="mx-auto max-w-2xl px-4 py-8 sm:px-6">
       <header className="mb-6">
         <h1 className="text-2xl font-semibold text-app-ink">
           Practitioner security setup
@@ -588,6 +591,6 @@ export default function Index() {
           </div>
         </section>
       ) : null}
-    </main>
+    </div>
   );
 }
