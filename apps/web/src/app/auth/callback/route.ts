@@ -9,8 +9,10 @@ function getSafeRedirectPath(nextParam: string | null): string {
   }
 
   try {
-    const parsed = new URL(nextParam, 'https://abstrack.local');
-    if (parsed.origin !== 'https://abstrack.local') {
+    // Dummy base only — validates `next` is a same-origin relative path, not an external URL.
+    const parseBase = 'https://example.com';
+    const parsed = new URL(nextParam, parseBase);
+    if (parsed.origin !== parseBase) {
       return DEFAULT_REDIRECT_PATH;
     }
 

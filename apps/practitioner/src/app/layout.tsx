@@ -1,5 +1,17 @@
 import './global.css';
+import { Plus_Jakarta_Sans } from 'next/font/google';
+import Script from 'next/script';
 import { LiveAnnouncerRoot } from '../components/a11y/LiveAnnouncerRoot';
+import { ThemeMenu } from '../components/theme/ThemeMenu';
+import { ThemeProvider } from '../components/theme/ThemeProvider';
+import { AuthProvider } from '../lib/auth-provider';
+import { THEME_INIT_SCRIPT } from '../lib/theme-init-script';
+
+const fontSans = Plus_Jakarta_Sans({
+  subsets: ['latin'],
+  variable: '--font-app-sans',
+  display: 'swap',
+});
 
 export const metadata = {
   title: 'Welcome to practitioner',
@@ -12,11 +24,26 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body>
-        <LiveAnnouncerRoot>
-          <main>{children}</main>
-        </LiveAnnouncerRoot>
+    <html lang="en" className={fontSans.variable} suppressHydrationWarning>
+      <body className={`${fontSans.className} antialiased`}>
+        <Script
+          id="abstrack-practitioner-theme-init"
+          strategy="beforeInteractive"
+        >
+          {THEME_INIT_SCRIPT}
+        </Script>
+        <ThemeProvider>
+          <div className="pointer-events-none fixed right-3 top-3 z-[200] sm:right-4 sm:top-4">
+            <div className="pointer-events-auto">
+              <ThemeMenu />
+            </div>
+          </div>
+          <AuthProvider>
+            <LiveAnnouncerRoot>
+              <main>{children}</main>
+            </LiveAnnouncerRoot>
+          </AuthProvider>
+        </ThemeProvider>
       </body>
     </html>
   );
