@@ -72,8 +72,8 @@ error.log
 # Next.js
 .next/
 out/
-# Auto-generated; `next dev` and `next build` can produce different contents — ignore to stop git churn.
-/apps/practitioner/next-env.d.ts
+# Next.js: auto-generated (`next dev` / `next build`); ignore repo-wide to avoid churn.
+next-env.d.ts
 
 # Supabase
 supabase/.branches
