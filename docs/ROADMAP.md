@@ -52,21 +52,21 @@
 
 ---
 
-## Week 4: April 6-12 -- Shared UI Components and Preset Management
+## Week 4: April 6-12 -- Shared UI Components and Preset Management (COMPLETE)
 
 **Goal:** Build the reusable component library and the first user-facing feature (presets).
 
 **Tasks:**
 
-- [ ] Implement core `@abstrack/ui` components: accessible buttons, form inputs, cards, modal dialogs, navigation shell -- designed for impaired-user accessibility (large touch targets, high contrast)
-- [ ] App layout and navigation for user web app ([apps/web](../apps/web)) and mobile app ([apps/mobile](../apps/mobile))
-- [ ] Symptom preset CRUD screens:
+- [x] Implement core `@abstrack/ui` components: accessible buttons, form inputs, cards, modal dialogs, navigation shell -- designed for impaired-user accessibility (large touch targets, high contrast)
+- [x] App layout and navigation for user web app ([apps/web](../apps/web)) and mobile app ([apps/mobile](../apps/mobile))
+- [x] Symptom preset CRUD screens:
   - Create/edit/delete/reorder symptom presets
   - Configure response type per symptom (yes/no, severity, free text, photo, video)
   - Common ABS symptom suggestions list
-- [ ] Health marker preset CRUD screens:
+- [x] Health marker preset CRUD screens:
   - Add/remove health markers (BAC, glucose, BP, heart rate, weight, custom)
-- [ ] Preset data persisted as normal rows/columns in Supabase, protected by RLS (same model as rest of PHI)
+- [x] Preset data persisted as normal rows/columns in Supabase, protected by RLS (same model as rest of PHI)
 
 **Why this week:** Presets are required before episode logging can be built. The UI work is moderate but the CRUD logic is straightforward.
 
