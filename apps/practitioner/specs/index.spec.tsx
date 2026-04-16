@@ -1,4 +1,3 @@
-import React from 'react';
 import { render } from '@testing-library/react';
 import { LiveAnnouncerProvider } from '@abstrack/ui/a11y-web';
 import Page from '../src/app/page';
