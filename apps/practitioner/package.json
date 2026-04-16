@@ -6,7 +6,11 @@
     "@abstrack/supabase": "workspace:*",
     "@abstrack/ui": "workspace:*",
     "next": "~16.0.1",
+    "qrcode": "^1.5.4",
     "react": "19.1.0",
     "react-dom": "19.1.0"
+  },
+  "devDependencies": {
+    "@types/qrcode": "^1.5.6"
   }
 }

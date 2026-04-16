@@ -72,6 +72,8 @@ error.log
 # Next.js
 .next/
 out/
+# Next.js: auto-generated (`next dev` / `next build`); ignore repo-wide to avoid churn.
+next-env.d.ts
 
 # Supabase
 supabase/.branches

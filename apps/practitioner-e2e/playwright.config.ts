@@ -21,7 +21,8 @@ const baseURL = process.env['BASE_URL'] || localBaseURL;
 /**
  * See https://playwright.dev/docs/test-configuration.
  *
- * Timeouts are generous: the first request to `next dev` can spend a long time compiling.
+ * E2E uses `next dev` (fast). `apps/practitioner/next-env.d.ts` is gitignored so dev vs build
+ * does not create noisy diffs — see root `.gitignore`.
  */
 export default defineConfig({
   ...nxE2EPreset(__filename, { testDir: './src' }),

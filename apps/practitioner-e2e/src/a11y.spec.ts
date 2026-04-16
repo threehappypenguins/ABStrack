@@ -17,14 +17,14 @@ test.describe('Accessibility (axe-core)', () => {
 
     await page.goto('/');
 
-    // Stock Nx home content below the welcome block has decorative SVGs that fail axe;
-    // scope to `#welcome` (see `apps/practitioner/src/app/page.tsx`). Wait so `include`
-    // always matches — axe throws if the selector matches zero nodes.
-    const welcome = page.locator('#welcome');
-    await welcome.waitFor({ state: 'visible', timeout: 20_000 });
+    // Scope to `#practitioner-home` (see `apps/practitioner/src/app/page.tsx`) so the
+    // scan targets page content, not chrome. Wait so `include` always matches — axe throws
+    // if the selector matches zero nodes.
+    const home = page.locator('#practitioner-home');
+    await home.waitFor({ state: 'visible', timeout: 20_000 });
 
     const results = await new AxeBuilder({ page })
-      .include('#welcome')
+      .include('#practitioner-home')
       .analyze();
 
     expect(
