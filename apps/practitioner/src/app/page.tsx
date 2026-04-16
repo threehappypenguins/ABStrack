@@ -122,6 +122,10 @@ export default function Index() {
   };
 
   useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+
     const isAuthenticated = Boolean(session?.access_token);
     setUserEmail(session?.user.email ?? null);
 
@@ -150,7 +154,7 @@ export default function Index() {
     };
 
     void load();
-  }, [session]);
+  }, [session, authLoading]);
 
   const startEnrollment = async () => {
     const isAuthenticated = Boolean(session?.access_token);
@@ -305,6 +309,22 @@ export default function Index() {
 
   const isAuthenticated = Boolean(session?.access_token);
   const showLoadingState = authLoading || isLoading;
+
+  if (authLoading) {
+    return (
+      <div
+        id="practitioner-home"
+        className="flex min-h-screen flex-col items-center justify-center bg-app-bg bg-app-gradient px-4 py-12 sm:px-6 lg:px-8"
+        role="status"
+        aria-busy="true"
+        aria-live="polite"
+      >
+        <p className="text-center text-sm text-app-muted">
+          Checking sign-in status…
+        </p>
+      </div>
+    );
+  }
 
   if (!isAuthenticated) {
     return (

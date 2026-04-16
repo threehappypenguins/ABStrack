@@ -106,9 +106,7 @@ export function ThemeMenu() {
     };
   }, [open]);
 
-  const handleRadiogroupKeyDown = (
-    e: ReactKeyboardEvent<HTMLDivElement>,
-  ) => {
+  const handleRadiogroupKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     const currentIndex = OPTIONS.findIndex((o) => o.value === preference);
     const safeIndex = currentIndex >= 0 ? currentIndex : 0;
     const { key } = e;
