@@ -12,18 +12,18 @@ This document summarizes the repository security posture, points to implementati
 
 ## Security Posture at a Glance
 
-| Control                                                               | Current Status                 | Where Defined / Implemented                                                                                                                                                                            |
-| --------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| TLS for client to Supabase traffic                                    | Implemented                    | [PRD: Architecture](PRD.md#architecture-overview) + [Security](PRD.md#security-privacy-and-compliance), Supabase platform/API model                                                                    |
-| RLS for PHI tables                                                    | Implemented                    | `supabase/migrations/20260327130000_rls_policies.sql`                                                                                                                                                  |
-| Grant-table authorization (`practitioner_access`, `caretaker_access`) | Implemented                    | `supabase/migrations/20260327120000_abstrack_core_schema.sql`, `supabase/migrations/20260327130000_rls_policies.sql`                                                                                   |
-| Append-only `access_log` with trusted insert path                     | Implemented                    | `supabase/migrations/20260327120000_abstrack_core_schema.sql`, `supabase/migrations/20260327130000_rls_policies.sql`                                                                                   |
-| Auth (email/password, persistent session, password reset/change)      | Implemented                    | `packages/supabase/src/lib/auth.ts`, app auth screens/providers                                                                                                                                        |
-| Practitioner MFA enforcement (fail-closed)                            | Planned (Week 5)               | [PRD: Authentication](PRD.md#1-authentication) + [Security](PRD.md#security-privacy-and-compliance); [roadmap Week 5](ROADMAP.md#week-5-april-13-19----auth-completion-and-episode-logging-foundation) |
-| Media bucket privacy + `storage.objects` RLS                          | Implemented                    | `supabase/migrations/20260328100000_episode_media_storage_bucket.sql`                                                                                                                                  |
-| Media access via signed URLs                                          | Planned for app flow (Week 7)  | [PRD §10](PRD.md#10-video--photo-capture) + [roadmap Week 7](ROADMAP.md#week-7-april-27---may-3----media-capture-and-offline-sync)                                                                     |
-| Data model: plaintext PHI under RLS (no app-layer E2E encryption)     | Implemented as design baseline | [PRD: Security](PRD.md#security-privacy-and-compliance) + [data model](PRD.md#data-model-plaintext-phi-in-supabase-under-rls); schema comments in core migration                                       |
-| PowerSync + SQLCipher offline protections                             | Planned (Week 7)               | [PRD: Architecture](PRD.md#architecture-overview)/[Security](PRD.md#security-privacy-and-compliance) and [roadmap Week 7](ROADMAP.md#week-7-april-27---may-3----media-capture-and-offline-sync)        |
+| Control                                                               | Current Status                                      | Where Defined / Implemented                                                                                                                                                                                                                           |
+| --------------------------------------------------------------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| TLS for client to Supabase traffic                                    | Implemented                                         | [PRD: Architecture](PRD.md#architecture-overview) + [Security](PRD.md#security-privacy-and-compliance), Supabase platform/API model                                                                                                                   |
+| RLS for PHI tables                                                    | Implemented                                         | `supabase/migrations/20260327130000_rls_policies.sql`                                                                                                                                                                                                 |
+| Grant-table authorization (`practitioner_access`, `caretaker_access`) | Implemented                                         | `supabase/migrations/20260327120000_abstrack_core_schema.sql`, `supabase/migrations/20260327130000_rls_policies.sql`                                                                                                                                  |
+| Append-only `access_log` with trusted insert path                     | Implemented                                         | `supabase/migrations/20260327120000_abstrack_core_schema.sql`, `supabase/migrations/20260327130000_rls_policies.sql`                                                                                                                                  |
+| Auth (email/password, persistent session, password reset/change)      | Implemented                                         | `packages/supabase/src/lib/auth.ts`, app auth screens/providers                                                                                                                                                                                       |
+| Practitioner MFA enforcement (fail-closed)                            | Implemented (RLS + helpers; UI uses claim contract) | [PRD: Authentication](PRD.md#1-authentication); [AUTH_CLAIM_CONTRACT.md](AUTH_CLAIM_CONTRACT.md); `supabase/migrations/20260416120000_practitioner_mfa_assurance_rls.sql`; `packages/supabase/src/lib/session-claims.ts`; practitioner `AuthProvider` |
+| Media bucket privacy + `storage.objects` RLS                          | Implemented                                         | `supabase/migrations/20260328100000_episode_media_storage_bucket.sql`                                                                                                                                                                                 |
+| Media access via signed URLs                                          | Planned for app flow (Week 7)                       | [PRD §10](PRD.md#10-video--photo-capture) + [roadmap Week 7](ROADMAP.md#week-7-april-27---may-3----media-capture-and-offline-sync)                                                                                                                    |
+| Data model: plaintext PHI under RLS (no app-layer E2E encryption)     | Implemented as design baseline                      | [PRD: Security](PRD.md#security-privacy-and-compliance) + [data model](PRD.md#data-model-plaintext-phi-in-supabase-under-rls); schema comments in core migration                                                                                      |
+| PowerSync + SQLCipher offline protections                             | Planned (Week 7)                                    | [PRD: Architecture](PRD.md#architecture-overview)/[Security](PRD.md#security-privacy-and-compliance) and [roadmap Week 7](ROADMAP.md#week-7-april-27---may-3----media-capture-and-offline-sync)                                                       |
 
 ## Control Details
 
@@ -68,7 +68,7 @@ This document summarizes the repository security posture, points to implementati
   - Helper functions `user_has_practitioner_access` and `user_is_caretaker_for_patient` are used across PHI and storage policies.
 - PRD references:
   - [PRD: Users & Roles](PRD.md#users--roles), [Authorized access](PRD.md#authorized-access-practitioners-and-caretakers-no-dek-sharing), and RLS requirements table.
-- Status: Implemented. Practitioner MFA check in the practitioner path is planned for Week 5.
+- Status: Implemented. Practitioner MFA assurance is enforced in SQL on the grant path; client routing uses `profiles.app_role` plus JWT `aal` per [AUTH_CLAIM_CONTRACT.md](AUTH_CLAIM_CONTRACT.md) (no ambiguous fallbacks).
 
 ### 4) `access_log`: append-only audit logging with trusted insert path
 
@@ -104,11 +104,11 @@ This document summarizes the repository security posture, points to implementati
     - `apps/mobile/src/app/screens/HomeScreen.tsx`
     - `apps/web/src/app/dashboard/page.tsx`
 - Planned:
-  - Practitioner MFA fail-closed enforcement path (Week 5).
+  - Additional practitioner app routes gated on MFA readiness (see [ROADMAP](ROADMAP.md)).
 - PRD references:
   - [PRD §1: Authentication](PRD.md#1-authentication).
   - [PRD: Practitioner TOTP enforcement (fail-closed)](PRD.md#two-factor-authentication-totp).
-- Status: Week 3 auth baseline implemented; practitioner MFA controls planned for Week 5.
+- Status: Week 3 auth baseline implemented; practitioner MFA enforcement and claim contract documented in [AUTH_CLAIM_CONTRACT.md](AUTH_CLAIM_CONTRACT.md).
 
 ### 6) Media storage security
 
@@ -150,7 +150,7 @@ Implemented now:
 
 Planned (not yet complete):
 
-- Practitioner MFA fail-closed enforcement hardening (Week 5).
+- Practitioner app navigation to patient-data routes behind explicit MFA-ready UI checks (beyond security setup page).
 - PowerSync + SQLCipher offline model implementation (Week 7).
 - Signed URL media playback/download flow completion in product UX and offline queue flow (Week 7).
 
@@ -173,4 +173,5 @@ Core implementation artifacts:
 Primary design references:
 
 - [docs/PRD.md](PRD.md) (Security, Authentication, and Media sections)
+- [docs/AUTH_CLAIM_CONTRACT.md](AUTH_CLAIM_CONTRACT.md) (JWT + `profiles.app_role` contract)
 - [docs/ROADMAP.md](ROADMAP.md) (Week 3, Week 5, Week 7)

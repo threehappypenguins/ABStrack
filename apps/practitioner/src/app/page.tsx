@@ -81,7 +81,7 @@ async function otpauthUriToQrPngDataUrl(otpauthUri: string): Promise<string> {
 export default function Index() {
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const { announce } = useAnnounce();
-  const { session, loading: authLoading } = useAuth();
+  const { session, loading: sessionLoading, gate } = useAuth();
 
   const [isLoading, setIsLoading] = useState(true);
   const [isEnrolling, setIsEnrolling] = useState(false);
@@ -122,7 +122,7 @@ export default function Index() {
   };
 
   useEffect(() => {
-    if (authLoading) {
+    if (sessionLoading) {
       return;
     }
 
@@ -154,7 +154,7 @@ export default function Index() {
     };
 
     void load();
-  }, [session, authLoading]);
+  }, [session, sessionLoading]);
 
   const startEnrollment = async () => {
     const isAuthenticated = Boolean(session?.access_token);
@@ -308,9 +308,9 @@ export default function Index() {
   };
 
   const isAuthenticated = Boolean(session?.access_token);
-  const showLoadingState = authLoading || isLoading;
+  const showLoadingState = sessionLoading || isLoading;
 
-  if (authLoading) {
+  if (sessionLoading) {
     return (
       <div
         id="practitioner-home"
@@ -353,6 +353,92 @@ export default function Index() {
     );
   }
 
+  if (gate.kind === 'profile_error') {
+    return (
+      <div
+        id="practitioner-home"
+        className="mx-auto max-w-lg px-4 py-12 sm:px-6"
+        role="alert"
+      >
+        <h1 className="text-xl font-semibold text-app-ink">
+          Could not load your profile
+        </h1>
+        <p className="mt-3 text-sm text-app-muted">
+          {gate.error.message}. You can try signing out and back in, or try
+          again later.
+        </p>
+        <form action="/api/auth/logout" method="POST" className="mt-6">
+          <button
+            type="submit"
+            className="min-h-11 rounded-md border border-app-border bg-app-surface px-4 py-2 text-sm font-medium text-app-ink shadow-sm transition hover:bg-[var(--app-nav-hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+          >
+            Log out
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  if (gate.kind === 'profile_missing') {
+    return (
+      <div
+        id="practitioner-home"
+        className="mx-auto max-w-lg px-4 py-12 sm:px-6"
+        role="alert"
+      >
+        <h1 className="text-xl font-semibold text-app-ink">
+          No profile for this account
+        </h1>
+        <p className="mt-3 text-sm text-app-muted">
+          This sign-in does not have an ABStrack profile yet. Practitioner
+          accounts must be created through the correct invitation flow.
+        </p>
+        <form action="/api/auth/logout" method="POST" className="mt-6">
+          <button
+            type="submit"
+            className="min-h-11 rounded-md border border-app-border bg-app-surface px-4 py-2 text-sm font-medium text-app-ink shadow-sm transition hover:bg-[var(--app-nav-hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+          >
+            Log out
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  if (gate.kind === 'wrong_app_role') {
+    return (
+      <div
+        id="practitioner-home"
+        className="mx-auto max-w-lg px-4 py-12 sm:px-6"
+        role="alert"
+      >
+        <h1 className="text-xl font-semibold text-app-ink">
+          Wrong account type for this app
+        </h1>
+        <p className="mt-3 text-sm text-app-muted">
+          This app is for healthcare practitioners. Your account is registered
+          as <span className="font-medium text-app-ink">{gate.appRole}</span>.
+          Use the patient or caretaker app instead.
+        </p>
+        <p className="mt-3 text-sm text-app-muted">
+          Sign out to use a different account, or open the patient or caretaker
+          app.
+        </p>
+        <form action="/api/auth/logout" method="POST" className="mt-6">
+          <button
+            type="submit"
+            className="min-h-11 rounded-md border border-app-border bg-app-surface px-4 py-2 text-sm font-medium text-app-ink shadow-sm transition hover:bg-[var(--app-nav-hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+          >
+            Log out
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  const mfaAssuranceReady =
+    gate.kind === 'practitioner' && gate.hasMfaAssuranceAal2;
+
   return (
     <div id="practitioner-home" className="mx-auto max-w-2xl px-4 py-8 sm:px-6">
       <header className="mb-6">
@@ -362,6 +448,16 @@ export default function Index() {
         <p className="mt-2 text-sm text-app-muted">
           Enroll at least one TOTP factor to make this practitioner account
           MFA-ready.
+          {mfaAssuranceReady ? (
+            <span className="mt-2 block text-emerald-800 dark:text-emerald-200">
+              Current session has MFA assurance (AAL2) for patient-data access.
+            </span>
+          ) : (
+            <span className="mt-2 block">
+              After you verify TOTP, complete a challenge when prompted so your
+              session reaches AAL2 — required for patient data access.
+            </span>
+          )}
         </p>
         {userEmail ? (
           <p
