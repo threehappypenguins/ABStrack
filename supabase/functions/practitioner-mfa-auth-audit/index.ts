@@ -9,14 +9,15 @@
  * HTTP contract (callers should handle each):
  * - **204** — `profiles.app_role` is `practitioner` and JWT `aal` is `aal2` (nothing to audit).
  * - **403** — practitioner and `aal` is not `aal2`; `access_log` row inserted (`auth_failure`).
- * - **200** + `{ ok: true, audited: false, reason: "not_practitioner" }` — authenticated user is
- *   not a practitioner; MFA audit does not apply (distinct from 204 so clients can detect wrong
- *   role or mis-scoped calls).
+ * - **200** + `{ ok: true, audited: false, reason: "not_practitioner" }` — profile row exists and
+ *   `app_role` is not `practitioner`; MFA audit does not apply (distinct from 204 so clients can
+ *   detect wrong role or mis-scoped calls).
  * - **400** — invalid optional `patient_user_id` in JSON body (malformed UUID).
  * - **401** — missing/invalid Bearer session or JWT payload; includes `WWW-Authenticate: Bearer`
  *   (RFC 6750) for OAuth2-style challenge detection.
  * - **405** — not POST; includes `Allow: POST, OPTIONS` (RFC 9110).
- * - **500** — server misconfiguration or unexpected DB failure on insert.
+ * - **500** — e.g. `server_misconfigured`, `profile_lookup_failed`, `profile_missing` (no `profiles`
+ *   row for the session user), or `audit_write_failed` on insert.
  *
  * Deploy: `pnpm dlx supabase functions deploy practitioner-mfa-auth-audit` (secrets from project).
  */
@@ -214,7 +215,21 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  if (profile?.app_role !== 'practitioner') {
+  if (profile == null) {
+    return new Response(
+      JSON.stringify({
+        error: 'profile_missing',
+        message:
+          'No profile exists for this authenticated user; cannot evaluate practitioner MFA audit.',
+      }),
+      {
+        status: 500,
+        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+      },
+    );
+  }
+
+  if (profile.app_role !== 'practitioner') {
     return new Response(
       JSON.stringify({ ok: true, audited: false, reason: 'not_practitioner' }),
       {
