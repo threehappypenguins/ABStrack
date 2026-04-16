@@ -5,6 +5,13 @@ import { useAnnounce } from '@abstrack/ui/a11y-web';
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../lib/auth-provider';
+import {
+  isUnenrollAlreadyGoneError,
+  looksLikeTotpSetupPayload,
+  mapMfaUnenrollErrorToUserMessage,
+  mapMfaVerifyErrorToUserMessage,
+  normalizeTotpCode,
+} from '../lib/mfa-user-messages';
 
 type TotpEnrollment = {
   id: string;
@@ -12,120 +19,6 @@ type TotpEnrollment = {
   secret: string;
   friendlyName: string;
 };
-
-function normalizeTotpCode(raw: string): string {
-  return raw.replace(/\D/g, '').slice(0, 6);
-}
-
-/**
- * Detects pasted Key URIs or setup blobs — not a six-digit OTP. We refuse these so
- * {@link normalizeTotpCode} cannot pull arbitrary digits out of an `otpauth://` string.
- *
- * @param raw - Field value (may include a full paste).
- * @returns Whether this looks like a setup payload rather than digits-only entry.
- */
-function looksLikeTotpSetupPayload(raw: string): boolean {
-  return (
-    /otpauth/i.test(raw) ||
-    /:\/\/[^\s]*totp/i.test(raw) ||
-    /\bsecret=/i.test(raw) ||
-    /\bissuer=/i.test(raw)
-  );
-}
-
-function getVerificationMessage(message?: string): string {
-  const lower = message?.toLowerCase() ?? '';
-  if (lower.includes('expired')) {
-    return 'That code expired. Enter the latest code from your authenticator app and try again.';
-  }
-  if (lower.includes('invalid')) {
-    return 'That code was not valid. Check the six-digit code and your device time, then try again.';
-  }
-  const trimmed = message?.trim();
-  if (trimmed) {
-    return trimmed;
-  }
-  return 'We could not verify that code yet. Please try again with a fresh code.';
-}
-
-type AuthLikeErrorFields = {
-  message: string;
-  status?: number;
-  code?: string;
-};
-
-/**
- * Reads message, HTTP status, and code from Supabase {@link AuthApiError} / {@link AuthError}
- * or similar thrown values (GoTrue may return an empty `message` for 422 MFA verify failures).
- *
- * @param error - Caught value from MFA APIs.
- * @returns Normalized fields for mapping to user-visible copy.
- */
-function readAuthLikeError(error: unknown): AuthLikeErrorFields {
-  if (typeof error === 'string') {
-    return { message: error };
-  }
-  if (typeof error !== 'object' || error === null) {
-    return { message: '' };
-  }
-  const o = error as Record<string, unknown>;
-  const message =
-    typeof o.message === 'string'
-      ? o.message
-      : typeof o.msg === 'string'
-        ? o.msg
-        : '';
-  const status = typeof o.status === 'number' ? o.status : undefined;
-  const code = typeof o.code === 'string' ? o.code : undefined;
-  if (!message && error instanceof Error) {
-    return { message: error.message, status, code };
-  }
-  return { message, status, code };
-}
-
-/**
- * Maps MFA verify (and related) failures to accessible copy. Handles empty API bodies that
- * would otherwise render a blank status line.
- *
- * @param error - Caught error from `mfa.challenge` / `mfa.verify`.
- * @returns User-visible message.
- */
-function mapMfaVerifyErrorToUserMessage(error: unknown): string {
-  const { message: raw, status, code } = readAuthLikeError(error);
-  const lower = raw.toLowerCase();
-
-  if (status === 401) {
-    return 'Your session may have expired. Sign in again, then retry verification.';
-  }
-
-  if (status === 422 || status === 400) {
-    return 'That code did not match. Enter the current six-digit code from your authenticator.';
-  }
-
-  if (
-    lower.includes('invalid') ||
-    lower.includes('incorrect') ||
-    lower.includes('mismatch') ||
-    lower.includes('wrong') ||
-    lower.includes('verification failed')
-  ) {
-    return getVerificationMessage(raw);
-  }
-
-  if (lower.includes('expired') || lower.includes('challenge')) {
-    return getVerificationMessage(raw);
-  }
-
-  if (code === 'mfa_verification_failed' || code === 'mfa_challenge_expired') {
-    return getVerificationMessage(raw);
-  }
-
-  if (raw.trim()) {
-    return getVerificationMessage(raw);
-  }
-
-  return 'That code did not match. Enter the current six-digit code from your authenticator.';
-}
 
 /**
  * Issuer label shown in authenticator apps for the enrollment QR.
@@ -205,6 +98,7 @@ export default function Index() {
   const [verifyFailureMessage, setVerifyFailureMessage] = useState<
     string | null
   >(null);
+  const [isCanceling, setIsCanceling] = useState(false);
 
   const mfaReady = verifiedTotpCount > 0;
 
@@ -359,13 +253,54 @@ export default function Index() {
     }
   };
 
-  const cancelEnrollment = () => {
+  const clearEnrollmentUiAfterCancel = async () => {
     setEnrollment(null);
     setVerifyCode('');
     setVerifyFailureMessage(null);
+    try {
+      await refreshMfaState();
+    } catch {
+      /* listFactors failure is non-blocking after successful unenroll */
+    }
     setAccessibleStatus(
       'TOTP setup was canceled. You can restart enrollment whenever you are ready.',
     );
+  };
+
+  const cancelEnrollment = async () => {
+    if (!enrollment) {
+      return;
+    }
+    setIsCanceling(true);
+    setVerifyFailureMessage(null);
+    try {
+      const { error } = await supabase.auth.mfa.unenroll({
+        factorId: enrollment.id,
+      });
+      if (error) {
+        if (isUnenrollAlreadyGoneError(error)) {
+          await clearEnrollmentUiAfterCancel();
+        } else {
+          setAccessibleStatus(
+            mapMfaUnenrollErrorToUserMessage(error),
+            'assertive',
+          );
+        }
+        return;
+      }
+      await clearEnrollmentUiAfterCancel();
+    } catch (error: unknown) {
+      if (isUnenrollAlreadyGoneError(error)) {
+        await clearEnrollmentUiAfterCancel();
+      } else {
+        setAccessibleStatus(
+          mapMfaUnenrollErrorToUserMessage(error),
+          'assertive',
+        );
+      }
+    } finally {
+      setIsCanceling(false);
+    }
   };
 
   const isAuthenticated = Boolean(session?.access_token);
@@ -575,18 +510,20 @@ export default function Index() {
             <button
               type="button"
               onClick={verifyEnrollment}
-              disabled={isVerifying || !/^\d{6}$/.test(verifyCode)}
+              disabled={
+                isVerifying || isCanceling || !/^\d{6}$/.test(verifyCode)
+              }
               className="min-h-11 rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-emerald-300"
             >
               {isVerifying ? 'Verifying code...' : 'Verify and finish'}
             </button>
             <button
               type="button"
-              onClick={cancelEnrollment}
-              disabled={isVerifying}
+              onClick={() => void cancelEnrollment()}
+              disabled={isVerifying || isCanceling}
               className="min-h-11 rounded-md border border-app-border bg-app-surface px-4 py-2 text-sm font-medium text-app-ink transition hover:bg-[var(--app-nav-hover-bg)] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Cancel
+              {isCanceling ? 'Canceling…' : 'Cancel'}
             </button>
           </div>
         </section>
