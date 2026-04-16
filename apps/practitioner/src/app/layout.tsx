@@ -1,4 +1,5 @@
 import './global.css';
+import type { ReactNode } from 'react';
 import { Plus_Jakarta_Sans } from 'next/font/google';
 import Script from 'next/script';
 import { LiveAnnouncerRoot } from '../components/a11y/LiveAnnouncerRoot';
@@ -21,7 +22,7 @@ export const metadata = {
 export default function RootLayout({
   children,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <html lang="en" className={fontSans.variable} suppressHydrationWarning>

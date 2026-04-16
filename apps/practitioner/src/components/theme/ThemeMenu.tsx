@@ -1,6 +1,12 @@
 'use client';
 
-import { useEffect, useId, useRef, useState } from 'react';
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from 'react';
 import { useTheme } from './ThemeProvider';
 import { IconCheck, IconComputer, IconMoon, IconSun } from './ThemeIcons';
 import type { ThemePreference } from '@/lib/theme-storage';
@@ -100,7 +106,9 @@ export function ThemeMenu() {
     };
   }, [open]);
 
-  const handleRadiogroupKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+  const handleRadiogroupKeyDown = (
+    e: ReactKeyboardEvent<HTMLDivElement>,
+  ) => {
     const currentIndex = OPTIONS.findIndex((o) => o.value === preference);
     const safeIndex = currentIndex >= 0 ? currentIndex : 0;
     const { key } = e;

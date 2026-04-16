@@ -1,7 +1,14 @@
 'use client';
 
 import { getSupabaseBrowserClient } from '@abstrack/supabase/browser';
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 
 interface AuthContextType {
   session: {
@@ -40,7 +47,7 @@ function isRefreshTokenFailure(error: unknown): boolean {
  * @param props - Wrapper props.
  * @returns Context provider with session and loading state.
  */
-export function AuthProvider({ children }: { children: React.ReactNode }) {
+export function AuthProvider({ children }: { children: ReactNode }) {
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [session, setSession] = useState<AuthContextType['session']>(null);
   const [loading, setLoading] = useState(true);
