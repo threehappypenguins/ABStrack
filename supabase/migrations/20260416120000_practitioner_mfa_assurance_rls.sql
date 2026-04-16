@@ -8,11 +8,14 @@
 -- Note: Raising aborts the transaction, so no access_log row is written in the same request;
 -- use the Edge Function practitioner-mfa-auth-audit for append-only auth_failure rows in a
 -- separate transaction when explicit server-side audit is required.
+--
+-- STABLE: no writes; reads grants/profile and auth.jwt() only. RAISE does not persist data.
+-- VOLATILE is unnecessary and can pessimise planner behaviour for repeated same-arg calls.
 
 CREATE OR REPLACE FUNCTION public.user_has_practitioner_access (p_patient_user_id uuid)
   RETURNS boolean
   LANGUAGE plpgsql
-  VOLATILE
+  STABLE
   SECURITY INVOKER
   SET search_path = pg_catalog, public
   AS $$

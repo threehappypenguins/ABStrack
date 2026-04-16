@@ -10,7 +10,7 @@
  */
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 
-import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { decodeJwt } from 'npm:jose@5';
 
 /** Matches Supabase Edge CORS guidance (authorization + apikey for supabase-js). */
@@ -24,11 +24,79 @@ const CORS_HEADERS: Record<string, string> = {
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-function parseOptionalPatientId(value: unknown): string | null {
-  if (typeof value !== 'string' || !UUID_RE.test(value)) {
+/** Parsed `patient_user_id` body field: omitted, syntactically invalid, or valid UUID string. */
+type PatientUserIdField =
+  | { kind: 'absent' }
+  | { kind: 'invalid'; message: string }
+  | { kind: 'valid'; uuid: string };
+
+/**
+ * Interprets the optional JSON `patient_user_id` for audit context.
+ *
+ * @param value - Raw `body.patient_user_id` value.
+ * @returns Absent if omitted/null/empty, invalid if wrong type or not a UUID string, else valid.
+ */
+function parsePatientUserIdField(value: unknown): PatientUserIdField {
+  if (value === undefined || value === null) {
+    return { kind: 'absent' };
+  }
+  if (typeof value !== 'string') {
+    return {
+      kind: 'invalid',
+      message: 'patient_user_id must be a string UUID when provided.',
+    };
+  }
+  const trimmed = value.trim();
+  if (trimmed === '') {
+    return { kind: 'absent' };
+  }
+  if (!UUID_RE.test(trimmed)) {
+    return {
+      kind: 'invalid',
+      message: 'patient_user_id must be a valid UUID.',
+    };
+  }
+  return { kind: 'valid', uuid: trimmed };
+}
+
+/**
+ * Resolves whether a patient id may be stored on `access_log`: user must exist in Auth and share an
+ * active practitioner grant; otherwise returns null to satisfy FK and avoid bogus attribution.
+ *
+ * @param admin - Service-role Supabase client.
+ * @param practitionerUserId - Authenticated practitioner (`sub`).
+ * @param field - Parsed body field (only `valid` carries a UUID to resolve).
+ * @returns `patient_user_id` for insert or null.
+ */
+async function resolveAuditPatientUserId(
+  admin: SupabaseClient,
+  practitionerUserId: string,
+  field: PatientUserIdField,
+): Promise<string | null> {
+  if (field.kind !== 'valid') {
     return null;
   }
-  return value;
+  const candidate = field.uuid;
+
+  const { data: authData, error: authErr } =
+    await admin.auth.admin.getUserById(candidate);
+  if (authErr || !authData?.user) {
+    return null;
+  }
+
+  const { data: grant, error: grantErr } = await admin
+    .from('practitioner_access')
+    .select('patient_user_id')
+    .eq('practitioner_user_id', practitionerUserId)
+    .eq('patient_user_id', candidate)
+    .is('revoked_at', null)
+    .maybeSingle();
+
+  if (grantErr || !grant) {
+    return null;
+  }
+
+  return candidate;
 }
 
 Deno.serve(async (req: Request) => {
@@ -62,12 +130,11 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  let patientUserId: string | null = null;
+  let body: { patient_user_id?: unknown };
   try {
-    const body = (await req.json()) as { patient_user_id?: unknown };
-    patientUserId = parseOptionalPatientId(body?.patient_user_id);
+    body = (await req.json()) as { patient_user_id?: unknown };
   } catch {
-    /* empty body */
+    body = {};
   }
 
   const admin = createClient(supabaseUrl, serviceKey, {
@@ -105,6 +172,26 @@ Deno.serve(async (req: Request) => {
     );
   }
 
+  const patientField = parsePatientUserIdField(body?.patient_user_id);
+  if (patientField.kind === 'invalid') {
+    return new Response(
+      JSON.stringify({
+        error: 'invalid_patient_user_id',
+        message: patientField.message,
+      }),
+      {
+        status: 400,
+        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+      },
+    );
+  }
+
+  const resolvedPatientUserId = await resolveAuditPatientUserId(
+    admin,
+    userData.user.id,
+    patientField,
+  );
+
   let aal: string | undefined;
   try {
     const claims = decodeJwt(token) as { aal?: string };
@@ -126,7 +213,7 @@ Deno.serve(async (req: Request) => {
   const { error: insertErr } = await admin.from('access_log').insert({
     actor_user_id: userData.user.id,
     actor_role: 'practitioner',
-    patient_user_id: patientUserId,
+    patient_user_id: resolvedPatientUserId,
     action: 'auth_failure',
     resource_type: 'practitioner_mfa_assurance',
     resource_id: null,
