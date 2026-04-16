@@ -50,7 +50,9 @@ const WWW_AUTHENTICATE_INVALID_JWT =
  *
  * @param wwwAuthenticate - Full `WWW-Authenticate` field value.
  */
-function unauthorizedJsonHeaders(wwwAuthenticate: string): Record<string, string> {
+function unauthorizedJsonHeaders(
+  wwwAuthenticate: string,
+): Record<string, string> {
   return {
     ...CORS_HEADERS,
     'Content-Type': 'application/json',
