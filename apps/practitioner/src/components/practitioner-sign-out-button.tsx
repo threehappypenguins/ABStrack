@@ -9,19 +9,24 @@ import {
   practitionerSignOutEverywhere,
 } from '@/lib/practitioner-device-trust';
 
-const SECONDARY_SIGN_OUT_CLASS =
+/** Default surface styling for primary and secondary sign-out controls. */
+const SIGN_OUT_BUTTON_SURFACE_CLASS =
   'min-h-11 rounded-md border border-app-border bg-app-surface px-4 py-2 text-sm font-medium text-app-ink shadow-sm transition hover:bg-[var(--app-nav-hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg';
 
 export type PractitionerSignOutButtonProps = {
   /** Visible button label for the default (session-aware) sign-out. */
   label?: string;
-  /** Tailwind / layout classes for the primary sign-out control. */
+  /**
+   * Tailwind / layout classes for the primary sign-out control. When omitted, a built-in surface
+   * style is used; pass a string to override completely.
+   */
   className?: string;
 };
 
 /**
  * Practitioner sign-out: default action respects MFA device trust (soft local clear) when active;
- * secondary action performs full server sign-out via `POST /api/auth/logout`.
+ * secondary action performs full server sign-out via `POST /api/auth/logout`. Primary and secondary
+ * buttons share a default surface style; pass `className` on the primary control only to override.
  *
  * @param props - Labels and styling.
  * @returns Accessible sign-out controls and optional trust explanation.
@@ -30,6 +35,7 @@ export function PractitionerSignOutButton({
   label = 'Log out',
   className,
 }: PractitionerSignOutButtonProps) {
+  const primaryClassName = className ?? SIGN_OUT_BUTTON_SURFACE_CLASS;
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const { announce } = useAnnounce();
   const [signingOut, setSigningOut] = useState(false);
@@ -125,7 +131,7 @@ export function PractitionerSignOutButton({
         <button
           type="button"
           data-testid="practitioner-sign-out"
-          className={className}
+          className={primaryClassName}
           disabled={busy}
           {...(busy ? { 'aria-busy': true as const } : {})}
           aria-describedby={
@@ -138,7 +144,7 @@ export function PractitionerSignOutButton({
         <button
           type="button"
           data-testid="practitioner-sign-out-everywhere"
-          className={SECONDARY_SIGN_OUT_CLASS}
+          className={SIGN_OUT_BUTTON_SURFACE_CLASS}
           disabled={busy}
           {...(signingOutEverywhere ? { 'aria-busy': true as const } : {})}
           onClick={handleSignOutEverywhere}

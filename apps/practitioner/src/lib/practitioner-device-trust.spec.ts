@@ -40,6 +40,32 @@ describe('tryRestoreTrustedMfaSession', () => {
     localStorage.clear();
   });
 
+  it('clears the trust bundle when stored bundle user id does not match current user', async () => {
+    const otherUserId = '99999999-9999-9999-9999-999999999999';
+    localStorage.setItem(
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
+      buildBundleJson(otherUserId, Date.now() + 60_000),
+    );
+
+    const getSession = jest.fn();
+    const supabase = {
+      auth: {
+        getSession,
+        setSession: jest.fn(),
+        signOut: jest.fn(),
+        mfa: {},
+      },
+    } as unknown as BrowserClient;
+
+    await expect(tryRestoreTrustedMfaSession(supabase, userId)).resolves.toBe(
+      false,
+    );
+    expect(
+      localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
+    ).toBeNull();
+    expect(getSession).not.toHaveBeenCalled();
+  });
+
   it('clears the trust bundle when assurance cannot be read', async () => {
     localStorage.setItem(
       PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,

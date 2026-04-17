@@ -9,9 +9,6 @@ import { getPatientDataMfaBlockReason } from '@/lib/practitioner-patient-data-ac
 import { usePractitionerVerifiedTotpCount } from '@/lib/use-practitioner-verified-totp';
 import { PractitionerSignOutButton } from './practitioner-sign-out-button';
 
-const PRACTITIONER_SIGN_OUT_BUTTON_CLASS =
-  'min-h-11 rounded-md border border-app-border bg-app-surface px-4 py-2 text-sm font-medium text-app-ink shadow-sm transition hover:bg-[var(--app-nav-hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg';
-
 const MFA_BLOCK_COPY = {
   enrollment: {
     title: 'Set up two-factor authentication first',
@@ -130,9 +127,7 @@ export function PractitionerPatientRoutesGate({
           >
             Try again
           </button>
-          <PractitionerSignOutButton
-            className={PRACTITIONER_SIGN_OUT_BUTTON_CLASS}
-          />
+          <PractitionerSignOutButton />
         </div>
       </div>
     );
@@ -222,10 +217,7 @@ export function PractitionerPatientRoutesGate({
             >
               Open security setup
             </Link>
-            <PractitionerSignOutButton
-              label="Sign out and try again"
-              className={PRACTITIONER_SIGN_OUT_BUTTON_CLASS}
-            />
+            <PractitionerSignOutButton label="Sign out and try again" />
           </div>
         </div>
       );
@@ -253,9 +245,7 @@ function IdentityBarrier({
       <h1 className="text-xl font-semibold text-app-ink">{title}</h1>
       <p className="mt-3 text-sm text-app-muted">{description}</p>
       <div className="mt-6">
-        <PractitionerSignOutButton
-          className={PRACTITIONER_SIGN_OUT_BUTTON_CLASS}
-        />
+        <PractitionerSignOutButton />
       </div>
     </div>
   );
@@ -272,9 +262,7 @@ function UnexpectedGateFallback({ gate }: { gate: PractitionerAppGate }) {
         Unexpected gate state: {gate.kind}. Please refresh or sign out.
       </p>
       <div className="mt-4">
-        <PractitionerSignOutButton
-          className={PRACTITIONER_SIGN_OUT_BUTTON_CLASS}
-        />
+        <PractitionerSignOutButton />
       </div>
     </div>
   );

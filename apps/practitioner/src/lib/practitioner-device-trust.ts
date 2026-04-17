@@ -257,6 +257,8 @@ async function revertToPreRestoreSession(
 
 /**
  * After email/password sign-in, attempts to restore a prior AAL2 session from the trust bundle.
+ * If the stored bundle’s `userId` does not match the current password session’s user, clears the
+ * bundle and returns (avoids keeping another user’s tokens after account switch).
  * On failure (revoked or expired tokens, **session user mismatch** after restore, assurance error,
  * **getSession error**, or session not at **aal2**), clears the bundle and restores the pre-restore
  * password session (or signs out) so the client is not left authenticated as the wrong user. If the
@@ -272,7 +274,11 @@ export async function tryRestoreTrustedMfaSession(
   userId: string,
 ): Promise<boolean> {
   const bundle = readBundle();
-  if (!bundle || bundle.userId !== userId) {
+  if (!bundle) {
+    return false;
+  }
+  if (bundle.userId !== userId) {
+    clearMfaTrustBundle();
     return false;
   }
   if (bundle.trustedUntilMs <= Date.now()) {

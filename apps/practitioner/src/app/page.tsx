@@ -14,9 +14,6 @@ import {
 } from '../lib/mfa-user-messages';
 import { PractitionerSignOutButton } from '../components/practitioner-sign-out-button';
 
-const PRACTITIONER_SIGN_OUT_BUTTON_CLASS =
-  'min-h-11 rounded-md border border-app-border bg-app-surface px-4 py-2 text-sm font-medium text-app-ink shadow-sm transition hover:bg-[var(--app-nav-hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg';
-
 type TotpEnrollment = {
   id: string;
   qrCodeImageSrc: string;
@@ -390,9 +387,7 @@ export default function Index() {
           signing in again. If this keeps happening, try again later.
         </p>
         <div className="mt-6">
-          <PractitionerSignOutButton
-            className={PRACTITIONER_SIGN_OUT_BUTTON_CLASS}
-          />
+          <PractitionerSignOutButton />
         </div>
       </div>
     );
@@ -413,9 +408,7 @@ export default function Index() {
           accounts must be created through the correct invitation flow.
         </p>
         <div className="mt-6">
-          <PractitionerSignOutButton
-            className={PRACTITIONER_SIGN_OUT_BUTTON_CLASS}
-          />
+          <PractitionerSignOutButton />
         </div>
       </div>
     );
@@ -441,9 +434,7 @@ export default function Index() {
           app.
         </p>
         <div className="mt-6">
-          <PractitionerSignOutButton
-            className={PRACTITIONER_SIGN_OUT_BUTTON_CLASS}
-          />
+          <PractitionerSignOutButton />
         </div>
       </div>
     );
@@ -482,9 +473,7 @@ export default function Index() {
         ) : null}
         <div className="mt-4 flex flex-wrap items-center gap-3">
           {isAuthenticated ? (
-            <PractitionerSignOutButton
-              className={PRACTITIONER_SIGN_OUT_BUTTON_CLASS}
-            />
+            <PractitionerSignOutButton />
           ) : (
             <Link
               href="/login"
