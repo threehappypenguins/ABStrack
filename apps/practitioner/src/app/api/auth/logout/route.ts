@@ -12,7 +12,8 @@ import { getSameOriginLogoutPostFailure } from '@/lib/same-origin-logout-post';
  * mutating session state, to mitigate CSRF-driven logouts.
  *
  * @param request - Incoming request with current cookies.
- * @returns Redirect response to practitioner login, or 403 when origin validation fails.
+ * @returns Redirect response to practitioner login, or **400** (e.g. malformed `Referer`) / **403**
+ *   when same-origin validation fails — see {@link getSameOriginLogoutPostFailure}.
  */
 export async function POST(request: NextRequest) {
   const csrfFailure = getSameOriginLogoutPostFailure(request);

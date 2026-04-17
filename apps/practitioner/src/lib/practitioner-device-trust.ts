@@ -46,13 +46,16 @@ const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
  *
  * @returns True only when `NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST` is the string `true` or `1`
  *   (case-insensitive, trimmed).
+ *
+ * Uses **dot** `process.env.NEXT_PUBLIC_…` access only — Next.js inlines public env at build time for
+ * static references; bracket or dynamic lookups are not replaced (see Next.js env docs).
  */
 export function isPractitionerMfaDeviceTrustEnabled(): boolean {
   let raw: string | undefined;
   try {
     raw =
       typeof process !== 'undefined' && process.env != null
-        ? process.env['NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST']
+        ? process.env.NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST
         : undefined;
   } catch {
     return false;
