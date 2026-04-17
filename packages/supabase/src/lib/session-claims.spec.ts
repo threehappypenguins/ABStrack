@@ -37,6 +37,16 @@ describe('parseAbstrackAccessTokenClaims', () => {
     expect(claims?.sub).toBe('11111111-1111-1111-1111-111111111111');
   });
 
+  it('decodes UTF-8 claim values in the JWT payload (not Latin-1)', () => {
+    const token = makeUnsignedJwt({
+      aal: 'aal2',
+      email: 'tëst@example.com',
+    });
+    const claims = parseAbstrackAccessTokenClaims(token);
+    expect(claims?.aal).toBe('aal2');
+    expect(claims?.email).toBe('tëst@example.com');
+  });
+
   it('returns null when neither atob nor Buffer is available', () => {
     const token = makeUnsignedJwt({ aal: 'aal2' });
     const prevAtob = globalThis.atob;

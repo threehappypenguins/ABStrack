@@ -38,6 +38,39 @@ export type AbstrackAccessTokenClaims = {
 };
 
 /**
+ * Decodes standard base64 (padded) payload segment bytes to a UTF-8 string.
+ *
+ * JWT payloads are JSON encoded as UTF-8 per RFC 7519; `atob()` alone yields a Latin-1 string
+ * and can mis-handle non-ASCII code points in claim values.
+ *
+ * @param paddedBase64 - Base64-encoded payload (with padding).
+ * @returns UTF-8 JSON text, or null if no decoder is available.
+ */
+function base64PayloadToUtf8String(paddedBase64: string): string | null {
+  try {
+    if (typeof Buffer !== 'undefined' && typeof Buffer.from === 'function') {
+      return Buffer.from(paddedBase64, 'base64').toString('utf8');
+    }
+    if (typeof atob === 'function') {
+      const binary = atob(paddedBase64);
+      const len = binary.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binary.charCodeAt(i) & 0xff;
+      }
+      if (typeof TextDecoder !== 'undefined') {
+        return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+      }
+      // Very old runtimes: no TextDecoder — ASCII-only JWT JSON still parses; non-ASCII may fail.
+      return binary;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Decodes a JWT access token payload without verifying the signature.
  *
  * Callers MUST only use this on tokens already issued to the Supabase client session; signature
@@ -61,16 +94,8 @@ export function parseAbstrackAccessTokenClaims(
     const pad = (4 - (base64.length % 4)) % 4;
     const padded = base64 + '='.repeat(pad);
 
-    let json: string;
-    if (typeof atob === 'function') {
-      json = atob(padded);
-    } else if (
-      typeof Buffer !== 'undefined' &&
-      typeof Buffer.from === 'function'
-    ) {
-      json = Buffer.from(padded, 'base64').toString('utf8');
-    } else {
-      // Hermes / some runtimes: no atob and no Buffer — fail closed (no claims).
+    const json = base64PayloadToUtf8String(padded);
+    if (json == null) {
       return null;
     }
 

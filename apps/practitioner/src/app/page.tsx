@@ -122,6 +122,13 @@ export default function Index() {
   };
 
   useEffect(() => {
+    if (gate.kind !== 'profile_error') {
+      return;
+    }
+    console.error('Practitioner profile load failed', gate.error);
+  }, [gate]);
+
+  useEffect(() => {
     if (sessionLoading) {
       return;
     }
@@ -375,8 +382,8 @@ export default function Index() {
           Could not load your profile
         </h1>
         <p className="mt-3 text-sm text-app-muted">
-          {gate.error.message}. You can try signing out and back in, or try
-          again later.
+          Something went wrong while loading your account. Try signing out and
+          signing in again. If this keeps happening, try again later.
         </p>
         <form action="/api/auth/logout" method="POST" className="mt-6">
           <button
