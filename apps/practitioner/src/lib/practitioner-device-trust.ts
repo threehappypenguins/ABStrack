@@ -50,9 +50,12 @@ export type PractitionerMfaTrustBundle = {
 };
 
 /**
- * Removes persisted Supabase browser session keys without calling Auth sign-out (no server-side
- * refresh revocation). Used for “trusted device” sign-out so the next sign-in can restore AAL2.
- * Swallows `localStorage` errors (blocked storage, privacy mode, quota) so sign-out still proceeds.
+ * Removes `sb-*-auth-token` keys from `localStorage` when present. The practitioner browser client
+ * uses **`@supabase/ssr` cookie-backed sessions**; ending the session is done with
+ * `auth.signOut` or `POST /api/auth/logout`. This sweep still matters because the Supabase client
+ * may persist auth-related material under those keys in some cases, and {@link practitionerSignOutEverywhere}
+ * pairs it with server logout so nothing session-like is left in browser storage for this origin.
+ * Swallows `localStorage` errors (blocked storage, privacy mode, quota).
  */
 export function clearSupabaseBrowserAuthStorage(): void {
   if (typeof window === 'undefined') {
@@ -310,10 +313,11 @@ export function practitionerSignOutEverywhere(): void {
 }
 
 /**
- * Signs the user out. If MFA device trust is still valid, clears only local Supabase storage so the
- * refresh token is not revoked server-side (allows AAL2 restore on next visit). Otherwise performs
- * a full Supabase sign-out and clears the trust bundle. For a **full** revoke while trust is active,
- * use {@link practitionerSignOutEverywhere} instead.
+ * Signs the user out. If MFA device trust is still valid, ends the browser session with
+ * **`auth.signOut({ scope: 'local' })`** so cookie-backed `@supabase/ssr` state is cleared without
+ * revoking the refresh token server-side (allows AAL2 restore from the trust bundle on next visit).
+ * Otherwise performs a full Supabase sign-out and clears the trust bundle. For a **full** revoke
+ * while trust is active, use {@link practitionerSignOutEverywhere} instead.
  *
  * Navigation to `/login` runs only in the browser (`window` present). In non-browser environments
  * (SSR, tests without `window`), storage and `signOut` still run when applicable, but there is no
@@ -334,7 +338,7 @@ export async function practitionerSignOut(
     bundle.trustedUntilMs > Date.now();
 
   if (trustActiveForUser) {
-    clearSupabaseBrowserAuthStorage();
+    await supabase.auth.signOut({ scope: 'local' });
     if (typeof window !== 'undefined') {
       window.location.assign('/login');
     }

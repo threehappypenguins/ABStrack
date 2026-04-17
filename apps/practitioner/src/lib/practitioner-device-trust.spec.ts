@@ -329,12 +329,11 @@ describe('practitionerSignOut', () => {
     localStorage.clear();
   });
 
-  it('soft sign-out: clears sb-* auth storage, keeps MFA bundle, does not call auth.signOut', async () => {
+  it('soft sign-out: calls auth.signOut with local scope, keeps MFA bundle', async () => {
     localStorage.setItem(
       PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
       buildBundleJson(userId, Date.now() + 60_000),
     );
-    localStorage.setItem('sb-example-auth-token', '{"persisted":true}');
 
     const signOut = jest.fn().mockResolvedValue({ error: null });
     const supabase = {
@@ -353,11 +352,11 @@ describe('practitionerSignOut', () => {
     expect(
       localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
     ).not.toBeNull();
-    expect(localStorage.getItem('sb-example-auth-token')).toBeNull();
-    expect(signOut).not.toHaveBeenCalled();
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(signOut).toHaveBeenCalledWith({ scope: 'local' });
   });
 
-  it('full sign-out: clears MFA bundle and calls auth.signOut (expired trust window)', async () => {
+  it('full sign-out: clears MFA bundle and calls auth.signOut without local scope (expired trust window)', async () => {
     localStorage.setItem(
       PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
       buildBundleJson(userId, Date.now() - 1000),
@@ -378,7 +377,8 @@ describe('practitionerSignOut', () => {
     expect(
       localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
     ).toBeNull();
-    expect(signOut).toHaveBeenCalled();
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(signOut).toHaveBeenCalledWith();
   });
 
   it('full sign-out when no session: clears bundle and calls auth.signOut', async () => {
@@ -400,7 +400,8 @@ describe('practitionerSignOut', () => {
     expect(
       localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
     ).toBeNull();
-    expect(signOut).toHaveBeenCalled();
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(signOut).toHaveBeenCalledWith();
   });
 });
 
@@ -419,7 +420,7 @@ describe('practitionerSignOutEverywhere', () => {
     submitSpy.mockRestore();
   });
 
-  it('clears MFA bundle and sb-* auth storage and POSTs logout form', () => {
+  it('clears MFA bundle, scrubs sb-* localStorage keys, and POSTs logout form', () => {
     localStorage.setItem(
       PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
       buildBundleJson(userId, Date.now() + 60_000),
@@ -432,6 +433,6 @@ describe('practitionerSignOutEverywhere', () => {
       localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
     ).toBeNull();
     expect(localStorage.getItem('sb-proj-auth-token')).toBeNull();
-    expect(submitSpy).toHaveBeenCalled();
+    expect(submitSpy).toHaveBeenCalledTimes(1);
   });
 });
