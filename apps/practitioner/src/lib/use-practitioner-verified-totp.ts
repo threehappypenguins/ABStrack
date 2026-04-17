@@ -11,8 +11,13 @@ export type UsePractitionerVerifiedTotpCountResult = {
   refresh: () => Promise<void>;
 };
 
+type FactorsPhase = 'idle' | 'loading' | 'ready';
+
 /**
  * Loads verified TOTP factor count for practitioner MFA gating. No-ops when `enabled` is false.
+ *
+ * When `enabled` flips from false to true, loading is set synchronously (via state adjustment
+ * during render) so consumers do not briefly see a settled count of 0 before the first fetch.
  *
  * @param enabled - When false, clears counts and skips network calls (e.g. non-practitioner gates).
  * @returns Verified factor count, loading and error state, and a manual refresh.
@@ -21,10 +26,26 @@ export function usePractitionerVerifiedTotpCount(
   enabled: boolean,
 ): UsePractitionerVerifiedTotpCountResult {
   const [verifiedTotpCount, setVerifiedTotpCount] = useState(0);
-  const [loading, setLoading] = useState(enabled);
+  const [prevEnabled, setPrevEnabled] = useState(enabled);
+  const [phase, setPhase] = useState<FactorsPhase>(() =>
+    enabled ? 'loading' : 'idle',
+  );
   const [error, setError] = useState<Error | null>(null);
   const isMountedRef = useRef(true);
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
+
+  if (enabled !== prevEnabled) {
+    setPrevEnabled(enabled);
+    if (!enabled) {
+      setPhase('idle');
+      setVerifiedTotpCount(0);
+      setError(null);
+    } else {
+      setPhase('loading');
+      setVerifiedTotpCount(0);
+      setError(null);
+    }
+  }
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -41,55 +62,33 @@ export function usePractitionerVerifiedTotpCount(
     return result.data.totp.filter((f) => f.status === 'verified').length;
   }, [supabase]);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback((): Promise<void> => {
     if (!enabled) {
-      return;
+      return Promise.resolve();
     }
     setError(null);
-    if (isMountedRef.current) {
-      setLoading(true);
-    }
-    try {
-      const n = await loadFactors();
-      if (isMountedRef.current) {
-        setVerifiedTotpCount(n);
-      }
-    } catch (e) {
-      if (isMountedRef.current) {
-        setError(e instanceof Error ? e : new Error(String(e)));
-      }
-    } finally {
-      if (isMountedRef.current) {
-        setLoading(false);
-      }
-    }
-  }, [enabled, loadFactors]);
+    setPhase('loading');
+    return Promise.resolve();
+  }, [enabled]);
 
   useEffect(() => {
-    if (!enabled) {
-      setVerifiedTotpCount(0);
-      setLoading(false);
-      setError(null);
+    if (!enabled || phase !== 'loading') {
       return;
     }
 
     let cancelled = false;
-    setLoading(true);
-    setError(null);
 
     void (async () => {
       try {
         const n = await loadFactors();
-        if (!cancelled) {
+        if (!cancelled && isMountedRef.current) {
           setVerifiedTotpCount(n);
+          setPhase('ready');
         }
       } catch (e) {
-        if (!cancelled) {
+        if (!cancelled && isMountedRef.current) {
           setError(e instanceof Error ? e : new Error(String(e)));
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
+          setPhase('ready');
         }
       }
     })();
@@ -97,7 +96,9 @@ export function usePractitionerVerifiedTotpCount(
     return () => {
       cancelled = true;
     };
-  }, [enabled, loadFactors]);
+  }, [enabled, phase, loadFactors]);
+
+  const loading = enabled && phase === 'loading';
 
   return { verifiedTotpCount, loading, error, refresh };
 }

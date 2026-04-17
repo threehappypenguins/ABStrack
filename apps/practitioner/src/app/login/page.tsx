@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState, type FormEvent } from 'react';
 import {
+  clearMfaTrustBundle,
   getTrustedUntilMsAfterVerification,
   saveMfaTrustBundle,
   tryRestoreTrustedMfaSession,
@@ -36,6 +37,7 @@ export default function LoginPage() {
   const [step, setStep] = useState<LoginStep>('credentials');
   const [loading, setLoading] = useState(false);
   const [verifyLoading, setVerifyLoading] = useState(false);
+  const [backToSignInLoading, setBackToSignInLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
 
@@ -179,6 +181,40 @@ export default function LoginPage() {
     }
   };
 
+  const handleBackToSignIn = async () => {
+    if (verifyLoading || backToSignInLoading) {
+      return;
+    }
+    setError(null);
+    setBackToSignInLoading(true);
+    try {
+      const { error: signOutError } = await supabase.auth.signOut();
+      if (signOutError) {
+        throw signOutError;
+      }
+      clearMfaTrustBundle();
+      setStep('credentials');
+      setVerifyCode('');
+      setMfaFactorId(null);
+      setRememberDevice(false);
+      setPassword('');
+      setStatus(null);
+      router.refresh();
+      announce(
+        'Signed out. You can enter your email and password to sign in again.',
+        { politeness: 'polite' },
+      );
+    } catch (backError) {
+      console.error(backError);
+      const message =
+        'Could not sign out. Try again, or refresh the page before using a different account.';
+      setError(message);
+      announce(message, { politeness: 'assertive' });
+    } finally {
+      setBackToSignInLoading(false);
+    }
+  };
+
   const showCredentialsStep = step === 'credentials';
 
   return (
@@ -313,18 +349,23 @@ export default function LoginPage() {
 
             <button
               type="button"
+              disabled={verifyLoading || backToSignInLoading}
+              {...(backToSignInLoading ? { 'aria-busy': true as const } : {})}
+              aria-describedby="login-back-to-sign-in-hint"
               onClick={() => {
-                setStep('credentials');
-                setVerifyCode('');
-                setMfaFactorId(null);
-                setRememberDevice(false);
-                setStatus(null);
-                setError(null);
+                void handleBackToSignIn();
               }}
-              className="w-full rounded-md border border-app-border bg-app-surface px-4 py-2 text-app-ink transition hover:bg-[var(--app-nav-hover-bg)]"
+              className="w-full rounded-md border border-app-border bg-app-surface px-4 py-2 text-app-ink transition hover:bg-[var(--app-nav-hover-bg)] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Back to sign in
+              {backToSignInLoading ? 'Signing out…' : 'Back to sign in'}
             </button>
+            <p
+              id="login-back-to-sign-in-hint"
+              className="text-center text-xs text-app-muted"
+            >
+              Ends this session so you can use a different account or start
+              over.
+            </p>
           </form>
         )}
 
