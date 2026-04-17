@@ -78,9 +78,10 @@ export default function LoginPage() {
       );
       if (verifiedTotpFactors.length < 1) {
         const message =
-          'No verified TOTP factor is enabled yet. Finish security setup before accessing practitioner patient workflows.';
-        setStatus(message);
+          'No verified TOTP factor yet. Opening security setup so you can enroll TOTP.';
         announce(message, { politeness: 'assertive' });
+        router.push('/');
+        router.refresh();
         return;
       }
 
