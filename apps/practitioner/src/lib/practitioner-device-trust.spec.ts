@@ -1,4 +1,4 @@
-import type { getSupabaseBrowserClient } from '@abstrack/supabase/browser';
+import type { AbstrackSupabaseClient } from '@abstrack/supabase';
 import {
   isPractitionerMfaDeviceTrustActive,
   practitionerSignOut,
@@ -9,7 +9,7 @@ import {
 /** Must match `MFA_TRUST_KEY` in `practitioner-device-trust.ts`. */
 const MFA_TRUST_STORAGE_KEY = 'abstrack.practitioner.mfaTrustBundle.v1';
 
-type BrowserClient = ReturnType<typeof getSupabaseBrowserClient>;
+type BrowserClient = AbstrackSupabaseClient;
 
 function buildBundleJson(userId: string, trustedUntilMs: number) {
   return JSON.stringify({

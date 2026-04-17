@@ -23,10 +23,9 @@
  * @module practitioner-device-trust
  */
 
-import type { Session } from '@abstrack/supabase';
-import type { getSupabaseBrowserClient } from '@abstrack/supabase/browser';
+import type { AbstrackSupabaseClient, Session } from '@abstrack/supabase';
 
-type PractitionerBrowserClient = ReturnType<typeof getSupabaseBrowserClient>;
+type PractitionerBrowserClient = AbstrackSupabaseClient;
 
 const MFA_TRUST_KEY = 'abstrack.practitioner.mfaTrustBundle.v1';
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
