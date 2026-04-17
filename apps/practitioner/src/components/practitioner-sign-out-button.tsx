@@ -80,6 +80,9 @@ export function PractitionerSignOutButton({
     void practitionerSignOut(supabase)
       .catch((err: unknown) => {
         console.error('Practitioner sign out failed', err);
+        if (!mountedRef.current) {
+          return;
+        }
         const message =
           err instanceof Error
             ? err.message
