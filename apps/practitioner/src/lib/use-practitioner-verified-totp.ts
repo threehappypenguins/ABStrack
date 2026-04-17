@@ -1,7 +1,7 @@
 'use client';
 
 import { getSupabaseBrowserClient } from '@abstrack/supabase/browser';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 export type UsePractitionerVerifiedTotpCountResult = {
   verifiedTotpCount: number;
@@ -24,6 +24,7 @@ export function usePractitionerVerifiedTotpCount(
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<Error | null>(null);
   const isMountedRef = useRef(true);
+  const supabase = useMemo(() => getSupabaseBrowserClient(), []);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -33,13 +34,12 @@ export function usePractitionerVerifiedTotpCount(
   }, []);
 
   const loadFactors = useCallback(async (): Promise<number> => {
-    const supabase = getSupabaseBrowserClient();
     const result = await supabase.auth.mfa.listFactors();
     if (result.error) {
       throw result.error;
     }
     return result.data.totp.filter((f) => f.status === 'verified').length;
-  }, []);
+  }, [supabase]);
 
   const refresh = useCallback(async () => {
     if (!enabled) {

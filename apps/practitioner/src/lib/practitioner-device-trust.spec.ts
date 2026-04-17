@@ -1,5 +1,10 @@
 import type { getSupabaseBrowserClient } from '@abstrack/supabase/browser';
-import { tryRestoreTrustedMfaSession } from './practitioner-device-trust';
+import {
+  isPractitionerMfaDeviceTrustActive,
+  practitionerSignOut,
+  practitionerSignOutEverywhere,
+  tryRestoreTrustedMfaSession,
+} from './practitioner-device-trust';
 
 /** Must match `MFA_TRUST_KEY` in `practitioner-device-trust.ts`. */
 const MFA_TRUST_STORAGE_KEY = 'abstrack.practitioner.mfaTrustBundle.v1';
@@ -249,5 +254,170 @@ describe('tryRestoreTrustedMfaSession', () => {
       false,
     );
     expect(signOut).toHaveBeenCalled();
+  });
+});
+
+describe('isPractitionerMfaDeviceTrustActive', () => {
+  const userId = '00000000-0000-0000-0000-000000000099';
+
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('returns false when userId is missing or empty', () => {
+    expect(isPractitionerMfaDeviceTrustActive(undefined)).toBe(false);
+    expect(isPractitionerMfaDeviceTrustActive('')).toBe(false);
+  });
+
+  it('returns false when there is no bundle or user does not match', () => {
+    expect(isPractitionerMfaDeviceTrustActive(userId)).toBe(false);
+    localStorage.setItem(
+      MFA_TRUST_STORAGE_KEY,
+      buildBundleJson(
+        '00000000-0000-0000-0000-000000000001',
+        Date.now() + 60_000,
+      ),
+    );
+    expect(isPractitionerMfaDeviceTrustActive(userId)).toBe(false);
+  });
+
+  it('returns false when the trust window has expired', () => {
+    localStorage.setItem(
+      MFA_TRUST_STORAGE_KEY,
+      buildBundleJson(userId, Date.now() - 1000),
+    );
+    expect(isPractitionerMfaDeviceTrustActive(userId)).toBe(false);
+  });
+
+  it('returns true when a non-expired bundle exists for the user', () => {
+    localStorage.setItem(
+      MFA_TRUST_STORAGE_KEY,
+      buildBundleJson(userId, Date.now() + 60_000),
+    );
+    expect(isPractitionerMfaDeviceTrustActive(userId)).toBe(true);
+  });
+});
+
+describe('practitionerSignOut', () => {
+  const userId = '00000000-0000-0000-0000-000000000088';
+
+  /** jsdom does not implement navigation; `practitionerSignOut` calls `location.assign`. */
+  const origConsoleError = console.error;
+  beforeAll(() => {
+    jest.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      const text = args
+        .map((a) => (a instanceof Error ? a.message : String(a)))
+        .join(' ');
+      if (text.includes('Not implemented: navigation')) {
+        return;
+      }
+      origConsoleError.apply(console, args as Parameters<typeof console.error>);
+    });
+  });
+
+  afterAll(() => {
+    jest.restoreAllMocks();
+  });
+
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('soft sign-out: clears sb-* auth storage, keeps MFA bundle, does not call auth.signOut', async () => {
+    localStorage.setItem(
+      MFA_TRUST_STORAGE_KEY,
+      buildBundleJson(userId, Date.now() + 60_000),
+    );
+    localStorage.setItem('sb-example-auth-token', '{"persisted":true}');
+
+    const signOut = jest.fn().mockResolvedValue({ error: null });
+    const supabase = {
+      auth: {
+        getSession: jest.fn().mockResolvedValue({
+          data: {
+            session: sessionForUser(userId),
+          },
+        }),
+        signOut,
+      },
+    } as unknown as BrowserClient;
+
+    await practitionerSignOut(supabase);
+
+    expect(localStorage.getItem(MFA_TRUST_STORAGE_KEY)).not.toBeNull();
+    expect(localStorage.getItem('sb-example-auth-token')).toBeNull();
+    expect(signOut).not.toHaveBeenCalled();
+  });
+
+  it('full sign-out: clears MFA bundle and calls auth.signOut (expired trust window)', async () => {
+    localStorage.setItem(
+      MFA_TRUST_STORAGE_KEY,
+      buildBundleJson(userId, Date.now() - 1000),
+    );
+
+    const signOut = jest.fn().mockResolvedValue({ error: null });
+    const supabase = {
+      auth: {
+        getSession: jest.fn().mockResolvedValue({
+          data: { session: sessionForUser(userId) },
+        }),
+        signOut,
+      },
+    } as unknown as BrowserClient;
+
+    await practitionerSignOut(supabase);
+
+    expect(localStorage.getItem(MFA_TRUST_STORAGE_KEY)).toBeNull();
+    expect(signOut).toHaveBeenCalled();
+  });
+
+  it('full sign-out when no session: clears bundle and calls auth.signOut', async () => {
+    localStorage.setItem(
+      MFA_TRUST_STORAGE_KEY,
+      buildBundleJson(userId, Date.now() + 60_000),
+    );
+
+    const signOut = jest.fn().mockResolvedValue({ error: null });
+    const supabase = {
+      auth: {
+        getSession: jest.fn().mockResolvedValue({ data: { session: null } }),
+        signOut,
+      },
+    } as unknown as BrowserClient;
+
+    await practitionerSignOut(supabase);
+
+    expect(localStorage.getItem(MFA_TRUST_STORAGE_KEY)).toBeNull();
+    expect(signOut).toHaveBeenCalled();
+  });
+});
+
+describe('practitionerSignOutEverywhere', () => {
+  const userId = '00000000-0000-0000-0000-000000000077';
+  let submitSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    localStorage.clear();
+    submitSpy = jest
+      .spyOn(HTMLFormElement.prototype, 'submit')
+      .mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    submitSpy.mockRestore();
+  });
+
+  it('clears MFA bundle and sb-* auth storage and POSTs logout form', () => {
+    localStorage.setItem(
+      MFA_TRUST_STORAGE_KEY,
+      buildBundleJson(userId, Date.now() + 60_000),
+    );
+    localStorage.setItem('sb-proj-auth-token', '{"refresh":true}');
+
+    practitionerSignOutEverywhere();
+
+    expect(localStorage.getItem(MFA_TRUST_STORAGE_KEY)).toBeNull();
+    expect(localStorage.getItem('sb-proj-auth-token')).toBeNull();
+    expect(submitSpy).toHaveBeenCalled();
   });
 });
