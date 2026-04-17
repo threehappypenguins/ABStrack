@@ -208,7 +208,9 @@ async function revertToPreRestoreSession(
  * After email/password sign-in, attempts to restore a prior AAL2 session from the trust bundle.
  * On failure (revoked or expired tokens, **session user mismatch** after restore, assurance error,
  * **getSession error**, or session not at **aal2**), clears the bundle and restores the pre-restore
- * password session (or signs out) so the client is not left authenticated as the wrong user.
+ * password session (or signs out) so the client is not left authenticated as the wrong user. If the
+ * **initial** `getSession()` user id does not match `userId`, clears the bundle and **signs out**
+ * (there is no safe pre-restore token pair for the expected user).
  *
  * @param supabase - Browser Supabase client.
  * @param userId - Authenticated user id from the new password session.
@@ -238,6 +240,7 @@ export async function tryRestoreTrustedMfaSession(
 
   if (preRestoreSession?.user?.id !== userId) {
     clearMfaTrustBundle();
+    await supabase.auth.signOut();
     return false;
   }
 

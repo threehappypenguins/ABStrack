@@ -25,6 +25,8 @@ type LoginStep = 'credentials' | 'mfa_verify';
  * Successful verification with “Trust this device” unchecked clears any stored bundle so trust
  * matches the checkbox for this sign-in. If there is no verified TOTP factor, any existing bundle
  * is cleared before redirecting to security setup so stale tokens are not kept in storage.
+ * If `getUser` does not return a user id after a successful password sign-in, the client signs out
+ * and clears the trust bundle so no half-established session remains.
  *
  * @returns Login UI.
  */
@@ -66,10 +68,16 @@ export default function LoginPage() {
         return;
       }
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user?.id) {
+      const userResult = await supabase.auth.getUser();
+      const user = userResult.data.user;
+      if (userResult.error || user?.id == null || user.id === '') {
+        try {
+          await supabase.auth.signOut();
+          clearMfaTrustBundle();
+        } catch (cleanupError) {
+          console.error(cleanupError);
+        }
+        router.refresh();
         const message = 'Could not resolve your account after sign-in.';
         setError(message);
         announce(message, { politeness: 'assertive' });

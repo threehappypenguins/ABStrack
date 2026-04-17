@@ -63,6 +63,10 @@ type MfaMock = {
  */
 function createLoginSupabaseMock(options?: {
   signInError?: { message: string } | null;
+  getUserResponse?: {
+    error: Error | null;
+    user: { id: string } | null;
+  };
   listFactors?: {
     error: Error | null;
     totp: Array<{ id: string; status: string }>;
@@ -80,8 +84,13 @@ function createLoginSupabaseMock(options?: {
   const signInWithPassword = jest
     .fn()
     .mockResolvedValue({ error: signInError });
+  const getUserResolved = options?.getUserResponse ?? {
+    error: null as Error | null,
+    user: { id: USER_ID },
+  };
   const getUser = jest.fn().mockResolvedValue({
-    data: { user: { id: USER_ID } },
+    data: { user: getUserResolved.user },
+    error: getUserResolved.error,
   });
   const listFactors = jest.fn().mockResolvedValue({
     error: listErr,
@@ -342,6 +351,27 @@ describe('LoginPage MFA state machine', () => {
       );
     });
     expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('signs out and clears trust bundle when getUser does not resolve after password sign-in', async () => {
+    const { client, mfa } = createLoginSupabaseMock({
+      getUserResponse: { error: null, user: null },
+    });
+    mockedGetClient.mockReturnValue(client as never);
+
+    renderLogin();
+    await submitCredentials();
+
+    await waitFor(() => {
+      expect(getVisibleFormError().textContent).toContain(
+        'Could not resolve your account after sign-in.',
+      );
+    });
+
+    expect(mfa.signOut).toHaveBeenCalled();
+    expect(mockedClearBundle).toHaveBeenCalled();
+    expect(mockRefresh).toHaveBeenCalled();
+    expect(mfa.listFactors).not.toHaveBeenCalled();
   });
 
   it('signs out and clears trust bundle when MFA setup fails after password succeeds', async () => {

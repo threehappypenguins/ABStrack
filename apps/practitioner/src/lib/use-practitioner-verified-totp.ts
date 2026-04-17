@@ -16,13 +16,17 @@ export type UsePractitionerVerifiedTotpCountResult = {
   error: Error | null;
   /**
    * Reloads the verified TOTP factor list. The returned promise settles when that request
-   * finishes (success or failure).
+   * finishes (success or failure). If `enabled` becomes false while the request is in flight,
+   * results are discarded and state is not updated.
    */
   refresh: () => Promise<void>;
 };
 
 /**
  * Loads verified TOTP factor count for practitioner MFA gating. No-ops when `enabled` is false.
+ *
+ * In-flight `listFactors` calls consult the latest `enabled` after each `await`, so turning
+ * `enabled` off always wins and cannot repopulate counts from a stale request.
  *
  * When `enabled` flips from false to true, `useLayoutEffect` sets a pending flag before paint so
  * consumers do not briefly see a settled count of 0 before the first fetch.
@@ -44,6 +48,9 @@ export function usePractitionerVerifiedTotpCount(
    */
   const skipNextEffectFetchRef = useRef(false);
   const isMountedRef = useRef(true);
+  /** Latest `enabled` for async guards (refresh / effect may finish after `enabled` flips false). */
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
 
   useLayoutEffect(() => {
@@ -88,16 +95,18 @@ export function usePractitionerVerifiedTotpCount(
     setPending(true);
     try {
       const n = await loadFactors();
-      if (isMountedRef.current) {
-        setVerifiedTotpCount(n);
-        setError(null);
-        setPending(false);
+      if (!isMountedRef.current || !enabledRef.current) {
+        return;
       }
+      setVerifiedTotpCount(n);
+      setError(null);
+      setPending(false);
     } catch (e) {
-      if (isMountedRef.current) {
-        setError(e instanceof Error ? e : new Error(String(e)));
-        setPending(false);
+      if (!isMountedRef.current || !enabledRef.current) {
+        return;
       }
+      setError(e instanceof Error ? e : new Error(String(e)));
+      setPending(false);
     } finally {
       skipNextEffectFetchRef.current = false;
     }
@@ -118,13 +127,13 @@ export function usePractitionerVerifiedTotpCount(
     void (async () => {
       try {
         const n = await loadFactors();
-        if (!cancelled && isMountedRef.current) {
+        if (!cancelled && isMountedRef.current && enabledRef.current) {
           setVerifiedTotpCount(n);
           setError(null);
           setPending(false);
         }
       } catch (e) {
-        if (!cancelled && isMountedRef.current) {
+        if (!cancelled && isMountedRef.current && enabledRef.current) {
           setError(e instanceof Error ? e : new Error(String(e)));
           setPending(false);
         }

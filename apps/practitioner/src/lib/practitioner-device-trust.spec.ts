@@ -129,6 +129,43 @@ describe('tryRestoreTrustedMfaSession', () => {
     expect(signOut).not.toHaveBeenCalled();
   });
 
+  it('clears the trust bundle and signs out when initial session user id does not match', async () => {
+    localStorage.setItem(
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
+      buildBundleJson(userId, Date.now() + 60_000),
+    );
+
+    const otherId = '99999999-9999-9999-9999-999999999999';
+
+    const setSession = jest.fn();
+    const signOut = jest.fn().mockResolvedValue({ error: null });
+
+    const supabase = {
+      auth: {
+        setSession,
+        signOut,
+        getSession: jest.fn().mockResolvedValue({
+          data: { session: prePasswordSession(otherId) },
+        }),
+        mfa: {
+          getAuthenticatorAssuranceLevel: jest.fn(),
+        },
+      },
+    } as unknown as BrowserClient;
+
+    await expect(tryRestoreTrustedMfaSession(supabase, userId)).resolves.toBe(
+      false,
+    );
+    expect(
+      localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
+    ).toBeNull();
+    expect(setSession).not.toHaveBeenCalled();
+    expect(signOut).toHaveBeenCalled();
+    expect(
+      supabase.auth.mfa.getAuthenticatorAssuranceLevel,
+    ).not.toHaveBeenCalled();
+  });
+
   it('clears the trust bundle when restored session user id does not match and reverts session', async () => {
     localStorage.setItem(
       PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
