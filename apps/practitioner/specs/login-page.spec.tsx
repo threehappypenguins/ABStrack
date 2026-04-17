@@ -515,6 +515,11 @@ describe('LoginPage MFA state machine', () => {
         'no longer matches this sign-in after the saved device check',
       );
     });
+    expect(getVisibleFormError().textContent).toContain(
+      'signed out for safety',
+    );
+    expect(client.auth.signOut).toHaveBeenCalled();
+    expect(mockedClearBundle).toHaveBeenCalled();
     expect(screen.queryByLabelText(/Authenticator code/i)).toBeNull();
     expect(mockPush).not.toHaveBeenCalled();
   });

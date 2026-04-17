@@ -30,7 +30,9 @@ type LoginStep = 'credentials' | 'mfa_verify';
  * {@link tryRestoreTrustedMfaSession} (discriminated: `restored`, `not_restored`, or `signed_out`;
  * some outcomes sign the user out), the client re-checks `getSession` when the outcome is
  * `not_restored` before reading assurance or showing the MFA step so a missing session cannot be
- * mistaken for a password session still awaiting TOTP.
+ * mistaken for a password session still awaiting TOTP. If the post-restore session user id does not
+ * match the account from password sign-in, the client signs out and clears the trust bundle before
+ * prompting for credentials again.
  *
  * @returns Login UI.
  */
@@ -149,8 +151,15 @@ export default function LoginPage() {
         return;
       }
       if (afterRestoreSession.data.session.user.id !== user.id) {
+        try {
+          await supabase.auth.signOut();
+          clearMfaTrustBundle();
+        } catch (cleanupError) {
+          console.error(cleanupError);
+        }
+        router.refresh();
         const message =
-          'Your session no longer matches this sign-in after the saved device check. Enter your email and password again.';
+          'Your session no longer matches this sign-in after the saved device check. You have been signed out for safety. Enter your email and password again.';
         setError(message);
         announce(message, { politeness: 'assertive' });
         setStep('credentials');
