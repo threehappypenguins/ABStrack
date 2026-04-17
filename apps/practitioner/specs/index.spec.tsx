@@ -1,15 +1,59 @@
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { LiveAnnouncerProvider } from '@abstrack/ui/a11y-web';
 import Page from '../src/app/page';
 import type { PractitionerSupabaseProfilesRow } from '../src/lib/supabase-wiring';
+import { useAuth } from '../src/lib/auth-provider';
+import type { Session } from '@abstrack/supabase';
 
 jest.mock('../src/lib/auth-provider', () => ({
-  useAuth: () => ({
-    session: null,
-    loading: false,
-    gate: { kind: 'signed_out' as const },
-  }),
+  useAuth: jest.fn(),
 }));
+
+const mockedUseAuth = jest.mocked(useAuth);
+
+/** Minimal session shape for gate branches that require `session?.access_token`. */
+function sessionWithToken(): Session {
+  return {
+    access_token: 'test-access-token',
+    refresh_token: '',
+    expires_in: 3600,
+    expires_at: undefined,
+    token_type: 'bearer',
+    user: {
+      id: '00000000-0000-0000-0000-000000000001',
+      aud: 'authenticated',
+      role: 'authenticated',
+      email: 'user@example.com',
+      app_metadata: {},
+      user_metadata: {},
+      created_at: '',
+    },
+  } as Session;
+}
+
+function renderPage() {
+  return render(
+    <LiveAnnouncerProvider>
+      <Page />
+    </LiveAnnouncerProvider>,
+  );
+}
+
+function expectLogoutPostForm() {
+  const form = document.querySelector(
+    'form[action="/api/auth/logout"][method="POST"]',
+  );
+  expect(form).not.toBeNull();
+  expect(screen.getByRole('button', { name: /^Log out$/i })).toBeTruthy();
+}
+
+const patientProfileRow: PractitionerSupabaseProfilesRow = {
+  id: '00000000-0000-0000-0000-000000000001',
+  display_name: null,
+  app_role: 'patient',
+  created_at: '2020-01-01T00:00:00.000Z',
+  updated_at: '2020-01-01T00:00:00.000Z',
+};
 
 /** Home page calls `getSupabaseBrowserClient()` on mount; env-public throws without URL + key. */
 const JEST_SUPABASE_URL = 'https://test.supabase.co';
@@ -40,13 +84,98 @@ describe('Page', () => {
     }
   });
 
-  it('should render successfully', () => {
-    const { baseElement } = render(
-      <LiveAnnouncerProvider>
-        <Page />
-      </LiveAnnouncerProvider>,
-    );
+  beforeEach(() => {
+    mockedUseAuth.mockReturnValue({
+      session: null,
+      loading: false,
+      profile: undefined,
+      profileError: null,
+      accessTokenClaims: null,
+      gate: { kind: 'signed_out' },
+    });
+  });
+
+  it('should render successfully when signed out', () => {
+    const { baseElement } = renderPage();
     expect(baseElement).toBeTruthy();
+  });
+
+  it('shows signed-out landing with Log in link and no logout form', () => {
+    renderPage();
+    expect(
+      screen.getByRole('heading', { name: /ABStrack Practitioner/i }),
+    ).toBeTruthy();
+    expect(screen.getByRole('link', { name: /^Log in$/i })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Log out$/i })).toBeNull();
+  });
+
+  it('shows profile_error copy and POST /api/auth/logout form', () => {
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+    mockedUseAuth.mockReturnValue({
+      session: sessionWithToken(),
+      loading: false,
+      profile: null,
+      profileError: new Error('simulated PostgREST failure'),
+      accessTokenClaims: null,
+      gate: {
+        kind: 'profile_error',
+        error: new Error('simulated PostgREST failure'),
+      },
+    });
+
+    renderPage();
+
+    expect(
+      screen.getByRole('heading', { name: /Could not load your profile/i }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/Something went wrong while loading your account/i),
+    ).toBeTruthy();
+    expect(screen.queryByText(/simulated PostgREST failure/i)).toBeNull();
+    expectLogoutPostForm();
+
+    consoleSpy.mockRestore();
+  });
+
+  it('shows profile_missing copy and POST /api/auth/logout form', () => {
+    mockedUseAuth.mockReturnValue({
+      session: sessionWithToken(),
+      loading: false,
+      profile: null,
+      profileError: null,
+      accessTokenClaims: null,
+      gate: { kind: 'profile_missing' },
+    });
+
+    renderPage();
+
+    expect(
+      screen.getByRole('heading', { name: /No profile for this account/i }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/does not have an ABStrack profile yet/i),
+    ).toBeTruthy();
+    expectLogoutPostForm();
+  });
+
+  it('shows wrong_app_role copy and POST /api/auth/logout form', () => {
+    mockedUseAuth.mockReturnValue({
+      session: sessionWithToken(),
+      loading: false,
+      profile: patientProfileRow,
+      profileError: null,
+      accessTokenClaims: null,
+      gate: { kind: 'wrong_app_role', appRole: 'patient' },
+    });
+
+    renderPage();
+
+    expect(
+      screen.getByRole('heading', { name: /Wrong account type for this app/i }),
+    ).toBeTruthy();
+    expect(screen.getByText(/healthcare practitioners/i)).toBeTruthy();
+    expect(screen.getByText('patient')).toBeTruthy();
+    expectLogoutPostForm();
   });
 
   it('resolves @abstrack/supabase types', () => {
