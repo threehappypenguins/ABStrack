@@ -49,20 +49,33 @@ describe('parseAbstrackAccessTokenClaims', () => {
 
   it('returns null when neither atob nor Buffer is available', () => {
     const token = makeUnsignedJwt({ aal: 'aal2' });
-    const prevAtob = globalThis.atob;
-    const prevBuffer = globalThis.Buffer;
+    const atobDesc = Object.getOwnPropertyDescriptor(globalThis, 'atob');
+    const bufferDesc = Object.getOwnPropertyDescriptor(globalThis, 'Buffer');
     try {
-      // @ts-expect-error delete atob to simulate RN/Hermes without a web base64 decoder
-      delete globalThis.atob;
-      // @ts-expect-error delete Buffer to simulate RN/Hermes without Node base64
-      delete globalThis.Buffer;
+      // Stub away decoders (delete can be a no-op when non-configurable; defineProperty is reliable).
+      Object.defineProperty(globalThis, 'atob', {
+        value: undefined,
+        configurable: true,
+        enumerable: atobDesc?.enumerable ?? false,
+        writable: true,
+      });
+      Object.defineProperty(globalThis, 'Buffer', {
+        value: undefined,
+        configurable: true,
+        enumerable: bufferDesc?.enumerable ?? false,
+        writable: true,
+      });
       expect(parseAbstrackAccessTokenClaims(token)).toBeNull();
     } finally {
-      if (prevAtob !== undefined) {
-        globalThis.atob = prevAtob;
+      if (atobDesc) {
+        Object.defineProperty(globalThis, 'atob', atobDesc);
+      } else {
+        Reflect.deleteProperty(globalThis, 'atob');
       }
-      if (prevBuffer !== undefined) {
-        globalThis.Buffer = prevBuffer;
+      if (bufferDesc) {
+        Object.defineProperty(globalThis, 'Buffer', bufferDesc);
+      } else {
+        Reflect.deleteProperty(globalThis, 'Buffer');
       }
     }
   });
