@@ -260,7 +260,8 @@ async function revertToPreRestoreSession(
  * If the stored bundle’s `userId` does not match the current password session’s user, clears the
  * bundle and returns (avoids keeping another user’s tokens after account switch).
  * On failure (revoked or expired tokens, **session user mismatch** after restore, assurance error,
- * **getSession error**, or session not at **aal2**), clears the bundle and restores the pre-restore
+ * **getSession error**, **missing session** after a successful `getSession()` call, or session not at
+ * **aal2**), clears the bundle and restores the pre-restore
  * password session (or signs out) so the client is not left authenticated as the wrong user. If the
  * **initial** `getSession()` user id does not match `userId`, clears the bundle and **signs out**
  * (there is no safe pre-restore token pair for the expected user).
@@ -356,9 +357,13 @@ export async function tryRestoreTrustedMfaSession(
   }
 
   const session = finalSessionResult.data.session;
-  if (session) {
-    saveMfaTrustBundle(session, bundle.trustedUntilMs);
+  if (session == null) {
+    clearMfaTrustBundle();
+    await revertToPreRestoreSession(supabase, preSessionTokens);
+    return false;
   }
+
+  saveMfaTrustBundle(session, bundle.trustedUntilMs);
 
   return true;
 }
