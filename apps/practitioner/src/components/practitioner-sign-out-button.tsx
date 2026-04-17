@@ -134,8 +134,8 @@ export function PractitionerSignOutButton({
           className="max-w-prose text-xs text-app-muted"
         >
           Device trust is on: &quot;{label}&quot; clears this browser session
-          but can let you skip TOTP on the next sign-in here. On a shared
-          computer, use Sign out everywhere.
+          without revoking the saved trust token so you can skip TOTP on the
+          next sign-in here. On a shared computer, use Sign out everywhere.
         </p>
       ) : null}
       <div className="flex flex-wrap gap-2">

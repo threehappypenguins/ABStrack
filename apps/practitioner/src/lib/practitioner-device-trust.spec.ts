@@ -5,7 +5,9 @@ import {
   PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
   practitionerSignOut,
   practitionerSignOutEverywhere,
+  refreshTrustedMfaBundleBeforePasswordSignIn,
   saveMfaTrustBundle,
+  syncMfaTrustBundleAfterTokenRefresh,
   tryRestoreTrustedMfaSession,
 } from './practitioner-device-trust';
 
@@ -30,6 +32,20 @@ type BrowserClient = AbstrackSupabaseClient;
 function buildBundleJson(userId: string, trustedUntilMs: number) {
   return JSON.stringify({
     userId,
+    refresh_token: 'refresh',
+    access_token: 'access',
+    trustedUntilMs,
+  });
+}
+
+function buildBundleJsonWithEmail(
+  userId: string,
+  trustedUntilMs: number,
+  email: string,
+) {
+  return JSON.stringify({
+    userId,
+    email,
     refresh_token: 'refresh',
     access_token: 'access',
     trustedUntilMs,
@@ -64,16 +80,20 @@ describe('tryRestoreTrustedMfaSession', () => {
       buildBundleJson(userId, Date.now() + 60_000),
     );
 
-    const setSession = jest.fn().mockResolvedValue({ error: null });
+    const refreshSession = jest.fn().mockResolvedValue({
+      data: {
+        session: prePasswordSession(userId),
+        user: { id: userId },
+      },
+      error: null,
+    });
     const supabase = {
       auth: {
-        setSession,
+        refreshSession,
+        setSession: jest.fn().mockResolvedValue({ error: null }),
         signOut: jest.fn(),
         getSession: jest
           .fn()
-          .mockResolvedValueOnce({
-            data: { session: prePasswordSession(userId) },
-          })
           .mockResolvedValueOnce({
             data: { session: prePasswordSession(userId) },
           })
@@ -92,6 +112,10 @@ describe('tryRestoreTrustedMfaSession', () => {
     await expect(
       tryRestoreTrustedMfaSession(supabase, userId),
     ).resolves.toEqual({ status: 'restored' });
+
+    expect(refreshSession).toHaveBeenCalledWith({
+      refresh_token: 'refresh',
+    });
   });
 
   it('clears the trust bundle when stored bundle user id does not match current user', async () => {
@@ -105,6 +129,7 @@ describe('tryRestoreTrustedMfaSession', () => {
     const supabase = {
       auth: {
         getSession,
+        refreshSession: jest.fn(),
         setSession: jest.fn(),
         signOut: jest.fn(),
         mfa: {},
@@ -126,11 +151,19 @@ describe('tryRestoreTrustedMfaSession', () => {
       buildBundleJson(userId, Date.now() + 60_000),
     );
 
+    const refreshSession = jest.fn().mockResolvedValue({
+      data: {
+        session: prePasswordSession(userId),
+        user: { id: userId },
+      },
+      error: null,
+    });
     const setSession = jest.fn().mockResolvedValue({ error: null });
     const signOut = jest.fn().mockResolvedValue({ error: null });
 
     const supabase = {
       auth: {
+        refreshSession,
         setSession,
         signOut,
         getSession: jest
@@ -155,9 +188,8 @@ describe('tryRestoreTrustedMfaSession', () => {
     expect(
       localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
     ).toBeNull();
-    expect(setSession).toHaveBeenCalledWith({
+    expect(refreshSession).toHaveBeenCalledWith({
       refresh_token: 'refresh',
-      access_token: 'access',
     });
     expect(setSession).toHaveBeenCalledWith({
       refresh_token: 'pre-refresh',
@@ -172,11 +204,19 @@ describe('tryRestoreTrustedMfaSession', () => {
       buildBundleJson(userId, Date.now() + 60_000),
     );
 
+    const refreshSession = jest.fn().mockResolvedValue({
+      data: {
+        session: prePasswordSession(userId),
+        user: { id: userId },
+      },
+      error: null,
+    });
     const setSession = jest.fn().mockResolvedValue({ error: null });
     const signOut = jest.fn().mockResolvedValue({ error: null });
 
     const supabase = {
       auth: {
+        refreshSession,
         setSession,
         signOut,
         getSession: jest
@@ -254,21 +294,24 @@ describe('tryRestoreTrustedMfaSession', () => {
 
     const otherId = '99999999-9999-9999-9999-999999999999';
 
+    const refreshSession = jest.fn().mockResolvedValue({
+      data: {
+        session: prePasswordSession(otherId),
+        user: { id: otherId },
+      },
+      error: null,
+    });
     const setSession = jest.fn().mockResolvedValue({ error: null });
     const signOut = jest.fn().mockResolvedValue({ error: null });
 
     const supabase = {
       auth: {
+        refreshSession,
         setSession,
         signOut,
-        getSession: jest
-          .fn()
-          .mockResolvedValueOnce({
-            data: { session: prePasswordSession(userId) },
-          })
-          .mockResolvedValueOnce({
-            data: { session: sessionForUser(otherId) },
-          }),
+        getSession: jest.fn().mockResolvedValueOnce({
+          data: { session: prePasswordSession(userId) },
+        }),
         mfa: {
           getAuthenticatorAssuranceLevel: jest.fn(),
         },
@@ -284,39 +327,37 @@ describe('tryRestoreTrustedMfaSession', () => {
     expect(
       supabase.auth.mfa.getAuthenticatorAssuranceLevel,
     ).not.toHaveBeenCalled();
-    expect(setSession).toHaveBeenCalledTimes(2);
-    expect(setSession).toHaveBeenNthCalledWith(1, {
+    expect(refreshSession).toHaveBeenCalledWith({
       refresh_token: 'refresh',
-      access_token: 'access',
     });
-    expect(setSession).toHaveBeenNthCalledWith(2, {
+    expect(setSession).toHaveBeenCalledWith({
       refresh_token: 'pre-refresh',
       access_token: 'pre-access',
     });
     expect(signOut).not.toHaveBeenCalled();
   });
 
-  it('clears the trust bundle when there is no session after setSession and reverts', async () => {
+  it('clears the trust bundle when refreshSession returns no session and reverts', async () => {
     localStorage.setItem(
       PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
       buildBundleJson(userId, Date.now() + 60_000),
     );
 
+    const refreshSession = jest.fn().mockResolvedValue({
+      data: { session: null, user: null },
+      error: null,
+    });
     const setSession = jest.fn().mockResolvedValue({ error: null });
     const signOut = jest.fn().mockResolvedValue({ error: null });
 
     const supabase = {
       auth: {
+        refreshSession,
         setSession,
         signOut,
-        getSession: jest
-          .fn()
-          .mockResolvedValueOnce({
-            data: { session: prePasswordSession(userId) },
-          })
-          .mockResolvedValueOnce({
-            data: { session: null },
-          }),
+        getSession: jest.fn().mockResolvedValueOnce({
+          data: { session: prePasswordSession(userId) },
+        }),
         mfa: {
           getAuthenticatorAssuranceLevel: jest.fn(),
         },
@@ -350,6 +391,7 @@ describe('tryRestoreTrustedMfaSession', () => {
 
     const supabase = {
       auth: {
+        refreshSession: jest.fn(),
         setSession,
         signOut,
         getSession: jest.fn().mockResolvedValue({
@@ -369,29 +411,28 @@ describe('tryRestoreTrustedMfaSession', () => {
     expect(signOut).toHaveBeenCalled();
   });
 
-  it('clears the trust bundle and reverts when getSession fails after setSession', async () => {
+  it('clears the trust bundle and reverts when refreshSession fails', async () => {
     localStorage.setItem(
       PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
       buildBundleJson(userId, Date.now() + 60_000),
     );
 
+    const refreshSession = jest.fn().mockResolvedValue({
+      data: { session: null, user: null },
+      error: { message: 'invalid refresh token' },
+    });
     const setSession = jest.fn().mockResolvedValue({ error: null });
     const signOut = jest.fn().mockResolvedValue({ error: null });
 
     const supabase = {
       auth: {
+        refreshSession,
         setSession,
         signOut,
-        getSession: jest
-          .fn()
-          .mockResolvedValueOnce({
-            error: null,
-            data: { session: prePasswordSession(userId) },
-          })
-          .mockResolvedValueOnce({
-            error: new Error('cookie unreadable'),
-            data: { session: null },
-          }),
+        getSession: jest.fn().mockResolvedValueOnce({
+          error: null,
+          data: { session: prePasswordSession(userId) },
+        }),
         mfa: {
           getAuthenticatorAssuranceLevel: jest.fn(),
         },
@@ -407,9 +448,8 @@ describe('tryRestoreTrustedMfaSession', () => {
     expect(
       supabase.auth.mfa.getAuthenticatorAssuranceLevel,
     ).not.toHaveBeenCalled();
-    expect(setSession).toHaveBeenCalledWith({
+    expect(refreshSession).toHaveBeenCalledWith({
       refresh_token: 'refresh',
-      access_token: 'access',
     });
     expect(setSession).toHaveBeenCalledWith({
       refresh_token: 'pre-refresh',
@@ -424,19 +464,23 @@ describe('tryRestoreTrustedMfaSession', () => {
       buildBundleJson(userId, Date.now() + 60_000),
     );
 
+    const refreshSession = jest.fn().mockResolvedValue({
+      data: {
+        session: prePasswordSession(userId),
+        user: { id: userId },
+      },
+      error: null,
+    });
     const setSession = jest.fn().mockResolvedValue({ error: null });
     const signOut = jest.fn().mockResolvedValue({ error: null });
 
     const supabase = {
       auth: {
+        refreshSession,
         setSession,
         signOut,
         getSession: jest
           .fn()
-          .mockResolvedValueOnce({
-            error: null,
-            data: { session: prePasswordSession(userId) },
-          })
           .mockResolvedValueOnce({
             error: null,
             data: { session: prePasswordSession(userId) },
@@ -473,19 +517,23 @@ describe('tryRestoreTrustedMfaSession', () => {
       buildBundleJson(userId, Date.now() + 60_000),
     );
 
+    const refreshSession = jest.fn().mockResolvedValue({
+      data: {
+        session: prePasswordSession(userId),
+        user: { id: userId },
+      },
+      error: null,
+    });
     const setSession = jest.fn().mockResolvedValue({ error: null });
     const signOut = jest.fn().mockResolvedValue({ error: null });
 
     const supabase = {
       auth: {
+        refreshSession,
         setSession,
         signOut,
         getSession: jest
           .fn()
-          .mockResolvedValueOnce({
-            error: null,
-            data: { session: prePasswordSession(userId) },
-          })
           .mockResolvedValueOnce({
             error: null,
             data: { session: prePasswordSession(userId) },
@@ -522,26 +570,26 @@ describe('tryRestoreTrustedMfaSession', () => {
       buildBundleJson(userId, Date.now() + 60_000),
     );
 
-    const setSession = jest
-      .fn()
-      .mockResolvedValueOnce({ error: null })
-      .mockResolvedValueOnce({
-        error: { message: 'revert failed' },
-      });
+    const refreshSession = jest.fn().mockResolvedValue({
+      data: {
+        session: prePasswordSession(userId),
+        user: { id: userId },
+      },
+      error: null,
+    });
+    const setSession = jest.fn().mockResolvedValueOnce({
+      error: { message: 'revert failed' },
+    });
     const signOut = jest.fn().mockResolvedValue({ error: null });
 
     const supabase = {
       auth: {
+        refreshSession,
         setSession,
         signOut,
-        getSession: jest
-          .fn()
-          .mockResolvedValueOnce({
-            data: { session: prePasswordSession(userId) },
-          })
-          .mockResolvedValue({
-            data: { session: prePasswordSession(userId) },
-          }),
+        getSession: jest.fn().mockResolvedValueOnce({
+          data: { session: prePasswordSession(userId) },
+        }),
         mfa: {
           getAuthenticatorAssuranceLevel: jest
             .fn()
@@ -698,7 +746,10 @@ describe('practitionerSignOut', () => {
       const text = args
         .map((a) => (a instanceof Error ? a.message : String(a)))
         .join(' ');
-      if (text.includes('Not implemented: navigation')) {
+      if (
+        text.includes('Not implemented: navigation') ||
+        text.includes('soft session clear failed')
+      ) {
         return;
       }
       origConsoleError.apply(console, args as Parameters<typeof console.error>);
@@ -713,12 +764,13 @@ describe('practitionerSignOut', () => {
     localStorage.clear();
   });
 
-  it('soft sign-out: calls auth.signOut with local scope, keeps MFA bundle', async () => {
+  it('soft sign-out: clears auth storage without POST /logout, keeps MFA bundle', async () => {
     localStorage.setItem(
       PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
       buildBundleJson(userId, Date.now() + 60_000),
     );
 
+    const removeItem = jest.fn().mockResolvedValue(undefined);
     const signOut = jest.fn().mockResolvedValue({ error: null });
     const supabase = {
       auth: {
@@ -728,6 +780,8 @@ describe('practitionerSignOut', () => {
           },
         }),
         signOut,
+        storage: { removeItem },
+        storageKey: 'sb-test-auth-token',
       },
     } as unknown as BrowserClient;
 
@@ -736,8 +790,10 @@ describe('practitionerSignOut', () => {
     expect(
       localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
     ).not.toBeNull();
-    expect(signOut).toHaveBeenCalledTimes(1);
-    expect(signOut).toHaveBeenCalledWith({ scope: 'local' });
+    expect(signOut).not.toHaveBeenCalled();
+    expect(removeItem).toHaveBeenCalledWith('sb-test-auth-token');
+    expect(removeItem).toHaveBeenCalledWith('sb-test-auth-token-code-verifier');
+    expect(removeItem).toHaveBeenCalledWith('sb-test-auth-token-user');
   });
 
   it('full sign-out: clears MFA bundle and calls auth.signOut without local scope (expired trust window)', async () => {
@@ -788,7 +844,7 @@ describe('practitionerSignOut', () => {
     expect(signOut).toHaveBeenCalledWith();
   });
 
-  it('falls back to server logout when local sign-out returns an error', async () => {
+  it('falls back to server logout when soft session clear fails', async () => {
     localStorage.setItem(
       PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
       buildBundleJson(userId, Date.now() + 60_000),
@@ -799,9 +855,10 @@ describe('practitionerSignOut', () => {
       .spyOn(HTMLFormElement.prototype, 'submit')
       .mockImplementation(() => undefined);
 
-    const signOut = jest
+    const removeItem = jest
       .fn()
-      .mockResolvedValue({ error: { message: 'local sign-out failed' } });
+      .mockRejectedValue(new Error('storage remove failed'));
+    const signOut = jest.fn().mockResolvedValue({ error: null });
     const supabase = {
       auth: {
         getSession: jest.fn().mockResolvedValue({
@@ -810,12 +867,14 @@ describe('practitionerSignOut', () => {
           },
         }),
         signOut,
+        storage: { removeItem },
+        storageKey: 'sb-test-auth-token',
       },
     } as unknown as BrowserClient;
 
     await practitionerSignOut(supabase);
 
-    expect(signOut).toHaveBeenCalledWith({ scope: 'local' });
+    expect(signOut).not.toHaveBeenCalled();
     expect(submitSpy).toHaveBeenCalledTimes(1);
     expect(
       localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
@@ -888,19 +947,344 @@ describe('practitionerSignOutEverywhere', () => {
   });
 });
 
+describe('syncMfaTrustBundleAfterTokenRefresh', () => {
+  const userId = '00000000-0000-0000-0000-000000000042';
+
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('rewrites bundle with rotated tokens when assurance is aal2', async () => {
+    const trustedUntil = Date.now() + 86_400_000;
+    localStorage.setItem(
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
+      buildBundleJson(userId, trustedUntil),
+    );
+
+    const supabase = {
+      auth: {
+        mfa: {
+          getAuthenticatorAssuranceLevel: jest.fn().mockResolvedValue({
+            data: { currentLevel: 'aal2', nextLevel: null },
+            error: null,
+          }),
+        },
+      },
+    };
+
+    const session = {
+      user: { id: userId },
+      refresh_token: 'rotated-refresh',
+      access_token: 'rotated-access',
+    } as Session;
+
+    await syncMfaTrustBundleAfterTokenRefresh(
+      supabase as unknown as BrowserClient,
+      session,
+    );
+
+    const raw = localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY);
+    expect(raw).toBeTruthy();
+    const parsed = JSON.parse(raw!) as {
+      refresh_token: string;
+      access_token: string;
+      trustedUntilMs: number;
+    };
+    expect(parsed.refresh_token).toBe('rotated-refresh');
+    expect(parsed.access_token).toBe('rotated-access');
+    expect(parsed.trustedUntilMs).toBe(trustedUntil);
+  });
+
+  it('does not update bundle when assurance is aal1', async () => {
+    const trustedUntil = Date.now() + 86_400_000;
+    const initial = buildBundleJson(userId, trustedUntil);
+    localStorage.setItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY, initial);
+
+    const supabase = {
+      auth: {
+        mfa: {
+          getAuthenticatorAssuranceLevel: jest.fn().mockResolvedValue({
+            data: { currentLevel: 'aal1', nextLevel: 'aal2' },
+            error: null,
+          }),
+        },
+      },
+    };
+
+    const session = {
+      user: { id: userId },
+      refresh_token: 'pwd-refresh',
+      access_token: 'pwd-access',
+    } as Session;
+
+    await syncMfaTrustBundleAfterTokenRefresh(
+      supabase as unknown as BrowserClient,
+      session,
+    );
+
+    expect(
+      localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
+    ).toBe(initial);
+  });
+});
+
+describe('refreshTrustedMfaBundleBeforePasswordSignIn', () => {
+  const userId = '00000000-0000-0000-0000-000000000042';
+  const email = 'doc@example.com';
+
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('returns false when there is no bundle', async () => {
+    const supabase = {
+      auth: {
+        refreshSession: jest.fn(),
+        signOut: jest.fn(),
+        mfa: { getAuthenticatorAssuranceLevel: jest.fn() },
+      },
+    } as unknown as BrowserClient;
+
+    await expect(
+      refreshTrustedMfaBundleBeforePasswordSignIn(supabase, email),
+    ).resolves.toBe(false);
+    expect(supabase.auth.refreshSession).not.toHaveBeenCalled();
+  });
+
+  it('returns false when bundle has no email (legacy)', async () => {
+    localStorage.setItem(
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
+      buildBundleJson(userId, Date.now() + 60_000),
+    );
+    const supabase = {
+      auth: {
+        refreshSession: jest.fn(),
+        signOut: jest.fn(),
+        mfa: { getAuthenticatorAssuranceLevel: jest.fn() },
+      },
+    } as unknown as BrowserClient;
+
+    await expect(
+      refreshTrustedMfaBundleBeforePasswordSignIn(supabase, email),
+    ).resolves.toBe(false);
+    expect(supabase.auth.refreshSession).not.toHaveBeenCalled();
+  });
+
+  it('matches email case-insensitively', async () => {
+    const trustedUntil = Date.now() + 60_000;
+    localStorage.setItem(
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
+      buildBundleJsonWithEmail(userId, trustedUntil, 'Doc@Example.COM'),
+    );
+    const refreshedSession = {
+      user: { id: userId, email: 'doc@example.com' },
+      refresh_token: 'new-r',
+      access_token: 'new-a',
+    };
+    const refreshSession = jest.fn().mockResolvedValue({
+      data: { session: refreshedSession },
+      error: null,
+    });
+    const getAuthenticatorAssuranceLevel = jest.fn().mockResolvedValue({
+      error: null,
+      data: { currentLevel: 'aal2', nextLevel: 'aal2' },
+    });
+    const supabase = {
+      auth: {
+        refreshSession,
+        signOut: jest.fn().mockResolvedValue({ error: null }),
+        mfa: { getAuthenticatorAssuranceLevel },
+      },
+    } as unknown as BrowserClient;
+
+    await expect(
+      refreshTrustedMfaBundleBeforePasswordSignIn(supabase, 'doc@example.com'),
+    ).resolves.toBe(true);
+    expect(refreshSession).toHaveBeenCalledWith({
+      refresh_token: 'refresh',
+    });
+  });
+
+  it('returns false when sign-in email does not match bundle email', async () => {
+    localStorage.setItem(
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
+      buildBundleJsonWithEmail(
+        userId,
+        Date.now() + 60_000,
+        'other@example.com',
+      ),
+    );
+    const supabase = {
+      auth: {
+        refreshSession: jest.fn(),
+        signOut: jest.fn(),
+        mfa: { getAuthenticatorAssuranceLevel: jest.fn() },
+      },
+    } as unknown as BrowserClient;
+
+    await expect(
+      refreshTrustedMfaBundleBeforePasswordSignIn(supabase, email),
+    ).resolves.toBe(false);
+    expect(supabase.auth.refreshSession).not.toHaveBeenCalled();
+  });
+
+  it('returns false and signs out when refresh succeeds but user id does not match bundle', async () => {
+    localStorage.setItem(
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
+      buildBundleJsonWithEmail(userId, Date.now() + 60_000, email),
+    );
+    const signOut = jest.fn().mockResolvedValue({ error: null });
+    const refreshSession = jest.fn().mockResolvedValue({
+      data: {
+        session: {
+          user: { id: '00000000-0000-0000-0000-000000000099' },
+          refresh_token: 'new-r',
+          access_token: 'new-a',
+        },
+      },
+      error: null,
+    });
+    const supabase = {
+      auth: {
+        refreshSession,
+        signOut,
+        mfa: { getAuthenticatorAssuranceLevel: jest.fn() },
+      },
+    } as unknown as BrowserClient;
+
+    await expect(
+      refreshTrustedMfaBundleBeforePasswordSignIn(supabase, email),
+    ).resolves.toBe(false);
+    expect(signOut).toHaveBeenCalled();
+  });
+
+  it('returns false and signs out when assurance is not aal2', async () => {
+    localStorage.setItem(
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
+      buildBundleJsonWithEmail(userId, Date.now() + 60_000, email),
+    );
+    const signOut = jest.fn().mockResolvedValue({ error: null });
+    const refreshSession = jest.fn().mockResolvedValue({
+      data: {
+        session: {
+          user: { id: userId },
+          refresh_token: 'new-r',
+          access_token: 'new-a',
+        },
+      },
+      error: null,
+    });
+    const getAuthenticatorAssuranceLevel = jest.fn().mockResolvedValue({
+      error: null,
+      data: { currentLevel: 'aal1', nextLevel: 'aal2' },
+    });
+    const supabase = {
+      auth: {
+        refreshSession,
+        signOut,
+        mfa: { getAuthenticatorAssuranceLevel },
+      },
+    } as unknown as BrowserClient;
+
+    await expect(
+      refreshTrustedMfaBundleBeforePasswordSignIn(supabase, email),
+    ).resolves.toBe(false);
+    expect(signOut).toHaveBeenCalled();
+  });
+
+  it('returns true and persists refreshed session when refresh and aal2 succeed', async () => {
+    const trustedUntil = Date.now() + 60_000;
+    localStorage.setItem(
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
+      buildBundleJsonWithEmail(userId, trustedUntil, email),
+    );
+    const signOut = jest.fn().mockResolvedValue({ error: null });
+    const refreshedSession = {
+      user: { id: userId, email },
+      refresh_token: 'new-r',
+      access_token: 'new-a',
+    };
+    const refreshSession = jest.fn().mockResolvedValue({
+      data: { session: refreshedSession },
+      error: null,
+    });
+    const getAuthenticatorAssuranceLevel = jest.fn().mockResolvedValue({
+      error: null,
+      data: { currentLevel: 'aal2', nextLevel: 'aal2' },
+    });
+    const supabase = {
+      auth: {
+        refreshSession,
+        signOut,
+        mfa: { getAuthenticatorAssuranceLevel },
+      },
+    } as unknown as BrowserClient;
+
+    await expect(
+      refreshTrustedMfaBundleBeforePasswordSignIn(supabase, email),
+    ).resolves.toBe(true);
+
+    const raw = localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY);
+    expect(raw).toBeTruthy();
+    const parsed = JSON.parse(raw as string) as {
+      refresh_token: string;
+      userId: string;
+      email?: string;
+    };
+    expect(parsed.refresh_token).toBe('new-r');
+    expect(parsed.userId).toBe(userId);
+    expect(parsed.email).toBe(email);
+    expect(signOut).not.toHaveBeenCalled();
+  });
+});
+
+describe('saveMfaTrustBundle', () => {
+  const userId = '00000000-0000-0000-0000-000000000042';
+
+  beforeEach(() => {
+    localStorage.clear();
+    process.env['NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST'] = 'true';
+  });
+
+  it('preserves email from existing bundle when session user omits email (same user id)', () => {
+    localStorage.setItem(
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
+      buildBundleJsonWithEmail(userId, Date.now() + 60_000, 'keep@example.com'),
+    );
+    saveMfaTrustBundle(
+      {
+        user: { id: userId },
+        refresh_token: 'new-refresh',
+        access_token: 'new-access',
+      } as Session,
+      Date.now() + 120_000,
+    );
+    const raw = localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY);
+    expect(raw).toBeTruthy();
+    const parsed = JSON.parse(raw as string) as {
+      email?: string;
+      refresh_token: string;
+      userId: string;
+    };
+    expect(parsed.userId).toBe(userId);
+    expect(parsed.email).toBe('keep@example.com');
+    expect(parsed.refresh_token).toBe('new-refresh');
+  });
+});
+
 describe('MFA device trust deploy gate', () => {
   const userId = '00000000-0000-0000-0000-000000000042';
 
-  it('reports disabled when env is unset', () => {
+  it('reports enabled when env is unset', () => {
     const prev = process.env['NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST'];
     delete process.env['NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST'];
-    expect(isPractitionerMfaDeviceTrustEnabled()).toBe(false);
+    expect(isPractitionerMfaDeviceTrustEnabled()).toBe(true);
     process.env['NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST'] = prev ?? 'true';
   });
 
   it('does not write localStorage when disabled', () => {
     const prev = process.env['NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST'];
-    delete process.env['NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST'];
+    process.env['NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST'] = 'false';
     localStorage.clear();
     saveMfaTrustBundle(
       {
@@ -922,7 +1306,7 @@ describe('MFA device trust deploy gate', () => {
       PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
       buildBundleJson(userId, Date.now() + 60_000),
     );
-    delete process.env['NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST'];
+    process.env['NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST'] = 'false';
     expect(isPractitionerMfaDeviceTrustActive(userId)).toBe(false);
     expect(
       localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),

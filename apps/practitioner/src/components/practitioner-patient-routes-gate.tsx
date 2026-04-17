@@ -14,13 +14,13 @@ const MFA_BLOCK_COPY = {
     title: 'Set up two-factor authentication first',
     body: 'Patient records are available only after you enroll and verify at least one TOTP factor, then complete the MFA step for this session.',
     announce:
-      'Patient data is blocked. Enroll and verify TOTP on the security setup page before opening patient records.',
+      'Patient data is blocked. Enroll and verify TOTP before opening patient records.',
   },
   aal2: {
     title: 'Complete two-factor sign-in for this session',
-    body: 'Your account has MFA, but this session is not verified to the level required for patient data. Sign out and sign in again, then complete the two-factor prompt. You can also return to security setup for guidance.',
+    body: 'Your account has MFA, but this session is not verified to the level required for patient data. Sign out, sign in again, and enter your authenticator code when prompted.',
     announce:
-      'Patient data is blocked until this session completes two-factor authentication. Sign out and sign in again, or open security setup.',
+      'Patient data is blocked until this session completes two-factor authentication. Sign out and sign in again.',
   },
 } as const;
 
@@ -208,12 +208,21 @@ export function PractitionerPatientRoutesGate({
           </h1>
           <p className="mt-3 text-sm text-app-muted">{copy.body}</p>
           <div className="mt-6 flex flex-wrap gap-3">
-            <Link
-              href="/"
-              className="inline-flex min-h-11 items-center justify-center rounded-md bg-app-primary px-4 py-2 text-sm font-medium text-white transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
-            >
-              Open security setup
-            </Link>
+            {mfaBlockReason === 'enrollment' ? (
+              <Link
+                href="/"
+                className="inline-flex min-h-11 items-center justify-center rounded-md bg-app-primary px-4 py-2 text-sm font-medium text-white transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+              >
+                Set up two-factor authentication
+              </Link>
+            ) : (
+              <Link
+                href="/login"
+                className="inline-flex min-h-11 items-center justify-center rounded-md bg-app-primary px-4 py-2 text-sm font-medium text-white transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+              >
+                Go to sign in
+              </Link>
+            )}
             <PractitionerSignOutButton label="Sign out and try again" />
           </div>
         </div>

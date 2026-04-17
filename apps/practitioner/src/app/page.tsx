@@ -75,7 +75,7 @@ async function otpauthUriToQrPngDataUrl(otpauthUri: string): Promise<string> {
 }
 
 /**
- * Practitioner security setup page for TOTP MFA enrollment and verification.
+ * Practitioner home: TOTP MFA enrollment and session verification.
  *
  * @returns Client page rendering enrollment status and setup actions.
  */
@@ -447,7 +447,7 @@ export default function Index() {
     <div id="practitioner-home" className="mx-auto max-w-2xl px-4 py-8 sm:px-6">
       <header className="mb-6">
         <h1 className="text-2xl font-semibold text-app-ink">
-          Practitioner security setup
+          Two-factor authentication
         </h1>
         <p className="mt-2 text-sm text-app-muted">
           Enroll at least one TOTP factor to make this practitioner account

@@ -7,6 +7,8 @@ import {
   saveMfaTrustBundle,
   clearMfaTrustBundle,
   getTrustedUntilMsAfterVerification,
+  refreshTrustedMfaBundleBeforePasswordSignIn,
+  readMfaTrustBundle,
 } from '../src/lib/practitioner-device-trust';
 
 jest.mock('@abstrack/supabase/browser', () => ({
@@ -23,6 +25,10 @@ jest.mock('../src/lib/practitioner-device-trust', () => {
     saveMfaTrustBundle: jest.fn(),
     clearMfaTrustBundle: jest.fn(),
     getTrustedUntilMsAfterVerification: jest.fn(() => Date.now() + 86_400_000),
+    refreshTrustedMfaBundleBeforePasswordSignIn: jest
+      .fn()
+      .mockResolvedValue(false),
+    readMfaTrustBundle: jest.fn().mockReturnValue(null),
   };
 });
 
@@ -41,6 +47,10 @@ const mockedTryRestore = jest.mocked(tryRestoreTrustedMfaSession);
 const mockedSaveBundle = jest.mocked(saveMfaTrustBundle);
 const mockedClearBundle = jest.mocked(clearMfaTrustBundle);
 const mockedTrustedUntil = jest.mocked(getTrustedUntilMsAfterVerification);
+const mockedRefreshBeforePassword = jest.mocked(
+  refreshTrustedMfaBundleBeforePasswordSignIn,
+);
+const mockedReadBundle = jest.mocked(readMfaTrustBundle);
 
 const USER_ID = '00000000-0000-0000-0000-000000000042';
 const FACTOR_ID = 'factor-totp-1';
@@ -247,6 +257,10 @@ describe('LoginPage MFA state machine', () => {
     mockedClearBundle.mockClear();
     mockedTrustedUntil.mockClear();
     mockedTrustedUntil.mockReturnValue(Date.now() + 86_400_000);
+    mockedRefreshBeforePassword.mockReset();
+    mockedRefreshBeforePassword.mockResolvedValue(false);
+    mockedReadBundle.mockReset();
+    mockedReadBundle.mockReturnValue(null);
   });
 
   it('shows message and stays on credentials when trust restore ends session (signed_out)', async () => {
@@ -286,6 +300,40 @@ describe('LoginPage MFA state machine', () => {
     expect(screen.queryByLabelText(/Authenticator code/i)).toBeNull();
   });
 
+  it('navigates to /patients when bundle was primed before password and bundle matches user', async () => {
+    mockedRefreshBeforePassword.mockResolvedValue(true);
+    const trustedUntil = Date.now() + 86_400_000;
+    mockedReadBundle.mockReturnValue({
+      userId: USER_ID,
+      email: 'doc@example.com',
+      refresh_token: 'r',
+      access_token: 'a',
+      trustedUntilMs: trustedUntil,
+    });
+    const { client } = createLoginSupabaseMock({
+      assuranceFirst: { currentLevel: 'aal1', nextLevel: 'aal2' },
+    });
+    mockedGetClient.mockReturnValue(client as never);
+
+    renderLogin();
+    await submitCredentials();
+
+    await waitFor(() => {
+      expect(mockPush).toHaveBeenCalledWith('/patients');
+    });
+    expect(mockedTryRestore).not.toHaveBeenCalled();
+    expect(client.auth.mfa.listFactors).not.toHaveBeenCalled();
+    expect(mockedSaveBundle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user: { id: USER_ID },
+        refresh_token: 'refresh-token',
+        access_token: 'access-token',
+      }),
+      trustedUntil,
+    );
+    expect(screen.queryByLabelText(/Authenticator code/i)).toBeNull();
+  });
+
   it('navigates to /patients when session is already AAL2', async () => {
     const { client } = createLoginSupabaseMock({
       assuranceFirst: { currentLevel: 'aal2', nextLevel: 'aal2' },
@@ -312,7 +360,7 @@ describe('LoginPage MFA state machine', () => {
     expect(screen.queryByLabelText(/Authenticator code/i)).toBeNull();
   });
 
-  it('redirects to security setup when there is no verified TOTP factor', async () => {
+  it('redirects to practitioner home when there is no verified TOTP factor', async () => {
     const { client } = createLoginSupabaseMock({
       listFactors: { error: null, totp: [] },
     });

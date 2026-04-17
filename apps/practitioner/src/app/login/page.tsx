@@ -3,7 +3,6 @@
 import { signInWithEmailPassword } from '@abstrack/supabase';
 import { getSupabaseBrowserClient } from '@abstrack/supabase/browser';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   useCallback,
@@ -17,6 +16,8 @@ import {
   clearMfaTrustBundle,
   getTrustedUntilMsAfterVerification,
   isPractitionerMfaDeviceTrustEnabled,
+  readMfaTrustBundle,
+  refreshTrustedMfaBundleBeforePasswordSignIn,
   saveMfaTrustBundle,
   tryRestoreTrustedMfaSession,
 } from '../../lib/practitioner-device-trust';
@@ -32,7 +33,9 @@ type LoginStep = 'credentials' | 'mfa_verify';
  * Practitioner email/password login with MFA step-up and optional device trust (browser storage).
  * Successful verification with “Trust this device” unchecked clears any stored bundle so trust
  * matches the checkbox for this sign-in. If there is no verified TOTP factor, any existing bundle
- * is cleared before redirecting to security setup so stale tokens are not kept in storage.
+ * is cleared before redirecting to practitioner home for TOTP enrollment so stale tokens are not kept in storage.
+ * After email/password authentication succeeds, password state is cleared immediately so the secret
+ * is not retained through MFA or device-trust checks.
  * If `getUser` does not return a user id after a successful password sign-in, the client signs out
  * and clears the trust bundle so no half-established session remains. After
  * {@link tryRestoreTrustedMfaSession} (discriminated: `restored`, `not_restored`, or `signed_out`;
@@ -46,8 +49,8 @@ type LoginStep = 'credentials' | 'mfa_verify';
  * `loading`, `step`, and `credentialLoginInFlightRef`) so parallel attempts cannot race. The MFA
  * verify form uses the same pattern (`verifyLoading`, `step`, `verifyMfaInFlightRef`).
  *
- * MFA “trust this device” is shown only when `isPractitionerMfaDeviceTrustEnabled()` is true
- * (`NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST` at build time; default off).
+ * MFA “trust this device” is hidden when `isPractitionerMfaDeviceTrustEnabled()` is false
+ * (`NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST` `false`/`0`; default on).
  *
  * `resetToCredentials` centralizes fallback to the credentials step: it clears MFA-only UI
  * state (code, trust checkbox, status line) so a later MFA step is not prefilled from a prior
@@ -158,8 +161,15 @@ export default function LoginPage() {
 
     /** True once password sign-in resolved a user; MFA/trust steps may still fail afterward. */
     let sessionEstablishedAfterPassword = false;
+    /** True when we refreshed AAL2 from the trust bundle before the password grant (see device-trust module). */
+    let trustedBundlePrimed = false;
 
     try {
+      trustedBundlePrimed = await refreshTrustedMfaBundleBeforePasswordSignIn(
+        supabase,
+        email,
+      );
+
       const { error: authError } = await signInWithEmailPassword(
         supabase,
         email,
@@ -167,9 +177,20 @@ export default function LoginPage() {
       );
 
       if (authError) {
+        if (trustedBundlePrimed) {
+          try {
+            await supabase.auth.signOut();
+          } catch {
+            /* ignore */
+          }
+        }
         resetToCredentials({ message: authError.message });
         return;
       }
+
+      // Drop the password from state as soon as Supabase accepted it so it is not retained through
+      // MFA / trust checks (controlled input clears with state).
+      setPassword('');
 
       const userResult = await supabase.auth.getUser();
       const user = userResult.data.user;
@@ -189,6 +210,24 @@ export default function LoginPage() {
 
       sessionEstablishedAfterPassword = true;
 
+      // Password sign-in replaces the pre-password AAL2 session from the trust bundle with an
+      // AAL1 grant, so we cannot require `aal2` here. If we refreshed from the bundle before
+      // password and password succeeded for the same user id, skip TOTP and persist the new tokens.
+      // Email was already matched inside `refreshTrustedMfaBundleBeforePasswordSignIn`; the bundle
+      // may omit `email` if the last save used a session without `user.email` (token payloads).
+      if (trustedBundlePrimed) {
+        const bundle = readMfaTrustBundle();
+        if (bundle != null && bundle.userId === user.id) {
+          const sessionWrap = await supabase.auth.getSession();
+          if (sessionWrap.data.session) {
+            saveMfaTrustBundle(sessionWrap.data.session, bundle.trustedUntilMs);
+          }
+          router.push('/patients');
+          router.refresh();
+          return;
+        }
+      }
+
       const factorsResult = await supabase.auth.mfa.listFactors();
       if (factorsResult.error) {
         throw factorsResult.error;
@@ -200,7 +239,7 @@ export default function LoginPage() {
       if (verifiedTotpFactors.length < 1) {
         clearMfaTrustBundle();
         const message =
-          'No verified TOTP factor yet. Opening security setup so you can enroll TOTP.';
+          'No verified TOTP factor yet. Redirecting so you can enroll an authenticator.';
         announce(message, { politeness: 'assertive' });
         router.push('/');
         router.refresh();
@@ -449,7 +488,7 @@ export default function LoginPage() {
           Practitioner login
         </h1>
         <p className="text-center text-sm text-app-muted">
-          Sign in to set up and verify your TOTP factor.
+          Sign in with your practitioner account.
         </p>
 
         {status ? (
@@ -597,15 +636,6 @@ export default function LoginPage() {
             </p>
           </form>
         )}
-
-        <div className="mt-5 text-center">
-          <Link
-            href="/"
-            className="text-sm font-medium text-app-primary underline-offset-2 hover:underline"
-          >
-            Open security setup
-          </Link>
-        </div>
       </div>
     </div>
   );

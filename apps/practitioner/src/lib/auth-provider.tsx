@@ -18,6 +18,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { syncMfaTrustBundleAfterTokenRefresh } from './practitioner-device-trust';
 
 type ProfileRow = Database['public']['Tables']['profiles']['Row'];
 
@@ -161,8 +162,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
       setSession(nextSession);
+      if (event === 'TOKEN_REFRESHED') {
+        void syncMfaTrustBundleAfterTokenRefresh(supabase, nextSession);
+      }
     });
 
     return () => {

@@ -20,9 +20,10 @@
  *
  * RLS and MFA fail-closed rules remain authoritative for PHI; this module is UX-only.
  *
- * **Deploy gate:** Token persistence and restore are **off by default**. Set
- * `NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST` to `true` or `1` only after an explicit security
- * decision. When disabled, this module does not write tokens; reads scrub any existing bundle key.
+ * **Deploy gate:** Token persistence and restore are **on by default** for expected practitioner login
+ * UX. Set `NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST` to `false` or `0` to disable the feature (no
+ * writes; reads scrub any existing bundle key)—e.g. if you want zero localStorage session material
+ * until server-managed trust ships.
  *
  * @module practitioner-device-trust
  */
@@ -42,29 +43,37 @@ const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
  * Whether practitioner MFA “trusted device” (localStorage token bundle) is allowed for this build.
- * Defaults to **false** when unset so high-impact XSS surface is not enabled accidentally.
+ * Defaults to **true** when unset or empty. Set to **`false` or `0`** (case-insensitive) to disable.
  *
- * @returns True only when `NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST` is the string `true` or `1`
- *   (case-insensitive, trimmed).
+ * @returns False when the env var is explicitly `false` or `0`; otherwise true (including unset).
  *
- * Uses **dot** `process.env.NEXT_PUBLIC_…` access only — Next.js inlines public env at build time for
- * static references; bracket or dynamic lookups are not replaced (see Next.js env docs).
+ * **Use bracket access** for this key: `process.env['NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST']`.
+ * An earlier change to dotted `process.env.NEXT_PUBLIC_…` relied on compile-time inlining; when
+ * the flag was missing from the inlining pass (wrong app `.env` path, cache, or first build), the
+ * flag read as always-off and the trust read path scrubbed `localStorage` on every read — breaking
+ * device trust. Bracket reads resolve like other runtime `NEXT_PUBLIC_*` usage in Next dev.
  */
 export function isPractitionerMfaDeviceTrustEnabled(): boolean {
   let raw: string | undefined;
   try {
     raw =
       typeof process !== 'undefined' && process.env != null
-        ? process.env.NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST
+        ? process.env['NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST']
         : undefined;
   } catch {
     return false;
   }
   if (raw == null || String(raw).trim() === '') {
-    return false;
+    return true;
   }
   const v = String(raw).trim().toLowerCase();
-  return v === 'true' || v === '1';
+  if (v === 'false' || v === '0') {
+    return false;
+  }
+  if (v === 'true' || v === '1') {
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -73,6 +82,12 @@ export function isPractitionerMfaDeviceTrustEnabled(): boolean {
  */
 export type PractitionerMfaTrustBundle = {
   userId: string;
+  /**
+   * Sign-in email for this account, stored so the login page can refresh from the bundle **before**
+   * `signInWithPassword` — a new password grant typically revokes the previous refresh token, so
+   * post-password restore would fail without this ordering.
+   */
+  email?: string;
   refresh_token: string;
   access_token: string;
   expires_at?: number;
@@ -114,6 +129,9 @@ function isValidStoredTrustBundle(
     if (typeof exp !== 'number' || !Number.isFinite(exp)) {
       return false;
     }
+  }
+  if (o['email'] !== undefined && !isNonEmptyTrimmedString(o['email'])) {
+    return false;
   }
   return true;
 }
@@ -187,10 +205,76 @@ function readBundle(): PractitionerMfaTrustBundle | null {
 }
 
 /**
- * @param userId - Authenticated user id from the current session, if any.
- * @returns Whether a non-expired MFA device-trust bundle exists for this user (soft sign-out path).
+ * Reads the MFA trust bundle for callers that need metadata (e.g. `trustedUntilMs`) without
+ * duplicating storage logic.
+ *
+ * @returns Parsed bundle or `null`.
+ */
+export function readMfaTrustBundle(): PractitionerMfaTrustBundle | null {
+  return readBundle();
+}
+
+/**
+ * Run **before** `signInWithEmailPassword` on the practitioner login form when a stored bundle
+ * exists for this sign-in email. A new password grant usually **invalidates** the prior refresh
+ * token on the server, so `tryRestoreTrustedMfaSession` **after** password cannot exchange the
+ * bundle token. Refreshing from the bundle first establishes AAL2; the caller then verifies the
+ * password as usual.
+ *
+ * Legacy bundles without `email` skip this path and rely on post-password restore (may fail until
+ * the user completes MFA once with a fresh save).
+ *
+ * @param supabase - Browser Supabase client.
+ * @param emailForSignIn - Email from the login form (trimmed comparison).
+ * @returns `true` if an AAL2 session was established from the bundle and persisted with
+ *   `saveMfaTrustBundle`; `false` to continue with password-first sign-in only.
+ */
+export async function refreshTrustedMfaBundleBeforePasswordSignIn(
+  supabase: PractitionerBrowserClient,
+  emailForSignIn: string,
+): Promise<boolean> {
+  if (!isPractitionerMfaDeviceTrustEnabled()) {
+    return false;
+  }
+  const bundle = readBundle();
+  if (!bundle || bundle.trustedUntilMs <= Date.now()) {
+    return false;
+  }
+  const want = emailForSignIn.trim().toLowerCase();
+  const got = bundle.email?.trim().toLowerCase();
+  if (!got || got !== want) {
+    return false;
+  }
+
+  const { data: refreshData, error: refreshError } =
+    await supabase.auth.refreshSession({
+      refresh_token: bundle.refresh_token,
+    });
+  if (refreshError || refreshData?.session == null) {
+    return false;
+  }
+  if (refreshData.session.user?.id !== bundle.userId) {
+    await supabase.auth.signOut();
+    return false;
+  }
+
+  const assurance = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+  if (assurance.error || assurance.data.currentLevel !== 'aal2') {
+    await supabase.auth.signOut();
+    return false;
+  }
+
+  saveMfaTrustBundle(refreshData.session, bundle.trustedUntilMs);
+  return true;
+}
+
+/**
+ * Whether a non-expired MFA device-trust bundle exists for this user (soft sign-out path).
  * Clears stored tokens when the bundle is **expired** or for a **different** user so session
  * material is not left in `localStorage` after trust has lapsed or the account changed.
+ *
+ * @param userId - Authenticated user id from the current session, if any.
+ * @returns Whether a non-expired MFA device-trust bundle exists for this user.
  */
 export function isPractitionerMfaDeviceTrustActive(
   userId: string | undefined,
@@ -217,6 +301,11 @@ export function isPractitionerMfaDeviceTrustActive(
  * Persists refresh/access tokens for a verified MFA session so this browser can restore AAL2
  * within the trust window. **Only call after explicit user opt-in**; see module XSS warning.
  *
+ * **`user.email` may be missing** on some Supabase session payloads (for example after
+ * `refreshSession` / token rotation). In that case, for the **same** `userId`, we **keep** the
+ * email already stored in the bundle so {@link refreshTrustedMfaBundleBeforePasswordSignIn} can
+ * still match the next sign-in (see Supabase refresh-token rotation docs).
+ *
  * @param session - Active Supabase session after successful `mfa.verify`.
  * @param trustedUntilMs - Absolute expiry for the trust window (must be finite).
  */
@@ -241,8 +330,24 @@ export function saveMfaTrustBundle(
   ) {
     return;
   }
+  const emailRaw = session.user.email;
+  const emailFromSession =
+    typeof emailRaw === 'string' && emailRaw.trim() !== ''
+      ? emailRaw.trim()
+      : undefined;
+
+  const previous = readMfaTrustBundle();
+  const email =
+    emailFromSession ??
+    (previous?.userId === session.user.id &&
+    typeof previous.email === 'string' &&
+    previous.email.trim() !== ''
+      ? previous.email.trim()
+      : undefined);
+
   const bundle: PractitionerMfaTrustBundle = {
     userId: session.user.id,
+    ...(email != null ? { email } : {}),
     refresh_token: session.refresh_token,
     access_token: session.access_token,
     expires_at: session.expires_at,
@@ -256,6 +361,54 @@ export function saveMfaTrustBundle(
   } catch {
     // Blocked or full storage; trust bundle is optional UX — session is already valid in memory.
   }
+}
+
+/**
+ * Call from `onAuthStateChange` when `event === 'TOKEN_REFRESHED'`. Supabase **rotates refresh tokens**; the bundle written at MFA
+ * verify time would otherwise go stale, so the next sign-in’s {@link tryRestoreTrustedMfaSession}
+ * would fail and clear storage. Only updates the bundle when a trust row still exists for this user,
+ * the window has not expired, and **MFA assurance is AAL2** — so password-only (AAL1) sessions never
+ * overwrite a prior AAL2 bundle.
+ *
+ * @param supabase - Browser Supabase client.
+ * @param session - Session from the auth callback (null clears nothing).
+ */
+export async function syncMfaTrustBundleAfterTokenRefresh(
+  supabase: PractitionerBrowserClient,
+  session: Session | null,
+): Promise<void> {
+  if (typeof window === 'undefined' || session?.user?.id == null) {
+    return;
+  }
+  if (!isPractitionerMfaDeviceTrustEnabled()) {
+    return;
+  }
+
+  const bundle = readBundle();
+  if (!bundle) {
+    return;
+  }
+  if (bundle.userId !== session.user.id) {
+    return;
+  }
+  if (bundle.trustedUntilMs <= Date.now()) {
+    return;
+  }
+  if (
+    session.refresh_token == null ||
+    session.refresh_token === '' ||
+    session.access_token == null ||
+    session.access_token === ''
+  ) {
+    return;
+  }
+
+  const assurance = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+  if (assurance.error || assurance.data.currentLevel !== 'aal2') {
+    return;
+  }
+
+  saveMfaTrustBundle(session, bundle.trustedUntilMs);
 }
 
 export function clearMfaTrustBundle(): void {
@@ -337,6 +490,8 @@ export type TryRestoreTrustedMfaSessionResult =
  * After email/password sign-in, attempts to restore a prior AAL2 session from the trust bundle.
  * If the stored bundle’s `userId` does not match the current password session’s user, clears the
  * bundle and returns (avoids keeping another user’s tokens after account switch).
+ * Restore uses `auth.refreshSession({ refresh_token })` with the stored refresh token, not
+ * `setSession({ access_token, refresh_token })` alone (see implementation comment).
  * On failure (revoked or expired tokens, **session user mismatch** after restore, assurance error,
  * **getSession error**, **missing session** after a successful `getSession()` call, or session not at
  * **aal2**), clears the bundle and restores the pre-restore
@@ -391,21 +546,26 @@ export async function tryRestoreTrustedMfaSession(
         }
       : null;
 
-  const { error } = await supabase.auth.setSession({
-    refresh_token: bundle.refresh_token,
-    access_token: bundle.access_token,
-  });
-  if (error) {
+  /**
+   * Always exchange the stored **refresh** token via the refresh endpoint — do not use
+   * `setSession({ access_token, refresh_token })` alone: if the access JWT is still within expiry,
+   * GoTrue **skips** `_callRefreshToken` and persists the **same** refresh token from the bundle.
+   * After normal use, Supabase may have rotated that refresh token, so the stored pair is stale and
+   * restore fails (and the bundle was cleared). `refreshSession({ refresh_token })` always refreshes.
+   */
+  const { data: refreshData, error: refreshError } =
+    await supabase.auth.refreshSession({
+      refresh_token: bundle.refresh_token,
+    });
+  if (refreshError || refreshData?.session == null) {
     return finishFailedBundleRestore(supabase, preSessionTokens);
   }
 
-  const afterSetResult = await supabase.auth.getSession();
-  if (afterSetResult.error) {
-    return finishFailedBundleRestore(supabase, preSessionTokens);
-  }
-
-  const sessionAfterSet = afterSetResult.data.session;
-  if (sessionAfterSet?.user?.id == null || sessionAfterSet.user.id !== userId) {
+  const sessionAfterRefresh = refreshData.session;
+  if (
+    sessionAfterRefresh.user?.id == null ||
+    sessionAfterRefresh.user.id !== userId
+  ) {
     return finishFailedBundleRestore(supabase, preSessionTokens);
   }
 
@@ -458,18 +618,49 @@ export function practitionerSignOutEverywhere(): void {
 }
 
 /**
- * Signs the user out. If MFA device trust is still valid, ends the browser session with
- * **`auth.signOut({ scope: 'local' })`** so cookie-backed `@supabase/ssr` state is cleared without
- * revoking the refresh token server-side (allows AAL2 restore from the trust bundle on next visit).
- * Otherwise performs a full Supabase sign-out and clears the trust bundle. For a **full** revoke
- * while trust is active, use {@link practitionerSignOutEverywhere} instead.
+ * Clears the browser auth session **without** calling GoTrue’s `POST /logout` endpoint.
  *
- * If `auth.signOut` returns an error, falls back to {@link practitionerSignOutEverywhere} in the
- * browser (server logout + form POST) so cookies are not left in an ambiguous state; in
- * non-browser contexts only `console.error` is used (no redirect).
+ * **`signOut({ scope: 'local' })` still revokes the current session’s refresh token on the server**
+ * (`GoTrueClient._signOut` → `admin.signOut(jwt, scope)`). The MFA trust bundle stores a copy of
+ * that refresh token; if it is revoked, `refreshSession` / restore fails on the next sign-in — the
+ * “same issue” loop users saw after “soft” logout.
  *
- * Navigation to `/login` via `location.assign` runs only after a successful client sign-out when
- * `window` is present.
+ * This mirrors the storage half of `GoTrueClient`’s private `_removeSession` (cookie chunks via
+ * `@supabase/ssr`), then navigation reloads the app with an empty session while the bundle’s token
+ * remains valid until natural expiry or {@link practitionerSignOutEverywhere}.
+ *
+ * @param supabase - Browser Supabase client (`createBrowserClient`).
+ */
+async function clearBrowserSessionWithoutServerLogout(
+  supabase: PractitionerBrowserClient,
+): Promise<void> {
+  const auth = supabase.auth as unknown as {
+    storage?: { removeItem: (key: string) => Promise<void> };
+    storageKey: string;
+    userStorage?: { removeItem: (key: string) => Promise<void> };
+  };
+  const { storage, storageKey, userStorage } = auth;
+  if (!storage?.removeItem || !storageKey) {
+    throw new Error('Supabase auth storage API unavailable for soft sign-out');
+  }
+  await storage.removeItem(storageKey);
+  await storage.removeItem(`${storageKey}-code-verifier`);
+  await storage.removeItem(`${storageKey}-user`);
+  if (userStorage?.removeItem) {
+    await userStorage.removeItem(`${storageKey}-user`);
+  }
+}
+
+/**
+ * Signs the user out. If MFA device trust is still valid, clears only **browser** session storage
+ * (no `POST /logout`) so the refresh token kept in the trust bundle stays valid for the next
+ * visit; then navigates to `/login`. Otherwise performs a full Supabase `signOut()` and clears the
+ * bundle. For a **full** server revoke while trust is active, use {@link practitionerSignOutEverywhere}.
+ *
+ * If the soft session clear fails, falls back to {@link practitionerSignOutEverywhere} in the browser.
+ *
+ * Navigation to `/login` via `location.assign` runs after soft clear or full sign-out when `window`
+ * is present.
  *
  * @param supabase - Browser Supabase client.
  */
@@ -486,16 +677,18 @@ export async function practitionerSignOut(
     bundle.trustedUntilMs > Date.now();
 
   if (trustActiveForUser) {
-    const { error: localSignOutError } = await supabase.auth.signOut({
-      scope: 'local',
-    });
-    if (localSignOutError) {
+    try {
+      await clearBrowserSessionWithoutServerLogout(supabase);
+    } catch (err) {
+      console.error(
+        'practitionerSignOut: soft session clear failed; falling back to full logout',
+        err,
+      );
       if (typeof document !== 'undefined') {
         practitionerSignOutEverywhere();
       } else {
         console.error(
-          'practitionerSignOut: local sign-out failed; cannot fall back to server logout without a document.',
-          localSignOutError,
+          'practitionerSignOut: cannot fall back to server logout without a document.',
         );
       }
       return;
