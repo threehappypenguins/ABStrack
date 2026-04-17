@@ -5,7 +5,7 @@ import { getSupabaseBrowserClient } from '@abstrack/supabase/browser';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useMemo, useState, type FormEvent } from 'react';
 import {
   clearMfaTrustBundle,
   getTrustedUntilMsAfterVerification,
@@ -34,6 +34,11 @@ type LoginStep = 'credentials' | 'mfa_verify';
  * match the account from password sign-in, the client signs out and clears the trust bundle before
  * prompting for credentials again.
  *
+ * `resetToCredentials` centralizes fallback to the credentials step: it clears MFA-only UI
+ * state (code, trust checkbox, status line) so a later MFA step is not prefilled from a prior
+ * attempt, optionally sets assertive error copy, and can clear the password after session-ending
+ * failures so secrets are not left in memory.
+ *
  * @returns Login UI.
  */
 export default function LoginPage() {
@@ -52,6 +57,32 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
 
+  /**
+   * Returns the UI to the credentials step and clears MFA-only state so later flows are not
+   * prefilled from a prior attempt. Optionally sets an assertive error line and matching live
+   * announcement, and clears the password after abandoned or session-ending sign-in.
+   *
+   * @param options.message - When set, passed to `setError` and `announce` (assertive).
+   * @param options.clearPassword - Clears the password field when true.
+   */
+  const resetToCredentials = useCallback(
+    (options?: { clearPassword?: boolean; message?: string }) => {
+      setStep('credentials');
+      setVerifyCode('');
+      setRememberDevice(false);
+      setMfaFactorId(null);
+      setStatus(null);
+      if (options?.clearPassword) {
+        setPassword('');
+      }
+      if (options?.message != null) {
+        setError(options.message);
+        announce(options.message, { politeness: 'assertive' });
+      }
+    },
+    [announce],
+  );
+
   const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
@@ -69,8 +100,7 @@ export default function LoginPage() {
       );
 
       if (authError) {
-        setError(authError.message);
-        announce(authError.message, { politeness: 'assertive' });
+        resetToCredentials({ message: authError.message });
         return;
       }
 
@@ -84,9 +114,9 @@ export default function LoginPage() {
           console.error(cleanupError);
         }
         router.refresh();
-        const message = 'Could not resolve your account after sign-in.';
-        setError(message);
-        announce(message, { politeness: 'assertive' });
+        resetToCredentials({
+          message: 'Could not resolve your account after sign-in.',
+        });
         return;
       }
 
@@ -121,33 +151,30 @@ export default function LoginPage() {
       }
       if (restoreOutcome.status === 'signed_out') {
         router.refresh();
-        const message =
-          'Your sign-in session ended during the saved device check. Enter your email and password again.';
-        setError(message);
-        announce(message, { politeness: 'assertive' });
-        setStep('credentials');
-        setMfaFactorId(null);
+        resetToCredentials({
+          clearPassword: true,
+          message:
+            'Your sign-in session ended during the saved device check. Enter your email and password again.',
+        });
         return;
       }
 
       const afterRestoreSession = await supabase.auth.getSession();
       if (afterRestoreSession.error) {
         console.error(afterRestoreSession.error);
-        const message =
-          'Could not confirm your session after the saved device check. Enter your email and password again.';
-        setError(message);
-        announce(message, { politeness: 'assertive' });
-        setStep('credentials');
-        setMfaFactorId(null);
+        resetToCredentials({
+          clearPassword: true,
+          message:
+            'Could not confirm your session after the saved device check. Enter your email and password again.',
+        });
         return;
       }
       if (afterRestoreSession.data.session?.user?.id == null) {
-        const message =
-          'Your sign-in session ended during the saved device check. Enter your email and password again.';
-        setError(message);
-        announce(message, { politeness: 'assertive' });
-        setStep('credentials');
-        setMfaFactorId(null);
+        resetToCredentials({
+          clearPassword: true,
+          message:
+            'Your sign-in session ended during the saved device check. Enter your email and password again.',
+        });
         return;
       }
       if (afterRestoreSession.data.session.user.id !== user.id) {
@@ -158,12 +185,11 @@ export default function LoginPage() {
           console.error(cleanupError);
         }
         router.refresh();
-        const message =
-          'Your session no longer matches this sign-in after the saved device check. You have been signed out for safety. Enter your email and password again.';
-        setError(message);
-        announce(message, { politeness: 'assertive' });
-        setStep('credentials');
-        setMfaFactorId(null);
+        resetToCredentials({
+          clearPassword: true,
+          message:
+            'Your session no longer matches this sign-in after the saved device check. You have been signed out for safety. Enter your email and password again.',
+        });
         return;
       }
 
@@ -195,15 +221,15 @@ export default function LoginPage() {
           console.error(cleanupError);
         }
         router.refresh();
-        const message =
-          'Your password was accepted, but we could not finish verifying multi-factor sign-in. You have been signed out for safety. Please try again.';
-        setError(message);
-        announce(message, { politeness: 'assertive' });
+        resetToCredentials({
+          clearPassword: true,
+          message:
+            'Your password was accepted, but we could not finish verifying multi-factor sign-in. You have been signed out for safety. Please try again.',
+        });
       } else {
-        const message =
-          'Unable to complete sign-in right now. Please try again.';
-        setError(message);
-        announce(message, { politeness: 'assertive' });
+        resetToCredentials({
+          message: 'Unable to complete sign-in right now. Please try again.',
+        });
       }
     } finally {
       setLoading(false);
@@ -317,12 +343,7 @@ export default function LoginPage() {
         throw signOutError;
       }
       clearMfaTrustBundle();
-      setStep('credentials');
-      setVerifyCode('');
-      setMfaFactorId(null);
-      setRememberDevice(false);
-      setPassword('');
-      setStatus(null);
+      resetToCredentials({ clearPassword: true });
       router.refresh();
       announce(
         'Signed out. You can enter your email and password to sign in again.',
