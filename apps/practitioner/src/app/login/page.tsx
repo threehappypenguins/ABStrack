@@ -22,6 +22,8 @@ type LoginStep = 'credentials' | 'mfa_verify';
 
 /**
  * Practitioner email/password login with MFA step-up and optional device trust (browser storage).
+ * Successful verification with “Trust this device” unchecked clears any stored bundle so trust
+ * matches the checkbox for this sign-in.
  *
  * @returns Login UI.
  */
@@ -181,12 +183,34 @@ export default function LoginPage() {
         throw verify.error;
       }
 
+      await supabase.auth.getSession();
+
+      const assuranceAfterVerify =
+        await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+      if (assuranceAfterVerify.error) {
+        console.error(assuranceAfterVerify.error);
+        const message =
+          'Could not confirm multi-factor status after verification. Try a new code from your authenticator app, or use Back to sign in to start over.';
+        setError(message);
+        announce(message, { politeness: 'assertive' });
+        return;
+      }
+      if (assuranceAfterVerify.data.currentLevel !== 'aal2') {
+        const message =
+          'Multi-factor sign-in did not finish updating your session. Try another code, or use Back to sign in to start over.';
+        setError(message);
+        announce(message, { politeness: 'assertive' });
+        return;
+      }
+
       if (rememberDevice) {
         const { data: sessionData } = await supabase.auth.getSession();
         const session = sessionData.session;
         if (session) {
           saveMfaTrustBundle(session, getTrustedUntilMsAfterVerification());
         }
+      } else {
+        clearMfaTrustBundle();
       }
 
       router.push('/patients');

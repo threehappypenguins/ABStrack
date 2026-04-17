@@ -315,6 +315,10 @@ export function practitionerSignOutEverywhere(): void {
  * a full Supabase sign-out and clears the trust bundle. For a **full** revoke while trust is active,
  * use {@link practitionerSignOutEverywhere} instead.
  *
+ * Navigation to `/login` runs only in the browser (`window` present). In non-browser environments
+ * (SSR, tests without `window`), storage and `signOut` still run when applicable, but there is no
+ * redirect.
+ *
  * @param supabase - Browser Supabase client.
  */
 export async function practitionerSignOut(
@@ -331,13 +335,17 @@ export async function practitionerSignOut(
 
   if (trustActiveForUser) {
     clearSupabaseBrowserAuthStorage();
-    window.location.assign('/login');
+    if (typeof window !== 'undefined') {
+      window.location.assign('/login');
+    }
     return;
   }
 
   clearMfaTrustBundle();
   await supabase.auth.signOut();
-  window.location.assign('/login');
+  if (typeof window !== 'undefined') {
+    window.location.assign('/login');
+  }
 }
 
 export function getTrustedUntilMsAfterVerification(): number {
