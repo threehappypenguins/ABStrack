@@ -1,6 +1,10 @@
 'use client';
 
-import { signInWithEmailPassword } from '@abstrack/supabase';
+import {
+  hasMfaAssuranceAal2,
+  parseAbstrackAccessTokenClaims,
+  signInWithEmailPassword,
+} from '@abstrack/supabase';
 import { getSupabaseBrowserClient } from '@abstrack/supabase/browser';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
 import { useRouter } from 'next/navigation';
@@ -210,21 +214,29 @@ export default function LoginPage() {
 
       sessionEstablishedAfterPassword = true;
 
-      // Password sign-in replaces the pre-password AAL2 session from the trust bundle with an
-      // AAL1 grant, so we cannot require `aal2` here. If we refreshed from the bundle before
-      // password and password succeeded for the same user id, skip TOTP and persist the new tokens.
-      // Email was already matched inside `refreshTrustedMfaBundleBeforePasswordSignIn`; the bundle
-      // may omit `email` if the last save used a session without `user.email` (token payloads).
+      // Password-only sign-in is usually AAL1; patient routes require JWT `aal` aal2. Only skip MFA
+      // here when assurance and the access token both indicate AAL2; otherwise continue to tryRestore
+      // / MFA verify. Never write the trust bundle from a password-only (AAL1) session — that would
+      // replace valid AAL2 tokens and break future device-trust restores.
       if (trustedBundlePrimed) {
         const bundle = readMfaTrustBundle();
         if (bundle != null && bundle.userId === user.id) {
-          const sessionWrap = await supabase.auth.getSession();
-          if (sessionWrap.data.session) {
-            saveMfaTrustBundle(sessionWrap.data.session, bundle.trustedUntilMs);
+          const assuranceAfterPassword =
+            await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+          if (
+            !assuranceAfterPassword.error &&
+            assuranceAfterPassword.data.currentLevel === 'aal2'
+          ) {
+            const sessionWrap = await supabase.auth.getSession();
+            const sess = sessionWrap.data.session;
+            const claims = parseAbstrackAccessTokenClaims(sess?.access_token);
+            if (sess && hasMfaAssuranceAal2(claims)) {
+              saveMfaTrustBundle(sess, bundle.trustedUntilMs);
+              router.push('/patients');
+              router.refresh();
+              return;
+            }
           }
-          router.push('/patients');
-          router.refresh();
-          return;
         }
       }
 

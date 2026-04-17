@@ -55,6 +55,18 @@ const mockedReadBundle = jest.mocked(readMfaTrustBundle);
 const USER_ID = '00000000-0000-0000-0000-000000000042';
 const FACTOR_ID = 'factor-totp-1';
 
+/** Unsigned JWT for tests that need `parseAbstrackAccessTokenClaims` / `aal` (Node `Buffer`). */
+function makeUnsignedJwtForTest(payload: Record<string, unknown>): string {
+  const header = Buffer.from(
+    JSON.stringify({ alg: 'none', typ: 'JWT' }),
+    'utf8',
+  ).toString('base64url');
+  const body = Buffer.from(JSON.stringify(payload), 'utf8').toString(
+    'base64url',
+  );
+  return `${header}.${body}.sig`;
+}
+
 type MfaMock = {
   signInWithPassword: jest.Mock;
   getUser: jest.Mock;
@@ -93,6 +105,8 @@ function createLoginSupabaseMock(options?: {
       access_token: string;
     } | null;
   };
+  /** Access token for default `getSession()` results (e.g. JWT with `aal` for primed fast-path). */
+  sessionAccessToken?: string;
 }): { client: { auth: Record<string, unknown> }; mfa: MfaMock } {
   const signInError = options?.signInError ?? null;
   const totpList = options?.listFactors?.totp ?? [
@@ -139,7 +153,7 @@ function createLoginSupabaseMock(options?: {
   const defaultMfaSession = {
     user: { id: USER_ID },
     refresh_token: 'refresh-token',
-    access_token: 'access-token',
+    access_token: options?.sessionAccessToken ?? 'access-token',
   };
   const mfaSessionOpts = options?.mfaVerifyGetSession;
   const verifyPhaseGetSessionResult = {
@@ -236,6 +250,9 @@ async function submitCredentials() {
   fireEvent.click(screen.getByRole('button', { name: /^Sign in$/i }));
 }
 
+const prevLoginPageMfaDeviceTrustEnv =
+  process.env['NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST'];
+
 describe('LoginPage MFA state machine', () => {
   let consoleErrorSpy: jest.SpyInstance;
 
@@ -246,6 +263,12 @@ describe('LoginPage MFA state machine', () => {
 
   afterAll(() => {
     consoleErrorSpy.mockRestore();
+    if (prevLoginPageMfaDeviceTrustEnv === undefined) {
+      delete process.env['NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST'];
+    } else {
+      process.env['NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST'] =
+        prevLoginPageMfaDeviceTrustEnv;
+    }
   });
 
   beforeEach(() => {
@@ -300,7 +323,7 @@ describe('LoginPage MFA state machine', () => {
     expect(screen.queryByLabelText(/Authenticator code/i)).toBeNull();
   });
 
-  it('navigates to /patients when bundle was primed before password and bundle matches user', async () => {
+  it('navigates to /patients when bundle was primed and assurance is AAL2 after password', async () => {
     mockedRefreshBeforePassword.mockResolvedValue(true);
     const trustedUntil = Date.now() + 86_400_000;
     mockedReadBundle.mockReturnValue({
@@ -310,8 +333,13 @@ describe('LoginPage MFA state machine', () => {
       access_token: 'a',
       trustedUntilMs: trustedUntil,
     });
+    const aal2AccessToken = makeUnsignedJwtForTest({
+      aal: 'aal2',
+      sub: USER_ID,
+    });
     const { client } = createLoginSupabaseMock({
-      assuranceFirst: { currentLevel: 'aal1', nextLevel: 'aal2' },
+      assuranceFirst: { currentLevel: 'aal2', nextLevel: 'aal2' },
+      sessionAccessToken: aal2AccessToken,
     });
     mockedGetClient.mockReturnValue(client as never);
 
@@ -321,13 +349,16 @@ describe('LoginPage MFA state machine', () => {
     await waitFor(() => {
       expect(mockPush).toHaveBeenCalledWith('/patients');
     });
+    expect(
+      client.auth.mfa.getAuthenticatorAssuranceLevel,
+    ).toHaveBeenCalled();
     expect(mockedTryRestore).not.toHaveBeenCalled();
     expect(client.auth.mfa.listFactors).not.toHaveBeenCalled();
     expect(mockedSaveBundle).toHaveBeenCalledWith(
       expect.objectContaining({
         user: { id: USER_ID },
         refresh_token: 'refresh-token',
-        access_token: 'access-token',
+        access_token: aal2AccessToken,
       }),
       trustedUntil,
     );
