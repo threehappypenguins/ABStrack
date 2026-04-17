@@ -228,6 +228,11 @@ export function readMfaTrustBundle(): PractitionerMfaTrustBundle | null {
  * @param emailForSignIn - Email from the login form (trimmed comparison).
  * @returns `true` if an AAL2 session was established from the bundle and persisted with
  *   `saveMfaTrustBundle`; `false` to continue with password-first sign-in only.
+ *
+ * On **refresh failure** (revoked/invalid token, empty session), **user mismatch** after a refresh
+ * returns a session, or **non-AAL2** assurance, clears the stored bundle **before** `signOut` so
+ * wrong or unusable tokens are not kept in storage (and storage is scrubbed even if `signOut`
+ * rejects).
  */
 export async function refreshTrustedMfaBundleBeforePasswordSignIn(
   supabase: PractitionerBrowserClient,
@@ -251,15 +256,18 @@ export async function refreshTrustedMfaBundleBeforePasswordSignIn(
       refresh_token: bundle.refresh_token,
     });
   if (refreshError || refreshData?.session == null) {
+    clearMfaTrustBundle();
     return false;
   }
   if (refreshData.session.user?.id !== bundle.userId) {
+    clearMfaTrustBundle();
     await supabase.auth.signOut();
     return false;
   }
 
   const assurance = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
   if (assurance.error || assurance.data.currentLevel !== 'aal2') {
+    clearMfaTrustBundle();
     await supabase.auth.signOut();
     return false;
   }
@@ -370,6 +378,10 @@ export function saveMfaTrustBundle(
  * the window has not expired, and **MFA assurance is AAL2** — so password-only (AAL1) sessions never
  * overwrite a prior AAL2 bundle.
  *
+ * **`readBundle()` does not drop expired rows** (only validates shape). If the stored bundle’s
+ * trust window has ended, or its `userId` does not match the refreshed session, clears the bundle so
+ * stale secrets are not retained until another code path runs.
+ *
  * @param supabase - Browser Supabase client.
  * @param session - Session from the auth callback (null clears nothing).
  */
@@ -389,9 +401,11 @@ export async function syncMfaTrustBundleAfterTokenRefresh(
     return;
   }
   if (bundle.userId !== session.user.id) {
+    clearMfaTrustBundle();
     return;
   }
   if (bundle.trustedUntilMs <= Date.now()) {
+    clearMfaTrustBundle();
     return;
   }
   if (

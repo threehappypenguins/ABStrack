@@ -33,6 +33,31 @@ import {
 
 type LoginStep = 'credentials' | 'mfa_verify';
 
+/** Verified TOTP row from `auth.mfa.listFactors()` — `friendly_name` is optional in API payloads. */
+type ListedTotpFactor = {
+  id: string;
+  friendly_name?: string | null;
+};
+
+/**
+ * Builds stable labels for the MFA factor picker when multiple verified TOTP factors exist.
+ *
+ * @param factors - Verified TOTP factors for the current user.
+ * @returns `{ id, label }` entries for each factor.
+ */
+function buildMfaFactorChoices(factors: ListedTotpFactor[]): Array<{
+  id: string;
+  label: string;
+}> {
+  return factors.map((f, index) => ({
+    id: f.id,
+    label:
+      typeof f.friendly_name === 'string' && f.friendly_name.trim() !== ''
+        ? f.friendly_name.trim()
+        : `Authenticator ${index + 1}`,
+  }));
+}
+
 /**
  * Practitioner email/password login with MFA step-up and optional device trust (browser storage).
  * Successful verification with “Trust this device” unchecked clears any stored bundle so trust
@@ -61,6 +86,9 @@ type LoginStep = 'credentials' | 'mfa_verify';
  * attempt, optionally sets assertive error copy, and can clear the password after session-ending
  * failures so secrets are not left in memory.
  *
+ * When several verified TOTP factors exist, the MFA step shows an **Authenticator** combobox
+ * (friendly name or “Authenticator N”) so challenge/verify use the factor the user selects.
+ *
  * @returns Login UI.
  */
 export default function LoginPage() {
@@ -76,6 +104,10 @@ export default function LoginPage() {
   const [verifyCode, setVerifyCode] = useState('');
   const [rememberDevice, setRememberDevice] = useState(false);
   const [mfaFactorId, setMfaFactorId] = useState<string | null>(null);
+  /** Populated when entering MFA verify so multiple enrolled TOTP factors can be chosen by label. */
+  const [mfaFactorChoices, setMfaFactorChoices] = useState<
+    Array<{ id: string; label: string }>
+  >([]);
   const [step, setStep] = useState<LoginStep>('credentials');
   const [loading, setLoading] = useState(false);
   const [verifyLoading, setVerifyLoading] = useState(false);
@@ -88,6 +120,7 @@ export default function LoginPage() {
   /** Synchronous guard: `verifyLoading` can lag behind rapid duplicate MFA submits. */
   const verifyMfaInFlightRef = useRef(false);
   const emailInputRef = useRef<HTMLInputElement>(null);
+  const mfaFactorSelectRef = useRef<HTMLSelectElement>(null);
   const mfaCodeInputRef = useRef<HTMLInputElement>(null);
   const prevStepRef = useRef<LoginStep>(step);
 
@@ -116,7 +149,11 @@ export default function LoginPage() {
 
     if (step === 'mfa_verify' && previousStep !== 'mfa_verify') {
       const frameId = requestAnimationFrame(() => {
-        mfaCodeInputRef.current?.focus();
+        if (mfaFactorChoices.length > 1) {
+          mfaFactorSelectRef.current?.focus();
+        } else {
+          mfaCodeInputRef.current?.focus();
+        }
       });
       return () => cancelAnimationFrame(frameId);
     }
@@ -129,7 +166,7 @@ export default function LoginPage() {
     }
 
     return undefined;
-  }, [step]);
+  }, [step, mfaFactorChoices.length]);
 
   const resetToCredentials = useCallback(
     (options?: { clearPassword?: boolean; message?: string }) => {
@@ -137,6 +174,7 @@ export default function LoginPage() {
       setVerifyCode('');
       setRememberDevice(false);
       setMfaFactorId(null);
+      setMfaFactorChoices([]);
       setStatus(null);
       if (options?.clearPassword) {
         setPassword('');
@@ -323,10 +361,15 @@ export default function LoginPage() {
         return;
       }
 
+      setMfaFactorChoices(
+        buildMfaFactorChoices(verifiedTotpFactors as ListedTotpFactor[]),
+      );
       setMfaFactorId(verifiedTotpFactors[0]?.id ?? null);
       setStep('mfa_verify');
       const message =
-        'Enter the six-digit code from your authenticator app to continue.';
+        verifiedTotpFactors.length > 1
+          ? 'Choose which authenticator to use, then enter the six-digit code.'
+          : 'Enter the six-digit code from your authenticator app to continue.';
       setStatus(message);
       announce(message, { politeness: 'assertive' });
     } catch (nextError) {
@@ -573,6 +616,37 @@ export default function LoginPage() {
           </form>
         ) : (
           <form onSubmit={handleVerifyMfa} className="mt-5 space-y-4">
+            {mfaFactorChoices.length > 1 ? (
+              <div>
+                <label
+                  htmlFor="mfa-factor"
+                  className="block text-sm font-medium text-app-muted"
+                >
+                  Authenticator
+                </label>
+                <select
+                  ref={mfaFactorSelectRef}
+                  id="mfa-factor"
+                  name="mfa-factor"
+                  aria-describedby="mfa-factor-hint"
+                  value={mfaFactorId ?? ''}
+                  onChange={(event) => {
+                    setMfaFactorId(event.target.value || null);
+                    setError(null);
+                  }}
+                  className="mt-1 block w-full rounded-md border border-app-border bg-app-bg px-3 py-2 text-app-ink shadow-sm focus:border-app-primary focus:outline-none focus:ring-2 focus:ring-app-ring"
+                >
+                  {mfaFactorChoices.map((choice) => (
+                    <option key={choice.id} value={choice.id}>
+                      {choice.label}
+                    </option>
+                  ))}
+                </select>
+                <p id="mfa-factor-hint" className="mt-1 text-xs text-app-muted">
+                  Use the code from the app you named here.
+                </p>
+              </div>
+            ) : null}
             <div>
               <label
                 htmlFor="mfa-code"

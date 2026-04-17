@@ -54,6 +54,7 @@ const mockedReadBundle = jest.mocked(readMfaTrustBundle);
 
 const USER_ID = '00000000-0000-0000-0000-000000000042';
 const FACTOR_ID = 'factor-totp-1';
+const FACTOR_ID_2 = 'factor-totp-2';
 
 /** Unsigned JWT for tests that need `parseAbstrackAccessTokenClaims` / `aal` (Node `Buffer`). */
 function makeUnsignedJwtForTest(payload: Record<string, unknown>): string {
@@ -91,7 +92,11 @@ function createLoginSupabaseMock(options?: {
   };
   listFactors?: {
     error: Error | null;
-    totp: Array<{ id: string; status: string }>;
+    totp: Array<{
+      id: string;
+      status: string;
+      friendly_name?: string | null;
+    }>;
   };
   assuranceFirst?: { currentLevel: string; nextLevel: string | null };
   assuranceAfterVerify?: { currentLevel: string; nextLevel: string | null };
@@ -349,9 +354,7 @@ describe('LoginPage MFA state machine', () => {
     await waitFor(() => {
       expect(mockPush).toHaveBeenCalledWith('/patients');
     });
-    expect(
-      client.auth.mfa.getAuthenticatorAssuranceLevel,
-    ).toHaveBeenCalled();
+    expect(client.auth.mfa.getAuthenticatorAssuranceLevel).toHaveBeenCalled();
     expect(mockedTryRestore).not.toHaveBeenCalled();
     expect(client.auth.mfa.listFactors).not.toHaveBeenCalled();
     expect(mockedSaveBundle).toHaveBeenCalledWith(
@@ -437,6 +440,52 @@ describe('LoginPage MFA state machine', () => {
     });
     expect(mockedSaveBundle).toHaveBeenCalled();
     expect(mockedClearBundle).not.toHaveBeenCalled();
+  });
+
+  it('credentials → MFA verify challenges the selected factor when multiple verified TOTP factors exist', async () => {
+    const { client, mfa } = createLoginSupabaseMock({
+      listFactors: {
+        error: null,
+        totp: [
+          { id: FACTOR_ID, status: 'verified', friendly_name: 'Work phone' },
+          { id: FACTOR_ID_2, status: 'verified', friendly_name: 'Personal' },
+        ],
+      },
+    });
+    mockedGetClient.mockReturnValue(client as never);
+
+    renderLogin();
+    await submitCredentials();
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('combobox', { name: /^Authenticator$/i }),
+      ).toBeTruthy();
+    });
+
+    fireEvent.change(
+      screen.getByRole('combobox', { name: /^Authenticator$/i }),
+      {
+        target: { value: FACTOR_ID_2 },
+      },
+    );
+    fireEvent.change(screen.getByLabelText(/Authenticator code/i), {
+      target: { value: '123456' },
+    });
+    fireEvent.click(
+      screen.getByRole('button', { name: /Verify and continue/i }),
+    );
+
+    await waitFor(() => {
+      expect(mockPush).toHaveBeenCalledWith('/patients');
+    });
+
+    expect(mfa.challenge).toHaveBeenCalledWith({ factorId: FACTOR_ID_2 });
+    expect(mfa.verify).toHaveBeenCalledWith({
+      factorId: FACTOR_ID_2,
+      challengeId: 'challenge-id',
+      code: '123456',
+    });
   });
 
   it('clears trust bundle on successful verify when remember device is unchecked', async () => {

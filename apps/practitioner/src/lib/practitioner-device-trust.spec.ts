@@ -1026,6 +1026,76 @@ describe('syncMfaTrustBundleAfterTokenRefresh', () => {
       localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
     ).toBe(initial);
   });
+
+  it('clears bundle when trust window is expired', async () => {
+    localStorage.setItem(
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
+      buildBundleJson(userId, Date.now() - 1000),
+    );
+
+    const supabase = {
+      auth: {
+        mfa: {
+          getAuthenticatorAssuranceLevel: jest.fn().mockResolvedValue({
+            data: { currentLevel: 'aal2', nextLevel: null },
+            error: null,
+          }),
+        },
+      },
+    };
+
+    const session = {
+      user: { id: userId },
+      refresh_token: 'rotated-refresh',
+      access_token: 'rotated-access',
+    } as Session;
+
+    await syncMfaTrustBundleAfterTokenRefresh(
+      supabase as unknown as BrowserClient,
+      session,
+    );
+
+    expect(
+      localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
+    ).toBeNull();
+    expect(
+      supabase.auth.mfa.getAuthenticatorAssuranceLevel,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('clears bundle when session user does not match bundle userId', async () => {
+    const otherId = '00000000-0000-0000-0000-000000000099';
+    localStorage.setItem(
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
+      buildBundleJson(userId, Date.now() + 60_000),
+    );
+
+    const supabase = {
+      auth: {
+        mfa: {
+          getAuthenticatorAssuranceLevel: jest.fn(),
+        },
+      },
+    };
+
+    const session = {
+      user: { id: otherId },
+      refresh_token: 'rotated-refresh',
+      access_token: 'rotated-access',
+    } as Session;
+
+    await syncMfaTrustBundleAfterTokenRefresh(
+      supabase as unknown as BrowserClient,
+      session,
+    );
+
+    expect(
+      localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
+    ).toBeNull();
+    expect(
+      supabase.auth.mfa.getAuthenticatorAssuranceLevel,
+    ).not.toHaveBeenCalled();
+  });
 });
 
 describe('refreshTrustedMfaBundleBeforePasswordSignIn', () => {
@@ -1156,6 +1226,34 @@ describe('refreshTrustedMfaBundleBeforePasswordSignIn', () => {
       refreshTrustedMfaBundleBeforePasswordSignIn(supabase, email),
     ).resolves.toBe(false);
     expect(signOut).toHaveBeenCalled();
+    expect(
+      localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
+    ).toBeNull();
+  });
+
+  it('clears the bundle when refreshSession fails', async () => {
+    localStorage.setItem(
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
+      buildBundleJsonWithEmail(userId, Date.now() + 60_000, email),
+    );
+    const refreshSession = jest.fn().mockResolvedValue({
+      data: { session: null },
+      error: { message: 'Invalid Refresh Token: Refresh Token Not Found' },
+    });
+    const supabase = {
+      auth: {
+        refreshSession,
+        signOut: jest.fn(),
+        mfa: { getAuthenticatorAssuranceLevel: jest.fn() },
+      },
+    } as unknown as BrowserClient;
+
+    await expect(
+      refreshTrustedMfaBundleBeforePasswordSignIn(supabase, email),
+    ).resolves.toBe(false);
+    expect(
+      localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
+    ).toBeNull();
   });
 
   it('returns false and signs out when assurance is not aal2', async () => {
@@ -1190,6 +1288,9 @@ describe('refreshTrustedMfaBundleBeforePasswordSignIn', () => {
       refreshTrustedMfaBundleBeforePasswordSignIn(supabase, email),
     ).resolves.toBe(false);
     expect(signOut).toHaveBeenCalled();
+    expect(
+      localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
+    ).toBeNull();
   });
 
   it('returns true and persists refreshed session when refresh and aal2 succeed', async () => {
