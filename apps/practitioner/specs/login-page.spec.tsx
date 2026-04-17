@@ -265,6 +265,7 @@ describe('LoginPage MFA state machine', () => {
     await waitFor(() => {
       expect(mockPush).toHaveBeenCalledWith('/');
     });
+    expect(mockedClearBundle).toHaveBeenCalled();
   });
 
   it('credentials → MFA verify → /patients and saves trust bundle when remember device is checked', async () => {

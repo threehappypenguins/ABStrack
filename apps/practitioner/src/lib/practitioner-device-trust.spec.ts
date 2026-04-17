@@ -222,6 +222,134 @@ describe('tryRestoreTrustedMfaSession', () => {
     expect(signOut).not.toHaveBeenCalled();
   });
 
+  it('clears the trust bundle and signs out when initial getSession fails', async () => {
+    localStorage.setItem(
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
+      buildBundleJson(userId, Date.now() + 60_000),
+    );
+
+    const setSession = jest.fn();
+    const signOut = jest.fn().mockResolvedValue({ error: null });
+
+    const supabase = {
+      auth: {
+        setSession,
+        signOut,
+        getSession: jest.fn().mockResolvedValue({
+          error: new Error('getSession failed'),
+          data: { session: null },
+        }),
+      },
+    } as unknown as BrowserClient;
+
+    await expect(tryRestoreTrustedMfaSession(supabase, userId)).resolves.toBe(
+      false,
+    );
+    expect(
+      localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
+    ).toBeNull();
+    expect(setSession).not.toHaveBeenCalled();
+    expect(signOut).toHaveBeenCalled();
+  });
+
+  it('clears the trust bundle and reverts when getSession fails after setSession', async () => {
+    localStorage.setItem(
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
+      buildBundleJson(userId, Date.now() + 60_000),
+    );
+
+    const setSession = jest.fn().mockResolvedValue({ error: null });
+    const signOut = jest.fn().mockResolvedValue({ error: null });
+
+    const supabase = {
+      auth: {
+        setSession,
+        signOut,
+        getSession: jest
+          .fn()
+          .mockResolvedValueOnce({
+            error: null,
+            data: { session: prePasswordSession(userId) },
+          })
+          .mockResolvedValueOnce({
+            error: new Error('cookie unreadable'),
+            data: { session: null },
+          }),
+        mfa: {
+          getAuthenticatorAssuranceLevel: jest.fn(),
+        },
+      },
+    } as unknown as BrowserClient;
+
+    await expect(tryRestoreTrustedMfaSession(supabase, userId)).resolves.toBe(
+      false,
+    );
+    expect(
+      localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
+    ).toBeNull();
+    expect(
+      supabase.auth.mfa.getAuthenticatorAssuranceLevel,
+    ).not.toHaveBeenCalled();
+    expect(setSession).toHaveBeenCalledWith({
+      refresh_token: 'refresh',
+      access_token: 'access',
+    });
+    expect(setSession).toHaveBeenCalledWith({
+      refresh_token: 'pre-refresh',
+      access_token: 'pre-access',
+    });
+    expect(signOut).not.toHaveBeenCalled();
+  });
+
+  it('clears the trust bundle and reverts when final getSession fails after AAL2', async () => {
+    localStorage.setItem(
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
+      buildBundleJson(userId, Date.now() + 60_000),
+    );
+
+    const setSession = jest.fn().mockResolvedValue({ error: null });
+    const signOut = jest.fn().mockResolvedValue({ error: null });
+
+    const supabase = {
+      auth: {
+        setSession,
+        signOut,
+        getSession: jest
+          .fn()
+          .mockResolvedValueOnce({
+            error: null,
+            data: { session: prePasswordSession(userId) },
+          })
+          .mockResolvedValueOnce({
+            error: null,
+            data: { session: prePasswordSession(userId) },
+          })
+          .mockResolvedValueOnce({
+            error: new Error('final getSession failed'),
+            data: { session: null },
+          }),
+        mfa: {
+          getAuthenticatorAssuranceLevel: jest.fn().mockResolvedValue({
+            error: null,
+            data: { currentLevel: 'aal2', nextLevel: 'aal2' },
+          }),
+        },
+      },
+    } as unknown as BrowserClient;
+
+    await expect(tryRestoreTrustedMfaSession(supabase, userId)).resolves.toBe(
+      false,
+    );
+    expect(
+      localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
+    ).toBeNull();
+    expect(setSession).toHaveBeenCalledWith({
+      refresh_token: 'pre-refresh',
+      access_token: 'pre-access',
+    });
+    expect(signOut).not.toHaveBeenCalled();
+  });
+
   it('signs out when revert setSession fails after a restore failure', async () => {
     localStorage.setItem(
       PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
@@ -402,6 +530,73 @@ describe('practitionerSignOut', () => {
     ).toBeNull();
     expect(signOut).toHaveBeenCalledTimes(1);
     expect(signOut).toHaveBeenCalledWith();
+  });
+
+  it('falls back to server logout when local sign-out returns an error', async () => {
+    localStorage.setItem(
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
+      buildBundleJson(userId, Date.now() + 60_000),
+    );
+    localStorage.setItem('sb-proj-auth-token', '{"x":1}');
+
+    const submitSpy = jest
+      .spyOn(HTMLFormElement.prototype, 'submit')
+      .mockImplementation(() => undefined);
+
+    const signOut = jest
+      .fn()
+      .mockResolvedValue({ error: { message: 'local sign-out failed' } });
+    const supabase = {
+      auth: {
+        getSession: jest.fn().mockResolvedValue({
+          data: {
+            session: sessionForUser(userId),
+          },
+        }),
+        signOut,
+      },
+    } as unknown as BrowserClient;
+
+    await practitionerSignOut(supabase);
+
+    expect(signOut).toHaveBeenCalledWith({ scope: 'local' });
+    expect(submitSpy).toHaveBeenCalledTimes(1);
+    expect(
+      localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
+    ).toBeNull();
+    expect(localStorage.getItem('sb-proj-auth-token')).toBeNull();
+
+    submitSpy.mockRestore();
+  });
+
+  it('falls back to server logout when full sign-out returns an error', async () => {
+    localStorage.setItem(
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
+      buildBundleJson(userId, Date.now() - 1000),
+    );
+
+    const submitSpy = jest
+      .spyOn(HTMLFormElement.prototype, 'submit')
+      .mockImplementation(() => undefined);
+
+    const signOut = jest
+      .fn()
+      .mockResolvedValue({ error: { message: 'sign-out failed' } });
+    const supabase = {
+      auth: {
+        getSession: jest.fn().mockResolvedValue({
+          data: { session: sessionForUser(userId) },
+        }),
+        signOut,
+      },
+    } as unknown as BrowserClient;
+
+    await practitionerSignOut(supabase);
+
+    expect(signOut).toHaveBeenCalledWith();
+    expect(submitSpy).toHaveBeenCalledTimes(1);
+
+    submitSpy.mockRestore();
   });
 });
 

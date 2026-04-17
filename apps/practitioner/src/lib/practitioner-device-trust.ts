@@ -207,8 +207,8 @@ async function revertToPreRestoreSession(
 /**
  * After email/password sign-in, attempts to restore a prior AAL2 session from the trust bundle.
  * On failure (revoked or expired tokens, **session user mismatch** after restore, assurance error,
- * or session not at **aal2**), clears the bundle and restores the pre-restore password session (or
- * signs out) so the client is not left authenticated as the wrong user.
+ * **getSession error**, or session not at **aal2**), clears the bundle and restores the pre-restore
+ * password session (or signs out) so the client is not left authenticated as the wrong user.
  *
  * @param supabase - Browser Supabase client.
  * @param userId - Authenticated user id from the new password session.
@@ -227,9 +227,14 @@ export async function tryRestoreTrustedMfaSession(
     return false;
   }
 
-  const {
-    data: { session: preRestoreSession },
-  } = await supabase.auth.getSession();
+  const preSessionResult = await supabase.auth.getSession();
+  if (preSessionResult.error) {
+    clearMfaTrustBundle();
+    await revertToPreRestoreSession(supabase, null);
+    return false;
+  }
+
+  const preRestoreSession = preSessionResult.data.session;
 
   if (preRestoreSession?.user?.id !== userId) {
     clearMfaTrustBundle();
@@ -257,9 +262,14 @@ export async function tryRestoreTrustedMfaSession(
     return false;
   }
 
-  const {
-    data: { session: sessionAfterSet },
-  } = await supabase.auth.getSession();
+  const afterSetResult = await supabase.auth.getSession();
+  if (afterSetResult.error) {
+    clearMfaTrustBundle();
+    await revertToPreRestoreSession(supabase, preSessionTokens);
+    return false;
+  }
+
+  const sessionAfterSet = afterSetResult.data.session;
   if (sessionAfterSet?.user?.id == null || sessionAfterSet.user.id !== userId) {
     clearMfaTrustBundle();
     await revertToPreRestoreSession(supabase, preSessionTokens);
@@ -278,8 +288,14 @@ export async function tryRestoreTrustedMfaSession(
     return false;
   }
 
-  const { data: sessionData } = await supabase.auth.getSession();
-  const session = sessionData.session;
+  const finalSessionResult = await supabase.auth.getSession();
+  if (finalSessionResult.error) {
+    clearMfaTrustBundle();
+    await revertToPreRestoreSession(supabase, preSessionTokens);
+    return false;
+  }
+
+  const session = finalSessionResult.data.session;
   if (session) {
     saveMfaTrustBundle(session, bundle.trustedUntilMs);
   }
@@ -319,9 +335,12 @@ export function practitionerSignOutEverywhere(): void {
  * Otherwise performs a full Supabase sign-out and clears the trust bundle. For a **full** revoke
  * while trust is active, use {@link practitionerSignOutEverywhere} instead.
  *
- * Navigation to `/login` runs only in the browser (`window` present). In non-browser environments
- * (SSR, tests without `window`), storage and `signOut` still run when applicable, but there is no
- * redirect.
+ * If `auth.signOut` returns an error, falls back to {@link practitionerSignOutEverywhere} in the
+ * browser (server logout + form POST) so cookies are not left in an ambiguous state; in
+ * non-browser contexts only `console.error` is used (no redirect).
+ *
+ * Navigation to `/login` via `location.assign` runs only after a successful client sign-out when
+ * `window` is present.
  *
  * @param supabase - Browser Supabase client.
  */
@@ -338,7 +357,20 @@ export async function practitionerSignOut(
     bundle.trustedUntilMs > Date.now();
 
   if (trustActiveForUser) {
-    await supabase.auth.signOut({ scope: 'local' });
+    const { error: localSignOutError } = await supabase.auth.signOut({
+      scope: 'local',
+    });
+    if (localSignOutError) {
+      if (typeof document !== 'undefined') {
+        practitionerSignOutEverywhere();
+      } else {
+        console.error(
+          'practitionerSignOut: local sign-out failed; cannot fall back to server logout without a document.',
+          localSignOutError,
+        );
+      }
+      return;
+    }
     if (typeof window !== 'undefined') {
       window.location.assign('/login');
     }
@@ -346,7 +378,18 @@ export async function practitionerSignOut(
   }
 
   clearMfaTrustBundle();
-  await supabase.auth.signOut();
+  const { error: signOutError } = await supabase.auth.signOut();
+  if (signOutError) {
+    if (typeof document !== 'undefined') {
+      practitionerSignOutEverywhere();
+    } else {
+      console.error(
+        'practitionerSignOut: sign-out failed; cannot fall back to server logout without a document.',
+        signOutError,
+      );
+    }
+    return;
+  }
   if (typeof window !== 'undefined') {
     window.location.assign('/login');
   }

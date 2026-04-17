@@ -23,7 +23,8 @@ type LoginStep = 'credentials' | 'mfa_verify';
 /**
  * Practitioner email/password login with MFA step-up and optional device trust (browser storage).
  * Successful verification with “Trust this device” unchecked clears any stored bundle so trust
- * matches the checkbox for this sign-in.
+ * matches the checkbox for this sign-in. If there is no verified TOTP factor, any existing bundle
+ * is cleared before redirecting to security setup so stale tokens are not kept in storage.
  *
  * @returns Login UI.
  */
@@ -86,6 +87,7 @@ export default function LoginPage() {
         (factor) => factor.status === 'verified',
       );
       if (verifiedTotpFactors.length < 1) {
+        clearMfaTrustBundle();
         const message =
           'No verified TOTP factor yet. Opening security setup so you can enroll TOTP.';
         announce(message, { politeness: 'assertive' });
