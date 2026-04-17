@@ -428,6 +428,79 @@ describe('tryRestoreTrustedMfaSession', () => {
   });
 });
 
+describe('stored trust bundle validation', () => {
+  const userId = '00000000-0000-0000-0000-000000000099';
+
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('removes invalid bundle with empty refresh_token and reports inactive', () => {
+    localStorage.setItem(
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
+      JSON.stringify({
+        userId,
+        refresh_token: '',
+        access_token: 'access',
+        trustedUntilMs: Date.now() + 60_000,
+      }),
+    );
+    expect(isPractitionerMfaDeviceTrustActive(userId)).toBe(false);
+    expect(
+      localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
+    ).toBeNull();
+  });
+
+  it('removes invalid bundle with NaN trustedUntilMs', () => {
+    localStorage.setItem(
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
+      JSON.stringify({
+        userId,
+        refresh_token: 'refresh',
+        access_token: 'access',
+        trustedUntilMs: Number.NaN,
+      }),
+    );
+    expect(isPractitionerMfaDeviceTrustActive(userId)).toBe(false);
+    expect(
+      localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
+    ).toBeNull();
+  });
+
+  it('removes invalid bundle when expires_at is non-finite', () => {
+    localStorage.setItem(
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
+      JSON.stringify({
+        userId,
+        refresh_token: 'refresh',
+        access_token: 'access',
+        trustedUntilMs: Date.now() + 60_000,
+        expires_at: Number.NaN,
+      }),
+    );
+    expect(isPractitionerMfaDeviceTrustActive(userId)).toBe(false);
+    expect(
+      localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
+    ).toBeNull();
+  });
+
+  it('removes invalid bundle with blank userId', () => {
+    localStorage.setItem(
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
+      JSON.stringify({
+        userId: '   ',
+        refresh_token: 'refresh',
+        access_token: 'access',
+        trustedUntilMs: Date.now() + 60_000,
+      }),
+    );
+    expect(isPractitionerMfaDeviceTrustActive(userId)).toBe(false);
+    expect(
+      localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
+    ).toBeNull();
+  });
+});
+
 describe('isPractitionerMfaDeviceTrustActive', () => {
   const userId = '00000000-0000-0000-0000-000000000099';
 
@@ -440,7 +513,7 @@ describe('isPractitionerMfaDeviceTrustActive', () => {
     expect(isPractitionerMfaDeviceTrustActive('')).toBe(false);
   });
 
-  it('returns false when there is no bundle or user does not match', () => {
+  it('returns false when there is no bundle or user does not match, and clears bundle on mismatch', () => {
     expect(isPractitionerMfaDeviceTrustActive(userId)).toBe(false);
     localStorage.setItem(
       PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
@@ -450,14 +523,20 @@ describe('isPractitionerMfaDeviceTrustActive', () => {
       ),
     );
     expect(isPractitionerMfaDeviceTrustActive(userId)).toBe(false);
+    expect(
+      localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
+    ).toBeNull();
   });
 
-  it('returns false when the trust window has expired', () => {
+  it('returns false when the trust window has expired and removes the bundle', () => {
     localStorage.setItem(
       PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
       buildBundleJson(userId, Date.now() - 1000),
     );
     expect(isPractitionerMfaDeviceTrustActive(userId)).toBe(false);
+    expect(
+      localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
+    ).toBeNull();
   });
 
   it('returns true when a non-expired bundle exists for the user', () => {

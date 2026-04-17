@@ -49,6 +49,44 @@ export type PractitionerMfaTrustBundle = {
   trustedUntilMs: number;
 };
 
+function isNonEmptyTrimmedString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim() !== '';
+}
+
+/**
+ * Validates JSON parsed from {@link PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY}. Rejects empty
+ * tokens, blank `userId`, non-finite `trustedUntilMs` / `expires_at`, and malformed shapes.
+ *
+ * @param parsed - Value from `JSON.parse`.
+ * @returns Whether the object is safe to use as a trust bundle.
+ */
+function isValidStoredTrustBundle(
+  parsed: unknown,
+): parsed is PractitionerMfaTrustBundle {
+  if (parsed === null || typeof parsed !== 'object') {
+    return false;
+  }
+  const o = parsed as Record<string, unknown>;
+  if (
+    !isNonEmptyTrimmedString(o['userId']) ||
+    !isNonEmptyTrimmedString(o['refresh_token']) ||
+    !isNonEmptyTrimmedString(o['access_token'])
+  ) {
+    return false;
+  }
+  const trustedUntilMs = o['trustedUntilMs'];
+  if (typeof trustedUntilMs !== 'number' || !Number.isFinite(trustedUntilMs)) {
+    return false;
+  }
+  if (o['expires_at'] !== undefined) {
+    const exp = o['expires_at'];
+    if (typeof exp !== 'number' || !Number.isFinite(exp)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /**
  * Removes `sb-*-auth-token` keys from `localStorage` when present. The practitioner browser client
  * uses **`@supabase/ssr` cookie-backed sessions**; ending the session is done with
@@ -77,6 +115,10 @@ export function clearSupabaseBrowserAuthStorage(): void {
   }
 }
 
+/**
+ * Reads the MFA trust bundle from storage. Corrupt or invalid payloads are removed so tokens are
+ * not left in `localStorage` indefinitely.
+ */
 function readBundle(): PractitionerMfaTrustBundle | null {
   if (typeof window === 'undefined') {
     return null;
@@ -93,16 +135,12 @@ function readBundle(): PractitionerMfaTrustBundle | null {
     return null;
   }
   try {
-    const parsed = JSON.parse(raw) as PractitionerMfaTrustBundle;
-    if (
-      typeof parsed.userId === 'string' &&
-      typeof parsed.refresh_token === 'string' &&
-      typeof parsed.access_token === 'string' &&
-      typeof parsed.trustedUntilMs === 'number'
-    ) {
-      return parsed;
+    const parsed: unknown = JSON.parse(raw);
+    if (!isValidStoredTrustBundle(parsed)) {
+      clearMfaTrustBundle();
+      return null;
     }
-    return null;
+    return parsed;
   } catch {
     return null;
   }
@@ -111,6 +149,8 @@ function readBundle(): PractitionerMfaTrustBundle | null {
 /**
  * @param userId - Authenticated user id from the current session, if any.
  * @returns Whether a non-expired MFA device-trust bundle exists for this user (soft sign-out path).
+ * Clears stored tokens when the bundle is **expired** or for a **different** user so session
+ * material is not left in `localStorage` after trust has lapsed or the account changed.
  */
 export function isPractitionerMfaDeviceTrustActive(
   userId: string | undefined,
@@ -119,11 +159,18 @@ export function isPractitionerMfaDeviceTrustActive(
     return false;
   }
   const bundle = readBundle();
-  return (
-    bundle !== null &&
-    bundle.userId === userId &&
-    bundle.trustedUntilMs > Date.now()
-  );
+  if (bundle === null) {
+    return false;
+  }
+  if (bundle.userId !== userId) {
+    clearMfaTrustBundle();
+    return false;
+  }
+  if (bundle.trustedUntilMs <= Date.now()) {
+    clearMfaTrustBundle();
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -131,13 +178,16 @@ export function isPractitionerMfaDeviceTrustActive(
  * within the trust window. **Only call after explicit user opt-in**; see module XSS warning.
  *
  * @param session - Active Supabase session after successful `mfa.verify`.
- * @param trustedUntilMs - Absolute expiry for the trust window.
+ * @param trustedUntilMs - Absolute expiry for the trust window (must be finite).
  */
 export function saveMfaTrustBundle(
   session: Session,
   trustedUntilMs: number,
 ): void {
   if (typeof window === 'undefined') {
+    return;
+  }
+  if (!Number.isFinite(trustedUntilMs)) {
     return;
   }
   if (
