@@ -57,7 +57,9 @@ test.describe('Accessibility (axe-core)', () => {
 
     // `#practitioner-patient-gate-root` is also used for the loading spinner; wait for the
     // signed-out gate so the scan does not run mid-transition or against spinner markup.
-    const signedOutHeading = page.getByRole('heading', { name: 'Sign in required' });
+    const signedOutHeading = page.getByRole('heading', {
+      name: 'Sign in required',
+    });
     await signedOutHeading.waitFor({ state: 'visible', timeout: 20_000 });
 
     const results = await new AxeBuilder({ page })

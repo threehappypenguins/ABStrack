@@ -40,6 +40,42 @@ describe('tryRestoreTrustedMfaSession', () => {
     localStorage.clear();
   });
 
+  it('returns restored when trust bundle applies and assurance is aal2', async () => {
+    localStorage.setItem(
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
+      buildBundleJson(userId, Date.now() + 60_000),
+    );
+
+    const setSession = jest.fn().mockResolvedValue({ error: null });
+    const supabase = {
+      auth: {
+        setSession,
+        signOut: jest.fn(),
+        getSession: jest
+          .fn()
+          .mockResolvedValueOnce({
+            data: { session: prePasswordSession(userId) },
+          })
+          .mockResolvedValueOnce({
+            data: { session: prePasswordSession(userId) },
+          })
+          .mockResolvedValueOnce({
+            data: { session: prePasswordSession(userId) },
+          }),
+        mfa: {
+          getAuthenticatorAssuranceLevel: jest.fn().mockResolvedValue({
+            error: null,
+            data: { currentLevel: 'aal2', nextLevel: 'aal2' },
+          }),
+        },
+      },
+    } as unknown as BrowserClient;
+
+    await expect(
+      tryRestoreTrustedMfaSession(supabase, userId),
+    ).resolves.toEqual({ status: 'restored' });
+  });
+
   it('clears the trust bundle when stored bundle user id does not match current user', async () => {
     const otherUserId = '99999999-9999-9999-9999-999999999999';
     localStorage.setItem(
@@ -57,9 +93,9 @@ describe('tryRestoreTrustedMfaSession', () => {
       },
     } as unknown as BrowserClient;
 
-    await expect(tryRestoreTrustedMfaSession(supabase, userId)).resolves.toBe(
-      false,
-    );
+    await expect(
+      tryRestoreTrustedMfaSession(supabase, userId),
+    ).resolves.toEqual({ status: 'not_restored' });
     expect(
       localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
     ).toBeNull();
@@ -95,9 +131,9 @@ describe('tryRestoreTrustedMfaSession', () => {
       },
     } as unknown as BrowserClient;
 
-    await expect(tryRestoreTrustedMfaSession(supabase, userId)).resolves.toBe(
-      false,
-    );
+    await expect(
+      tryRestoreTrustedMfaSession(supabase, userId),
+    ).resolves.toEqual({ status: 'not_restored' });
     expect(
       localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
     ).toBeNull();
@@ -142,9 +178,9 @@ describe('tryRestoreTrustedMfaSession', () => {
       },
     } as unknown as BrowserClient;
 
-    await expect(tryRestoreTrustedMfaSession(supabase, userId)).resolves.toBe(
-      false,
-    );
+    await expect(
+      tryRestoreTrustedMfaSession(supabase, userId),
+    ).resolves.toEqual({ status: 'not_restored' });
     expect(
       localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
     ).toBeNull();
@@ -179,9 +215,9 @@ describe('tryRestoreTrustedMfaSession', () => {
       },
     } as unknown as BrowserClient;
 
-    await expect(tryRestoreTrustedMfaSession(supabase, userId)).resolves.toBe(
-      false,
-    );
+    await expect(
+      tryRestoreTrustedMfaSession(supabase, userId),
+    ).resolves.toEqual({ status: 'signed_out' });
     expect(
       localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
     ).toBeNull();
@@ -221,9 +257,9 @@ describe('tryRestoreTrustedMfaSession', () => {
       },
     } as unknown as BrowserClient;
 
-    await expect(tryRestoreTrustedMfaSession(supabase, userId)).resolves.toBe(
-      false,
-    );
+    await expect(
+      tryRestoreTrustedMfaSession(supabase, userId),
+    ).resolves.toEqual({ status: 'not_restored' });
     expect(
       localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
     ).toBeNull();
@@ -269,9 +305,9 @@ describe('tryRestoreTrustedMfaSession', () => {
       },
     } as unknown as BrowserClient;
 
-    await expect(tryRestoreTrustedMfaSession(supabase, userId)).resolves.toBe(
-      false,
-    );
+    await expect(
+      tryRestoreTrustedMfaSession(supabase, userId),
+    ).resolves.toEqual({ status: 'not_restored' });
     expect(
       localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
     ).toBeNull();
@@ -305,9 +341,9 @@ describe('tryRestoreTrustedMfaSession', () => {
       },
     } as unknown as BrowserClient;
 
-    await expect(tryRestoreTrustedMfaSession(supabase, userId)).resolves.toBe(
-      false,
-    );
+    await expect(
+      tryRestoreTrustedMfaSession(supabase, userId),
+    ).resolves.toEqual({ status: 'signed_out' });
     expect(
       localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
     ).toBeNull();
@@ -344,9 +380,9 @@ describe('tryRestoreTrustedMfaSession', () => {
       },
     } as unknown as BrowserClient;
 
-    await expect(tryRestoreTrustedMfaSession(supabase, userId)).resolves.toBe(
-      false,
-    );
+    await expect(
+      tryRestoreTrustedMfaSession(supabase, userId),
+    ).resolves.toEqual({ status: 'not_restored' });
     expect(
       localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
     ).toBeNull();
@@ -400,9 +436,9 @@ describe('tryRestoreTrustedMfaSession', () => {
       },
     } as unknown as BrowserClient;
 
-    await expect(tryRestoreTrustedMfaSession(supabase, userId)).resolves.toBe(
-      false,
-    );
+    await expect(
+      tryRestoreTrustedMfaSession(supabase, userId),
+    ).resolves.toEqual({ status: 'not_restored' });
     expect(
       localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
     ).toBeNull();
@@ -449,9 +485,9 @@ describe('tryRestoreTrustedMfaSession', () => {
       },
     } as unknown as BrowserClient;
 
-    await expect(tryRestoreTrustedMfaSession(supabase, userId)).resolves.toBe(
-      false,
-    );
+    await expect(
+      tryRestoreTrustedMfaSession(supabase, userId),
+    ).resolves.toEqual({ status: 'not_restored' });
     expect(
       localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
     ).toBeNull();
@@ -496,9 +532,9 @@ describe('tryRestoreTrustedMfaSession', () => {
       },
     } as unknown as BrowserClient;
 
-    await expect(tryRestoreTrustedMfaSession(supabase, userId)).resolves.toBe(
-      false,
-    );
+    await expect(
+      tryRestoreTrustedMfaSession(supabase, userId),
+    ).resolves.toEqual({ status: 'signed_out' });
     expect(signOut).toHaveBeenCalled();
   });
 });

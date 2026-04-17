@@ -132,7 +132,7 @@ function createLoginSupabaseMock(options?: {
     access_token: 'access-token',
   };
   const mfaSessionOpts = options?.mfaVerifyGetSession;
-  const getSession = jest.fn().mockResolvedValue({
+  const verifyPhaseGetSessionResult = {
     data: {
       session:
         mfaSessionOpts?.session === undefined
@@ -140,7 +140,21 @@ function createLoginSupabaseMock(options?: {
           : mfaSessionOpts.session,
     },
     error: mfaSessionOpts?.error ?? null,
-  });
+  };
+  /** Login calls `getSession` after `tryRestoreTrustedMfaSession` before MFA; keep that success when verify-phase mocks simulate failure. */
+  const postTrustRestoreGetSessionOk = {
+    data: { session: defaultMfaSession },
+    error: null as const,
+  };
+  const verifyPhaseDiffersFromHealthy =
+    mfaSessionOpts != null &&
+    (mfaSessionOpts.error != null || mfaSessionOpts.session === null);
+  const getSession = verifyPhaseDiffersFromHealthy
+    ? jest
+        .fn()
+        .mockResolvedValueOnce(postTrustRestoreGetSessionOk)
+        .mockResolvedValue(verifyPhaseGetSessionResult)
+    : jest.fn().mockResolvedValue(verifyPhaseGetSessionResult);
   const signOut = jest.fn().mockResolvedValue({ error: null });
 
   const challenge = jest.fn().mockResolvedValue({
@@ -227,15 +241,35 @@ describe('LoginPage MFA state machine', () => {
     mockPush.mockClear();
     mockRefresh.mockClear();
     mockedTryRestore.mockReset();
-    mockedTryRestore.mockResolvedValue(false);
+    mockedTryRestore.mockResolvedValue({ status: 'not_restored' });
     mockedSaveBundle.mockClear();
     mockedClearBundle.mockClear();
     mockedTrustedUntil.mockClear();
     mockedTrustedUntil.mockReturnValue(Date.now() + 86_400_000);
   });
 
+  it('shows message and stays on credentials when trust restore ends session (signed_out)', async () => {
+    mockedTryRestore.mockResolvedValue({ status: 'signed_out' });
+    const { client } = createLoginSupabaseMock({
+      assuranceFirst: { currentLevel: 'aal1', nextLevel: 'aal2' },
+    });
+    mockedGetClient.mockReturnValue(client as never);
+
+    renderLogin();
+    await submitCredentials();
+
+    await waitFor(() => {
+      expect(getVisibleFormError().textContent).toContain(
+        'Your sign-in session ended during the saved device check',
+      );
+    });
+    expect(screen.queryByLabelText(/Authenticator code/i)).toBeNull();
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(client.auth.getSession).not.toHaveBeenCalled();
+  });
+
   it('navigates to /patients when trusted MFA session restores', async () => {
-    mockedTryRestore.mockResolvedValue(true);
+    mockedTryRestore.mockResolvedValue({ status: 'restored' });
     const { client } = createLoginSupabaseMock({
       assuranceFirst: { currentLevel: 'aal1', nextLevel: 'aal2' },
     });
@@ -411,6 +445,78 @@ describe('LoginPage MFA state machine', () => {
       );
     });
     expect(mockPush).not.toHaveBeenCalledWith('/patients');
+  });
+
+  it('returns to credentials when getSession fails after trust restore returns false', async () => {
+    const { client } = createLoginSupabaseMock({
+      assuranceFirst: { currentLevel: 'aal1', nextLevel: 'aal2' },
+    });
+    (client.auth.getSession as jest.Mock).mockResolvedValueOnce({
+      error: { message: 'storage read failed' },
+      data: { session: null },
+    });
+    mockedGetClient.mockReturnValue(client as never);
+
+    renderLogin();
+    await submitCredentials();
+
+    await waitFor(() => {
+      expect(getVisibleFormError().textContent).toContain(
+        'Could not confirm your session after the saved device check',
+      );
+    });
+    expect(screen.queryByLabelText(/Authenticator code/i)).toBeNull();
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('returns to credentials when getSession returns no session after trust restore returns false', async () => {
+    const { client } = createLoginSupabaseMock({
+      assuranceFirst: { currentLevel: 'aal1', nextLevel: 'aal2' },
+    });
+    (client.auth.getSession as jest.Mock).mockResolvedValueOnce({
+      error: null,
+      data: { session: null },
+    });
+    mockedGetClient.mockReturnValue(client as never);
+
+    renderLogin();
+    await submitCredentials();
+
+    await waitFor(() => {
+      expect(getVisibleFormError().textContent).toContain(
+        'Your sign-in session ended during the saved device check',
+      );
+    });
+    expect(screen.queryByLabelText(/Authenticator code/i)).toBeNull();
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('returns to credentials when session user id differs after trust restore returns false', async () => {
+    const { client } = createLoginSupabaseMock({
+      assuranceFirst: { currentLevel: 'aal1', nextLevel: 'aal2' },
+    });
+    (client.auth.getSession as jest.Mock).mockResolvedValueOnce({
+      error: null,
+      data: {
+        session: {
+          user: { id: '99999999-9999-9999-9999-999999999999' },
+          refresh_token: 'refresh-token',
+          access_token: 'access-token',
+        },
+      },
+    });
+    mockedGetClient.mockReturnValue(client as never);
+
+    renderLogin();
+    await submitCredentials();
+
+    await waitFor(() => {
+      expect(getVisibleFormError().textContent).toContain(
+        'no longer matches this sign-in after the saved device check',
+      );
+    });
+    expect(screen.queryByLabelText(/Authenticator code/i)).toBeNull();
+    expect(mockPush).not.toHaveBeenCalled();
   });
 
   it('shows auth error when password sign-in fails', async () => {

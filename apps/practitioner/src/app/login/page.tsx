@@ -26,7 +26,11 @@ type LoginStep = 'credentials' | 'mfa_verify';
  * matches the checkbox for this sign-in. If there is no verified TOTP factor, any existing bundle
  * is cleared before redirecting to security setup so stale tokens are not kept in storage.
  * If `getUser` does not return a user id after a successful password sign-in, the client signs out
- * and clears the trust bundle so no half-established session remains.
+ * and clears the trust bundle so no half-established session remains. After
+ * {@link tryRestoreTrustedMfaSession} (discriminated: `restored`, `not_restored`, or `signed_out`;
+ * some outcomes sign the user out), the client re-checks `getSession` when the outcome is
+ * `not_restored` before reading assurance or showing the MFA step so a missing session cannot be
+ * mistaken for a password session still awaiting TOTP.
  *
  * @returns Login UI.
  */
@@ -104,10 +108,53 @@ export default function LoginPage() {
         return;
       }
 
-      const restored = await tryRestoreTrustedMfaSession(supabase, user.id);
-      if (restored) {
+      const restoreOutcome = await tryRestoreTrustedMfaSession(
+        supabase,
+        user.id,
+      );
+      if (restoreOutcome.status === 'restored') {
         router.push('/patients');
         router.refresh();
+        return;
+      }
+      if (restoreOutcome.status === 'signed_out') {
+        router.refresh();
+        const message =
+          'Your sign-in session ended during the saved device check. Enter your email and password again.';
+        setError(message);
+        announce(message, { politeness: 'assertive' });
+        setStep('credentials');
+        setMfaFactorId(null);
+        return;
+      }
+
+      const afterRestoreSession = await supabase.auth.getSession();
+      if (afterRestoreSession.error) {
+        console.error(afterRestoreSession.error);
+        const message =
+          'Could not confirm your session after the saved device check. Enter your email and password again.';
+        setError(message);
+        announce(message, { politeness: 'assertive' });
+        setStep('credentials');
+        setMfaFactorId(null);
+        return;
+      }
+      if (afterRestoreSession.data.session?.user?.id == null) {
+        const message =
+          'Your sign-in session ended during the saved device check. Enter your email and password again.';
+        setError(message);
+        announce(message, { politeness: 'assertive' });
+        setStep('credentials');
+        setMfaFactorId(null);
+        return;
+      }
+      if (afterRestoreSession.data.session.user.id !== user.id) {
+        const message =
+          'Your session no longer matches this sign-in after the saved device check. Enter your email and password again.';
+        setError(message);
+        announce(message, { politeness: 'assertive' });
+        setStep('credentials');
+        setMfaFactorId(null);
         return;
       }
 
