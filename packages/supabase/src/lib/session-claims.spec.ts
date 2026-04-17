@@ -36,6 +36,26 @@ describe('parseAbstrackAccessTokenClaims', () => {
     expect(claims?.role).toBe('authenticated');
     expect(claims?.sub).toBe('11111111-1111-1111-1111-111111111111');
   });
+
+  it('returns null when neither atob nor Buffer is available', () => {
+    const token = makeUnsignedJwt({ aal: 'aal2' });
+    const prevAtob = globalThis.atob;
+    const prevBuffer = globalThis.Buffer;
+    try {
+      // @ts-expect-error delete atob to simulate RN/Hermes without a web base64 decoder
+      delete globalThis.atob;
+      // @ts-expect-error delete Buffer to simulate RN/Hermes without Node base64
+      delete globalThis.Buffer;
+      expect(parseAbstrackAccessTokenClaims(token)).toBeNull();
+    } finally {
+      if (prevAtob !== undefined) {
+        globalThis.atob = prevAtob;
+      }
+      if (prevBuffer !== undefined) {
+        globalThis.Buffer = prevBuffer;
+      }
+    }
+  });
 });
 
 describe('hasMfaAssuranceAal2', () => {
@@ -76,6 +96,39 @@ describe('resolvePractitionerAppGate', () => {
         accessTokenClaims: null,
       }),
     ).toEqual({ kind: 'profile_loading' });
+  });
+
+  it('returns profile_error when profile lookup failed (even while profile is still undefined)', () => {
+    const err = new Error('network');
+    const gate = resolvePractitionerAppGate({
+      hasSession: true,
+      profile: undefined,
+      profileError: err,
+      accessTokenClaims: null,
+    });
+    expect(gate).toEqual({ kind: 'profile_error', error: err });
+  });
+
+  it('returns profile_missing when session exists but profile row is absent', () => {
+    expect(
+      resolvePractitionerAppGate({
+        hasSession: true,
+        profile: null,
+        profileError: null,
+        accessTokenClaims: { aal: 'aal2' },
+      }),
+    ).toEqual({ kind: 'profile_missing' });
+  });
+
+  it('returns profile_missing when app_role is not a canonical value', () => {
+    expect(
+      resolvePractitionerAppGate({
+        hasSession: true,
+        profile: { app_role: 'not_a_valid_role' },
+        profileError: null,
+        accessTokenClaims: null,
+      }),
+    ).toEqual({ kind: 'profile_missing' });
   });
 
   it('returns wrong_app_role for non-practitioner profiles', () => {

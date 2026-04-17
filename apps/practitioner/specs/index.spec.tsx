@@ -4,7 +4,11 @@ import Page from '../src/app/page';
 import type { PractitionerSupabaseProfilesRow } from '../src/lib/supabase-wiring';
 
 jest.mock('../src/lib/auth-provider', () => ({
-  useAuth: () => ({ session: null, loading: false }),
+  useAuth: () => ({
+    session: null,
+    loading: false,
+    gate: { kind: 'signed_out' as const },
+  }),
 }));
 
 /** Home page calls `getSupabaseBrowserClient()` on mount; env-public throws without URL + key. */

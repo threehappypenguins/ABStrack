@@ -60,10 +60,20 @@ export function parseAbstrackAccessTokenClaims(
     const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
     const pad = (4 - (base64.length % 4)) % 4;
     const padded = base64 + '='.repeat(pad);
-    const json =
-      typeof atob === 'function'
-        ? atob(padded)
-        : Buffer.from(padded, 'base64').toString('utf8');
+
+    let json: string;
+    if (typeof atob === 'function') {
+      json = atob(padded);
+    } else if (
+      typeof Buffer !== 'undefined' &&
+      typeof Buffer.from === 'function'
+    ) {
+      json = Buffer.from(padded, 'base64').toString('utf8');
+    } else {
+      // Hermes / some runtimes: no atob and no Buffer — fail closed (no claims).
+      return null;
+    }
+
     const raw = JSON.parse(json) as Record<string, unknown>;
     return raw as AbstrackAccessTokenClaims;
   } catch {

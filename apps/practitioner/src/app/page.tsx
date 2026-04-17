@@ -140,6 +140,17 @@ export default function Index() {
         return;
       }
 
+      // Only list MFA factors for practitioner profiles; avoid API + SR noise on error gates.
+      if (gate.kind !== 'practitioner') {
+        setEnrollment(null);
+        setVerifyCode('');
+        setVerifyFailureMessage(null);
+        setVerifiedTotpCount(0);
+        setStatusMessage(null);
+        setIsLoading(false);
+        return;
+      }
+
       try {
         await refreshMfaState();
       } catch (error) {
@@ -154,7 +165,7 @@ export default function Index() {
     };
 
     void load();
-  }, [session, sessionLoading]);
+  }, [session, sessionLoading, gate.kind]);
 
   const startEnrollment = async () => {
     const isAuthenticated = Boolean(session?.access_token);
