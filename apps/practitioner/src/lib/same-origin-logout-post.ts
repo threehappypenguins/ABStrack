@@ -8,11 +8,13 @@ export type SameOriginLogoutPostFailure = {
 
 /**
  * Blocks cross-site `POST` requests to the practitioner logout endpoint so a malicious page cannot
- * forge a form that signs users out (CSRF). Same-origin and same-site navigations from this app
- * include headers browsers set for anti-CSRF (`Origin`, `Sec-Fetch-Site`, `Referer`).
+ * forge a form that signs users out (CSRF). Checks enforce **same-origin** (exact URL origin), not
+ * schemeful same-site: prefer a non-empty matching `Origin`, else a matching `Referer` origin; if both
+ * are absent, only `Sec-Fetch-Site: same-origin` is accepted (`same-site` is rejected so the guard
+ * matches its name and stays predictable when browsers omit `Origin` on some `POST`s).
  *
  * This is not a substitute for CSRF tokens when you must support trusted cross-origin clients;
- * practitioner logout is intended to be same-site only.
+ * practitioner logout is intended to be same-origin only.
  *
  * @param request - Minimal request shape (`url` + `headers`), e.g. Next.js `NextRequest`.
  * @returns `null` if the request may proceed, or a failure object the route should turn into a 4xx response.
@@ -47,7 +49,7 @@ export function getSameOriginLogoutPostFailure(
   }
 
   const secFetchSite = request.headers.get('Sec-Fetch-Site');
-  if (secFetchSite === 'same-origin' || secFetchSite === 'same-site') {
+  if (secFetchSite === 'same-origin') {
     return null;
   }
 

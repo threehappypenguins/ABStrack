@@ -80,6 +80,9 @@ export default function LoginPage() {
   const credentialLoginInFlightRef = useRef(false);
   /** Synchronous guard: `verifyLoading` can lag behind rapid duplicate MFA submits. */
   const verifyMfaInFlightRef = useRef(false);
+  const emailInputRef = useRef<HTMLInputElement>(null);
+  const mfaCodeInputRef = useRef<HTMLInputElement>(null);
+  const prevStepRef = useRef<LoginStep>(step);
 
   /**
    * Returns the UI to the credentials step and clears MFA-only state so later flows are not
@@ -94,6 +97,32 @@ export default function LoginPage() {
       setRememberDevice(false);
     }
   }, [deviceTrustFeatureEnabled]);
+
+  /**
+   * Moves focus when the visible step changes so keyboard and screen-reader users are not left on
+   * an unmounted control (e.g. Sign in) after switching to MFA, and land on the email field when
+   * returning from MFA.
+   */
+  useEffect(() => {
+    const previousStep = prevStepRef.current;
+    prevStepRef.current = step;
+
+    if (step === 'mfa_verify' && previousStep !== 'mfa_verify') {
+      const frameId = requestAnimationFrame(() => {
+        mfaCodeInputRef.current?.focus();
+      });
+      return () => cancelAnimationFrame(frameId);
+    }
+
+    if (step === 'credentials' && previousStep === 'mfa_verify') {
+      const frameId = requestAnimationFrame(() => {
+        emailInputRef.current?.focus();
+      });
+      return () => cancelAnimationFrame(frameId);
+    }
+
+    return undefined;
+  }, [step]);
 
   const resetToCredentials = useCallback(
     (options?: { clearPassword?: boolean; message?: string }) => {
@@ -452,6 +481,7 @@ export default function LoginPage() {
                 Email
               </label>
               <input
+                ref={emailInputRef}
                 id="email"
                 type="email"
                 required
@@ -500,6 +530,7 @@ export default function LoginPage() {
                 Authenticator code
               </label>
               <input
+                ref={mfaCodeInputRef}
                 id="mfa-code"
                 name="mfa-code"
                 inputMode="numeric"

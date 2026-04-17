@@ -58,9 +58,18 @@ describe('getSameOriginLogoutPostFailure', () => {
     ).toBeNull();
   });
 
-  it('returns 403 when Origin and Referer are absent and Sec-Fetch-Site is not same-origin/same-site', () => {
+  it('returns 403 when Origin and Referer are absent and Sec-Fetch-Site is none', () => {
     expect(
       getSameOriginLogoutPostFailure(req({ 'Sec-Fetch-Site': 'none' })),
+    ).toEqual({
+      status: 403,
+      error: 'Could not validate request origin',
+    });
+  });
+
+  it('returns 403 when Origin and Referer are absent and Sec-Fetch-Site is same-site (strict same-origin)', () => {
+    expect(
+      getSameOriginLogoutPostFailure(req({ 'Sec-Fetch-Site': 'same-site' })),
     ).toEqual({
       status: 403,
       error: 'Could not validate request origin',
