@@ -230,6 +230,7 @@ describe('LoginPage MFA state machine', () => {
   let consoleErrorSpy: jest.SpyInstance;
 
   beforeAll(() => {
+    process.env['NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST'] = 'true';
     consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
   });
 

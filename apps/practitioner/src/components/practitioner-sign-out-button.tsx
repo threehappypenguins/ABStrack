@@ -54,13 +54,24 @@ export function PractitionerSignOutButton({
 
   useEffect(() => {
     const sync = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!mountedRef.current) {
-        return;
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (!mountedRef.current) {
+          return;
+        }
+        setTrustActive(isPractitionerMfaDeviceTrustActive(session?.user?.id));
+      } catch (syncError) {
+        console.error(
+          'Practitioner sign-out button: session sync failed',
+          syncError,
+        );
+        if (!mountedRef.current) {
+          return;
+        }
+        setTrustActive(false);
       }
-      setTrustActive(isPractitionerMfaDeviceTrustActive(session?.user?.id));
     };
 
     void sync();

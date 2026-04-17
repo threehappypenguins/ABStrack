@@ -5,10 +5,18 @@ import { getSupabaseBrowserClient } from '@abstrack/supabase/browser';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useMemo, useState, type FormEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from 'react';
 import {
   clearMfaTrustBundle,
   getTrustedUntilMsAfterVerification,
+  isPractitionerMfaDeviceTrustEnabled,
   saveMfaTrustBundle,
   tryRestoreTrustedMfaSession,
 } from '../../lib/practitioner-device-trust';
@@ -34,6 +42,13 @@ type LoginStep = 'credentials' | 'mfa_verify';
  * match the account from password sign-in, the client signs out and clears the trust bundle before
  * prompting for credentials again.
  *
+ * The credentials form ignores duplicate submits while a sign-in is already in progress (see
+ * `loading`, `step`, and `credentialLoginInFlightRef`) so parallel attempts cannot race. The MFA
+ * verify form uses the same pattern (`verifyLoading`, `step`, `verifyMfaInFlightRef`).
+ *
+ * MFA “trust this device” is shown only when `isPractitionerMfaDeviceTrustEnabled()` is true
+ * (`NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST` at build time; default off).
+ *
  * `resetToCredentials` centralizes fallback to the credentials step: it clears MFA-only UI
  * state (code, trust checkbox, status line) so a later MFA step is not prefilled from a prior
  * attempt, optionally sets assertive error copy, and can clear the password after session-ending
@@ -44,6 +59,10 @@ type LoginStep = 'credentials' | 'mfa_verify';
 export default function LoginPage() {
   const router = useRouter();
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
+  const deviceTrustFeatureEnabled = useMemo(
+    () => isPractitionerMfaDeviceTrustEnabled(),
+    [],
+  );
   const { announce } = useAnnounce();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -57,6 +76,11 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
 
+  /** Synchronous guard: `loading` can lag one frame behind rapid duplicate submits. */
+  const credentialLoginInFlightRef = useRef(false);
+  /** Synchronous guard: `verifyLoading` can lag behind rapid duplicate MFA submits. */
+  const verifyMfaInFlightRef = useRef(false);
+
   /**
    * Returns the UI to the credentials step and clears MFA-only state so later flows are not
    * prefilled from a prior attempt. Optionally sets an assertive error line and matching live
@@ -65,6 +89,12 @@ export default function LoginPage() {
    * @param options.message - When set, passed to `setError` and `announce` (assertive).
    * @param options.clearPassword - Clears the password field when true.
    */
+  useEffect(() => {
+    if (!deviceTrustFeatureEnabled) {
+      setRememberDevice(false);
+    }
+  }, [deviceTrustFeatureEnabled]);
+
   const resetToCredentials = useCallback(
     (options?: { clearPassword?: boolean; message?: string }) => {
       setStep('credentials');
@@ -85,6 +115,14 @@ export default function LoginPage() {
 
   const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (
+      step !== 'credentials' ||
+      loading ||
+      credentialLoginInFlightRef.current
+    ) {
+      return;
+    }
+    credentialLoginInFlightRef.current = true;
     setError(null);
     setStatus(null);
     setLoading(true);
@@ -232,102 +270,115 @@ export default function LoginPage() {
         });
       }
     } finally {
+      credentialLoginInFlightRef.current = false;
       setLoading(false);
     }
   };
 
   const handleVerifyMfa = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setError(null);
-    setStatus(null);
-
-    if (mfaFactorId == null) {
-      const message =
-        'Could not determine which authenticator to verify. Please sign in again.';
-      setError(message);
-      announce(message, { politeness: 'assertive' });
+    if (
+      step !== 'mfa_verify' ||
+      verifyLoading ||
+      verifyMfaInFlightRef.current
+    ) {
       return;
     }
-
-    if (!/^\d{6}$/.test(verifyCode)) {
-      const message =
-        'Enter the current six-digit code from your authenticator app.';
-      setError(message);
-      announce(message, { politeness: 'assertive' });
-      return;
-    }
-
-    setVerifyLoading(true);
+    verifyMfaInFlightRef.current = true;
     try {
-      const challenge = await supabase.auth.mfa.challenge({
-        factorId: mfaFactorId,
-      });
-      if (challenge.error) {
-        throw challenge.error;
-      }
+      setError(null);
+      setStatus(null);
 
-      const verify = await supabase.auth.mfa.verify({
-        factorId: mfaFactorId,
-        challengeId: challenge.data.id,
-        code: verifyCode,
-      });
-      if (verify.error) {
-        throw verify.error;
-      }
-
-      const { data: sessionAfterVerify, error: sessionAfterVerifyError } =
-        await supabase.auth.getSession();
-      if (sessionAfterVerifyError) {
-        console.error(sessionAfterVerifyError);
+      if (mfaFactorId == null) {
         const message =
-          'Could not read your session after verification. Try a new code from your authenticator app, or use Back to sign in to start over.';
-        setError(message);
-        announce(message, { politeness: 'assertive' });
-        return;
-      }
-      if (sessionAfterVerify.session == null) {
-        const message =
-          'Your session could not be confirmed after verification. Try a new code from your authenticator app, or use Back to sign in to start over.';
+          'Could not determine which authenticator to verify. Please sign in again.';
         setError(message);
         announce(message, { politeness: 'assertive' });
         return;
       }
 
-      const assuranceAfterVerify =
-        await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-      if (assuranceAfterVerify.error) {
-        console.error(assuranceAfterVerify.error);
+      if (!/^\d{6}$/.test(verifyCode)) {
         const message =
-          'Could not confirm multi-factor status after verification. Try a new code from your authenticator app, or use Back to sign in to start over.';
-        setError(message);
-        announce(message, { politeness: 'assertive' });
-        return;
-      }
-      if (assuranceAfterVerify.data.currentLevel !== 'aal2') {
-        const message =
-          'Multi-factor sign-in did not finish updating your session. Try another code, or use Back to sign in to start over.';
+          'Enter the current six-digit code from your authenticator app.';
         setError(message);
         announce(message, { politeness: 'assertive' });
         return;
       }
 
-      if (rememberDevice) {
-        saveMfaTrustBundle(
-          sessionAfterVerify.session,
-          getTrustedUntilMsAfterVerification(),
-        );
-      } else {
-        clearMfaTrustBundle();
-      }
+      setVerifyLoading(true);
+      try {
+        const challenge = await supabase.auth.mfa.challenge({
+          factorId: mfaFactorId,
+        });
+        if (challenge.error) {
+          throw challenge.error;
+        }
 
-      router.push('/patients');
-      router.refresh();
-    } catch (verifyError) {
-      const message = mapMfaVerifyErrorToUserMessage(verifyError);
-      setError(message);
-      announce(message, { politeness: 'assertive' });
+        const verify = await supabase.auth.mfa.verify({
+          factorId: mfaFactorId,
+          challengeId: challenge.data.id,
+          code: verifyCode,
+        });
+        if (verify.error) {
+          throw verify.error;
+        }
+
+        const { data: sessionAfterVerify, error: sessionAfterVerifyError } =
+          await supabase.auth.getSession();
+        if (sessionAfterVerifyError) {
+          console.error(sessionAfterVerifyError);
+          const message =
+            'Could not read your session after verification. Try a new code from your authenticator app, or use Back to sign in to start over.';
+          setError(message);
+          announce(message, { politeness: 'assertive' });
+          return;
+        }
+        if (sessionAfterVerify.session == null) {
+          const message =
+            'Your session could not be confirmed after verification. Try a new code from your authenticator app, or use Back to sign in to start over.';
+          setError(message);
+          announce(message, { politeness: 'assertive' });
+          return;
+        }
+
+        const assuranceAfterVerify =
+          await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+        if (assuranceAfterVerify.error) {
+          console.error(assuranceAfterVerify.error);
+          const message =
+            'Could not confirm multi-factor status after verification. Try a new code from your authenticator app, or use Back to sign in to start over.';
+          setError(message);
+          announce(message, { politeness: 'assertive' });
+          return;
+        }
+        if (assuranceAfterVerify.data.currentLevel !== 'aal2') {
+          const message =
+            'Multi-factor sign-in did not finish updating your session. Try another code, or use Back to sign in to start over.';
+          setError(message);
+          announce(message, { politeness: 'assertive' });
+          return;
+        }
+
+        if (deviceTrustFeatureEnabled && rememberDevice) {
+          saveMfaTrustBundle(
+            sessionAfterVerify.session,
+            getTrustedUntilMsAfterVerification(),
+          );
+        } else {
+          clearMfaTrustBundle();
+        }
+
+        router.push('/patients');
+        router.refresh();
+      } catch (verifyError) {
+        const message = mapMfaVerifyErrorToUserMessage(verifyError);
+        setError(message);
+        announce(message, { politeness: 'assertive' });
+      } finally {
+        setVerifyLoading(false);
+      }
     } finally {
-      setVerifyLoading(false);
+      verifyMfaInFlightRef.current = false;
     }
   };
 
@@ -474,15 +525,17 @@ export default function LoginPage() {
               />
             </div>
 
-            <label className="flex items-start gap-2 text-sm text-app-muted">
-              <input
-                type="checkbox"
-                className="mt-1 h-4 w-4 rounded border-app-border text-app-primary focus:ring-app-ring"
-                checked={rememberDevice}
-                onChange={(event) => setRememberDevice(event.target.checked)}
-              />
-              <span>Trust this device for 30 days.</span>
-            </label>
+            {deviceTrustFeatureEnabled ? (
+              <label className="flex items-start gap-2 text-sm text-app-muted">
+                <input
+                  type="checkbox"
+                  className="mt-1 h-4 w-4 rounded border-app-border text-app-primary focus:ring-app-ring"
+                  checked={rememberDevice}
+                  onChange={(event) => setRememberDevice(event.target.checked)}
+                />
+                <span>Trust this device for 30 days.</span>
+              </label>
+            ) : null}
 
             <button
               type="submit"

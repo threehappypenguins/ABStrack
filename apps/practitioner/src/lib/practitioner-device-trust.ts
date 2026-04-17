@@ -20,6 +20,10 @@
  *
  * RLS and MFA fail-closed rules remain authoritative for PHI; this module is UX-only.
  *
+ * **Deploy gate:** Token persistence and restore are **off by default**. Set
+ * `NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST` to `true` or `1` only after an explicit security
+ * decision. When disabled, this module does not write tokens; reads scrub any existing bundle key.
+ *
  * @module practitioner-device-trust
  */
 
@@ -35,6 +39,30 @@ export const PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY =
   'abstrack.practitioner.mfaTrustBundle.v1';
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Whether practitioner MFA “trusted device” (localStorage token bundle) is allowed for this build.
+ * Defaults to **false** when unset so high-impact XSS surface is not enabled accidentally.
+ *
+ * @returns True only when `NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST` is the string `true` or `1`
+ *   (case-insensitive, trimmed).
+ */
+export function isPractitionerMfaDeviceTrustEnabled(): boolean {
+  let raw: string | undefined;
+  try {
+    raw =
+      typeof process !== 'undefined' && process.env != null
+        ? process.env['NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST']
+        : undefined;
+  } catch {
+    return false;
+  }
+  if (raw == null || String(raw).trim() === '') {
+    return false;
+  }
+  const v = String(raw).trim().toLowerCase();
+  return v === 'true' || v === '1';
+}
 
 /**
  * Serialized trust bundle. **Contains long-lived session secrets** readable by any script on the
@@ -123,6 +151,14 @@ function readBundle(): PractitionerMfaTrustBundle | null {
   if (typeof window === 'undefined') {
     return null;
   }
+  if (!isPractitionerMfaDeviceTrustEnabled()) {
+    try {
+      window.localStorage.removeItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY);
+    } catch {
+      // Blocked storage — same as `clearMfaTrustBundle`.
+    }
+    return null;
+  }
   let raw: string | null;
   try {
     raw = window.localStorage.getItem(
@@ -186,6 +222,9 @@ export function saveMfaTrustBundle(
   trustedUntilMs: number,
 ): void {
   if (typeof window === 'undefined') {
+    return;
+  }
+  if (!isPractitionerMfaDeviceTrustEnabled()) {
     return;
   }
   if (!Number.isFinite(trustedUntilMs)) {

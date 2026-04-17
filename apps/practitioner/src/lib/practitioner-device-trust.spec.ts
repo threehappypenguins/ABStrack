@@ -1,11 +1,29 @@
-import type { AbstrackSupabaseClient } from '@abstrack/supabase';
+import type { AbstrackSupabaseClient, Session } from '@abstrack/supabase';
 import {
   isPractitionerMfaDeviceTrustActive,
+  isPractitionerMfaDeviceTrustEnabled,
   PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
   practitionerSignOut,
   practitionerSignOutEverywhere,
+  saveMfaTrustBundle,
   tryRestoreTrustedMfaSession,
 } from './practitioner-device-trust';
+
+const prevPractitionerDeviceTrustEnv =
+  process.env['NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST'];
+
+beforeAll(() => {
+  process.env['NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST'] = 'true';
+});
+
+afterAll(() => {
+  if (prevPractitionerDeviceTrustEnv === undefined) {
+    delete process.env['NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST'];
+  } else {
+    process.env['NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST'] =
+      prevPractitionerDeviceTrustEnv;
+  }
+});
 
 type BrowserClient = AbstrackSupabaseClient;
 
@@ -867,5 +885,48 @@ describe('practitionerSignOutEverywhere', () => {
     ).toBeNull();
     expect(localStorage.getItem('sb-proj-auth-token')).toBeNull();
     expect(submitSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('MFA device trust deploy gate', () => {
+  const userId = '00000000-0000-0000-0000-000000000042';
+
+  it('reports disabled when env is unset', () => {
+    const prev = process.env['NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST'];
+    delete process.env['NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST'];
+    expect(isPractitionerMfaDeviceTrustEnabled()).toBe(false);
+    process.env['NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST'] = prev ?? 'true';
+  });
+
+  it('does not write localStorage when disabled', () => {
+    const prev = process.env['NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST'];
+    delete process.env['NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST'];
+    localStorage.clear();
+    saveMfaTrustBundle(
+      {
+        user: { id: userId },
+        refresh_token: 'r',
+        access_token: 'a',
+      } as Session,
+      Date.now() + 60_000,
+    );
+    expect(
+      localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
+    ).toBeNull();
+    process.env['NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST'] = prev ?? 'true';
+  });
+
+  it('clears existing bundle on read when disabled', () => {
+    const prev = process.env['NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST'];
+    localStorage.setItem(
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
+      buildBundleJson(userId, Date.now() + 60_000),
+    );
+    delete process.env['NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST'];
+    expect(isPractitionerMfaDeviceTrustActive(userId)).toBe(false);
+    expect(
+      localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
+    ).toBeNull();
+    process.env['NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST'] = prev ?? 'true';
   });
 });
