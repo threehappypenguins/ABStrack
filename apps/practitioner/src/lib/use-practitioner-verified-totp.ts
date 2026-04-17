@@ -1,7 +1,7 @@
 'use client';
 
 import { getSupabaseBrowserClient } from '@abstrack/supabase/browser';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 export type UsePractitionerVerifiedTotpCountResult = {
   verifiedTotpCount: number;
@@ -23,25 +23,47 @@ export function usePractitionerVerifiedTotpCount(
   const [verifiedTotpCount, setVerifiedTotpCount] = useState(0);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<Error | null>(null);
+  const isMountedRef = useRef(true);
 
-  const loadFactors = useCallback(async () => {
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  const loadFactors = useCallback(async (): Promise<number> => {
     const supabase = getSupabaseBrowserClient();
     const result = await supabase.auth.mfa.listFactors();
     if (result.error) {
       throw result.error;
     }
-    const n = result.data.totp.filter((f) => f.status === 'verified').length;
-    setVerifiedTotpCount(n);
+    return result.data.totp.filter((f) => f.status === 'verified').length;
   }, []);
 
   const refresh = useCallback(async () => {
-    setError(null);
-    try {
-      await loadFactors();
-    } catch (e) {
-      setError(e instanceof Error ? e : new Error(String(e)));
+    if (!enabled) {
+      return;
     }
-  }, [loadFactors]);
+    setError(null);
+    if (isMountedRef.current) {
+      setLoading(true);
+    }
+    try {
+      const n = await loadFactors();
+      if (isMountedRef.current) {
+        setVerifiedTotpCount(n);
+      }
+    } catch (e) {
+      if (isMountedRef.current) {
+        setError(e instanceof Error ? e : new Error(String(e)));
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
+    }
+  }, [enabled, loadFactors]);
 
   useEffect(() => {
     if (!enabled) {
@@ -57,7 +79,10 @@ export function usePractitionerVerifiedTotpCount(
 
     void (async () => {
       try {
-        await loadFactors();
+        const n = await loadFactors();
+        if (!cancelled) {
+          setVerifiedTotpCount(n);
+        }
       } catch (e) {
         if (!cancelled) {
           setError(e instanceof Error ? e : new Error(String(e)));

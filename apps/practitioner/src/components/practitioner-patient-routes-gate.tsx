@@ -272,7 +272,9 @@ function UnexpectedGateFallback({ gate }: { gate: PractitionerAppGate }) {
         Unexpected gate state: {gate.kind}. Please refresh or sign out.
       </p>
       <div className="mt-4">
-        <PractitionerSignOutButton className="min-h-11 rounded-md border border-app-border bg-app-surface px-4 py-2 text-sm font-medium text-app-ink" />
+        <PractitionerSignOutButton
+          className={PRACTITIONER_SIGN_OUT_BUTTON_CLASS}
+        />
       </div>
     </div>
   );

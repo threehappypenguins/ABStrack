@@ -62,7 +62,9 @@ export default function LoginPage() {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user?.id) {
-        setError('Could not resolve your account after sign-in.');
+        const message = 'Could not resolve your account after sign-in.';
+        setError(message);
+        announce(message, { politeness: 'assertive' });
         return;
       }
 
