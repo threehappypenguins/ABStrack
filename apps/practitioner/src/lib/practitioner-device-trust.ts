@@ -164,9 +164,38 @@ export function clearMfaTrustBundle(): void {
 }
 
 /**
+ * After a failed trust-bundle restore, re-applies the password session’s tokens so the client is
+ * not left on a mismatched or half-applied session. If reversion fails or no tokens were
+ * captured, signs out.
+ *
+ * @param supabase - Browser Supabase client.
+ * @param preSessionTokens - Refresh/access pair from before `setSession(bundle)`, if any.
+ */
+async function revertToPreRestoreSession(
+  supabase: PractitionerBrowserClient,
+  preSessionTokens: { refresh_token: string; access_token: string } | null,
+): Promise<void> {
+  if (
+    preSessionTokens &&
+    preSessionTokens.refresh_token !== '' &&
+    preSessionTokens.access_token !== ''
+  ) {
+    const { error } = await supabase.auth.setSession({
+      refresh_token: preSessionTokens.refresh_token,
+      access_token: preSessionTokens.access_token,
+    });
+    if (!error) {
+      return;
+    }
+  }
+  await supabase.auth.signOut();
+}
+
+/**
  * After email/password sign-in, attempts to restore a prior AAL2 session from the trust bundle.
  * On failure (revoked or expired tokens, **session user mismatch** after restore, assurance error,
- * or session not at **aal2**), clears the bundle so later logins do not repeat a useless restore.
+ * or session not at **aal2**), clears the bundle and restores the pre-restore password session (or
+ * signs out) so the client is not left authenticated as the wrong user.
  *
  * @param supabase - Browser Supabase client.
  * @param userId - Authenticated user id from the new password session.
@@ -185,12 +214,33 @@ export async function tryRestoreTrustedMfaSession(
     return false;
   }
 
+  const {
+    data: { session: preRestoreSession },
+  } = await supabase.auth.getSession();
+
+  if (preRestoreSession?.user?.id !== userId) {
+    clearMfaTrustBundle();
+    return false;
+  }
+
+  const preSessionTokens =
+    preRestoreSession.refresh_token &&
+    preRestoreSession.refresh_token !== '' &&
+    preRestoreSession.access_token &&
+    preRestoreSession.access_token !== ''
+      ? {
+          refresh_token: preRestoreSession.refresh_token,
+          access_token: preRestoreSession.access_token,
+        }
+      : null;
+
   const { error } = await supabase.auth.setSession({
     refresh_token: bundle.refresh_token,
     access_token: bundle.access_token,
   });
   if (error) {
     clearMfaTrustBundle();
+    await revertToPreRestoreSession(supabase, preSessionTokens);
     return false;
   }
 
@@ -199,16 +249,19 @@ export async function tryRestoreTrustedMfaSession(
   } = await supabase.auth.getSession();
   if (sessionAfterSet?.user?.id == null || sessionAfterSet.user.id !== userId) {
     clearMfaTrustBundle();
+    await revertToPreRestoreSession(supabase, preSessionTokens);
     return false;
   }
 
   const assurance = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
   if (assurance.error) {
     clearMfaTrustBundle();
+    await revertToPreRestoreSession(supabase, preSessionTokens);
     return false;
   }
   if (assurance.data.currentLevel !== 'aal2') {
     clearMfaTrustBundle();
+    await revertToPreRestoreSession(supabase, preSessionTokens);
     return false;
   }
 
