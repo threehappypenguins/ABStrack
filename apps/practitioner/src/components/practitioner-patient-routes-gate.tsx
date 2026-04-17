@@ -4,9 +4,9 @@ import type { PractitionerAppGate } from '@abstrack/supabase';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
 import Link from 'next/link';
 import { useEffect, useRef, type ReactNode } from 'react';
-import { useAuth } from '../lib/auth-provider';
-import { getPatientDataMfaBlockReason } from '../lib/practitioner-patient-data-access';
-import { usePractitionerVerifiedTotpCount } from '../lib/use-practitioner-verified-totp';
+import { useAuth } from '@/lib/auth-provider';
+import { getPatientDataMfaBlockReason } from '@/lib/practitioner-patient-data-access';
+import { usePractitionerVerifiedTotpCount } from '@/lib/use-practitioner-verified-totp';
 import { PractitionerSignOutButton } from './practitioner-sign-out-button';
 
 const PRACTITIONER_SIGN_OUT_BUTTON_CLASS =

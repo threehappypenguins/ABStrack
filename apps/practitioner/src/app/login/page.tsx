@@ -47,6 +47,9 @@ export default function LoginPage() {
     setStatus(null);
     setLoading(true);
 
+    /** True once password sign-in resolved a user; MFA/trust steps may still fail afterward. */
+    let sessionEstablishedAfterPassword = false;
+
     try {
       const { error: authError } = await signInWithEmailPassword(
         supabase,
@@ -69,6 +72,8 @@ export default function LoginPage() {
         announce(message, { politeness: 'assertive' });
         return;
       }
+
+      sessionEstablishedAfterPassword = true;
 
       const factorsResult = await supabase.auth.mfa.listFactors();
       if (factorsResult.error) {
@@ -114,10 +119,24 @@ export default function LoginPage() {
       announce(message, { politeness: 'assertive' });
     } catch (nextError) {
       console.error(nextError);
-      setError('Unable to sign in right now. Please try again.');
-      announce('Unable to sign in right now. Please try again.', {
-        politeness: 'assertive',
-      });
+      if (sessionEstablishedAfterPassword) {
+        try {
+          await supabase.auth.signOut();
+          clearMfaTrustBundle();
+        } catch (cleanupError) {
+          console.error(cleanupError);
+        }
+        router.refresh();
+        const message =
+          'Your password was accepted, but we could not finish verifying multi-factor sign-in. You have been signed out for safety. Please try again.';
+        setError(message);
+        announce(message, { politeness: 'assertive' });
+      } else {
+        const message =
+          'Unable to complete sign-in right now. Please try again.';
+        setError(message);
+        announce(message, { politeness: 'assertive' });
+      }
     } finally {
       setLoading(false);
     }

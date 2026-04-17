@@ -38,13 +38,17 @@ export function usePractitionerVerifiedTotpCount(
   const [pending, setPending] = useState(() => enabled);
   const [error, setError] = useState<Error | null>(null);
   const prevEnabledRef = useRef(enabled);
-  /** When true, the pending-triggered fetch effect skips once so manual refresh can own the load. */
+  /**
+   * When true, the next pending-triggered fetch effect skips once so `refresh()` can own the load.
+   * Cleared in `refresh` finally, when `enabled` becomes false, or when the effect consumes it.
+   */
   const skipNextEffectFetchRef = useRef(false);
   const isMountedRef = useRef(true);
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
 
   useLayoutEffect(() => {
     if (!enabled) {
+      skipNextEffectFetchRef.current = false;
       setPending(false);
       setVerifiedTotpCount(0);
       setError(null);
@@ -94,6 +98,8 @@ export function usePractitionerVerifiedTotpCount(
         setError(e instanceof Error ? e : new Error(String(e)));
         setPending(false);
       }
+    } finally {
+      skipNextEffectFetchRef.current = false;
     }
   }, [enabled, loadFactors]);
 
