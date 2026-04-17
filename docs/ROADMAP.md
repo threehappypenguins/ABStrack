@@ -80,7 +80,7 @@
 
 - [x] TOTP setup flow for practitioners via Supabase Auth MFA API (mandatory for practitioners)
 - [x] Practitioner MFA **fail-closed** per [PRD](PRD.md): RLS and/or **Edge Function** (or equivalent) verifies MFA via Auth APIs before patient-data reads; hooks alone must not be the sole control if they can fail open
-- [ ] JWT claims / role metadata for routing; practitioner patient-data access must satisfy MFA rules in policy or server path
+- [x] JWT claims / role metadata for routing; practitioner patient-data access must satisfy MFA rules in policy or server path
 - [ ] Frontend MFA gating in practitioner app (no patient routes until MFA verified)
 
 **Second half (April 16-19, school finished):**

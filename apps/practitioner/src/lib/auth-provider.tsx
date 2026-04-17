@@ -1,5 +1,14 @@
 'use client';
 
+import {
+  fetchProfileByUserId,
+  parseAbstrackAccessTokenClaims,
+  resolvePractitionerAppGate,
+  type AbstrackAccessTokenClaims,
+  type Database,
+  type PractitionerAppGate,
+  type Session,
+} from '@abstrack/supabase';
 import { getSupabaseBrowserClient } from '@abstrack/supabase/browser';
 import {
   createContext,
@@ -10,12 +19,21 @@ import {
   type ReactNode,
 } from 'react';
 
+type ProfileRow = Database['public']['Tables']['profiles']['Row'];
+
 interface AuthContextType {
-  session: {
-    user: { id: string; email?: string };
-    access_token?: string;
-  } | null;
+  session: Session | null;
+  /**
+   * True while initial auth is resolving or, when signed in, while the profile row is loading.
+   */
   loading: boolean;
+  /** Own profile row: undefined = not loaded yet; null = no row or load failed without error object. */
+  profile: ProfileRow | null | undefined;
+  profileError: Error | null;
+  /** Claims from the current access token (signature not verified locally). */
+  accessTokenClaims: AbstrackAccessTokenClaims | null;
+  /** Normalized gate for practitioner routing (role from DB, MFA from JWT `aal`). */
+  gate: PractitionerAppGate;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -42,15 +60,41 @@ function isRefreshTokenFailure(error: unknown): boolean {
 }
 
 /**
- * Provides practitioner auth session state from Supabase browser auth.
+ * Provides practitioner auth session state, `profiles.app_role`, and JWT claim metadata from
+ * Supabase browser auth. See `docs/AUTH_CLAIM_CONTRACT.md`.
  *
  * @param props - Wrapper props.
- * @returns Context provider with session and loading state.
+ * @returns Context provider with session, profile, and loading state.
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
-  const [session, setSession] = useState<AuthContextType['session']>(null);
-  const [loading, setLoading] = useState(true);
+  const [session, setSession] = useState<Session | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [profile, setProfile] = useState<ProfileRow | null | undefined>(
+    undefined,
+  );
+  const [profileError, setProfileError] = useState<Error | null>(null);
+
+  const accessTokenClaims = useMemo(
+    () => parseAbstrackAccessTokenClaims(session?.access_token),
+    [session?.access_token],
+  );
+
+  const gate = useMemo(
+    () =>
+      resolvePractitionerAppGate({
+        hasSession: Boolean(session?.user),
+        profile,
+        profileError,
+        accessTokenClaims,
+      }),
+    [session?.user, profile, profileError, accessTokenClaims],
+  );
+
+  const identityLoading =
+    Boolean(session?.user) && profile === undefined && profileError === null;
+
+  const loading = authLoading || identityLoading;
 
   useEffect(() => {
     let mounted = true;
@@ -108,7 +152,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           clearTimeout(timeoutId);
         }
         if (mounted) {
-          setLoading(false);
+          setAuthLoading(false);
         }
       }
     };
@@ -127,11 +171,62 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [supabase]);
 
-  return (
-    <AuthContext.Provider value={{ session, loading }}>
-      {children}
-    </AuthContext.Provider>
+  useEffect(() => {
+    const userId = session?.user?.id;
+    if (!userId) {
+      setProfile(undefined);
+      setProfileError(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadProfile = async () => {
+      setProfile(undefined);
+      setProfileError(null);
+      const { data, error } = await fetchProfileByUserId(supabase, userId);
+      if (cancelled) {
+        return;
+      }
+      if (error) {
+        const err =
+          error instanceof Error
+            ? error
+            : new Error(
+                typeof error === 'object' &&
+                error !== null &&
+                'message' in error &&
+                typeof (error as { message: unknown }).message === 'string'
+                  ? (error as { message: string }).message
+                  : 'Profile request failed',
+              );
+        setProfileError(err);
+        setProfile(null);
+        return;
+      }
+      setProfile(data ?? null);
+    };
+
+    void loadProfile();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.user?.id, supabase]);
+
+  const value = useMemo(
+    () => ({
+      session,
+      loading,
+      profile,
+      profileError,
+      accessTokenClaims,
+      gate,
+    }),
+    [session, loading, profile, profileError, accessTokenClaims, gate],
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 /**

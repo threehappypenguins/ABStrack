@@ -28,6 +28,16 @@ export {
   fetchProfileByUserId,
   healthCheckProfilesLimit1,
 } from './lib/queries.js';
+export type {
+  AbstrackAccessTokenClaims,
+  PractitionerAppGate,
+} from './lib/session-claims.js';
+export {
+  hasMfaAssuranceAal2,
+  parseAbstrackAccessTokenClaims,
+  parseProfileAppRole,
+  resolvePractitionerAppGate,
+} from './lib/session-claims.js';
 export type { PresetDataErrorCode } from './lib/preset-data-error.js';
 export {
   PresetDataError,
