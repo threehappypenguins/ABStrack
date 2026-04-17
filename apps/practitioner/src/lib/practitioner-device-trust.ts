@@ -27,7 +27,13 @@ import type { AbstrackSupabaseClient, Session } from '@abstrack/supabase';
 
 type PractitionerBrowserClient = AbstrackSupabaseClient;
 
-const MFA_TRUST_KEY = 'abstrack.practitioner.mfaTrustBundle.v1';
+/**
+ * `localStorage` key for the practitioner MFA device-trust bundle. **Bundle holds session
+ * secrets** — see module warning.
+ */
+export const PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY =
+  'abstrack.practitioner.mfaTrustBundle.v1';
+
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
@@ -74,7 +80,9 @@ function readBundle(): PractitionerMfaTrustBundle | null {
   }
   let raw: string | null;
   try {
-    raw = window.localStorage.getItem(MFA_TRUST_KEY);
+    raw = window.localStorage.getItem(
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
+    );
   } catch {
     return null;
   }
@@ -145,7 +153,10 @@ export function saveMfaTrustBundle(
     trustedUntilMs,
   };
   try {
-    window.localStorage.setItem(MFA_TRUST_KEY, JSON.stringify(bundle));
+    window.localStorage.setItem(
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
+      JSON.stringify(bundle),
+    );
   } catch {
     // Blocked or full storage; trust bundle is optional UX — session is already valid in memory.
   }
@@ -156,7 +167,7 @@ export function clearMfaTrustBundle(): void {
     return;
   }
   try {
-    window.localStorage.removeItem(MFA_TRUST_KEY);
+    window.localStorage.removeItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY);
   } catch {
     // Same environments as `readBundle` / theme storage.
   }

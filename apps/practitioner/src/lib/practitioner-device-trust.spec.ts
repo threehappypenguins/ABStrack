@@ -1,13 +1,11 @@
 import type { AbstrackSupabaseClient } from '@abstrack/supabase';
 import {
   isPractitionerMfaDeviceTrustActive,
+  PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
   practitionerSignOut,
   practitionerSignOutEverywhere,
   tryRestoreTrustedMfaSession,
 } from './practitioner-device-trust';
-
-/** Must match `MFA_TRUST_KEY` in `practitioner-device-trust.ts`. */
-const MFA_TRUST_STORAGE_KEY = 'abstrack.practitioner.mfaTrustBundle.v1';
 
 type BrowserClient = AbstrackSupabaseClient;
 
@@ -44,7 +42,7 @@ describe('tryRestoreTrustedMfaSession', () => {
 
   it('clears the trust bundle when assurance cannot be read', async () => {
     localStorage.setItem(
-      MFA_TRUST_STORAGE_KEY,
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
       buildBundleJson(userId, Date.now() + 60_000),
     );
 
@@ -74,7 +72,9 @@ describe('tryRestoreTrustedMfaSession', () => {
     await expect(tryRestoreTrustedMfaSession(supabase, userId)).resolves.toBe(
       false,
     );
-    expect(localStorage.getItem(MFA_TRUST_STORAGE_KEY)).toBeNull();
+    expect(
+      localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
+    ).toBeNull();
     expect(setSession).toHaveBeenCalledWith({
       refresh_token: 'refresh',
       access_token: 'access',
@@ -88,7 +88,7 @@ describe('tryRestoreTrustedMfaSession', () => {
 
   it('clears the trust bundle when current assurance level is not aal2', async () => {
     localStorage.setItem(
-      MFA_TRUST_STORAGE_KEY,
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
       buildBundleJson(userId, Date.now() + 60_000),
     );
 
@@ -119,7 +119,9 @@ describe('tryRestoreTrustedMfaSession', () => {
     await expect(tryRestoreTrustedMfaSession(supabase, userId)).resolves.toBe(
       false,
     );
-    expect(localStorage.getItem(MFA_TRUST_STORAGE_KEY)).toBeNull();
+    expect(
+      localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
+    ).toBeNull();
     expect(setSession).toHaveBeenCalledWith({
       refresh_token: 'pre-refresh',
       access_token: 'pre-access',
@@ -129,7 +131,7 @@ describe('tryRestoreTrustedMfaSession', () => {
 
   it('clears the trust bundle when restored session user id does not match and reverts session', async () => {
     localStorage.setItem(
-      MFA_TRUST_STORAGE_KEY,
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
       buildBundleJson(userId, Date.now() + 60_000),
     );
 
@@ -159,7 +161,9 @@ describe('tryRestoreTrustedMfaSession', () => {
     await expect(tryRestoreTrustedMfaSession(supabase, userId)).resolves.toBe(
       false,
     );
-    expect(localStorage.getItem(MFA_TRUST_STORAGE_KEY)).toBeNull();
+    expect(
+      localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
+    ).toBeNull();
     expect(
       supabase.auth.mfa.getAuthenticatorAssuranceLevel,
     ).not.toHaveBeenCalled();
@@ -177,7 +181,7 @@ describe('tryRestoreTrustedMfaSession', () => {
 
   it('clears the trust bundle when there is no session after setSession and reverts', async () => {
     localStorage.setItem(
-      MFA_TRUST_STORAGE_KEY,
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
       buildBundleJson(userId, Date.now() + 60_000),
     );
 
@@ -205,7 +209,9 @@ describe('tryRestoreTrustedMfaSession', () => {
     await expect(tryRestoreTrustedMfaSession(supabase, userId)).resolves.toBe(
       false,
     );
-    expect(localStorage.getItem(MFA_TRUST_STORAGE_KEY)).toBeNull();
+    expect(
+      localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
+    ).toBeNull();
     expect(
       supabase.auth.mfa.getAuthenticatorAssuranceLevel,
     ).not.toHaveBeenCalled();
@@ -218,7 +224,7 @@ describe('tryRestoreTrustedMfaSession', () => {
 
   it('signs out when revert setSession fails after a restore failure', async () => {
     localStorage.setItem(
-      MFA_TRUST_STORAGE_KEY,
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
       buildBundleJson(userId, Date.now() + 60_000),
     );
 
@@ -272,7 +278,7 @@ describe('isPractitionerMfaDeviceTrustActive', () => {
   it('returns false when there is no bundle or user does not match', () => {
     expect(isPractitionerMfaDeviceTrustActive(userId)).toBe(false);
     localStorage.setItem(
-      MFA_TRUST_STORAGE_KEY,
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
       buildBundleJson(
         '00000000-0000-0000-0000-000000000001',
         Date.now() + 60_000,
@@ -283,7 +289,7 @@ describe('isPractitionerMfaDeviceTrustActive', () => {
 
   it('returns false when the trust window has expired', () => {
     localStorage.setItem(
-      MFA_TRUST_STORAGE_KEY,
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
       buildBundleJson(userId, Date.now() - 1000),
     );
     expect(isPractitionerMfaDeviceTrustActive(userId)).toBe(false);
@@ -291,7 +297,7 @@ describe('isPractitionerMfaDeviceTrustActive', () => {
 
   it('returns true when a non-expired bundle exists for the user', () => {
     localStorage.setItem(
-      MFA_TRUST_STORAGE_KEY,
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
       buildBundleJson(userId, Date.now() + 60_000),
     );
     expect(isPractitionerMfaDeviceTrustActive(userId)).toBe(true);
@@ -325,7 +331,7 @@ describe('practitionerSignOut', () => {
 
   it('soft sign-out: clears sb-* auth storage, keeps MFA bundle, does not call auth.signOut', async () => {
     localStorage.setItem(
-      MFA_TRUST_STORAGE_KEY,
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
       buildBundleJson(userId, Date.now() + 60_000),
     );
     localStorage.setItem('sb-example-auth-token', '{"persisted":true}');
@@ -344,14 +350,16 @@ describe('practitionerSignOut', () => {
 
     await practitionerSignOut(supabase);
 
-    expect(localStorage.getItem(MFA_TRUST_STORAGE_KEY)).not.toBeNull();
+    expect(
+      localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
+    ).not.toBeNull();
     expect(localStorage.getItem('sb-example-auth-token')).toBeNull();
     expect(signOut).not.toHaveBeenCalled();
   });
 
   it('full sign-out: clears MFA bundle and calls auth.signOut (expired trust window)', async () => {
     localStorage.setItem(
-      MFA_TRUST_STORAGE_KEY,
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
       buildBundleJson(userId, Date.now() - 1000),
     );
 
@@ -367,13 +375,15 @@ describe('practitionerSignOut', () => {
 
     await practitionerSignOut(supabase);
 
-    expect(localStorage.getItem(MFA_TRUST_STORAGE_KEY)).toBeNull();
+    expect(
+      localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
+    ).toBeNull();
     expect(signOut).toHaveBeenCalled();
   });
 
   it('full sign-out when no session: clears bundle and calls auth.signOut', async () => {
     localStorage.setItem(
-      MFA_TRUST_STORAGE_KEY,
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
       buildBundleJson(userId, Date.now() + 60_000),
     );
 
@@ -387,7 +397,9 @@ describe('practitionerSignOut', () => {
 
     await practitionerSignOut(supabase);
 
-    expect(localStorage.getItem(MFA_TRUST_STORAGE_KEY)).toBeNull();
+    expect(
+      localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
+    ).toBeNull();
     expect(signOut).toHaveBeenCalled();
   });
 });
@@ -409,14 +421,16 @@ describe('practitionerSignOutEverywhere', () => {
 
   it('clears MFA bundle and sb-* auth storage and POSTs logout form', () => {
     localStorage.setItem(
-      MFA_TRUST_STORAGE_KEY,
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
       buildBundleJson(userId, Date.now() + 60_000),
     );
     localStorage.setItem('sb-proj-auth-token', '{"refresh":true}');
 
     practitionerSignOutEverywhere();
 
-    expect(localStorage.getItem(MFA_TRUST_STORAGE_KEY)).toBeNull();
+    expect(
+      localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
+    ).toBeNull();
     expect(localStorage.getItem('sb-proj-auth-token')).toBeNull();
     expect(submitSpy).toHaveBeenCalled();
   });

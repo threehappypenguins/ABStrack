@@ -1,23 +1,31 @@
 'use client';
 
 import { getSupabaseBrowserClient } from '@abstrack/supabase/browser';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 export type UsePractitionerVerifiedTotpCountResult = {
   verifiedTotpCount: number;
   loading: boolean;
   error: Error | null;
-  /** Reloads factor list after enrollment or session changes. */
+  /**
+   * Reloads the verified TOTP factor list. The returned promise settles when that request
+   * finishes (success or failure).
+   */
   refresh: () => Promise<void>;
 };
-
-type FactorsPhase = 'idle' | 'loading' | 'ready';
 
 /**
  * Loads verified TOTP factor count for practitioner MFA gating. No-ops when `enabled` is false.
  *
- * When `enabled` flips from false to true, loading is set synchronously (via state adjustment
- * during render) so consumers do not briefly see a settled count of 0 before the first fetch.
+ * When `enabled` flips from false to true, `useLayoutEffect` sets a pending flag before paint so
+ * consumers do not briefly see a settled count of 0 before the first fetch.
  *
  * @param enabled - When false, clears counts and skips network calls (e.g. non-practitioner gates).
  * @returns Verified factor count, loading and error state, and a manual refresh.
@@ -26,26 +34,31 @@ export function usePractitionerVerifiedTotpCount(
   enabled: boolean,
 ): UsePractitionerVerifiedTotpCountResult {
   const [verifiedTotpCount, setVerifiedTotpCount] = useState(0);
-  const [prevEnabled, setPrevEnabled] = useState(enabled);
-  const [phase, setPhase] = useState<FactorsPhase>(() =>
-    enabled ? 'loading' : 'idle',
-  );
+  /** True while a factor fetch is required or in flight (when `enabled`). */
+  const [pending, setPending] = useState(() => enabled);
   const [error, setError] = useState<Error | null>(null);
+  const prevEnabledRef = useRef(enabled);
+  /** When true, the pending-triggered fetch effect skips once so manual refresh can own the load. */
+  const skipNextEffectFetchRef = useRef(false);
   const isMountedRef = useRef(true);
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
 
-  if (enabled !== prevEnabled) {
-    setPrevEnabled(enabled);
+  useLayoutEffect(() => {
     if (!enabled) {
-      setPhase('idle');
+      setPending(false);
       setVerifiedTotpCount(0);
       setError(null);
-    } else {
-      setPhase('loading');
+      prevEnabledRef.current = false;
+      return;
+    }
+
+    if (!prevEnabledRef.current) {
+      setPending(true);
       setVerifiedTotpCount(0);
       setError(null);
     }
-  }
+    prevEnabledRef.current = true;
+  }, [enabled]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -62,17 +75,35 @@ export function usePractitionerVerifiedTotpCount(
     return result.data.totp.filter((f) => f.status === 'verified').length;
   }, [supabase]);
 
-  const refresh = useCallback((): Promise<void> => {
+  const refresh = useCallback(async (): Promise<void> => {
     if (!enabled) {
-      return Promise.resolve();
+      return;
     }
     setError(null);
-    setPhase('loading');
-    return Promise.resolve();
-  }, [enabled]);
+    skipNextEffectFetchRef.current = true;
+    setPending(true);
+    try {
+      const n = await loadFactors();
+      if (isMountedRef.current) {
+        setVerifiedTotpCount(n);
+        setError(null);
+        setPending(false);
+      }
+    } catch (e) {
+      if (isMountedRef.current) {
+        setError(e instanceof Error ? e : new Error(String(e)));
+        setPending(false);
+      }
+    }
+  }, [enabled, loadFactors]);
 
   useEffect(() => {
-    if (!enabled || phase !== 'loading') {
+    if (!enabled || !pending) {
+      return;
+    }
+
+    if (skipNextEffectFetchRef.current) {
+      skipNextEffectFetchRef.current = false;
       return;
     }
 
@@ -83,12 +114,13 @@ export function usePractitionerVerifiedTotpCount(
         const n = await loadFactors();
         if (!cancelled && isMountedRef.current) {
           setVerifiedTotpCount(n);
-          setPhase('ready');
+          setError(null);
+          setPending(false);
         }
       } catch (e) {
         if (!cancelled && isMountedRef.current) {
           setError(e instanceof Error ? e : new Error(String(e)));
-          setPhase('ready');
+          setPending(false);
         }
       }
     })();
@@ -96,9 +128,9 @@ export function usePractitionerVerifiedTotpCount(
     return () => {
       cancelled = true;
     };
-  }, [enabled, phase, loadFactors]);
+  }, [enabled, pending, loadFactors]);
 
-  const loading = enabled && phase === 'loading';
+  const loading = enabled && pending;
 
   return { verifiedTotpCount, loading, error, refresh };
 }
