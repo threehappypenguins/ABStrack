@@ -499,6 +499,17 @@ describe('stored trust bundle validation', () => {
       localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
     ).toBeNull();
   });
+
+  it('removes storage when JSON.parse fails', () => {
+    localStorage.setItem(
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
+      '{"truncated":',
+    );
+    expect(isPractitionerMfaDeviceTrustActive(userId)).toBe(false);
+    expect(
+      localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
+    ).toBeNull();
+  });
 });
 
 describe('isPractitionerMfaDeviceTrustActive', () => {

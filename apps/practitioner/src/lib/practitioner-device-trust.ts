@@ -116,8 +116,8 @@ export function clearSupabaseBrowserAuthStorage(): void {
 }
 
 /**
- * Reads the MFA trust bundle from storage. Corrupt or invalid payloads are removed so tokens are
- * not left in `localStorage` indefinitely.
+ * Reads the MFA trust bundle from storage. Corrupt, unparseable, or invalid payloads are removed
+ * so tokens are not left in `localStorage` indefinitely.
  */
 function readBundle(): PractitionerMfaTrustBundle | null {
   if (typeof window === 'undefined') {
@@ -142,6 +142,7 @@ function readBundle(): PractitionerMfaTrustBundle | null {
     }
     return parsed;
   } catch {
+    clearMfaTrustBundle();
     return null;
   }
 }
