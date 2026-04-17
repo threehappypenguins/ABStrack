@@ -12,6 +12,10 @@ import {
   mapMfaVerifyErrorToUserMessage,
   normalizeTotpCode,
 } from '../lib/mfa-user-messages';
+import { PractitionerSignOutButton } from '../components/practitioner-sign-out-button';
+
+const PRACTITIONER_SIGN_OUT_BUTTON_CLASS =
+  'min-h-11 rounded-md border border-app-border bg-app-surface px-4 py-2 text-sm font-medium text-app-ink shadow-sm transition hover:bg-[var(--app-nav-hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg';
 
 type TotpEnrollment = {
   id: string;
@@ -385,14 +389,11 @@ export default function Index() {
           Something went wrong while loading your account. Try signing out and
           signing in again. If this keeps happening, try again later.
         </p>
-        <form action="/api/auth/logout" method="POST" className="mt-6">
-          <button
-            type="submit"
-            className="min-h-11 rounded-md border border-app-border bg-app-surface px-4 py-2 text-sm font-medium text-app-ink shadow-sm transition hover:bg-[var(--app-nav-hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
-          >
-            Log out
-          </button>
-        </form>
+        <div className="mt-6">
+          <PractitionerSignOutButton
+            className={PRACTITIONER_SIGN_OUT_BUTTON_CLASS}
+          />
+        </div>
       </div>
     );
   }
@@ -411,14 +412,11 @@ export default function Index() {
           This sign-in does not have an ABStrack profile yet. Practitioner
           accounts must be created through the correct invitation flow.
         </p>
-        <form action="/api/auth/logout" method="POST" className="mt-6">
-          <button
-            type="submit"
-            className="min-h-11 rounded-md border border-app-border bg-app-surface px-4 py-2 text-sm font-medium text-app-ink shadow-sm transition hover:bg-[var(--app-nav-hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
-          >
-            Log out
-          </button>
-        </form>
+        <div className="mt-6">
+          <PractitionerSignOutButton
+            className={PRACTITIONER_SIGN_OUT_BUTTON_CLASS}
+          />
+        </div>
       </div>
     );
   }
@@ -442,14 +440,11 @@ export default function Index() {
           Sign out to use a different account, or open the patient or caretaker
           app.
         </p>
-        <form action="/api/auth/logout" method="POST" className="mt-6">
-          <button
-            type="submit"
-            className="min-h-11 rounded-md border border-app-border bg-app-surface px-4 py-2 text-sm font-medium text-app-ink shadow-sm transition hover:bg-[var(--app-nav-hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
-          >
-            Log out
-          </button>
-        </form>
+        <div className="mt-6">
+          <PractitionerSignOutButton
+            className={PRACTITIONER_SIGN_OUT_BUTTON_CLASS}
+          />
+        </div>
       </div>
     );
   }
@@ -485,16 +480,11 @@ export default function Index() {
             Signed in as {userEmail}
           </p>
         ) : null}
-        <div className="mt-4">
+        <div className="mt-4 flex flex-wrap items-center gap-3">
           {isAuthenticated ? (
-            <form action="/api/auth/logout" method="POST">
-              <button
-                type="submit"
-                className="min-h-11 rounded-md border border-app-border bg-app-surface px-4 py-2 text-sm font-medium text-app-ink shadow-sm transition hover:bg-[var(--app-nav-hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
-              >
-                Log out
-              </button>
-            </form>
+            <PractitionerSignOutButton
+              className={PRACTITIONER_SIGN_OUT_BUTTON_CLASS}
+            />
           ) : (
             <Link
               href="/login"
@@ -503,6 +493,14 @@ export default function Index() {
               Log in
             </Link>
           )}
+          {mfaAssuranceReady && mfaReady ? (
+            <Link
+              href="/patients"
+              className="inline-flex min-h-11 items-center rounded-md bg-emerald-800 px-4 py-2 text-sm font-medium text-white transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg dark:bg-emerald-700"
+            >
+              Patient workspace
+            </Link>
+          ) : null}
         </div>
       </header>
 

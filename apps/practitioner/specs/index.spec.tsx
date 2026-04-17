@@ -39,11 +39,8 @@ function renderPage() {
   );
 }
 
-function expectLogoutPostForm() {
-  const form = document.querySelector(
-    'form[action="/api/auth/logout"][method="POST"]',
-  );
-  expect(form).not.toBeNull();
+function expectPractitionerSignOutButton() {
+  expect(screen.getByTestId('practitioner-sign-out')).toBeTruthy();
   expect(screen.getByRole('button', { name: /^Log out$/i })).toBeTruthy();
 }
 
@@ -109,7 +106,7 @@ describe('Page', () => {
     expect(screen.queryByRole('button', { name: /^Log out$/i })).toBeNull();
   });
 
-  it('shows profile_error copy and POST /api/auth/logout form', () => {
+  it('shows profile_error copy and practitioner sign-out control', () => {
     const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
     mockedUseAuth.mockReturnValue({
       session: sessionWithToken(),
@@ -132,12 +129,12 @@ describe('Page', () => {
       screen.getByText(/Something went wrong while loading your account/i),
     ).toBeTruthy();
     expect(screen.queryByText(/simulated PostgREST failure/i)).toBeNull();
-    expectLogoutPostForm();
+    expectPractitionerSignOutButton();
 
     consoleSpy.mockRestore();
   });
 
-  it('shows profile_missing copy and POST /api/auth/logout form', () => {
+  it('shows profile_missing copy and practitioner sign-out control', () => {
     mockedUseAuth.mockReturnValue({
       session: sessionWithToken(),
       loading: false,
@@ -155,10 +152,10 @@ describe('Page', () => {
     expect(
       screen.getByText(/does not have an ABStrack profile yet/i),
     ).toBeTruthy();
-    expectLogoutPostForm();
+    expectPractitionerSignOutButton();
   });
 
-  it('shows wrong_app_role copy and POST /api/auth/logout form', () => {
+  it('shows wrong_app_role copy and practitioner sign-out control', () => {
     mockedUseAuth.mockReturnValue({
       session: sessionWithToken(),
       loading: false,
@@ -175,7 +172,7 @@ describe('Page', () => {
     ).toBeTruthy();
     expect(screen.getByText(/healthcare practitioners/i)).toBeTruthy();
     expect(screen.getByText('patient')).toBeTruthy();
-    expectLogoutPostForm();
+    expectPractitionerSignOutButton();
   });
 
   it('resolves @abstrack/supabase types', () => {
