@@ -193,7 +193,23 @@ export default function LoginPage() {
         throw verify.error;
       }
 
-      await supabase.auth.getSession();
+      const { data: sessionAfterVerify, error: sessionAfterVerifyError } =
+        await supabase.auth.getSession();
+      if (sessionAfterVerifyError) {
+        console.error(sessionAfterVerifyError);
+        const message =
+          'Could not read your session after verification. Try a new code from your authenticator app, or use Back to sign in to start over.';
+        setError(message);
+        announce(message, { politeness: 'assertive' });
+        return;
+      }
+      if (sessionAfterVerify.session == null) {
+        const message =
+          'Your session could not be confirmed after verification. Try a new code from your authenticator app, or use Back to sign in to start over.';
+        setError(message);
+        announce(message, { politeness: 'assertive' });
+        return;
+      }
 
       const assuranceAfterVerify =
         await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
@@ -214,11 +230,10 @@ export default function LoginPage() {
       }
 
       if (rememberDevice) {
-        const { data: sessionData } = await supabase.auth.getSession();
-        const session = sessionData.session;
-        if (session) {
-          saveMfaTrustBundle(session, getTrustedUntilMsAfterVerification());
-        }
+        saveMfaTrustBundle(
+          sessionAfterVerify.session,
+          getTrustedUntilMsAfterVerification(),
+        );
       } else {
         clearMfaTrustBundle();
       }

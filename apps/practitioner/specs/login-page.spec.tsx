@@ -74,6 +74,15 @@ function createLoginSupabaseMock(options?: {
   assuranceFirst?: { currentLevel: string; nextLevel: string | null };
   assuranceAfterVerify?: { currentLevel: string; nextLevel: string | null };
   verifyError?: unknown;
+  /** Result of `getSession()` during MFA verify (only call site on this page). */
+  mfaVerifyGetSession?: {
+    error?: { message: string } | null;
+    session?: {
+      user: { id: string };
+      refresh_token: string;
+      access_token: string;
+    } | null;
+  };
 }): { client: { auth: Record<string, unknown> }; mfa: MfaMock } {
   const signInError = options?.signInError ?? null;
   const totpList = options?.listFactors?.totp ?? [
@@ -117,14 +126,20 @@ function createLoginSupabaseMock(options?: {
       data: assuranceAfterVerify,
     });
 
+  const defaultMfaSession = {
+    user: { id: USER_ID },
+    refresh_token: 'refresh-token',
+    access_token: 'access-token',
+  };
+  const mfaSessionOpts = options?.mfaVerifyGetSession;
   const getSession = jest.fn().mockResolvedValue({
     data: {
-      session: {
-        user: { id: USER_ID },
-        refresh_token: 'refresh-token',
-        access_token: 'access-token',
-      },
+      session:
+        mfaSessionOpts?.session === undefined
+          ? defaultMfaSession
+          : mfaSessionOpts.session,
     },
+    error: mfaSessionOpts?.error ?? null,
   });
   const signOut = jest.fn().mockResolvedValue({ error: null });
 
@@ -334,6 +349,68 @@ describe('LoginPage MFA state machine', () => {
 
     expect(mockedClearBundle).toHaveBeenCalled();
     expect(mockedSaveBundle).not.toHaveBeenCalled();
+  });
+
+  it('does not navigate when getSession fails after MFA verify', async () => {
+    const { client } = createLoginSupabaseMock({
+      mfaVerifyGetSession: {
+        error: { message: 'session read failed' },
+        session: null,
+      },
+    });
+    mockedGetClient.mockReturnValue(client as never);
+
+    renderLogin();
+    await submitCredentials();
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Authenticator code/i)).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByLabelText(/Authenticator code/i), {
+      target: { value: '123456' },
+    });
+    fireEvent.click(
+      screen.getByRole('button', { name: /Verify and continue/i }),
+    );
+
+    await waitFor(() => {
+      expect(getVisibleFormError().textContent).toContain(
+        'Could not read your session after verification',
+      );
+    });
+    expect(mockPush).not.toHaveBeenCalledWith('/patients');
+  });
+
+  it('does not navigate when getSession returns no session after MFA verify', async () => {
+    const { client } = createLoginSupabaseMock({
+      mfaVerifyGetSession: {
+        error: null,
+        session: null,
+      },
+    });
+    mockedGetClient.mockReturnValue(client as never);
+
+    renderLogin();
+    await submitCredentials();
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Authenticator code/i)).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByLabelText(/Authenticator code/i), {
+      target: { value: '654321' },
+    });
+    fireEvent.click(
+      screen.getByRole('button', { name: /Verify and continue/i }),
+    );
+
+    await waitFor(() => {
+      expect(getVisibleFormError().textContent).toContain(
+        'could not be confirmed after verification',
+      );
+    });
+    expect(mockPush).not.toHaveBeenCalledWith('/patients');
   });
 
   it('shows auth error when password sign-in fails', async () => {

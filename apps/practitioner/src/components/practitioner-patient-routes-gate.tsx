@@ -48,11 +48,8 @@ export function PractitionerPatientRoutesGate({
     refresh: refreshTotpFactors,
   } = usePractitionerVerifiedTotpCount(totpEnabled);
 
-  const awaitingProfile = gate.kind === 'profile_loading';
   const showSpinner =
-    authLoading ||
-    awaitingProfile ||
-    (gate.kind === 'practitioner' && totpLoading);
+    authLoading || (gate.kind === 'practitioner' && totpLoading);
 
   const mfaGateHeadingRef = useRef<HTMLHeadingElement>(null);
   const signInHeadingRef = useRef<HTMLHeadingElement>(null);
