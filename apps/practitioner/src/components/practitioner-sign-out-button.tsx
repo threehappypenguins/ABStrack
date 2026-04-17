@@ -51,6 +51,9 @@ export function PractitionerSignOutButton({
       const {
         data: { session },
       } = await supabase.auth.getSession();
+      if (!mountedRef.current) {
+        return;
+      }
       setTrustActive(isPractitionerMfaDeviceTrustActive(session?.user?.id));
     };
 
@@ -59,6 +62,9 @@ export function PractitionerSignOutButton({
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mountedRef.current) {
+        return;
+      }
       setTrustActive(isPractitionerMfaDeviceTrustActive(session?.user?.id));
     });
 

@@ -165,8 +165,8 @@ export function clearMfaTrustBundle(): void {
 
 /**
  * After email/password sign-in, attempts to restore a prior AAL2 session from the trust bundle.
- * On failure (revoked or expired tokens, assurance error, or session not at **aal2**), clears the
- * bundle so later logins do not repeat a useless restore.
+ * On failure (revoked or expired tokens, **session user mismatch** after restore, assurance error,
+ * or session not at **aal2**), clears the bundle so later logins do not repeat a useless restore.
  *
  * @param supabase - Browser Supabase client.
  * @param userId - Authenticated user id from the new password session.
@@ -190,6 +190,14 @@ export async function tryRestoreTrustedMfaSession(
     access_token: bundle.access_token,
   });
   if (error) {
+    clearMfaTrustBundle();
+    return false;
+  }
+
+  const {
+    data: { session: sessionAfterSet },
+  } = await supabase.auth.getSession();
+  if (sessionAfterSet?.user?.id == null || sessionAfterSet.user.id !== userId) {
     clearMfaTrustBundle();
     return false;
   }

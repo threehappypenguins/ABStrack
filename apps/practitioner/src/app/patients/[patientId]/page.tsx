@@ -1,5 +1,5 @@
 type PatientDetailPageProps = {
-  params: Promise<{ patientId: string }>;
+  params: { patientId: string };
 };
 
 /**
@@ -8,10 +8,8 @@ type PatientDetailPageProps = {
  * @param props - Dynamic route params.
  * @returns Patient detail shell.
  */
-export default async function PatientDetailPage({
-  params,
-}: PatientDetailPageProps) {
-  const { patientId } = await params;
+export default function PatientDetailPage({ params }: PatientDetailPageProps) {
+  const { patientId } = params;
 
   return (
     <div

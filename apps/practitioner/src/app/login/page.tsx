@@ -81,8 +81,6 @@ export default function LoginPage() {
           'No verified TOTP factor is enabled yet. Finish security setup before accessing practitioner patient workflows.';
         setStatus(message);
         announce(message, { politeness: 'assertive' });
-        router.push('/');
-        router.refresh();
         return;
       }
 
