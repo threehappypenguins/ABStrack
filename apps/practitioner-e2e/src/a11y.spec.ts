@@ -55,8 +55,10 @@ test.describe('Accessibility (axe-core)', () => {
 
     await page.goto('/patients');
 
-    const gate = page.locator('#practitioner-patient-gate-root');
-    await gate.waitFor({ state: 'visible', timeout: 20_000 });
+    // `#practitioner-patient-gate-root` is also used for the loading spinner; wait for the
+    // signed-out gate so the scan does not run mid-transition or against spinner markup.
+    const signedOutHeading = page.getByRole('heading', { name: 'Sign in required' });
+    await signedOutHeading.waitFor({ state: 'visible', timeout: 20_000 });
 
     const results = await new AxeBuilder({ page })
       .include('#practitioner-patient-gate-root')
