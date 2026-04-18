@@ -75,3 +75,4 @@ export {
   listEpisodeTemplates,
   updateEpisodeTemplate,
 } from './lib/episode-template-data.js';
+export { createEpisode } from './lib/episode-data.js';

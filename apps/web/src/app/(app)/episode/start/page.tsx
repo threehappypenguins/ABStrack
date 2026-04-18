@@ -1,10 +1,10 @@
 import Link from 'next/link';
+import { EpisodeStartFlow } from '@/components/episode-flow/EpisodeStartFlow';
 
 /**
- * Episode-start flow shell: entry route after the home CTA. Template selection and prompts are
- * implemented in follow-up work.
+ * Episode-start flow: template picker and episode row creation after the home CTA.
  *
- * @returns Episode start placeholder within the authenticated shell.
+ * @returns Authenticated episode start page.
  */
 export default function EpisodeStartPage() {
   return (
@@ -18,26 +18,8 @@ export default function EpisodeStartPage() {
             ← Back to dashboard
           </Link>
         </p>
-        <h1 className="mt-4 text-2xl font-bold tracking-tight text-app-ink">
-          Start an episode
-        </h1>
-        <p className="mt-2 text-sm leading-relaxed text-app-muted">
-          You are in the episode logging flow. Choosing an episode template and
-          stepping through prompts will be added here in follow-up work.
-        </p>
       </div>
-
-      <div
-        className="rounded-2xl border border-app-border/90 bg-app-surface p-6 shadow-soft ring-1 ring-[color:var(--app-ring-slate)] sm:p-8"
-        role="status"
-        aria-live="polite"
-      >
-        <p className="text-sm leading-relaxed text-app-ink">
-          This screen confirms you reached the episode-start pathway from home.
-          Template selection and symptom prompts are not implemented on this
-          page yet.
-        </p>
-      </div>
+      <EpisodeStartFlow />
     </div>
   );
 }
