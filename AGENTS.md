@@ -1,5 +1,11 @@
 # Repository instructions for AI coding agents
 
+## Never run Git or Supabase database commands on Sarah’s behalf
+
+**Do not** run **`git commit`**, **`git push`**, **`git merge`**, or any other **Git** command that updates history or remotes. **Do not** run **`pnpm dlx supabase db push`**, **`supabase migration repair`**, or any command that **applies migrations** or **mutates migration history** on her linked/cloud project. **Do not** perform **releases**, **tags**, or **PR merges** for her.
+
+Sarah alone decides when schema hits cloud, when history is rewritten, and when work is published. **Instruct her** to run the exact commands from **[docs/SUPABASE_CLOUD_DEVELOPER.md](docs/SUPABASE_CLOUD_DEVELOPER.md)** (or Git docs) when something must happen in **her** terminal or on **GitHub**—do not execute those steps yourself unless she **explicitly** asks you to run a **specific** command in chat.
+
 ## Supabase: cloud + CLI on Sarah’s machine for migrations
 
 **Sarah uses Supabase Cloud.** **GitHub Actions** runs **`supabase db push`** when code merges to **`main`** (backstop: `main` and cloud stay aligned).
@@ -23,7 +29,7 @@ pnpm exec prettier --write packages/supabase/src/lib/database.types.ts
 
 (`database.types.ts` is the only file overridden in `.prettierrc.cjs` to use `prettier.database-types.json` — `semi: false` and `singleQuote: false` — so Prettier matches what `supabase gen types` emits; the rest of the repo stays single-quoted.)
 
-Then **commit** both the migration file(s) and **`packages/supabase/src/lib/database.types.ts`**.
+Then **Sarah commits** both the migration file(s) and **`packages/supabase/src/lib/database.types.ts`** (the agent does not commit).
 
 **Order matters:** `db push` **before** `gen types --linked` (linked reads **cloud**).
 
