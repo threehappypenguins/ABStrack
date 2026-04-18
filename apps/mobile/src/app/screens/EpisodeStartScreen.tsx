@@ -41,6 +41,8 @@ export function EpisodeStartScreen() {
   const singleTemplateAutoInFlightRef = useRef(false);
   /** `focusCycleId` for which single-template auto-start already succeeded (skips duplicate inserts until a new focus cycle). */
   const singleTemplateAutoSucceededCycleIdRef = useRef<number | null>(null);
+  /** Current focus session’s cancellation token; set in `useFocusEffect` and passed to every `load()` so blur cancels in-flight work (including Retry). */
+  const focusCancelRef = useRef<FocusLoadCancel | null>(null);
 
   const [status, setStatus] = useState<'loading' | 'error' | 'ready'>(
     'loading',
@@ -154,6 +156,7 @@ export function EpisodeStartScreen() {
       focusCycleIdRef.current += 1;
       const cycleId = focusCycleIdRef.current;
       const focusCancel: FocusLoadCancel = { cancelled: false };
+      focusCancelRef.current = focusCancel;
       void load(focusCancel, cycleId);
       return () => {
         focusCancel.cancelled = true;
@@ -163,6 +166,7 @@ export function EpisodeStartScreen() {
 
   const onSelectTemplate = (id: string) => {
     setSelectedId(id);
+    setEpisodeStartError(null);
     announce(`${rows.find((r) => r.id === id)?.name ?? 'Template'} selected.`);
   };
 
@@ -251,7 +255,11 @@ export function EpisodeStartScreen() {
             errorTitle="Could not load templates"
             errorMessage={errorMessage ?? undefined}
             onRetry={() => {
-              void load();
+              const token = focusCancelRef.current;
+              if (token == null) {
+                return;
+              }
+              void load(token, focusCycleIdRef.current);
             }}
           >
             <ScrollView
