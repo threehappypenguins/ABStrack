@@ -68,6 +68,8 @@ export function SymptomPromptScreen() {
     () => getSymptomPromptSession(episodeId).answers,
   );
   const answersRef = useRef(answers);
+  /** Bumps on each `load()` start and on effect cleanup so in-flight loads ignore stale results after unmount, retry, or param change. */
+  const loadGenRef = useRef(0);
 
   useEffect(() => {
     answersRef.current = answers;
@@ -84,10 +86,16 @@ export function SymptomPromptScreen() {
   );
 
   const load = useCallback(async () => {
+    const myGen = ++loadGenRef.current;
+    const stale = () => myGen !== loadGenRef.current;
+
     setStatus('loading');
     setErrorMessage(null);
     const supabase = getMobileSupabaseClient();
     const result = await listPresetSymptomsForPreset(supabase, symptomPresetId);
+    if (stale()) {
+      return;
+    }
     if (!result.ok) {
       setErrorMessage(result.error.message);
       setStatus('error');
@@ -108,6 +116,9 @@ export function SymptomPromptScreen() {
 
   useEffect(() => {
     void load();
+    return () => {
+      loadGenRef.current += 1;
+    };
   }, [load]);
 
   useEffect(() => {

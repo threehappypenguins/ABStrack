@@ -72,6 +72,8 @@ export function SymptomPromptFlow({
   const textPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  /** Bumps on each `load()` start and on effect cleanup so in-flight loads ignore stale results after unmount, retry, or param change. */
+  const loadGenRef = useRef(0);
 
   useEffect(() => {
     activeIndexRef.current = activeIndex;
@@ -138,10 +140,16 @@ export function SymptomPromptFlow({
   );
 
   const load = useCallback(async () => {
+    const myGen = ++loadGenRef.current;
+    const stale = () => myGen !== loadGenRef.current;
+
     setStatus('loading');
     setErrorMessage(null);
     const supabase = createBrowserClient();
     const result = await listPresetSymptomsForPreset(supabase, symptomPresetId);
+    if (stale()) {
+      return;
+    }
     if (!result.ok) {
       setErrorMessage(result.error.message);
       setStatus('error');
@@ -163,6 +171,9 @@ export function SymptomPromptFlow({
 
   useEffect(() => {
     void load();
+    return () => {
+      loadGenRef.current += 1;
+    };
   }, [load]);
 
   const currentLine = lines[activeIndex] ?? null;
