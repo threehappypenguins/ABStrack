@@ -1,8 +1,7 @@
 'use client';
 
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   validateEpisodeTemplateName,
   validateEpisodeTemplatePresetPair,
@@ -15,6 +14,11 @@ import {
 import { useAnnounce } from '@abstrack/ui/a11y-web';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
 import { useAuth } from '@/lib/auth-provider';
+import {
+  useUnsavedChangesLeaveGuard,
+  type PendingLeaveAction,
+} from '@/lib/use-unsaved-changes-leave-guard';
+import { ConfirmDialog } from '../symptom-presets/ConfirmDialog';
 
 /**
  * Form to create an episode template: display name plus paired symptom and health marker presets.
@@ -38,6 +42,73 @@ export function EpisodeTemplateCreateForm() {
   const [listsError, setListsError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
+  const pendingLeaveRef = useRef<PendingLeaveAction | null>(null);
+
+  const isDirty = useMemo(() => {
+    const nameTrimmed = name.trim();
+    return (
+      nameTrimmed !== '' ||
+      symptomPresetId !== '' ||
+      healthMarkerPresetId !== ''
+    );
+  }, [name, symptomPresetId, healthMarkerPresetId]);
+
+  const onRequestDiscardDialog = useCallback(() => {
+    setDiscardDialogOpen(true);
+  }, []);
+
+  useUnsavedChangesLeaveGuard({
+    active: isDirty && !!session,
+    blockIntercepts: saving,
+    dialogOpen: discardDialogOpen,
+    pendingLeaveRef,
+    onRequestDiscard: onRequestDiscardDialog,
+    exemptFormId: 'episode-template-create-form',
+  });
+
+  const navigateToTemplatesList = useCallback(() => {
+    router.push('/presets/episode-templates');
+  }, [router]);
+
+  const handleDiscardConfirm = useCallback(() => {
+    const action = pendingLeaveRef.current;
+    pendingLeaveRef.current = null;
+
+    if (!action) {
+      router.push('/presets/episode-templates');
+      return;
+    }
+    if (action.kind === 'form') {
+      action.form.submit();
+      return;
+    }
+    const { href } = action;
+    let url: URL;
+    try {
+      url = new URL(href, window.location.origin);
+    } catch {
+      router.push('/presets/episode-templates');
+      return;
+    }
+    if (url.origin !== window.location.origin) {
+      window.location.assign(href);
+      return;
+    }
+    router.push(`${url.pathname}${url.search}${url.hash}`);
+  }, [router]);
+
+  const requestLeaveCreate = useCallback(() => {
+    if (!isDirty) {
+      navigateToTemplatesList();
+      return;
+    }
+    pendingLeaveRef.current = {
+      kind: 'href',
+      href: '/presets/episode-templates',
+    };
+    setDiscardDialogOpen(true);
+  }, [isDirty, navigateToTemplatesList]);
 
   useEffect(() => {
     if (authLoading || !session?.user.id) {
@@ -133,12 +204,16 @@ export function EpisodeTemplateCreateForm() {
   return (
     <div className="w-full space-y-8">
       <div>
-        <Link
-          href="/presets/episode-templates"
-          className="text-sm font-medium text-app-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+        <button
+          type="button"
+          disabled={saving}
+          onClick={() => {
+            requestLeaveCreate();
+          }}
+          className="text-left text-sm font-medium text-app-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-60"
         >
           ← Back to episode templates
-        </Link>
+        </button>
         <h1 className="mt-4 text-2xl font-bold tracking-tight text-app-ink">
           New episode template
         </h1>
@@ -162,6 +237,7 @@ export function EpisodeTemplateCreateForm() {
       ) : null}
 
       <form
+        id="episode-template-create-form"
         onSubmit={(e) => {
           void onSubmit(e);
         }}
@@ -269,14 +345,33 @@ export function EpisodeTemplateCreateForm() {
           >
             {saving ? 'Saving…' : 'Save template'}
           </button>
-          <Link
-            href="/presets/episode-templates"
-            className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-app-border bg-app-bg px-5 text-sm font-semibold text-app-ink shadow-sm transition hover:bg-[var(--app-nav-hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+          <button
+            type="button"
+            disabled={saving}
+            className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-app-border bg-app-bg px-5 text-sm font-semibold text-app-ink shadow-sm transition hover:bg-[var(--app-nav-hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:opacity-60"
+            onClick={() => {
+              requestLeaveCreate();
+            }}
           >
             Cancel
-          </Link>
+          </button>
         </div>
       </form>
+
+      <ConfirmDialog
+        open={discardDialogOpen}
+        title="Discard unsaved changes?"
+        description="You have edits that are not saved yet. If you leave now, those changes will be lost."
+        confirmLabel="Discard changes"
+        cancelLabel="Keep editing"
+        onConfirm={() => {
+          handleDiscardConfirm();
+        }}
+        onClose={() => {
+          pendingLeaveRef.current = null;
+          setDiscardDialogOpen(false);
+        }}
+      />
     </div>
   );
 }

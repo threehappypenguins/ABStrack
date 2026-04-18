@@ -74,6 +74,10 @@ export function useUnsavedChangesLeaveGuard({
       if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) {
         return;
       }
+      // Only intercept primary-button navigations; aux clicks (e.g. middle = open in new tab) must pass through.
+      if (event.button !== 0) {
+        return;
+      }
 
       const target = event.target;
       if (!(target instanceof Element)) {
