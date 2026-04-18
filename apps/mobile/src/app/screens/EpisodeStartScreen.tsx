@@ -35,6 +35,13 @@ type FlowPhase = 'pick' | 'done';
 export function EpisodeStartScreen() {
   const navigation = useNavigation<EpisodeStartNav>();
   const phaseRef = useRef<FlowPhase>('pick');
+  /** Increments on each screen focus; scopes single-template auto-start idempotency to the current focus cycle. */
+  const focusCycleIdRef = useRef(0);
+  /** Prevents concurrent `saveEpisodeWithTemplatePresets` on the single-template path when `load` runs more than once before success. */
+  const singleTemplateAutoInFlightRef = useRef(false);
+  /** `focusCycleId` for which single-template auto-start already succeeded (skips duplicate inserts until a new focus cycle). */
+  const singleTemplateAutoSucceededCycleIdRef = useRef<number | null>(null);
+
   const [status, setStatus] = useState<'loading' | 'error' | 'ready'>(
     'loading',
   );
@@ -49,80 +56,102 @@ export function EpisodeStartScreen() {
   const [phase, setPhase] = useState<FlowPhase>('pick');
   phaseRef.current = phase;
 
-  const load = useCallback(async (focusCancel?: FocusLoadCancel) => {
-    const stale = () => focusCancel?.cancelled === true;
+  const load = useCallback(
+    async (focusCancel?: FocusLoadCancel, focusCycle?: number) => {
+      const cycleId = focusCycle ?? focusCycleIdRef.current;
+      const stale = () => focusCancel?.cancelled === true;
 
-    setStatus('loading');
-    setErrorMessage(null);
-    setEpisodeStartError(null);
-    const authResult = await getCurrentUserId();
-    if (stale()) {
-      return;
-    }
-    if (!authResult.ok) {
-      setErrorMessage(authResult.error.message);
-      setStatus('error');
-      return;
-    }
-    if (authResult.data === null) {
-      setErrorMessage('You need to be signed in to start an episode.');
-      setStatus('error');
-      return;
-    }
-    const userId = authResult.data;
-    const result = await fetchEpisodeTemplates();
-    if (stale()) {
-      return;
-    }
-    if (!result.ok) {
-      setErrorMessage(result.error.message);
-      setStatus('error');
-      return;
-    }
-
-    setRows(result.data);
-
-    if (result.data.length === 1) {
-      const template = result.data[0];
-      setSubmitting(true);
-      const saveResult = await saveEpisodeWithTemplatePresets({
-        userId,
-        symptomPresetId: template.symptom_preset_id,
-        healthMarkerPresetId: template.health_marker_preset_id,
-      });
-      setSubmitting(false);
+      setStatus('loading');
+      setErrorMessage(null);
+      setEpisodeStartError(null);
+      const authResult = await getCurrentUserId();
       if (stale()) {
         return;
       }
-      if (!saveResult.ok) {
-        setSelectedId(template.id);
-        setEpisodeStartError(saveResult.error.message);
-        announce(saveResult.error.message);
-        setStatus('ready');
+      if (!authResult.ok) {
+        setErrorMessage(authResult.error.message);
+        setStatus('error');
         return;
       }
-      announce('Episode started.');
-      setPhase('done');
-      setStatus('ready');
-      return;
-    }
-
-    setSelectedId((prev) => {
-      if (prev && result.data.some((r) => r.id === prev)) {
-        return prev;
+      if (authResult.data === null) {
+        setErrorMessage('You need to be signed in to start an episode.');
+        setStatus('error');
+        return;
       }
-      return null;
-    });
-    setStatus('ready');
-  }, []);
+      const userId = authResult.data;
+      const result = await fetchEpisodeTemplates();
+      if (stale()) {
+        return;
+      }
+      if (!result.ok) {
+        setErrorMessage(result.error.message);
+        setStatus('error');
+        return;
+      }
+
+      setRows(result.data);
+
+      if (result.data.length === 1) {
+        if (singleTemplateAutoSucceededCycleIdRef.current === cycleId) {
+          setPhase('done');
+          setStatus('ready');
+          return;
+        }
+        if (singleTemplateAutoInFlightRef.current) {
+          setStatus('loading');
+          return;
+        }
+
+        const template = result.data[0];
+        singleTemplateAutoInFlightRef.current = true;
+        setSubmitting(true);
+        try {
+          const saveResult = await saveEpisodeWithTemplatePresets({
+            userId,
+            symptomPresetId: template.symptom_preset_id,
+            healthMarkerPresetId: template.health_marker_preset_id,
+          });
+          if (stale()) {
+            return;
+          }
+          if (!saveResult.ok) {
+            setSelectedId(template.id);
+            setEpisodeStartError(saveResult.error.message);
+            announce(saveResult.error.message);
+            setStatus('ready');
+            return;
+          }
+          singleTemplateAutoSucceededCycleIdRef.current = cycleId;
+          announce('Episode started.');
+          setPhase('done');
+          setStatus('ready');
+        } finally {
+          singleTemplateAutoInFlightRef.current = false;
+          setSubmitting(false);
+        }
+        return;
+      }
+
+      setSelectedId((prev) => {
+        if (prev && result.data.some((r) => r.id === prev)) {
+          return prev;
+        }
+        return null;
+      });
+      setStatus('ready');
+    },
+    [],
+  );
 
   useFocusEffect(
     useCallback(() => {
       if (phaseRef.current === 'done') {
         return;
       }
+      focusCycleIdRef.current += 1;
+      const cycleId = focusCycleIdRef.current;
       const focusCancel: FocusLoadCancel = { cancelled: false };
-      void load(focusCancel);
+      void load(focusCancel, cycleId);
       return () => {
         focusCancel.cancelled = true;
       };

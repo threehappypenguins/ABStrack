@@ -7,9 +7,13 @@ import { createEpisode } from '@abstrack/supabase';
 import { getMobileSupabaseClient } from '../supabase-wiring';
 
 /**
- * Creates an episode row with both preset columns set (symptom + health marker from the template).
+ * Creates an episode row with `symptom_preset_id` and `health_marker_preset_id` set (typically the
+ * pair taken from an episode template or an explicit picker).
  *
- * @param args - Signed-in user id and preset ids from the chosen {@link EpisodeTemplateRow}.
+ * @param args - Insert payload.
+ * @param args.userId - Authenticated user id for `episodes.user_id` (must satisfy RLS).
+ * @param args.symptomPresetId - `symptom_presets.id`.
+ * @param args.healthMarkerPresetId - `health_marker_presets.id`.
  */
 export function saveEpisodeWithTemplatePresets(args: {
   userId: string;

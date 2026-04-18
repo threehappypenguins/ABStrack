@@ -22,6 +22,9 @@ export function EpisodeStartFlow() {
   const { announce } = useAnnounce();
   const groupLegendId = useId();
   const phaseRef = useRef<FlowPhase>('pick');
+  /** Prevents concurrent or repeated `createEpisode` on the single-template auto-start path when `refresh` runs more than once before `phase` is `done`. */
+  const singleTemplateAutoInFlightRef = useRef(false);
+  const singleTemplateAutoSucceededRef = useRef(false);
 
   const [rows, setRows] = useState<EpisodeTemplateWithPresetsRow[]>([]);
   const [loadState, setLoadState] = useState<'idle' | 'loading' | 'error'>(
@@ -52,25 +55,41 @@ export function EpisodeStartFlow() {
     setRows(result.data);
 
     if (result.data.length === 1) {
-      const template = result.data[0];
-      setSubmitting(true);
-      const saveResult = await createEpisode(supabase, {
-        user_id: userId,
-        started_at: new Date().toISOString(),
-        symptom_preset_id: template.symptom_preset_id,
-        health_marker_preset_id: template.health_marker_preset_id,
-      });
-      setSubmitting(false);
-      if (!saveResult.ok) {
-        setSelectedId(template.id);
-        setSubmitError(saveResult.error.message);
-        announce(saveResult.error.message, { politeness: 'assertive' });
+      if (singleTemplateAutoSucceededRef.current) {
+        setPhase('done');
         setLoadState('idle');
         return;
       }
-      announce('Episode started.', { politeness: 'polite' });
-      setPhase('done');
-      setLoadState('idle');
+      if (singleTemplateAutoInFlightRef.current) {
+        setLoadState('loading');
+        return;
+      }
+
+      const template = result.data[0];
+      singleTemplateAutoInFlightRef.current = true;
+      setSubmitting(true);
+      try {
+        const saveResult = await createEpisode(supabase, {
+          user_id: userId,
+          started_at: new Date().toISOString(),
+          symptom_preset_id: template.symptom_preset_id,
+          health_marker_preset_id: template.health_marker_preset_id,
+        });
+        if (!saveResult.ok) {
+          setSelectedId(template.id);
+          setSubmitError(saveResult.error.message);
+          announce(saveResult.error.message, { politeness: 'assertive' });
+          setLoadState('idle');
+          return;
+        }
+        singleTemplateAutoSucceededRef.current = true;
+        announce('Episode started.', { politeness: 'polite' });
+        setPhase('done');
+        setLoadState('idle');
+      } finally {
+        singleTemplateAutoInFlightRef.current = false;
+        setSubmitting(false);
+      }
       return;
     }
 
