@@ -8,6 +8,9 @@ import { COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
 import { useAppTheme } from '../../theme/AppThemeContext';
 import { nw } from '../../theme/app-nativewind-classes';
 
+const EMPTY_OPTIONS_MESSAGE =
+  'No presets in this list yet. Create one in the Symptoms or Markers tab.';
+
 export type PresetOptionSheetOption = { id: string; name: string };
 
 export type PresetOptionSheetFieldProps = {
@@ -51,9 +54,7 @@ export function PresetOptionSheetField({
       return;
     }
     if (options.length === 0) {
-      announce(
-        'No presets in this list yet. Create one in the Symptoms or Markers tab.',
-      );
+      announce(EMPTY_OPTIONS_MESSAGE);
       return;
     }
 
@@ -95,6 +96,8 @@ export function PresetOptionSheetField({
     showActionSheetWithOptions,
   ]);
 
+  const listEmpty = options.length === 0;
+
   return (
     <View className="gap-2">
       <Text
@@ -107,11 +110,24 @@ export function PresetOptionSheetField({
       <Text className={`text-sm ${nw.textMuted}`} maxFontSizeMultiplier={2}>
         {hint}
       </Text>
+      {listEmpty ? (
+        <Text
+          className={`text-sm ${nw.textMuted}`}
+          maxFontSizeMultiplier={2}
+          accessibilityRole="text"
+        >
+          {EMPTY_OPTIONS_MESSAGE}
+        </Text>
+      ) : null}
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${label}. ${summary}. Opens a list to choose.`}
-        accessibilityState={{ disabled: disabled || options.length === 0 }}
-        disabled={disabled || options.length === 0}
+        accessibilityLabel={`${label}. ${summary}. ${
+          listEmpty
+            ? 'No options yet. Tap to hear this hint again.'
+            : 'Opens a list to choose.'
+        }`}
+        accessibilityState={{ disabled }}
+        disabled={disabled}
         onPress={openSheet}
         className={`flex-row items-center justify-between rounded-[10px] px-3 py-3 active:opacity-90 ${nw.card}`}
         style={{

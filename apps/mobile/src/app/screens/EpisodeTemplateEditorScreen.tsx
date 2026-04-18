@@ -133,12 +133,7 @@ export function EpisodeTemplateEditorScreen() {
       onNavigateToList: goToTemplateList,
     });
 
-  useEpisodeTemplatesDraftRegistration(
-    status === 'ready',
-    isDirty,
-    busy,
-    goToTemplateList,
-  );
+  useEpisodeTemplatesDraftRegistration(true, isDirty, busy, goToTemplateList);
 
   const nameValidation = useMemo(
     () => validateEpisodeTemplateName(name),
