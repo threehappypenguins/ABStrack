@@ -1,5 +1,6 @@
--- Episode rows: optional health-marker preset (same-owner pattern as symptom_preset_id).
--- episode_templates: named pairing of symptom + health-marker presets for template-first episode starts.
+-- episodes: optional per-episode health_marker_preset_id (same-owner pattern as symptom_preset_id).
+-- episode_templates: each row pairs exactly one symptom preset with one health marker preset (both columns NOT NULL; invalid to omit either). ON DELETE CASCADE removes the template if either referenced preset is deleted.
+-- RLS is NOT owner-only: same as symptom_presets / health_marker_presets (caretaker read/write, practitioner read).
 
 -- ---------------------------------------------------------------------------
 -- episodes.health_marker_preset_id
@@ -64,7 +65,7 @@ CREATE TRIGGER episode_preset_owners
   EXECUTE FUNCTION public.enforce_episode_preset_owners ();
 
 -- ---------------------------------------------------------------------------
--- episode_templates — always a usable pair (NOT NULL); CASCADE removes row if either preset is deleted
+-- episode_templates — NOT NULL preset pair; CASCADE on preset delete; RLS mirrors symptom_presets (not owner-only)
 -- ---------------------------------------------------------------------------
 CREATE TABLE public.episode_templates (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid (),
@@ -132,7 +133,8 @@ CREATE TRIGGER set_updated_at
 ALTER TABLE public.episode_templates
   ENABLE ROW LEVEL SECURITY;
 
--- Same pattern as symptom_presets / health_marker_presets (caretaker read/write, practitioner read).
+-- Policies align with public.symptom_presets / public.health_marker_presets in 20260327130000_rls_policies.sql:
+-- SELECT: patient owner OR caretaker OR practitioner (grant); INSERT/UPDATE/DELETE: patient OR caretaker.
 CREATE POLICY episode_templates_select ON public.episode_templates
   FOR SELECT
   TO authenticated
