@@ -26,7 +26,11 @@ function clampIndex(index: number, length: number): number {
   if (length <= 0) {
     return 0;
   }
-  return Math.max(0, Math.min(index, length - 1));
+  if (!Number.isFinite(index)) {
+    return 0;
+  }
+  const i = Math.trunc(index);
+  return Math.max(0, Math.min(i, length - 1));
 }
 
 /**

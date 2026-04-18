@@ -8,6 +8,19 @@ function storageKey(episodeId: string): string {
 }
 
 /**
+ * Produces a safe non-negative step index from stored JSON (rejects NaN, ±Infinity, non-numbers).
+ *
+ * @param value - Parsed `activeIndex` field.
+ * @returns Integer ≥ 0, or `null` if unusable.
+ */
+function sanitizeActiveIndex(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return null;
+  }
+  return Math.max(0, Math.floor(value));
+}
+
+/**
  * Reads traversal state from `sessionStorage` for the current browser session.
  *
  * @param episodeId - `episodes.id`.
@@ -28,14 +41,18 @@ export function getSymptomPromptSession(
     if (
       typeof parsed !== 'object' ||
       parsed === null ||
-      typeof parsed.activeIndex !== 'number' ||
       typeof parsed.answers !== 'object' ||
-      parsed.answers === null
+      parsed.answers === null ||
+      Array.isArray(parsed.answers)
     ) {
       return createInitialSymptomPromptSession();
     }
+    const activeIndex = sanitizeActiveIndex(parsed.activeIndex);
+    if (activeIndex === null) {
+      return createInitialSymptomPromptSession();
+    }
     return {
-      activeIndex: parsed.activeIndex,
+      activeIndex,
       answers: parsed.answers,
     };
   } catch {

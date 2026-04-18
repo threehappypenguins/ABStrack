@@ -7,6 +7,30 @@ import { createInitialSymptomPromptSession } from '@abstrack/types';
  */
 const sessions = new Map<Uuid, SymptomPromptSessionState>();
 
+function sanitizeActiveIndex(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return null;
+  }
+  return Math.max(0, Math.floor(value));
+}
+
+function sanitizeStoredState(
+  raw: SymptomPromptSessionState,
+): SymptomPromptSessionState {
+  if (
+    typeof raw.answers !== 'object' ||
+    raw.answers === null ||
+    Array.isArray(raw.answers)
+  ) {
+    return createInitialSymptomPromptSession();
+  }
+  const activeIndex = sanitizeActiveIndex(raw.activeIndex);
+  if (activeIndex === null) {
+    return createInitialSymptomPromptSession();
+  }
+  return { activeIndex, answers: raw.answers };
+}
+
 /**
  * Reads traversal state for an episode, or returns a fresh initial state.
  *
@@ -16,7 +40,11 @@ const sessions = new Map<Uuid, SymptomPromptSessionState>();
 export function getSymptomPromptSession(
   episodeId: string,
 ): SymptomPromptSessionState {
-  return sessions.get(episodeId) ?? createInitialSymptomPromptSession();
+  const raw = sessions.get(episodeId);
+  if (!raw) {
+    return createInitialSymptomPromptSession();
+  }
+  return sanitizeStoredState(raw);
 }
 
 /**
