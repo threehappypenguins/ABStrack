@@ -49,7 +49,7 @@ export function EpisodeStartHomeCta({
           className="text-center text-[18px] font-semibold text-white"
           maxFontSizeMultiplier={2}
         >
-          I&apos;m having an episode
+          I'm having an episode
         </Text>
       </Pressable>
     </View>
