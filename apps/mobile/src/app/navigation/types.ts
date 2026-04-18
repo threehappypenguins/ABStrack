@@ -34,5 +34,7 @@ export type MainStackParamList = {
   MainTabs: undefined;
   /** Episode logging entry: shell until template selection and prompts ship. */
   EpisodeStart: undefined;
+  /** Linear symptom prompts for the active episode (preset lines). */
+  SymptomPrompt: { episodeId: string; symptomPresetId: string };
   Settings: undefined;
 };

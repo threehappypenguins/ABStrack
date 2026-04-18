@@ -4,7 +4,6 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { EpisodeTemplateWithPresetsRow } from '@abstrack/types';
 import { announce } from '@abstrack/ui/native';
-import { COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
 import {
   fetchEpisodeTemplates,
   getCurrentUserId,
@@ -23,8 +22,6 @@ type EpisodeStartNav = NativeStackNavigationProp<
   'EpisodeStart'
 >;
 
-type FlowPhase = 'pick' | 'done';
-
 /**
  * Episode-start flow: if there is exactly one episode template, start the episode immediately
  * (no tap-through). Otherwise pick a template, then create an episode with both preset ids from
@@ -34,7 +31,6 @@ type FlowPhase = 'pick' | 'done';
  */
 export function EpisodeStartScreen() {
   const navigation = useNavigation<EpisodeStartNav>();
-  const phaseRef = useRef<FlowPhase>('pick');
   /** Increments on each screen focus; scopes single-template auto-start idempotency to the current focus cycle. */
   const focusCycleIdRef = useRef(0);
   /** Prevents concurrent `saveEpisodeWithTemplatePresets` on the single-template path when `load` runs more than once before success. */
@@ -55,8 +51,6 @@ export function EpisodeStartScreen() {
   const [rows, setRows] = useState<EpisodeTemplateWithPresetsRow[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [phase, setPhase] = useState<FlowPhase>('pick');
-  phaseRef.current = phase;
 
   const load = useCallback(
     async (focusCancel?: FocusLoadCancel, focusCycle?: number) => {
@@ -95,7 +89,6 @@ export function EpisodeStartScreen() {
 
       if (result.data.length === 1) {
         if (singleTemplateAutoSucceededCycleIdRef.current === cycleId) {
-          setPhase('done');
           setStatus('ready');
           return;
         }
@@ -123,10 +116,20 @@ export function EpisodeStartScreen() {
             setStatus('ready');
             return;
           }
+          if (!saveResult.data) {
+            setSelectedId(template.id);
+            setEpisodeStartError('Could not start episode.');
+            announce('Could not start episode.');
+            setStatus('ready');
+            return;
+          }
           singleTemplateAutoSucceededCycleIdRef.current = cycleId;
           announce('Episode started.');
-          setPhase('done');
-          setStatus('ready');
+          // Keep `loading` until navigation unmounts — `ready` would flash the template chooser briefly.
+          navigation.replace('SymptomPrompt', {
+            episodeId: saveResult.data.id,
+            symptomPresetId: template.symptom_preset_id,
+          });
         } finally {
           singleTemplateAutoInFlightRef.current = false;
           if (!stale()) {
@@ -145,14 +148,11 @@ export function EpisodeStartScreen() {
       });
       setStatus('ready');
     },
-    [],
+    [navigation],
   );
 
   useFocusEffect(
     useCallback(() => {
-      if (phaseRef.current === 'done') {
-        return;
-      }
       focusCycleIdRef.current += 1;
       const cycleId = focusCycleIdRef.current;
       const focusCancel: FocusLoadCancel = { cancelled: false };
@@ -203,9 +203,18 @@ export function EpisodeStartScreen() {
         announce(result.error.message);
         return;
       }
+      if (!result.data) {
+        const message = 'Could not start episode.';
+        setEpisodeStartError(message);
+        announce(message);
+        return;
+      }
       setEpisodeStartError(null);
       announce('Episode started.');
-      setPhase('done');
+      navigation.replace('SymptomPrompt', {
+        episodeId: result.data.id,
+        symptomPresetId: template.symptom_preset_id,
+      });
     } finally {
       setSubmitting(false);
     }
@@ -223,163 +232,138 @@ export function EpisodeStartScreen() {
           Start an episode
         </Text>
 
-        {phase === 'done' ? (
-          <View className="gap-4" accessibilityLiveRegion="polite">
-            <Text
-              className={`text-base leading-relaxed ${nw.textInk}`}
-              maxFontSizeMultiplier={2}
-            >
-              Your episode has been started with the template you chose. Use
-              Back when you are ready to return home.
-            </Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Back to home"
-              onPress={() => {
-                navigation.goBack();
-              }}
-              style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
-              className="items-center justify-center rounded-xl bg-red-700 px-4 py-4 active:opacity-90 dark:bg-red-600"
-            >
-              <Text className="text-center text-[17px] font-semibold text-white">
-                Back to home
-              </Text>
-            </Pressable>
-          </View>
-        ) : (
-          <AsyncScreenContainer
-            status={status}
-            loadingAccessibilityLabel={
-              submitting ? 'Starting episode' : 'Loading episode templates'
+        <AsyncScreenContainer
+          status={status}
+          loadingAccessibilityLabel={
+            submitting ? 'Starting episode' : 'Loading episode templates'
+          }
+          errorTitle="Could not load templates"
+          errorMessage={errorMessage ?? undefined}
+          onRetry={() => {
+            const token = focusCancelRef.current;
+            if (token == null) {
+              return;
             }
-            errorTitle="Could not load templates"
-            errorMessage={errorMessage ?? undefined}
-            onRetry={() => {
-              const token = focusCancelRef.current;
-              if (token == null) {
-                return;
-              }
-              void load(token, focusCycleIdRef.current);
-            }}
+            void load(token, focusCycleIdRef.current);
+          }}
+        >
+          <ScrollView
+            testID="episode-start-template-scroll"
+            className="flex-1"
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={{ paddingBottom: 16 }}
           >
-            <ScrollView
-              testID="episode-start-template-scroll"
-              className="flex-1"
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={{ paddingBottom: 16 }}
-            >
-              {rows.length === 1 ? (
-                <Text
-                  className={`mb-4 text-base leading-relaxed ${nw.textMuted}`}
-                  maxFontSizeMultiplier={2}
-                >
-                  Your episode uses the template below for symptoms and health
-                  markers.
-                </Text>
-              ) : rows.length > 1 ? (
-                <Text
-                  className={`mb-4 text-base leading-relaxed ${nw.textMuted}`}
-                  maxFontSizeMultiplier={2}
-                >
-                  Tap one template for this episode. It sets both your symptom
-                  list and health markers for this episode.
-                </Text>
-              ) : null}
+            {rows.length === 1 ? (
+              <Text
+                className={`mb-4 text-base leading-relaxed ${nw.textMuted}`}
+                maxFontSizeMultiplier={2}
+              >
+                Your episode uses the template below for symptoms and health
+                markers.
+              </Text>
+            ) : rows.length > 1 ? (
+              <Text
+                className={`mb-4 text-base leading-relaxed ${nw.textMuted}`}
+                maxFontSizeMultiplier={2}
+              >
+                Tap one template for this episode. It sets both your symptom
+                list and health markers for this episode.
+              </Text>
+            ) : null}
 
-              {episodeStartError ? (
+            {episodeStartError ? (
+              <Text
+                accessibilityRole="alert"
+                className={`mb-4 text-base leading-relaxed ${nw.textError}`}
+                maxFontSizeMultiplier={2}
+              >
+                {episodeStartError}
+              </Text>
+            ) : null}
+
+            {rows.length === 0 ? (
+              <View
+                className="rounded-xl bg-app-bg p-4 dark:bg-app-bg-dark"
+                accessibilityRole="text"
+              >
                 <Text
-                  accessibilityRole="alert"
-                  className={`mb-4 text-base leading-relaxed ${nw.textError}`}
+                  className={`text-base leading-relaxed ${nw.textInk}`}
                   maxFontSizeMultiplier={2}
                 >
-                  {episodeStartError}
+                  You do not have any episode templates yet. Open the Templates
+                  tab, create a template, then come back here.
                 </Text>
-              ) : null}
-
-              {rows.length === 0 ? (
-                <View
-                  className="rounded-xl bg-app-bg p-4 dark:bg-app-bg-dark"
-                  accessibilityRole="text"
-                >
-                  <Text
-                    className={`text-base leading-relaxed ${nw.textInk}`}
-                    maxFontSizeMultiplier={2}
-                  >
-                    You do not have any episode templates yet. Open the
-                    Templates tab, create a template, then come back here.
-                  </Text>
-                </View>
-              ) : (
-                <View
-                  accessibilityRole="radiogroup"
-                  accessibilityLabel="Episode templates"
-                >
-                  {rows.map((row) => {
-                    const selected = selectedId === row.id;
-                    return (
-                      <Pressable
-                        key={row.id}
-                        testID={`episode-start-template-option-${row.id}`}
-                        accessibilityRole="radio"
-                        accessibilityState={{ selected, disabled: submitting }}
-                        accessibilityLabel={`${row.name}. Symptoms: ${row.symptom_preset.name}. Health markers: ${row.health_marker_preset.name}.`}
-                        onPress={() => {
-                          if (!submitting) {
-                            onSelectTemplate(row.id);
-                          }
-                        }}
-                        className={`mb-3 rounded-2xl border-2 p-4 active:opacity-90 ${
-                          selected
-                            ? 'border-red-600 bg-red-50 dark:border-red-500 dark:bg-red-950/40'
-                            : 'border-app-border bg-app-bg dark:border-app-border-dark dark:bg-app-bg-dark'
-                        }`}
+              </View>
+            ) : (
+              <View
+                accessibilityRole="radiogroup"
+                accessibilityLabel="Episode templates"
+              >
+                {rows.map((row) => {
+                  const selected = selectedId === row.id;
+                  return (
+                    <Pressable
+                      key={row.id}
+                      testID={`episode-start-template-option-${row.id}`}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected, disabled: submitting }}
+                      accessibilityLabel={`${row.name}. Symptoms: ${row.symptom_preset.name}. Health markers: ${row.health_marker_preset.name}.`}
+                      onPress={() => {
+                        if (!submitting) {
+                          onSelectTemplate(row.id);
+                        }
+                      }}
+                      className={`mb-3 rounded-2xl border-2 p-4 active:opacity-90 ${
+                        selected
+                          ? 'border-red-600 bg-red-50 dark:border-red-500 dark:bg-red-950/40'
+                          : 'border-app-border bg-app-bg dark:border-app-border-dark dark:bg-app-bg-dark'
+                      }`}
+                    >
+                      <Text
+                        className={`text-[18px] font-semibold ${nw.textInk}`}
+                        maxFontSizeMultiplier={2}
                       >
-                        <Text
-                          className={`text-[18px] font-semibold ${nw.textInk}`}
-                          maxFontSizeMultiplier={2}
-                        >
-                          {row.name}
-                        </Text>
-                        <Text
-                          className={`mt-2 text-sm leading-relaxed ${nw.textMuted}`}
-                          maxFontSizeMultiplier={2}
-                        >
-                          Symptoms: {row.symptom_preset.name}
-                        </Text>
-                        <Text
-                          className={`mt-1 text-sm leading-relaxed ${nw.textMuted}`}
-                          maxFontSizeMultiplier={2}
-                        >
-                          Markers: {row.health_marker_preset.name}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              )}
+                        {row.name}
+                      </Text>
+                      <Text
+                        className={`mt-2 text-sm leading-relaxed ${nw.textMuted}`}
+                        maxFontSizeMultiplier={2}
+                      >
+                        Symptoms: {row.symptom_preset.name}
+                      </Text>
+                      <Text
+                        className={`mt-1 text-sm leading-relaxed ${nw.textMuted}`}
+                        maxFontSizeMultiplier={2}
+                      >
+                        Markers: {row.health_marker_preset.name}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            )}
 
-              {rows.length > 0 ? (
-                <Pressable
-                  testID="episode-start-submit"
-                  accessibilityRole="button"
-                  accessibilityLabel="Start episode with selected template"
-                  accessibilityState={{
-                    disabled: selectedId === null || submitting,
-                  }}
-                  disabled={selectedId === null || submitting}
-                  onPress={() => {
-                    void onStartEpisode();
-                  }}
-                  className={`mt-4 min-h-[56px] items-center justify-center rounded-xl bg-red-700 px-4 py-4 active:opacity-90 disabled:opacity-50 dark:bg-red-600`}
-                >
-                  <Text className="text-center text-[18px] font-semibold text-white">
-                    {submitting ? 'Starting…' : 'Start episode'}
-                  </Text>
-                </Pressable>
-              ) : null}
-            </ScrollView>
-          </AsyncScreenContainer>
-        )}
+            {rows.length > 0 ? (
+              <Pressable
+                testID="episode-start-submit"
+                accessibilityRole="button"
+                accessibilityLabel="Start episode with selected template"
+                accessibilityState={{
+                  disabled: selectedId === null || submitting,
+                }}
+                disabled={selectedId === null || submitting}
+                onPress={() => {
+                  void onStartEpisode();
+                }}
+                className={`mt-4 min-h-[56px] items-center justify-center rounded-xl bg-red-700 px-4 py-4 active:opacity-90 disabled:opacity-50 dark:bg-red-600`}
+              >
+                <Text className="text-center text-[18px] font-semibold text-white">
+                  {submitting ? 'Starting…' : 'Start episode'}
+                </Text>
+              </Pressable>
+            ) : null}
+          </ScrollView>
+        </AsyncScreenContainer>
       </View>
     </ScreenShell>
   );

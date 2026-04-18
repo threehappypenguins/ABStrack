@@ -1,14 +1,14 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { EpisodeTemplateWithPresetsRow } from '@abstrack/types';
 import { createEpisode, listEpisodeTemplates } from '@abstrack/supabase';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
 import { useAuth } from '@/lib/auth-provider';
-
-type FlowPhase = 'pick' | 'done';
+import { PageLoading } from '@/components/page-states/PageLoading';
 
 /**
  * Impaired-friendly episode start: load templates; if there is exactly one template, create the
@@ -18,11 +18,11 @@ type FlowPhase = 'pick' | 'done';
  * @returns Client UI for `/episode/start`.
  */
 export function EpisodeStartFlow() {
+  const router = useRouter();
   const { session, loading: authLoading } = useAuth();
   const { announce } = useAnnounce();
   const groupLegendId = useId();
-  const phaseRef = useRef<FlowPhase>('pick');
-  /** Prevents concurrent or repeated `createEpisode` on the single-template auto-start path when `refresh` runs more than once before `phase` is `done`. */
+  /** Prevents concurrent or repeated `createEpisode` on the single-template auto-start path when `refresh` runs more than once before navigation. */
   const singleTemplateAutoInFlightRef = useRef(false);
   const singleTemplateAutoSucceededRef = useRef(false);
 
@@ -34,8 +34,6 @@ export function EpisodeStartFlow() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [phase, setPhase] = useState<FlowPhase>('pick');
-  phaseRef.current = phase;
 
   const refresh = useCallback(async (): Promise<void> => {
     const userId = session?.user?.id;
@@ -56,7 +54,6 @@ export function EpisodeStartFlow() {
 
     if (result.data.length === 1) {
       if (singleTemplateAutoSucceededRef.current) {
-        setPhase('done');
         setLoadState('idle');
         return;
       }
@@ -82,10 +79,19 @@ export function EpisodeStartFlow() {
           setLoadState('idle');
           return;
         }
+        if (!saveResult.data) {
+          setSelectedId(template.id);
+          setSubmitError('Could not start episode.');
+          announce('Could not start episode.', { politeness: 'assertive' });
+          setLoadState('idle');
+          return;
+        }
         singleTemplateAutoSucceededRef.current = true;
         announce('Episode started.', { politeness: 'polite' });
-        setPhase('done');
-        setLoadState('idle');
+        // Stay on `loading` until navigation unmounts this view — `idle` would paint the chooser for a frame.
+        router.replace(
+          `/episode/${saveResult.data.id}/symptoms?symptomPresetId=${encodeURIComponent(template.symptom_preset_id)}`,
+        );
       } finally {
         singleTemplateAutoInFlightRef.current = false;
         setSubmitting(false);
@@ -100,10 +106,10 @@ export function EpisodeStartFlow() {
       }
       return null;
     });
-  }, [announce, session?.user?.id]);
+  }, [announce, router, session?.user?.id]);
 
   useEffect(() => {
-    if (authLoading || !session?.user?.id || phaseRef.current === 'done') {
+    if (authLoading || !session?.user?.id) {
       return;
     }
     void refresh();
@@ -132,19 +138,20 @@ export function EpisodeStartFlow() {
       announce(result.error.message, { politeness: 'assertive' });
       return;
     }
+    if (!result.data) {
+      const message = 'Could not start episode.';
+      setSubmitError(message);
+      announce(message, { politeness: 'assertive' });
+      return;
+    }
     announce('Episode started.', { politeness: 'polite' });
-    setPhase('done');
+    router.replace(
+      `/episode/${result.data.id}/symptoms?symptomPresetId=${encodeURIComponent(template.symptom_preset_id)}`,
+    );
   };
 
   if (authLoading) {
-    return (
-      <div className="space-y-2">
-        <h1 className="text-2xl font-bold tracking-tight text-app-ink">
-          Start an episode
-        </h1>
-        <p className="text-sm text-app-muted">Loading…</p>
-      </div>
-    );
+    return <PageLoading title="Start an episode" />;
   }
 
   if (!session) {
@@ -166,42 +173,12 @@ export function EpisodeStartFlow() {
     );
   }
 
-  if (phase === 'done') {
-    return (
-      <div className="space-y-4">
-        <h1 className="text-2xl font-bold tracking-tight text-app-ink">
-          Start an episode
-        </h1>
-        <div
-          className="rounded-2xl border border-app-border/90 bg-app-surface p-6 shadow-soft ring-1 ring-[color:var(--app-ring-slate)] sm:p-8"
-          role="status"
-          aria-live="polite"
-        >
-          <p className="text-sm leading-relaxed text-app-ink">
-            Your episode has been started with the template you chose. You can
-            continue from the dashboard when you are ready.
-          </p>
-        </div>
-        <Link
-          href="/dashboard"
-          className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-app-primary px-5 text-sm font-semibold text-white shadow-sm transition hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
-        >
-          Back to dashboard
-        </Link>
-      </div>
-    );
-  }
-
   if (loadState === 'loading') {
     return (
-      <div className="space-y-2">
-        <h1 className="text-2xl font-bold tracking-tight text-app-ink">
-          Start an episode
-        </h1>
-        <p className="text-sm text-app-muted" role="status">
-          {submitting ? 'Starting episode…' : 'Loading templates…'}
-        </p>
-      </div>
+      <PageLoading
+        title="Start an episode"
+        message={submitting ? 'Starting your episode…' : 'Preparing…'}
+      />
     );
   }
 

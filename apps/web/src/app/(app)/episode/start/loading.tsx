@@ -6,5 +6,5 @@ import { PageLoading } from '@/components/page-states/PageLoading';
  * @returns Loading fallback.
  */
 export default function EpisodeStartLoading() {
-  return <PageLoading title="Start an episode" />;
+  return <PageLoading title="Start an episode" message="Preparing…" />;
 }
