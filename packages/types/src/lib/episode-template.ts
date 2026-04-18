@@ -65,7 +65,7 @@ export type EpisodeTemplateInsert = Pick<
   EpisodeTemplateRow,
   'user_id' | 'name' | 'symptom_preset_id' | 'health_marker_preset_id'
 > & {
-  id?: string;
+  id?: Uuid;
 };
 
 export type EpisodeTemplateUpdate = Partial<

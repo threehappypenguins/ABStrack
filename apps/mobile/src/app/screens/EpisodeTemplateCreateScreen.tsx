@@ -45,11 +45,16 @@ export function EpisodeTemplateCreateScreen() {
   const [listsLoading, setListsLoading] = useState(true);
   const [listsError, setListsError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Matches initial field values so dirty detection works while preset lists are still loading. */
   const [formBaseline, setFormBaseline] = useState<{
     name: string;
     symptomId: string | null;
     markerId: string | null;
-  } | null>(null);
+  }>({
+    name: '',
+    symptomId: null,
+    markerId: null,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -95,16 +100,13 @@ export function EpisodeTemplateCreateScreen() {
 
   const nameOk = useMemo(() => validateEpisodeTemplateName(name).ok, [name]);
 
-  const isDirty = useMemo(() => {
-    if (!formBaseline) {
-      return false;
-    }
-    return (
+  const isDirty = useMemo(
+    () =>
       name.trim() !== formBaseline.name.trim() ||
       symptomId !== formBaseline.symptomId ||
-      markerId !== formBaseline.markerId
-    );
-  }, [formBaseline, name, symptomId, markerId]);
+      markerId !== formBaseline.markerId,
+    [formBaseline, name, symptomId, markerId],
+  );
 
   const goToTemplateList = useCallback(() => {
     navigation.navigate('EpisodeTemplateList');

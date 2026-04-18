@@ -557,9 +557,7 @@ describe.skipIf(!presetIntegrationReady)(
           throw new Error(hm.error.message);
         }
         etHmId = hm.data.id;
-      });
 
-      it('creates and lists episode template with nested preset names', async () => {
         const created = await createEpisodeTemplate(clientA, {
           user_id: userAId,
           name: `ABS Episode ${suffix}`,
@@ -568,10 +566,12 @@ describe.skipIf(!presetIntegrationReady)(
         });
         expect(created.ok).toBe(true);
         if (!created.ok) {
-          return;
+          throw new Error(created.error.message);
         }
         etTemplateId = created.data.id;
+      });
 
+      it('lists episode template with nested preset names', async () => {
         const list = await listEpisodeTemplates(clientA);
         expect(list.ok).toBe(true);
         if (!list.ok) {
