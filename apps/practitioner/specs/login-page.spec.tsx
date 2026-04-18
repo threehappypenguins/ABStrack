@@ -68,6 +68,12 @@ function makeUnsignedJwtForTest(payload: Record<string, unknown>): string {
   return `${header}.${body}.sig`;
 }
 
+/** Default mock access token with `aal: aal2` so login waits and `/patients` match the patient gate. */
+const DEFAULT_SESSION_ACCESS_TOKEN_AAL2 = makeUnsignedJwtForTest({
+  aal: 'aal2',
+  sub: USER_ID,
+});
+
 type MfaMock = {
   signInWithPassword: jest.Mock;
   getUser: jest.Mock;
@@ -158,7 +164,8 @@ function createLoginSupabaseMock(options?: {
   const defaultMfaSession = {
     user: { id: USER_ID },
     refresh_token: 'refresh-token',
-    access_token: options?.sessionAccessToken ?? 'access-token',
+    access_token:
+      options?.sessionAccessToken ?? DEFAULT_SESSION_ACCESS_TOKEN_AAL2,
   };
   const mfaSessionOpts = options?.mfaVerifyGetSession;
   const verifyPhaseGetSessionResult = {

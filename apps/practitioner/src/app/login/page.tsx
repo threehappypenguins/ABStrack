@@ -4,6 +4,7 @@ import {
   hasMfaAssuranceAal2,
   parseAbstrackAccessTokenClaims,
   signInWithEmailPassword,
+  type Session,
 } from '@abstrack/supabase';
 import { getSupabaseBrowserClient } from '@abstrack/supabase/browser';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
@@ -58,6 +59,52 @@ function buildMfaFactorChoices(factors: ListedTotpFactor[]): Array<{
   }));
 }
 
+/** Max polls when waiting for the access token JWT to include `aal: aal2` after assurance reports AAL2. */
+const JWT_AAL2_SYNC_MAX_ATTEMPTS = 8;
+const JWT_AAL2_SYNC_DELAY_MS = 75;
+
+/**
+ * Patient routes gate on JWT `aal` via `hasMfaAssuranceAal2` (see `resolvePractitionerAppGate` in
+ * `@abstrack/supabase`). After MFA or trust restore, `getAuthenticatorAssuranceLevel` can
+ * report AAL2 before Supabase refreshes the session JWT — briefly polls `getSession()` so we do
+ * not navigate to `/patients` while the gate would still see `aal1`.
+ *
+ * When `sessionHint` is set (e.g. the `getSession()` result right after `mfa.verify`), parses that
+ * token first so a token already showing `aal: aal2` avoids an extra round-trip and matches what
+ * the practitioner gate reads from the client session.
+ *
+ * @param supabase - Browser Supabase client.
+ * @param sessionHint - Optional session to parse before polling (same shape as `getSession().data.session`).
+ * @returns The session whose `access_token` parses to AAL2, or `null` if still stale / missing.
+ */
+async function waitForSessionWithJwtAal2(
+  supabase: ReturnType<typeof getSupabaseBrowserClient>,
+  sessionHint?: Session | null,
+): Promise<Session | null> {
+  if (sessionHint?.access_token != null) {
+    const hintClaims = parseAbstrackAccessTokenClaims(sessionHint.access_token);
+    if (hasMfaAssuranceAal2(hintClaims)) {
+      return sessionHint;
+    }
+  }
+  for (let attempt = 0; attempt < JWT_AAL2_SYNC_MAX_ATTEMPTS; attempt++) {
+    if (attempt > 0) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, JWT_AAL2_SYNC_DELAY_MS),
+      );
+    }
+    const { data, error } = await supabase.auth.getSession();
+    if (error || data.session?.access_token == null) {
+      return null;
+    }
+    const claims = parseAbstrackAccessTokenClaims(data.session.access_token);
+    if (hasMfaAssuranceAal2(claims)) {
+      return data.session;
+    }
+  }
+  return null;
+}
+
 /**
  * Practitioner email/password login with MFA step-up and optional device trust (browser storage).
  * Successful verification with “Trust this device” unchecked clears any stored bundle so trust
@@ -88,6 +135,9 @@ function buildMfaFactorChoices(factors: ListedTotpFactor[]): Array<{
  *
  * When several verified TOTP factors exist, the MFA step shows an **Authenticator** combobox
  * (friendly name or “Authenticator N”) so challenge/verify use the factor the user selects.
+ *
+ * Before navigating to `/patients`, the client waits until the session access token’s JWT `aal`
+ * claim matches patient-route gating (not only `getAuthenticatorAssuranceLevel`).
  *
  * @returns Login UI.
  */
@@ -125,12 +175,8 @@ export default function LoginPage() {
   const prevStepRef = useRef<LoginStep>(step);
 
   /**
-   * Returns the UI to the credentials step and clears MFA-only state so later flows are not
-   * prefilled from a prior attempt. Optionally sets an assertive error line and matching live
-   * announcement, and clears the password after abandoned or session-ending sign-in.
-   *
-   * @param options.message - When set, passed to `setError` and `announce` (assertive).
-   * @param options.clearPassword - Clears the password field when true.
+   * When device trust is disabled (`NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST`), clears
+   * remember-device state so it cannot remain true while the trust UI is hidden.
    */
   useEffect(() => {
     if (!deviceTrustFeatureEnabled) {
@@ -168,6 +214,14 @@ export default function LoginPage() {
     return undefined;
   }, [step, mfaFactorChoices.length]);
 
+  /**
+   * Returns the UI to the credentials step and clears MFA-only state so later flows are not
+   * prefilled from a prior attempt. Optionally sets an assertive error line and matching live
+   * announcement, and clears the password after abandoned or session-ending sign-in.
+   *
+   * @param options.message - When set, passed to `setError` and `announce` (assertive).
+   * @param options.clearPassword - Clears the password field when true.
+   */
   const resetToCredentials = useCallback(
     (options?: { clearPassword?: boolean; message?: string }) => {
       setStep('credentials');
@@ -265,10 +319,8 @@ export default function LoginPage() {
             !assuranceAfterPassword.error &&
             assuranceAfterPassword.data.currentLevel === 'aal2'
           ) {
-            const sessionWrap = await supabase.auth.getSession();
-            const sess = sessionWrap.data.session;
-            const claims = parseAbstrackAccessTokenClaims(sess?.access_token);
-            if (sess && hasMfaAssuranceAal2(claims)) {
+            const sess = await waitForSessionWithJwtAal2(supabase);
+            if (sess) {
               saveMfaTrustBundle(sess, bundle.trustedUntilMs);
               router.push('/patients');
               router.refresh();
@@ -301,9 +353,13 @@ export default function LoginPage() {
         user.id,
       );
       if (restoreOutcome.status === 'restored') {
-        router.push('/patients');
-        router.refresh();
-        return;
+        const sessionWithJwtAal2 = await waitForSessionWithJwtAal2(supabase);
+        if (sessionWithJwtAal2 != null) {
+          router.push('/patients');
+          router.refresh();
+          return;
+        }
+        /* Else: JWT `aal` may still lag; fall through to session/assurance checks. */
       }
       if (restoreOutcome.status === 'signed_out') {
         router.refresh();
@@ -356,9 +412,13 @@ export default function LoginPage() {
       }
 
       if (assurance.data.currentLevel === 'aal2') {
-        router.push('/patients');
-        router.refresh();
-        return;
+        const sessionWithJwtAal2 = await waitForSessionWithJwtAal2(supabase);
+        if (sessionWithJwtAal2 != null) {
+          router.push('/patients');
+          router.refresh();
+          return;
+        }
+        /* Fall through to MFA step when JWT `aal` still reflects AAL1. */
       }
 
       setMfaFactorChoices(
@@ -482,9 +542,21 @@ export default function LoginPage() {
           return;
         }
 
+        const sessionWithJwtAal2 = await waitForSessionWithJwtAal2(
+          supabase,
+          sessionAfterVerify.session,
+        );
+        if (sessionWithJwtAal2 == null) {
+          const message =
+            'Your session did not show full two-factor verification yet. Try another code, or use Back to sign in to start over.';
+          setError(message);
+          announce(message, { politeness: 'assertive' });
+          return;
+        }
+
         if (deviceTrustFeatureEnabled && rememberDevice) {
           saveMfaTrustBundle(
-            sessionAfterVerify.session,
+            sessionWithJwtAal2,
             getTrustedUntilMsAfterVerification(),
           );
         } else {

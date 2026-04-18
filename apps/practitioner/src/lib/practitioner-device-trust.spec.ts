@@ -1121,6 +1121,28 @@ describe('refreshTrustedMfaBundleBeforePasswordSignIn', () => {
     expect(supabase.auth.refreshSession).not.toHaveBeenCalled();
   });
 
+  it('returns false and clears storage when bundle trust window is expired', async () => {
+    localStorage.setItem(
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
+      buildBundleJsonWithEmail(userId, Date.now() - 1, email),
+    );
+    const supabase = {
+      auth: {
+        refreshSession: jest.fn(),
+        signOut: jest.fn(),
+        mfa: { getAuthenticatorAssuranceLevel: jest.fn() },
+      },
+    } as unknown as BrowserClient;
+
+    await expect(
+      refreshTrustedMfaBundleBeforePasswordSignIn(supabase, email),
+    ).resolves.toBe(false);
+    expect(supabase.auth.refreshSession).not.toHaveBeenCalled();
+    expect(
+      localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
+    ).toBeNull();
+  });
+
   it('returns false when bundle has no email (legacy)', async () => {
     localStorage.setItem(
       PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,

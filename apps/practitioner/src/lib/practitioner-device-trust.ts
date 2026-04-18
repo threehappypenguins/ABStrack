@@ -233,6 +233,9 @@ export function readMfaTrustBundle(): PractitionerMfaTrustBundle | null {
  * returns a session, or **non-AAL2** assurance, clears the stored bundle **before** `signOut` so
  * wrong or unusable tokens are not kept in storage (and storage is scrubbed even if `signOut`
  * rejects).
+ *
+ * When the bundle’s **trust window has ended** (`trustedUntilMs`), clears storage before returning
+ * `false` so expired session material is not retained.
  */
 export async function refreshTrustedMfaBundleBeforePasswordSignIn(
   supabase: PractitionerBrowserClient,
@@ -242,7 +245,11 @@ export async function refreshTrustedMfaBundleBeforePasswordSignIn(
     return false;
   }
   const bundle = readBundle();
-  if (!bundle || bundle.trustedUntilMs <= Date.now()) {
+  if (!bundle) {
+    return false;
+  }
+  if (bundle.trustedUntilMs <= Date.now()) {
+    clearMfaTrustBundle();
     return false;
   }
   const want = emailForSignIn.trim().toLowerCase();
