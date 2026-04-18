@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EpisodeTemplateWithPresetsRow } from '@abstrack/types';
 import {
+  normalizeEpisodeTemplateName,
   validateEpisodeTemplateName,
   validateEpisodeTemplatePresetPair,
 } from '@abstrack/types';
@@ -95,7 +96,7 @@ export function EpisodeTemplateEditorPage({
     }
     const t = templateResult.data;
     setRow(t);
-    setNameDraft(t.name);
+    setNameDraft(normalizeEpisodeTemplateName(t.name));
     setSymptomPresetId(t.symptom_preset_id);
     setHealthMarkerPresetId(t.health_marker_preset_id);
     setPageStatus('ready');
@@ -112,9 +113,10 @@ export function EpisodeTemplateEditorPage({
     if (!row) {
       return false;
     }
-    const nameTrimmed = nameDraft.trim();
+    const draftName = normalizeEpisodeTemplateName(nameDraft);
+    const storedName = normalizeEpisodeTemplateName(row.name);
     return (
-      nameTrimmed !== row.name ||
+      draftName !== storedName ||
       symptomPresetId !== row.symptom_preset_id ||
       healthMarkerPresetId !== row.health_marker_preset_id
     );
@@ -195,7 +197,7 @@ export function EpisodeTemplateEditorPage({
       return;
     }
     const unchanged =
-      nameCheck.name === row.name &&
+      nameCheck.name === normalizeEpisodeTemplateName(row.name) &&
       symptomPresetId === row.symptom_preset_id &&
       healthMarkerPresetId === row.health_marker_preset_id;
     if (unchanged) {

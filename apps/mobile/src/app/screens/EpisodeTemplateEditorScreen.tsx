@@ -14,6 +14,7 @@ import { announce } from '@abstrack/ui/native';
 import { COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
 import type { EpisodeTemplateWithPresetsRow } from '@abstrack/types';
 import {
+  normalizeEpisodeTemplateName,
   validateEpisodeTemplateName,
   validateEpisodeTemplatePresetPair,
 } from '@abstrack/types';
@@ -101,7 +102,7 @@ export function EpisodeTemplateEditorScreen() {
     }
     const t = tRes.data;
     setRow(t);
-    setName(t.name);
+    setName(normalizeEpisodeTemplateName(t.name));
     setSymptomId(t.symptom_preset_id);
     setMarkerId(t.health_marker_preset_id);
     setStatus('ready');
@@ -115,9 +116,10 @@ export function EpisodeTemplateEditorScreen() {
     if (!row) {
       return false;
     }
-    const nameTrimmed = name.trim();
+    const draftName = normalizeEpisodeTemplateName(name);
+    const storedName = normalizeEpisodeTemplateName(row.name);
     return (
-      nameTrimmed !== row.name ||
+      draftName !== storedName ||
       symptomId !== row.symptom_preset_id ||
       markerId !== row.health_marker_preset_id
     );
@@ -176,7 +178,7 @@ export function EpisodeTemplateEditorScreen() {
     const sid = symptomId as string;
     const hid = markerId as string;
     const unchanged =
-      nameCheck.name === row.name &&
+      nameCheck.name === normalizeEpisodeTemplateName(row.name) &&
       sid === row.symptom_preset_id &&
       hid === row.health_marker_preset_id;
     if (unchanged) {
