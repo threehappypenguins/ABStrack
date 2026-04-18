@@ -82,8 +82,8 @@ CREATE TRIGGER episode_preset_owners
 -- ---------------------------------------------------------------------------
 -- episode_templates — NOT NULL preset pair; CASCADE on preset delete; RLS mirrors symptom_presets (patient + caretaker write; practitioner read)
 -- ---------------------------------------------------------------------------
--- IF NOT EXISTS: table may already exist if a prior run failed after CREATE TABLE but before migration history was recorded.
-CREATE TABLE IF NOT EXISTS public.episode_templates (
+-- Use CREATE TABLE (not IF NOT EXISTS): skipping DDL left some clouds with nullable preset columns while migration history advanced.
+CREATE TABLE public.episode_templates (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid (),
   user_id uuid NOT NULL REFERENCES auth.users (id) ON DELETE CASCADE,
   name text NOT NULL,
