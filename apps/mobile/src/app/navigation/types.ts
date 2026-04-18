@@ -16,10 +16,18 @@ export type HealthMarkerPresetsStackParamList = {
   HealthMarkerPresetEdit: { presetId: string };
 };
 
+/** Stack inside the Episode templates tab: list, create, edit. */
+export type EpisodeTemplatesStackParamList = {
+  EpisodeTemplateList: undefined;
+  EpisodeTemplateCreate: undefined;
+  EpisodeTemplateEdit: { templateId: string };
+};
+
 export type MainTabParamList = {
   Home: undefined;
   SymptomPresets: undefined;
   HealthMarkerPresets: undefined;
+  EpisodeTemplates: undefined;
 };
 
 export type MainStackParamList = {

@@ -28,6 +28,13 @@ const NAV_ITEMS: {
       path === '/presets/health-markers' ||
       path.startsWith('/presets/health-markers/'),
   },
+  {
+    href: '/presets/episode-templates',
+    label: 'Episode templates',
+    match: (path) =>
+      path === '/presets/episode-templates' ||
+      path.startsWith('/presets/episode-templates/'),
+  },
 ];
 
 function isNavActive(pathname: string, match: (path: string) => boolean) {

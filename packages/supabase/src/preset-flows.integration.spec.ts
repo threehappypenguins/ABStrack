@@ -18,6 +18,13 @@ import { getSupabasePublishableKey, getSupabaseUrl } from './lib/env-public.js';
 import type { AbstrackSupabaseClient } from './lib/supabase-client-type.js';
 import { getSupabaseAdminClient } from './admin.js';
 import {
+  createEpisodeTemplate,
+  deleteEpisodeTemplate,
+  getEpisodeTemplateById,
+  listEpisodeTemplates,
+  updateEpisodeTemplate,
+} from './lib/episode-template-data.js';
+import {
   createHealthMarkerPreset,
   createPresetHealthMarker,
   createPresetSymptom,
@@ -522,6 +529,92 @@ describe.skipIf(!presetIntegrationReady)(
 
       afterAll(async () => {
         await deleteHealthMarkerPreset(clientA, victimHId);
+      });
+    });
+
+    describe.sequential('episode templates — CRUD and cross-user', () => {
+      let etSymptomId: string | undefined;
+      let etHmId: string | undefined;
+      let etTemplateId: string | undefined;
+
+      beforeAll(async () => {
+        const sp = await createSymptomPreset(clientA, {
+          user_id: userAId,
+          name: `ET sym ${suffix}`,
+        });
+        expect(sp.ok).toBe(true);
+        if (!sp.ok) {
+          throw new Error(sp.error.message);
+        }
+        etSymptomId = sp.data.id;
+
+        const hm = await createHealthMarkerPreset(clientA, {
+          user_id: userAId,
+          name: `ET hm ${suffix}`,
+        });
+        expect(hm.ok).toBe(true);
+        if (!hm.ok) {
+          throw new Error(hm.error.message);
+        }
+        etHmId = hm.data.id;
+
+        const created = await createEpisodeTemplate(clientA, {
+          user_id: userAId,
+          name: `ABS Episode ${suffix}`,
+          symptom_preset_id: etSymptomId!,
+          health_marker_preset_id: etHmId!,
+        });
+        expect(created.ok).toBe(true);
+        if (!created.ok) {
+          throw new Error(created.error.message);
+        }
+        etTemplateId = created.data.id;
+      });
+
+      it('lists episode template with nested preset names', async () => {
+        const list = await listEpisodeTemplates(clientA);
+        expect(list.ok).toBe(true);
+        if (!list.ok) {
+          return;
+        }
+        const found = list.data.find((r) => r.id === etTemplateId!);
+        expect(found).toBeDefined();
+        expect(found?.symptom_preset.name).toContain(`ET sym ${suffix}`);
+        expect(found?.health_marker_preset.name).toContain(`ET hm ${suffix}`);
+      });
+
+      it('updates episode template', async () => {
+        const up = await updateEpisodeTemplate(clientA, etTemplateId!, {
+          name: `Renamed ${suffix}`,
+        });
+        expect(up.ok).toBe(true);
+        if (!up.ok) {
+          return;
+        }
+        expect(up.data.name).toBe(`Renamed ${suffix}`);
+      });
+
+      it('hides other user template from get by id', async () => {
+        const got = await getEpisodeTemplateById(clientB, etTemplateId!);
+        expect(got.ok).toBe(true);
+        if (!got.ok) {
+          return;
+        }
+        expect(got.data).toBeNull();
+      });
+
+      it('deletes episode template', async () => {
+        const del = await deleteEpisodeTemplate(clientA, etTemplateId!);
+        expect(del.ok).toBe(true);
+      });
+
+      afterAll(async () => {
+        if (etSymptomId !== undefined) {
+          await deleteSymptomPreset(clientA, etSymptomId);
+        }
+        if (etHmId !== undefined) {
+          await deleteHealthMarkerPreset(clientA, etHmId);
+        }
       });
     });
   },

@@ -51,6 +51,12 @@ export default function Index() {
             >
               Health marker presets
             </Link>
+            <Link
+              href="/presets/episode-templates"
+              className="block w-full rounded-full border border-app-border bg-app-surface py-3 text-center text-sm font-semibold text-app-ink shadow-sm transition hover:bg-[var(--app-nav-hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+            >
+              Episode templates
+            </Link>
             <form action="/api/auth/logout" method="POST">
               <button
                 type="submit"

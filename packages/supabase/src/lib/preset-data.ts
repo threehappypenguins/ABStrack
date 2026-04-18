@@ -22,7 +22,8 @@ export type PresetDataResult<T> =
   | { ok: true; data: T }
   | { ok: false; error: PresetDataError };
 
-async function wrap<T>(
+/** @internal Shared by preset and episode-template data modules. */
+export async function wrap<T>(
   run: () => Promise<{ data: T | null; error: unknown }>,
 ): Promise<PresetDataResult<NonNullable<T>>> {
   try {
@@ -61,8 +62,10 @@ async function wrapVoid(
 
 /**
  * DELETE with a returning row so 0-row deletes surface as PostgREST errors (e.g. PGRST116) instead of silent success.
+ *
+ * @internal Shared by preset and episode-template data modules.
  */
-async function wrapDeleteExpectOne(
+export async function wrapDeleteExpectOne(
   run: () => Promise<{ data: unknown; error: unknown }>,
 ): Promise<PresetDataResult<void>> {
   try {

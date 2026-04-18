@@ -1,2 +1,3 @@
 export * from './lib/abs-symptom-suggestions.js';
+export * from './lib/episode-template.js';
 export * from './lib/types.js';

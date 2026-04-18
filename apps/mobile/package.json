@@ -12,6 +12,7 @@
     "@abstrack/types": "workspace:*",
     "@abstrack/ui": "workspace:*",
     "@expo/metro-config": "*",
+    "@expo/react-native-action-sheet": "^4.1.1",
     "@expo/vector-icons": "*",
     "@react-navigation/bottom-tabs": "*",
     "@react-navigation/native": "*",
