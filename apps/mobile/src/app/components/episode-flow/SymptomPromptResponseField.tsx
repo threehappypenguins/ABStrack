@@ -6,6 +6,7 @@ import type {
   SymptomResponseType,
 } from '@abstrack/types';
 import { COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
+import { useAppTheme } from '../../theme/AppThemeContext';
 import { nw } from '../../theme/app-nativewind-classes';
 
 export type SymptomPromptResponseFieldProps = {
@@ -46,6 +47,7 @@ export function SymptomPromptResponseField({
   onChange,
   disabled,
 }: SymptomPromptResponseFieldProps) {
+  const { colors } = useAppTheme();
   const effective = answer ?? defaultAnswerForType(line.response_type);
 
   switch (line.response_type) {
@@ -142,7 +144,7 @@ export function SymptomPromptResponseField({
             onChange({ type: 'free_text', value: t });
           }}
           placeholder="Type a short note (optional)"
-          placeholderTextColor="#888"
+          placeholderTextColor={colors.inputPlaceholder}
           className={`min-h-[120px] rounded-xl border border-app-border bg-white p-4 text-[17px] text-app-ink dark:border-app-border-dark dark:bg-app-bg-dark ${nw.textInk}`}
           maxFontSizeMultiplier={2}
         />

@@ -100,6 +100,7 @@ export function EpisodeStartScreen() {
         const template = result.data[0];
         singleTemplateAutoInFlightRef.current = true;
         setSubmitting(true);
+        let didNavigateToSymptomPrompt = false;
         try {
           const saveResult = await saveEpisodeWithTemplatePresets({
             userId,
@@ -130,9 +131,10 @@ export function EpisodeStartScreen() {
             episodeId: saveResult.data.id,
             symptomPresetId: template.symptom_preset_id,
           });
+          didNavigateToSymptomPrompt = true;
         } finally {
           singleTemplateAutoInFlightRef.current = false;
-          if (!stale()) {
+          if (!stale() && !didNavigateToSymptomPrompt) {
             setSubmitting(false);
           }
         }
@@ -180,6 +182,7 @@ export function EpisodeStartScreen() {
     }
     setEpisodeStartError(null);
     setSubmitting(true);
+    let didNavigateToSymptomPrompt = false;
     try {
       const authResult = await getCurrentUserId();
       if (!authResult.ok) {
@@ -215,8 +218,11 @@ export function EpisodeStartScreen() {
         episodeId: result.data.id,
         symptomPresetId: template.symptom_preset_id,
       });
+      didNavigateToSymptomPrompt = true;
     } finally {
-      setSubmitting(false);
+      if (!didNavigateToSymptomPrompt) {
+        setSubmitting(false);
+      }
     }
   };
 

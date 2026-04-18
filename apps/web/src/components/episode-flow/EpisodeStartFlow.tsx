@@ -65,6 +65,7 @@ export function EpisodeStartFlow() {
       const template = result.data[0];
       singleTemplateAutoInFlightRef.current = true;
       setSubmitting(true);
+      let didNavigateToSymptoms = false;
       try {
         const saveResult = await createEpisode(supabase, {
           user_id: userId,
@@ -92,9 +93,12 @@ export function EpisodeStartFlow() {
         router.replace(
           `/episode/${saveResult.data.id}/symptoms?symptomPresetId=${encodeURIComponent(template.symptom_preset_id)}`,
         );
+        didNavigateToSymptoms = true;
       } finally {
         singleTemplateAutoInFlightRef.current = false;
-        setSubmitting(false);
+        if (!didNavigateToSymptoms) {
+          setSubmitting(false);
+        }
       }
       return;
     }
@@ -125,29 +129,36 @@ export function EpisodeStartFlow() {
     }
     setSubmitting(true);
     setSubmitError(null);
-    const supabase = createBrowserClient();
-    const result = await createEpisode(supabase, {
-      user_id: session.user.id,
-      started_at: new Date().toISOString(),
-      symptom_preset_id: template.symptom_preset_id,
-      health_marker_preset_id: template.health_marker_preset_id,
-    });
-    setSubmitting(false);
-    if (!result.ok) {
-      setSubmitError(result.error.message);
-      announce(result.error.message, { politeness: 'assertive' });
-      return;
+    let didNavigateToSymptoms = false;
+    try {
+      const supabase = createBrowserClient();
+      const result = await createEpisode(supabase, {
+        user_id: session.user.id,
+        started_at: new Date().toISOString(),
+        symptom_preset_id: template.symptom_preset_id,
+        health_marker_preset_id: template.health_marker_preset_id,
+      });
+      if (!result.ok) {
+        setSubmitError(result.error.message);
+        announce(result.error.message, { politeness: 'assertive' });
+        return;
+      }
+      if (!result.data) {
+        const message = 'Could not start episode.';
+        setSubmitError(message);
+        announce(message, { politeness: 'assertive' });
+        return;
+      }
+      announce('Episode started.', { politeness: 'polite' });
+      router.replace(
+        `/episode/${result.data.id}/symptoms?symptomPresetId=${encodeURIComponent(template.symptom_preset_id)}`,
+      );
+      didNavigateToSymptoms = true;
+    } finally {
+      if (!didNavigateToSymptoms) {
+        setSubmitting(false);
+      }
     }
-    if (!result.data) {
-      const message = 'Could not start episode.';
-      setSubmitError(message);
-      announce(message, { politeness: 'assertive' });
-      return;
-    }
-    announce('Episode started.', { politeness: 'polite' });
-    router.replace(
-      `/episode/${result.data.id}/symptoms?symptomPresetId=${encodeURIComponent(template.symptom_preset_id)}`,
-    );
   };
 
   if (authLoading) {
