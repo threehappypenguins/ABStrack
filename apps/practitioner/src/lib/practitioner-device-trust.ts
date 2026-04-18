@@ -20,10 +20,10 @@
  *
  * RLS and MFA fail-closed rules remain authoritative for PHI; this module is UX-only.
  *
- * **Deploy gate:** Token persistence and restore are **on by default** for expected practitioner login
- * UX. Set `NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST` to `false` or `0` to disable the feature (no
- * writes; reads scrub any existing bundle key)—e.g. if you want zero localStorage session material
- * until server-managed trust ships.
+ * **Deploy gate:** Token persistence and restore are **on by default** when the env var is unset or
+ * blank. Set it to **`true` or `1`** (case-insensitive) to enable explicitly, or **`false` or `0`**
+ * to disable (no writes; reads scrub any existing bundle key). **Any other non-empty value is
+ * treated as disabled** (fail-closed) so typos do not silently keep the feature on.
  *
  * @module practitioner-device-trust
  */
@@ -43,9 +43,14 @@ const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
  * Whether practitioner MFA “trusted device” (localStorage token bundle) is allowed for this build.
- * Defaults to **true** when unset or empty. Set to **`false` or `0`** (case-insensitive) to disable.
  *
- * @returns False when the env var is explicitly `false` or `0`; otherwise true (including unset).
+ * **Parsing (fail-closed for non-whitelisted values):**
+ * - Unset, `null`, or empty/whitespace → **enabled** (default practitioner UX).
+ * - `false` or `0` (case-insensitive) → **disabled**.
+ * - `true` or `1` (case-insensitive) → **enabled**.
+ * - Any other non-empty string (e.g. `yes`) → **disabled** — avoids treating typos as “on”.
+ *
+ * @returns Whether device trust reads/writes are allowed for this process.
  *
  * **Use bracket access** for this key: `process.env['NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST']`.
  * An earlier change to dotted `process.env.NEXT_PUBLIC_…` relied on compile-time inlining; when
@@ -83,9 +88,9 @@ export function isPractitionerMfaDeviceTrustEnabled(): boolean {
 export type PractitionerMfaTrustBundle = {
   userId: string;
   /**
-   * Sign-in email for this account, stored so the login page can refresh from the bundle **before**
-   * `signInWithPassword` — a new password grant typically revokes the previous refresh token, so
-   * post-password restore would fail without this ordering.
+   * Sign-in email for this account, used to correlate the bundle with the next login attempt (see
+   * {@link tryRestoreTrustedMfaSession} and `saveMfaTrustBundle` merge rules when `user.email` is
+   * absent on the session).
    */
   email?: string;
   refresh_token: string;
@@ -215,75 +220,6 @@ export function readMfaTrustBundle(): PractitionerMfaTrustBundle | null {
 }
 
 /**
- * Run **before** `signInWithEmailPassword` on the practitioner login form when a stored bundle
- * exists for this sign-in email. A new password grant usually **invalidates** the prior refresh
- * token on the server, so `tryRestoreTrustedMfaSession` **after** password cannot exchange the
- * bundle token. Refreshing from the bundle first establishes AAL2; the caller then verifies the
- * password as usual.
- *
- * Legacy bundles without `email` skip this path and rely on post-password restore (may fail until
- * the user completes MFA once with a fresh save).
- *
- * @param supabase - Browser Supabase client.
- * @param emailForSignIn - Email from the login form (trimmed comparison).
- * @returns `true` if an AAL2 session was established from the bundle and persisted with
- *   `saveMfaTrustBundle`; `false` to continue with password-first sign-in only.
- *
- * On **refresh failure** (revoked/invalid token, empty session), **user mismatch** after a refresh
- * returns a session, or **non-AAL2** assurance, clears the stored bundle **before** `signOut` so
- * wrong or unusable tokens are not kept in storage (and storage is scrubbed even if `signOut`
- * rejects).
- *
- * When the bundle’s **trust window has ended** (`trustedUntilMs`), clears storage before returning
- * `false` so expired session material is not retained.
- */
-export async function refreshTrustedMfaBundleBeforePasswordSignIn(
-  supabase: PractitionerBrowserClient,
-  emailForSignIn: string,
-): Promise<boolean> {
-  if (!isPractitionerMfaDeviceTrustEnabled()) {
-    return false;
-  }
-  const bundle = readBundle();
-  if (!bundle) {
-    return false;
-  }
-  if (bundle.trustedUntilMs <= Date.now()) {
-    clearMfaTrustBundle();
-    return false;
-  }
-  const want = emailForSignIn.trim().toLowerCase();
-  const got = bundle.email?.trim().toLowerCase();
-  if (!got || got !== want) {
-    return false;
-  }
-
-  const { data: refreshData, error: refreshError } =
-    await supabase.auth.refreshSession({
-      refresh_token: bundle.refresh_token,
-    });
-  if (refreshError || refreshData?.session == null) {
-    clearMfaTrustBundle();
-    return false;
-  }
-  if (refreshData.session.user?.id !== bundle.userId) {
-    clearMfaTrustBundle();
-    await supabase.auth.signOut();
-    return false;
-  }
-
-  const assurance = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-  if (assurance.error || assurance.data.currentLevel !== 'aal2') {
-    clearMfaTrustBundle();
-    await supabase.auth.signOut();
-    return false;
-  }
-
-  saveMfaTrustBundle(refreshData.session, bundle.trustedUntilMs);
-  return true;
-}
-
-/**
  * Whether a non-expired MFA device-trust bundle exists for this user (soft sign-out path).
  * Clears stored tokens when the bundle is **expired** or for a **different** user so session
  * material is not left in `localStorage` after trust has lapsed or the account changed.
@@ -318,8 +254,8 @@ export function isPractitionerMfaDeviceTrustActive(
  *
  * **`user.email` may be missing** on some Supabase session payloads (for example after
  * `refreshSession` / token rotation). In that case, for the **same** `userId`, we **keep** the
- * email already stored in the bundle so {@link refreshTrustedMfaBundleBeforePasswordSignIn} can
- * still match the next sign-in (see Supabase refresh-token rotation docs).
+ * email already stored in the bundle so the next login can still correlate storage with the
+ * account (see Supabase refresh-token rotation docs).
  *
  * @param session - Active Supabase session after successful `mfa.verify`.
  * @param trustedUntilMs - Absolute expiry for the trust window (must be finite).
@@ -509,6 +445,8 @@ export type TryRestoreTrustedMfaSessionResult =
 
 /**
  * After email/password sign-in, attempts to restore a prior AAL2 session from the trust bundle.
+ * **Security:** intentionally runs only after a successful password grant so `refreshSession` does
+ * not authenticate the browser before the user proves possession of the password.
  * If the stored bundle’s `userId` does not match the current password session’s user, clears the
  * bundle and returns (avoids keeping another user’s tokens after account switch).
  * Restore uses `auth.refreshSession({ refresh_token })` with the stored refresh token, not

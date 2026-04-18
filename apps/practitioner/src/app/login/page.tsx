@@ -21,8 +21,6 @@ import {
   clearMfaTrustBundle,
   getTrustedUntilMsAfterVerification,
   isPractitionerMfaDeviceTrustEnabled,
-  readMfaTrustBundle,
-  refreshTrustedMfaBundleBeforePasswordSignIn,
   saveMfaTrustBundle,
   tryRestoreTrustedMfaSession,
 } from '../../lib/practitioner-device-trust';
@@ -125,8 +123,9 @@ async function waitForSessionWithJwtAal2(
  * `loading`, `step`, and `credentialLoginInFlightRef`) so parallel attempts cannot race. The MFA
  * verify form uses the same pattern (`verifyLoading`, `step`, `verifyMfaInFlightRef`).
  *
- * MFA “trust this device” is hidden when `isPractitionerMfaDeviceTrustEnabled()` is false
- * (`NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST` `false`/`0`; default on).
+ * MFA “trust this device” is hidden when `isPractitionerMfaDeviceTrustEnabled()` is false; see
+ * that function for `NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST` parsing (unset defaults on;
+ * unrecognized non-empty values disable).
  *
  * `resetToCredentials` centralizes fallback to the credentials step: it clears MFA-only UI
  * state (code, trust checkbox, status line) so a later MFA step is not prefilled from a prior
@@ -138,6 +137,10 @@ async function waitForSessionWithJwtAal2(
  *
  * Before navigating to `/patients`, the client waits until the session access token’s JWT `aal`
  * claim matches patient-route gating (not only `getAuthenticatorAssuranceLevel`).
+ *
+ * **Device trust:** the client does not call `refreshSession` from the stored bundle until after
+ * `signInWithEmailPassword` succeeds, so no authenticated session is persisted from the trust bundle
+ * before the password is verified.
  *
  * @returns Login UI.
  */
@@ -257,15 +260,8 @@ export default function LoginPage() {
 
     /** True once password sign-in resolved a user; MFA/trust steps may still fail afterward. */
     let sessionEstablishedAfterPassword = false;
-    /** True when we refreshed AAL2 from the trust bundle before the password grant (see device-trust module). */
-    let trustedBundlePrimed = false;
 
     try {
-      trustedBundlePrimed = await refreshTrustedMfaBundleBeforePasswordSignIn(
-        supabase,
-        email,
-      );
-
       const { error: authError } = await signInWithEmailPassword(
         supabase,
         email,
@@ -273,13 +269,6 @@ export default function LoginPage() {
       );
 
       if (authError) {
-        if (trustedBundlePrimed) {
-          try {
-            await supabase.auth.signOut();
-          } catch {
-            /* ignore */
-          }
-        }
         resetToCredentials({ message: authError.message });
         return;
       }
@@ -306,29 +295,10 @@ export default function LoginPage() {
 
       sessionEstablishedAfterPassword = true;
 
-      // Password-only sign-in is usually AAL1; patient routes require JWT `aal` aal2. Only skip MFA
-      // here when assurance and the access token both indicate AAL2; otherwise continue to tryRestore
-      // / MFA verify. Never write the trust bundle from a password-only (AAL1) session — that would
-      // replace valid AAL2 tokens and break future device-trust restores.
-      if (trustedBundlePrimed) {
-        const bundle = readMfaTrustBundle();
-        if (bundle != null && bundle.userId === user.id) {
-          const assuranceAfterPassword =
-            await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-          if (
-            !assuranceAfterPassword.error &&
-            assuranceAfterPassword.data.currentLevel === 'aal2'
-          ) {
-            const sess = await waitForSessionWithJwtAal2(supabase);
-            if (sess) {
-              saveMfaTrustBundle(sess, bundle.trustedUntilMs);
-              router.push('/patients');
-              router.refresh();
-              return;
-            }
-          }
-        }
-      }
+      // Password-only sign-in is usually AAL1; patient routes require JWT `aal` aal2. Device-trust
+      // restore runs only after the password grant via `tryRestoreTrustedMfaSession` — we do not
+      // call `refreshSession` from the bundle before password (that would persist an authenticated
+      // session before the password is verified).
 
       const factorsResult = await supabase.auth.mfa.listFactors();
       if (factorsResult.error) {
