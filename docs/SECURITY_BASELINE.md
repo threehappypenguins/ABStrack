@@ -110,6 +110,14 @@ This document summarizes the repository security posture, points to implementati
   - [PRD: Practitioner TOTP enforcement (fail-closed)](PRD.md#two-factor-authentication-totp).
 - Status: Week 3 auth baseline implemented; practitioner MFA enforcement and claim contract documented in [AUTH_CLAIM_CONTRACT.md](AUTH_CLAIM_CONTRACT.md).
 
+#### Practitioner “trusted device” (browser storage — documented risk)
+
+- Intent: optional practitioner UX to skip re-entering TOTP on a later email/password sign-in within a time window, after the user opts in post–MFA verification.
+- Implementation: [`apps/practitioner/src/lib/practitioner-device-trust.ts`](../apps/practitioner/src/lib/practitioner-device-trust.ts) stores a bundle that includes Supabase **`refresh_token`** and **`access_token`** in **`localStorage`**. That increases **XSS blast radius**: script running in this origin can read web storage and exfiltrate tokens usable until expiry or revocation—unacceptable to treat as equivalent to HttpOnly cookies.
+- Mitigations (product and engineering): user **opt-in** only; treat **CSP**, XSS-safe rendering (no unsanitized HTML / avoid `dangerouslySetInnerHTML` with untrusted content), and dependency hygiene as part of the control set for this surface. Prefer deploying a **strict Content-Security-Policy** at the edge or host (include `connect-src` / WebSocket hosts required by Supabase Auth and your project URL).
+- Preferred direction: **redesign** to server-managed device trust (opaque HttpOnly cookie + server validation, or short-lived scoped tokens exchanged only server-side)—not implemented in the current client-only bundle.
+- Status: **interim** client implementation; **RLS and MFA rules remain authoritative** for PHI—this path is not an additional server-side authorization layer.
+
 ### 6) Media storage security
 
 - Intent: media confidentiality is provided by private bucket + RLS + TLS + platform encryption at rest, not client-managed DEKs.
@@ -169,6 +177,7 @@ Core implementation artifacts:
 - `apps/mobile/src/app/screens/UpdatePasswordScreen.tsx`
 - `apps/web/src/lib/auth-provider.tsx`
 - `apps/web/src/app/dashboard/page.tsx`
+- `apps/practitioner/src/lib/practitioner-device-trust.ts` (trusted-device UX; see XSS warning in file and subsection above)
 
 Primary design references:
 

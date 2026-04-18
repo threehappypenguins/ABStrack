@@ -43,4 +43,43 @@ test.describe('Accessibility (axe-core)', () => {
         : '',
     ).toEqual([]);
   });
+
+  test('patients gate (signed out) has no axe violations @a11y', async ({
+    page,
+  }, testInfo) => {
+    // eslint-disable-next-line playwright/no-skipped-test -- intentional per-project skip
+    test.skip(
+      testInfo.project.name !== 'chromium',
+      'Axe runs on Chromium only for this suite; adjust if you need per-engine scans.',
+    );
+
+    await page.goto('/patients');
+
+    // `#practitioner-patient-gate-root` is also used for the loading spinner; wait for the
+    // signed-out gate so the scan does not run mid-transition or against spinner markup.
+    const signedOutHeading = page.getByRole('heading', {
+      name: 'Sign in required',
+    });
+    await signedOutHeading.waitFor({ state: 'visible', timeout: 20_000 });
+
+    const results = await new AxeBuilder({ page })
+      .include('#practitioner-patient-gate-root')
+      .analyze();
+
+    expect(
+      results.violations,
+      results.violations.length
+        ? `axe violations:\n${JSON.stringify(
+            results.violations.map((v) => ({
+              id: v.id,
+              impact: v.impact,
+              description: v.description,
+              nodes: v.nodes.slice(0, 5).map((n) => n.html),
+            })),
+            null,
+            2,
+          )}`
+        : '',
+    ).toEqual([]);
+  });
 });
