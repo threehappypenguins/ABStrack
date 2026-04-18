@@ -8,7 +8,8 @@ function storageKey(episodeId: string): string {
 }
 
 /**
- * Produces a safe non-negative step index from stored JSON (rejects NaN, ±Infinity, non-numbers).
+ * Produces a safe non-negative step index from stored JSON (rejects non-finite numbers and non-numbers).
+ * Examples include `Infinity` parsed from large exponent literals (e.g. `1e400`) and string values.
  *
  * @param value - Parsed `activeIndex` field.
  * @returns Integer ≥ 0, or `null` if unusable.

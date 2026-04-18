@@ -13,18 +13,36 @@ function setStored(episodeId: string, value: unknown): void {
   );
 }
 
+/** Writes a raw string (bypasses JSON.stringify) to exercise parse edge cases. */
+function setStoredRaw(episodeId: string, raw: string): void {
+  sessionStorage.setItem(`abstrack.symptomPrompt.${episodeId}`, raw);
+}
+
 describe('symptom-prompt-session-store', () => {
   beforeEach(() => {
     sessionStorage.clear();
   });
 
-  it('getSymptomPromptSession returns initial state when activeIndex is NaN', () => {
-    setStored('ep-1', { activeIndex: NaN, answers: {} });
+  it('getSymptomPromptSession returns initial state when activeIndex is null (JSON.stringify maps NaN/Infinity to null)', () => {
+    expect(JSON.stringify({ activeIndex: NaN, answers: {} })).toBe(
+      '{"activeIndex":null,"answers":{}}',
+    );
+    setStored('ep-1', { activeIndex: null, answers: {} });
     expect(getSymptomPromptSession('ep-1')).toEqual(initial);
   });
 
-  it('getSymptomPromptSession returns initial state when activeIndex is Infinity', () => {
-    setStored('ep-1', { activeIndex: Number.POSITIVE_INFINITY, answers: {} });
+  it('getSymptomPromptSession returns initial state when activeIndex is Infinity (JSON number literal in stored payload)', () => {
+    setStoredRaw('ep-1', '{"activeIndex":1e400,"answers":{}}');
+    expect(getSymptomPromptSession('ep-1')).toEqual(initial);
+  });
+
+  it('getSymptomPromptSession returns initial state when activeIndex is not a number (e.g. string)', () => {
+    setStoredRaw('ep-1', '{"activeIndex":"2","answers":{}}');
+    expect(getSymptomPromptSession('ep-1')).toEqual(initial);
+  });
+
+  it('getSymptomPromptSession returns initial state when stored JSON is invalid', () => {
+    setStoredRaw('ep-1', '{"activeIndex":');
     expect(getSymptomPromptSession('ep-1')).toEqual(initial);
   });
 
