@@ -194,12 +194,58 @@ export type Database = {
           },
         ]
       }
+      episode_templates: {
+        Row: {
+          created_at: string
+          health_marker_preset_id: string
+          id: string
+          name: string
+          symptom_preset_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          health_marker_preset_id: string
+          id?: string
+          name: string
+          symptom_preset_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          health_marker_preset_id?: string
+          id?: string
+          name?: string
+          symptom_preset_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "episode_templates_health_marker_preset_id_fk"
+            columns: ["health_marker_preset_id"]
+            isOneToOne: false
+            referencedRelation: "health_marker_presets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "episode_templates_symptom_preset_id_fk"
+            columns: ["symptom_preset_id"]
+            isOneToOne: false
+            referencedRelation: "symptom_presets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       episodes: {
         Row: {
           created_at: string
           ended_at: string | null
           episode_label: string | null
           episode_type: string
+          health_marker_preset_id: string | null
           id: string
           note: string | null
           started_at: string
@@ -212,6 +258,7 @@ export type Database = {
           ended_at?: string | null
           episode_label?: string | null
           episode_type?: string
+          health_marker_preset_id?: string | null
           id?: string
           note?: string | null
           started_at: string
@@ -224,6 +271,7 @@ export type Database = {
           ended_at?: string | null
           episode_label?: string | null
           episode_type?: string
+          health_marker_preset_id?: string | null
           id?: string
           note?: string | null
           started_at?: string
@@ -232,6 +280,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "episodes_health_marker_preset_id_fk"
+            columns: ["health_marker_preset_id"]
+            isOneToOne: false
+            referencedRelation: "health_marker_presets"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "episodes_symptom_preset_id_fk"
             columns: ["symptom_preset_id"]
