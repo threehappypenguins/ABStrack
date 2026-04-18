@@ -127,11 +127,14 @@ export function EpisodeStartScreen() {
           setStatus('ready');
         } finally {
           singleTemplateAutoInFlightRef.current = false;
-          setSubmitting(false);
+          if (!stale()) {
+            setSubmitting(false);
+          }
         }
         return;
       }
 
+      setSubmitting(false);
       setSelectedId((prev) => {
         if (prev && result.data.some((r) => r.id === prev)) {
           return prev;
@@ -176,11 +179,14 @@ export function EpisodeStartScreen() {
     try {
       const authResult = await getCurrentUserId();
       if (!authResult.ok) {
+        setEpisodeStartError(authResult.error.message);
         announce(authResult.error.message);
         return;
       }
       if (authResult.data === null) {
-        announce('You need to be signed in to start an episode.');
+        const message = 'You need to be signed in to start an episode.';
+        setEpisodeStartError(message);
+        announce(message);
         return;
       }
       const result = await saveEpisodeWithTemplatePresets({
