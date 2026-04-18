@@ -98,6 +98,9 @@
         { "env": "EXPO_PUBLIC_SUPABASE_ANON_KEY" },
         { "env": "SUPABASE_URL" }
       ]
+    },
+    "typecheck": {
+      "inputs": ["default", { "dependentTasksOutputFiles": "**/*.d.ts" }]
     }
   },
   "generators": {

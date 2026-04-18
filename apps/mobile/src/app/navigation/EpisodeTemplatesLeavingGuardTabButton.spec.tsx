@@ -1,7 +1,10 @@
 import * as React from 'react';
 import { Alert } from 'react-native';
 import { act, fireEvent, render } from '@testing-library/react-native';
-import { useNavigationState } from '@react-navigation/native';
+import {
+  useNavigationState,
+  type NavigationState,
+} from '@react-navigation/native';
 
 import {
   EpisodeTemplatesDraftProvider,
@@ -28,22 +31,41 @@ jest.mock('@abstrack/ui/native', () => {
 
 function makeEpisodeTemplatesNavState(
   nested: 'EpisodeTemplateCreate' | 'EpisodeTemplateEdit',
-) {
+): NavigationState {
+  const nestedScreen =
+    nested === 'EpisodeTemplateEdit'
+      ? ({
+          key: 'EpisodeTemplateEdit',
+          name: 'EpisodeTemplateEdit' as const,
+          params: { templateId: 't1' },
+        } as const)
+      : ({
+          key: 'EpisodeTemplateCreate',
+          name: 'EpisodeTemplateCreate' as const,
+        } as const);
+
+  const nestedStack: NavigationState = {
+    key: 'episode-templates-stack',
+    index: 0,
+    routeNames: [nestedScreen.name],
+    type: 'stack',
+    stale: false,
+    routes: [nestedScreen],
+  };
+
   return {
+    key: 'main-tabs',
+    index: 0,
+    routeNames: ['EpisodeTemplates'],
+    type: 'tab',
+    stale: false,
     routes: [
       {
+        key: 'EpisodeTemplates',
         name: 'EpisodeTemplates',
-        state: {
-          routes: [
-            nested === 'EpisodeTemplateEdit'
-              ? { name: 'EpisodeTemplateEdit', params: { templateId: 't1' } }
-              : { name: 'EpisodeTemplateCreate' },
-          ],
-          index: 0,
-        },
+        state: nestedStack,
       },
     ],
-    index: 0,
   };
 }
 
@@ -65,7 +87,9 @@ function TabButtonWithDraft(props: {
       targetRoute={props.targetRoute}
       onPress={props.onTabPress}
       testID="leaving-guard-tab"
-    />
+    >
+      {null}
+    </EpisodeTemplatesLeavingGuardTabButton>
   );
 }
 
