@@ -385,7 +385,10 @@ function AppBootstrap() {
             <MainStack.Screen
               name="EpisodeStart"
               component={EpisodeStartScreen}
-              options={{ title: 'Start an episode' }}
+              options={{
+                title: '',
+                headerBackTitle: 'Home',
+              }}
             />
             <MainStack.Screen
               name="Settings"

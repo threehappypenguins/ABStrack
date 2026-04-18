@@ -335,6 +335,7 @@ export interface EpisodeRow {
   id: Uuid;
   user_id: Uuid;
   symptom_preset_id: Uuid | null;
+  health_marker_preset_id: Uuid | null;
   episode_type: EpisodeType;
   episode_label: string | null;
   note: string | null;
@@ -347,6 +348,7 @@ export interface EpisodeRow {
 export type EpisodeInsert = Pick<EpisodeRow, 'user_id' | 'started_at'> & {
   id?: Uuid;
   symptom_preset_id?: Uuid | null;
+  health_marker_preset_id?: Uuid | null;
   episode_type?: EpisodeType;
   episode_label?: string | null;
   note?: string | null;
@@ -357,6 +359,7 @@ export type EpisodeUpdate = Partial<
   Pick<
     EpisodeRow,
     | 'symptom_preset_id'
+    | 'health_marker_preset_id'
     | 'episode_type'
     | 'episode_label'
     | 'note'
