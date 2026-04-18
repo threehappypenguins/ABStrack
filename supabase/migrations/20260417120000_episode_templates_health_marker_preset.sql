@@ -82,7 +82,8 @@ CREATE TRIGGER episode_preset_owners
 -- ---------------------------------------------------------------------------
 -- episode_templates — NOT NULL preset pair; CASCADE on preset delete; RLS mirrors symptom_presets (patient + caretaker write; practitioner read)
 -- ---------------------------------------------------------------------------
-CREATE TABLE public.episode_templates (
+-- IF NOT EXISTS: table may already exist if a prior run failed after CREATE TABLE but before migration history was recorded.
+CREATE TABLE IF NOT EXISTS public.episode_templates (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid (),
   user_id uuid NOT NULL REFERENCES auth.users (id) ON DELETE CASCADE,
   name text NOT NULL,
@@ -98,7 +99,7 @@ CREATE TABLE public.episode_templates (
     ON DELETE CASCADE
 );
 
-CREATE INDEX episode_templates_user_idx ON public.episode_templates (user_id);
+CREATE INDEX IF NOT EXISTS episode_templates_user_idx ON public.episode_templates (user_id);
 
 COMMENT ON TABLE public.episode_templates IS 'Named template: required symptom + health-marker preset pair for episode starts (both FKs NOT NULL). Deleting either preset CASCADE-deletes the template. RLS: patient and linked caretaker read/write; practitioner read-only with grant (PRD); user_id immutability via phi_user_id_immutable.';
 COMMENT ON COLUMN public.episode_templates.symptom_preset_id IS 'Required FK to symptom_presets.id; ON DELETE CASCADE removes this template if the symptom preset is deleted. Same-owner vs user_id is enforced by trigger episode_template_preset_owners.';
