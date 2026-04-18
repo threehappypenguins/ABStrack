@@ -1,6 +1,6 @@
 -- episodes: optional per-episode health_marker_preset_id (same-owner pattern as symptom_preset_id).
 -- episode_templates: each row pairs exactly one symptom preset with one health marker preset (both columns NOT NULL; invalid to omit either). ON DELETE CASCADE removes the template if either referenced preset is deleted.
--- RLS is NOT owner-only: same as symptom_presets / health_marker_presets (caretaker read/write, practitioner read).
+-- RLS (PRD Authorized access): patient CRUD on own user_id; caretaker CRUD when caretaker_access links (same effective access as patient for these rows); practitioner SELECT only when practitioner_access + MFA rules apply—no write policies for practitioners (same policy shape as symptom_presets / health_marker_presets).
 
 -- ---------------------------------------------------------------------------
 -- episodes.health_marker_preset_id
@@ -65,7 +65,7 @@ CREATE TRIGGER episode_preset_owners
   EXECUTE FUNCTION public.enforce_episode_preset_owners ();
 
 -- ---------------------------------------------------------------------------
--- episode_templates — NOT NULL preset pair; CASCADE on preset delete; RLS mirrors symptom_presets (not owner-only)
+-- episode_templates — NOT NULL preset pair; CASCADE on preset delete; RLS mirrors symptom_presets (patient + caretaker write; practitioner read)
 -- ---------------------------------------------------------------------------
 CREATE TABLE public.episode_templates (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid (),
@@ -85,7 +85,7 @@ CREATE TABLE public.episode_templates (
 
 CREATE INDEX episode_templates_user_idx ON public.episode_templates (user_id);
 
-COMMENT ON TABLE public.episode_templates IS 'Named template: required symptom + health-marker preset pair for episode starts (both FKs NOT NULL). Deleting either preset CASCADE-deletes the template. RLS matches symptom_presets / health_marker_presets: patient owner and caretaker may read/write; practitioner may read when granted (user_has_practitioner_access); user_id immutability via phi_user_id_immutable.';
+COMMENT ON TABLE public.episode_templates IS 'Named template: required symptom + health-marker preset pair for episode starts (both FKs NOT NULL). Deleting either preset CASCADE-deletes the template. RLS: patient and linked caretaker read/write; practitioner read-only with grant (PRD); user_id immutability via phi_user_id_immutable.';
 COMMENT ON COLUMN public.episode_templates.symptom_preset_id IS 'Required FK to symptom_presets.id; ON DELETE CASCADE removes this template if the symptom preset is deleted. Same-owner vs user_id is enforced by trigger episode_template_preset_owners.';
 COMMENT ON COLUMN public.episode_templates.health_marker_preset_id IS 'Required FK to health_marker_presets.id; ON DELETE CASCADE removes this template if the health-marker preset is deleted. Same-owner vs user_id is enforced by trigger episode_template_preset_owners.';
 
@@ -133,8 +133,9 @@ CREATE TRIGGER set_updated_at
 ALTER TABLE public.episode_templates
   ENABLE ROW LEVEL SECURITY;
 
--- Policies align with public.symptom_presets / public.health_marker_presets in 20260327130000_rls_policies.sql:
--- SELECT: patient owner OR caretaker OR practitioner (grant); INSERT/UPDATE/DELETE: patient OR caretaker.
+-- Policies align with public.symptom_presets / public.health_marker_presets (20260327130000_rls_policies.sql).
+-- SELECT: patient OR caretaker (grant) OR practitioner (grant + MFA path via user_has_practitioner_access).
+-- INSERT/UPDATE/DELETE: patient OR caretaker only—practitioners have no write policies on this table (PRD: PHI read-only for practitioners).
 CREATE POLICY episode_templates_select ON public.episode_templates
   FOR SELECT
   TO authenticated
