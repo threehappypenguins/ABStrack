@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import type { RouteProp } from '@react-navigation/native';
 import {
@@ -7,7 +7,11 @@ import {
   useRoute,
 } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { PresetSymptomRow, SymptomPromptAnswer } from '@abstrack/types';
+import type {
+  PresetSymptomRow,
+  SymptomPromptAnswer,
+  SymptomPromptAnswers,
+} from '@abstrack/types';
 import { listPresetSymptomsForPreset } from '@abstrack/supabase';
 import { announce } from '@abstrack/ui/native';
 import { COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
@@ -63,6 +67,11 @@ export function SymptomPromptScreen() {
   const [answers, setAnswers] = useState(
     () => getSymptomPromptSession(episodeId).answers,
   );
+  const answersRef = useRef(answers);
+
+  useEffect(() => {
+    answersRef.current = answers;
+  }, [answers]);
 
   const persist = useCallback(
     (nextIndex: number, nextAnswers: typeof answers) => {
@@ -89,6 +98,7 @@ export function SymptomPromptScreen() {
     const idx = clampIndex(session.activeIndex, result.data.length);
     setActiveIndex(idx);
     setAnswers(session.answers);
+    answersRef.current = session.answers;
     setSymptomPromptSession(episodeId, {
       activeIndex: idx,
       answers: session.answers,
@@ -104,6 +114,7 @@ export function SymptomPromptScreen() {
     const s = getSymptomPromptSession(episodeId);
     setActiveIndex(s.activeIndex);
     setAnswers(s.answers);
+    answersRef.current = s.answers;
     setPhase('prompting');
   }, [episodeId]);
 
@@ -124,18 +135,20 @@ export function SymptomPromptScreen() {
     if (!currentLine) {
       return;
     }
-    setAnswers((prev) => {
-      const merged = { ...prev, [currentLine.id]: next };
-      persist(activeIndex, merged);
-      return merged;
-    });
+    const merged: SymptomPromptAnswers = {
+      ...answersRef.current,
+      [currentLine.id]: next,
+    };
+    answersRef.current = merged;
+    setAnswers(merged);
+    persist(activeIndex, merged);
   };
 
   const goBackStep = () => {
     if (activeIndex > 0) {
       const next = activeIndex - 1;
       setActiveIndex(next);
-      persist(next, answers);
+      persist(next, answersRef.current);
       announce(`Back to step ${next + 1} of ${lines.length}.`);
     } else {
       navigation.goBack();
@@ -150,7 +163,7 @@ export function SymptomPromptScreen() {
     if (activeIndex < lines.length - 1) {
       const next = activeIndex + 1;
       setActiveIndex(next);
-      persist(next, answers);
+      persist(next, answersRef.current);
       return;
     }
     setPhase('complete');

@@ -3,7 +3,11 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { PresetSymptomRow, SymptomPromptAnswer } from '@abstrack/types';
+import type {
+  PresetSymptomRow,
+  SymptomPromptAnswer,
+  SymptomPromptAnswers,
+} from '@abstrack/types';
 import { createInitialSymptomPromptSession } from '@abstrack/types';
 import { listPresetSymptomsForPreset } from '@abstrack/supabase';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
@@ -188,32 +192,34 @@ export function SymptomPromptFlow({
     if (!currentLine) {
       return;
     }
-    setAnswers((prev) => {
-      const merged = { ...prev, [currentLine.id]: next };
-      answersRef.current = merged;
-      if (next.type === 'free_text') {
-        if (textPersistTimerRef.current !== null) {
-          clearTimeout(textPersistTimerRef.current);
-        }
-        textPersistTimerRef.current = setTimeout(() => {
-          textPersistTimerRef.current = null;
-          setSymptomPromptSession(episodeIdRef.current, {
-            activeIndex: activeIndexRef.current,
-            answers: answersRef.current,
-          });
-        }, FREE_TEXT_PERSIST_DEBOUNCE_MS);
-      } else {
-        if (textPersistTimerRef.current !== null) {
-          clearTimeout(textPersistTimerRef.current);
-          textPersistTimerRef.current = null;
-        }
+    const merged: SymptomPromptAnswers = {
+      ...answersRef.current,
+      [currentLine.id]: next,
+    };
+    answersRef.current = merged;
+    setAnswers(merged);
+
+    if (next.type === 'free_text') {
+      if (textPersistTimerRef.current !== null) {
+        clearTimeout(textPersistTimerRef.current);
+      }
+      textPersistTimerRef.current = setTimeout(() => {
+        textPersistTimerRef.current = null;
         setSymptomPromptSession(episodeIdRef.current, {
           activeIndex: activeIndexRef.current,
-          answers: merged,
+          answers: answersRef.current,
         });
+      }, FREE_TEXT_PERSIST_DEBOUNCE_MS);
+    } else {
+      if (textPersistTimerRef.current !== null) {
+        clearTimeout(textPersistTimerRef.current);
+        textPersistTimerRef.current = null;
       }
-      return merged;
-    });
+      setSymptomPromptSession(episodeIdRef.current, {
+        activeIndex: activeIndexRef.current,
+        answers: merged,
+      });
+    }
   };
 
   const goBackStep = () => {
