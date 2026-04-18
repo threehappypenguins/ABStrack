@@ -5,13 +5,26 @@
 -- ---------------------------------------------------------------------------
 -- episodes.health_marker_preset_id
 -- ---------------------------------------------------------------------------
+-- Idempotent: column may already exist if a prior push applied this section but migration history was repaired / out of sync.
 ALTER TABLE public.episodes
-  ADD COLUMN health_marker_preset_id uuid;
+  ADD COLUMN IF NOT EXISTS health_marker_preset_id uuid;
 
-ALTER TABLE public.episodes
-  ADD CONSTRAINT episodes_health_marker_preset_id_fk FOREIGN KEY (health_marker_preset_id)
-    REFERENCES public.health_marker_presets (id)
-    ON DELETE SET NULL;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT
+      1
+    FROM
+      pg_constraint
+    WHERE
+      conname = 'episodes_health_marker_preset_id_fk') THEN
+    ALTER TABLE public.episodes
+      ADD CONSTRAINT episodes_health_marker_preset_id_fk FOREIGN KEY (health_marker_preset_id)
+        REFERENCES public.health_marker_presets (id)
+        ON DELETE SET NULL;
+  END IF;
+END
+$$;
 
 COMMENT ON COLUMN public.episodes.health_marker_preset_id IS 'Optional FK to health_marker_presets.id; ON DELETE SET NULL clears only this column. Same-owner vs user_id is enforced by trigger episode_preset_owners.';
 
@@ -55,9 +68,11 @@ $$;
 
 COMMENT ON FUNCTION public.enforce_episode_preset_owners () IS 'Ensures episode symptom_preset_id and health_marker_preset_id reference presets owned by episodes.user_id.';
 
-DROP TRIGGER episode_symptom_preset_owner ON public.episodes;
+DROP TRIGGER IF EXISTS episode_symptom_preset_owner ON public.episodes;
 
-DROP FUNCTION public.enforce_episode_symptom_preset_owner ();
+DROP FUNCTION IF EXISTS public.enforce_episode_symptom_preset_owner ();
+
+DROP TRIGGER IF EXISTS episode_preset_owners ON public.episodes;
 
 CREATE TRIGGER episode_preset_owners
   BEFORE INSERT OR UPDATE OF symptom_preset_id, health_marker_preset_id, user_id ON public.episodes
@@ -120,10 +135,14 @@ $$;
 
 COMMENT ON FUNCTION public.enforce_episode_template_preset_owners () IS 'Ensures episode_templates preset FKs (both required) reference presets owned by episode_templates.user_id.';
 
+DROP TRIGGER IF EXISTS episode_template_preset_owners ON public.episode_templates;
+
 CREATE TRIGGER episode_template_preset_owners
   BEFORE INSERT OR UPDATE OF symptom_preset_id, health_marker_preset_id, user_id ON public.episode_templates
   FOR EACH ROW
   EXECUTE FUNCTION public.enforce_episode_template_preset_owners ();
+
+DROP TRIGGER IF EXISTS set_updated_at ON public.episode_templates;
 
 CREATE TRIGGER set_updated_at
   BEFORE UPDATE ON public.episode_templates
@@ -136,6 +155,14 @@ ALTER TABLE public.episode_templates
 -- Policies align with public.symptom_presets / public.health_marker_presets (20260327130000_rls_policies.sql).
 -- SELECT: patient OR caretaker (grant) OR practitioner (grant + MFA path via user_has_practitioner_access).
 -- INSERT/UPDATE/DELETE: patient OR caretaker only—practitioners have no write policies on this table (PRD: PHI read-only for practitioners).
+DROP POLICY IF EXISTS episode_templates_select ON public.episode_templates;
+
+DROP POLICY IF EXISTS episode_templates_insert ON public.episode_templates;
+
+DROP POLICY IF EXISTS episode_templates_update ON public.episode_templates;
+
+DROP POLICY IF EXISTS episode_templates_delete ON public.episode_templates;
+
 CREATE POLICY episode_templates_select ON public.episode_templates
   FOR SELECT
   TO authenticated
@@ -162,6 +189,8 @@ CREATE POLICY episode_templates_delete ON public.episode_templates
   TO authenticated
   USING (user_id = (SELECT auth.uid())
     OR public.user_is_caretaker_for_patient (user_id));
+
+DROP TRIGGER IF EXISTS phi_user_id_immutable ON public.episode_templates;
 
 CREATE TRIGGER phi_user_id_immutable
   BEFORE UPDATE ON public.episode_templates
