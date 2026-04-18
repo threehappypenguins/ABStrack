@@ -109,6 +109,12 @@ export function EpisodeTemplateEditorPage({
     void refresh();
   }, [authLoading, session, refresh]);
 
+  useEffect(() => {
+    if (saving && deleteOpen) {
+      setDeleteOpen(false);
+    }
+  }, [saving, deleteOpen]);
+
   const isDirty = useMemo(() => {
     if (!row) {
       return false;
@@ -419,8 +425,8 @@ export function EpisodeTemplateEditorPage({
           </button>
           <button
             type="button"
-            className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-red-200 bg-red-50 px-5 text-sm font-semibold text-red-800 shadow-sm transition hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:opacity-60 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200 dark:hover:bg-red-950/60"
-            disabled={deleting}
+            className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-red-200 bg-red-50 px-5 text-sm font-semibold text-red-800 shadow-sm transition hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200 dark:hover:bg-red-950/60"
+            disabled={saving || deleting}
             onClick={() => {
               setDeleteOpen(true);
             }}

@@ -533,9 +533,9 @@ describe.skipIf(!presetIntegrationReady)(
     });
 
     describe.sequential('episode templates — CRUD and cross-user', () => {
-      let etSymptomId: string;
-      let etHmId: string;
-      let etTemplateId: string;
+      let etSymptomId: string | undefined;
+      let etHmId: string | undefined;
+      let etTemplateId: string | undefined;
 
       beforeAll(async () => {
         const sp = await createSymptomPreset(clientA, {
@@ -561,8 +561,8 @@ describe.skipIf(!presetIntegrationReady)(
         const created = await createEpisodeTemplate(clientA, {
           user_id: userAId,
           name: `ABS Episode ${suffix}`,
-          symptom_preset_id: etSymptomId,
-          health_marker_preset_id: etHmId,
+          symptom_preset_id: etSymptomId!,
+          health_marker_preset_id: etHmId!,
         });
         expect(created.ok).toBe(true);
         if (!created.ok) {
@@ -577,14 +577,14 @@ describe.skipIf(!presetIntegrationReady)(
         if (!list.ok) {
           return;
         }
-        const found = list.data.find((r) => r.id === etTemplateId);
+        const found = list.data.find((r) => r.id === etTemplateId!);
         expect(found).toBeDefined();
         expect(found?.symptom_preset.name).toContain(`ET sym ${suffix}`);
         expect(found?.health_marker_preset.name).toContain(`ET hm ${suffix}`);
       });
 
       it('updates episode template', async () => {
-        const up = await updateEpisodeTemplate(clientA, etTemplateId, {
+        const up = await updateEpisodeTemplate(clientA, etTemplateId!, {
           name: `Renamed ${suffix}`,
         });
         expect(up.ok).toBe(true);
@@ -595,7 +595,7 @@ describe.skipIf(!presetIntegrationReady)(
       });
 
       it('hides other user template from get by id', async () => {
-        const got = await getEpisodeTemplateById(clientB, etTemplateId);
+        const got = await getEpisodeTemplateById(clientB, etTemplateId!);
         expect(got.ok).toBe(true);
         if (!got.ok) {
           return;
@@ -604,13 +604,17 @@ describe.skipIf(!presetIntegrationReady)(
       });
 
       it('deletes episode template', async () => {
-        const del = await deleteEpisodeTemplate(clientA, etTemplateId);
+        const del = await deleteEpisodeTemplate(clientA, etTemplateId!);
         expect(del.ok).toBe(true);
       });
 
       afterAll(async () => {
-        await deleteSymptomPreset(clientA, etSymptomId);
-        await deleteHealthMarkerPreset(clientA, etHmId);
+        if (etSymptomId !== undefined) {
+          await deleteSymptomPreset(clientA, etSymptomId);
+        }
+        if (etHmId !== undefined) {
+          await deleteHealthMarkerPreset(clientA, etHmId);
+        }
       });
     });
   },
