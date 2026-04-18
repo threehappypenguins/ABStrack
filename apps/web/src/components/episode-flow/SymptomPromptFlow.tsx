@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PresetSymptomRow, SymptomPromptAnswer } from '@abstrack/types';
 import { createInitialSymptomPromptSession } from '@abstrack/types';
 import { listPresetSymptomsForPreset } from '@abstrack/supabase';
@@ -21,6 +21,9 @@ export type SymptomPromptFlowProps = {
   /** `symptom_presets.id` for the active episode (from template at start). */
   symptomPresetId: string;
 };
+
+/** Delay before writing free-text drafts to `sessionStorage` (keystrokes stay snappy in React state). */
+const FREE_TEXT_PERSIST_DEBOUNCE_MS = 300;
 
 function clampIndex(index: number, length: number): number {
   if (length <= 0) {
@@ -59,22 +62,75 @@ export function SymptomPromptFlow({
     () => createInitialSymptomPromptSession().answers,
   );
 
+  const episodeIdRef = useRef(episodeId);
+  const activeIndexRef = useRef(activeIndex);
+  const answersRef = useRef(answers);
+  const textPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+
   useEffect(() => {
+    activeIndexRef.current = activeIndex;
+  }, [activeIndex]);
+
+  useEffect(() => {
+    answersRef.current = answers;
+  }, [answers]);
+
+  useEffect(() => {
+    const outgoingEpisodeId = episodeIdRef.current;
+    if (textPersistTimerRef.current !== null) {
+      clearTimeout(textPersistTimerRef.current);
+      textPersistTimerRef.current = null;
+      setSymptomPromptSession(outgoingEpisodeId, {
+        activeIndex: activeIndexRef.current,
+        answers: answersRef.current,
+      });
+    }
+    episodeIdRef.current = episodeId;
     const s = getSymptomPromptSession(episodeId);
     setActiveIndex(s.activeIndex);
     setAnswers(s.answers);
+    answersRef.current = s.answers;
+    activeIndexRef.current = s.activeIndex;
     setPhase('prompting');
     setHydrated(true);
   }, [episodeId]);
 
-  const persist = useCallback(
+  const flushPendingTextPersist = useCallback(() => {
+    if (textPersistTimerRef.current === null) {
+      return;
+    }
+    clearTimeout(textPersistTimerRef.current);
+    textPersistTimerRef.current = null;
+    setSymptomPromptSession(episodeIdRef.current, {
+      activeIndex: activeIndexRef.current,
+      answers: answersRef.current,
+    });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (textPersistTimerRef.current === null) {
+        return;
+      }
+      clearTimeout(textPersistTimerRef.current);
+      textPersistTimerRef.current = null;
+      setSymptomPromptSession(episodeIdRef.current, {
+        activeIndex: activeIndexRef.current,
+        answers: answersRef.current,
+      });
+    };
+  }, []);
+
+  const persistImmediate = useCallback(
     (nextIndex: number, nextAnswers: typeof answers) => {
-      setSymptomPromptSession(episodeId, {
+      setSymptomPromptSession(episodeIdRef.current, {
         activeIndex: nextIndex,
         answers: nextAnswers,
       });
     },
-    [episodeId],
+    [],
   );
 
   const load = useCallback(async () => {
@@ -92,6 +148,8 @@ export function SymptomPromptFlow({
     const idx = clampIndex(session.activeIndex, result.data.length);
     setActiveIndex(idx);
     setAnswers(session.answers);
+    answersRef.current = session.answers;
+    activeIndexRef.current = idx;
     setSymptomPromptSession(episodeId, {
       activeIndex: idx,
       answers: session.answers,
@@ -132,16 +190,39 @@ export function SymptomPromptFlow({
     }
     setAnswers((prev) => {
       const merged = { ...prev, [currentLine.id]: next };
-      persist(activeIndex, merged);
+      answersRef.current = merged;
+      if (next.type === 'free_text') {
+        if (textPersistTimerRef.current !== null) {
+          clearTimeout(textPersistTimerRef.current);
+        }
+        textPersistTimerRef.current = setTimeout(() => {
+          textPersistTimerRef.current = null;
+          setSymptomPromptSession(episodeIdRef.current, {
+            activeIndex: activeIndexRef.current,
+            answers: answersRef.current,
+          });
+        }, FREE_TEXT_PERSIST_DEBOUNCE_MS);
+      } else {
+        if (textPersistTimerRef.current !== null) {
+          clearTimeout(textPersistTimerRef.current);
+          textPersistTimerRef.current = null;
+        }
+        setSymptomPromptSession(episodeIdRef.current, {
+          activeIndex: activeIndexRef.current,
+          answers: merged,
+        });
+      }
       return merged;
     });
   };
 
   const goBackStep = () => {
+    flushPendingTextPersist();
     if (activeIndex > 0) {
       const next = activeIndex - 1;
       setActiveIndex(next);
-      persist(next, answers);
+      activeIndexRef.current = next;
+      persistImmediate(next, answersRef.current);
       announce(`Back to step ${next + 1} of ${lines.length}.`, {
         politeness: 'polite',
       });
@@ -151,6 +232,7 @@ export function SymptomPromptFlow({
   };
 
   const goNext = () => {
+    flushPendingTextPersist();
     if (lines.length === 0) {
       setPhase('complete');
       return;
@@ -158,7 +240,8 @@ export function SymptomPromptFlow({
     if (activeIndex < lines.length - 1) {
       const next = activeIndex + 1;
       setActiveIndex(next);
-      persist(next, answers);
+      activeIndexRef.current = next;
+      persistImmediate(next, answersRef.current);
       return;
     }
     setPhase('complete');
