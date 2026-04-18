@@ -18,6 +18,46 @@ describe('csp-config', () => {
     expect(supabaseHttpAndWsOrigins('not-a-url')).toBeNull();
   });
 
+  describe('normalizeCspHeaderValue', () => {
+    /**
+     * Guards the contract when policy text is built with a multi-line template literal
+     * (one directive per line); the HTTP header value must still be a single line.
+     */
+    it('strips actual newlines and CRLF from raw policy text while preserving token spacing', () => {
+      const rawMultilineTemplate = `default-src 'self';
+script-src 'self' 'unsafe-inline';
+connect-src 'self' https://abc.supabase.co wss://abc.supabase.co`;
+
+      const fromLf = normalizeCspHeaderValue(rawMultilineTemplate);
+
+      expect(fromLf).not.toMatch(/[\r\n]/);
+      expect(fromLf).toBe(
+        "default-src 'self'; script-src 'self' 'unsafe-inline'; connect-src 'self' https://abc.supabase.co wss://abc.supabase.co",
+      );
+
+      const rawCrLf = [
+        "default-src 'self';",
+        "script-src 'self' 'unsafe-inline';",
+        "connect-src 'self' https://abc.supabase.co",
+      ].join('\r\n');
+
+      const fromCrLf = normalizeCspHeaderValue(rawCrLf);
+
+      expect(fromCrLf).not.toMatch(/[\r\n]/);
+      expect(fromCrLf).toBe(
+        "default-src 'self'; script-src 'self' 'unsafe-inline'; connect-src 'self' https://abc.supabase.co",
+      );
+    });
+
+    it('normalizes inline escape sequences and mixed padding', () => {
+      expect(
+        normalizeCspHeaderValue("default-src 'self';\nscript-src 'self'"),
+      ).toBe("default-src 'self'; script-src 'self'");
+      expect(normalizeCspHeaderValue('a\r\nb\rc')).toBe('a b c');
+      expect(normalizeCspHeaderValue('x  \n  y')).toBe('x y');
+    });
+  });
+
   it('emits a single-line policy without accidental newlines', () => {
     const raw = buildPractitionerCspDirectives({
       supabaseUrl: 'https://abc.supabase.co',

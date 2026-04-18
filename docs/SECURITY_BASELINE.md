@@ -127,7 +127,7 @@ This document summarizes the repository security posture, points to implementati
 - **Allowed origins (summary):**
   - **`'self'`** — same-origin navigation, API routes, and Next.js assets.
   - **Supabase project** — `https`/`wss` (or `http`/`ws` for local CLI) origins derived from `NEXT_PUBLIC_SUPABASE_URL` for REST, Auth, Realtime, and Storage.
-  - **Local development** — extra `connect-src` entries for common Next/Nx ports and `localhost`/`127.0.0.1:54321 so Report-Only stays usable during `next dev` (HMR and local Supabase).
+  - **Local development** — extra `connect-src` entries for common Next/Nx ports and `localhost` / `127.0.0.1:54321` so Report-Only stays usable during `next dev` (HMR and local Supabase).
 - **Directives (summary):** `default-src 'self'`; `script-src` includes `'unsafe-inline'` (required for the theme bootstrap inline script and typical Next.js inline handling; **nonces** are the long-term tightening path per [Next.js CSP](https://nextjs.org/docs/app/guides/content-security-policy)); `'unsafe-eval'` is added **in development only** for React/Next tooling; `style-src 'unsafe-inline'` for Tailwind/Next; `img-src` includes `data:`/`blob:` (e.g. TOTP QR); `connect-src` as above; `frame-ancestors 'none'`; `frame-src 'none'`; `upgrade-insecure-requests` in **production** when the Supabase URL is `https://…`.
 - **Reporting:** there is no dedicated violation collector in-repo yet; Phase A still helps via DevTools. A future **`report-to`** / **`Reporting-Endpoints`** endpoint can be added without changing the staged model.
 - Status: **Phase A** deployed by default; **Phase B** is opt-in via env until operators confirm low violation noise.

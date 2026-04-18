@@ -4,13 +4,17 @@
  */
 
 /**
- * Normalizes a CSP header string: strip newlines and collapse whitespace (Next.js guidance).
+ * Normalizes a CSP header string for a single-line HTTP header value: CRLF/LF/CR become spaces,
+ * then runs of whitespace collapse to one space, then trim (Next.js CSP examples use this shape).
  *
  * @param {string} raw - Multi-line or padded policy text.
- * @returns {string} Header-safe single-line value.
+ * @returns {string} Header-safe single-line value (no `\r` or `\n`).
  */
 function normalizeCspHeaderValue(raw) {
-  return raw.replace(/\s{2,}/g, ' ').trim();
+  return raw
+    .replace(/\r\n|\r|\n/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 }
 
 /**
