@@ -118,6 +118,20 @@ This document summarizes the repository security posture, points to implementati
 - Preferred direction: **redesign** to server-managed device trust (opaque HttpOnly cookie + server validation, or short-lived scoped tokens exchanged only server-side)—not implemented in the current client-only bundle.
 - Status: **interim** client implementation; **RLS and MFA rules remain authoritative** for PHI—this path is not an additional server-side authorization layer.
 
+#### Practitioner Content-Security-Policy (staged)
+
+- Intent: reduce XSS impact on the practitioner surface (including optional trusted-device tokens in `localStorage`) with a **strict, staged** CSP: report violations first, then enforce when noise is acceptable.
+- Implementation: [`apps/practitioner/next.config.js`](../apps/practitioner/next.config.js) sets headers globally (`/:path*`). Policy is built in [`apps/practitioner/csp-config.js`](../apps/practitioner/csp-config.js) from `NEXT_PUBLIC_SUPABASE_URL` at build time (same host as Auth, REST, Realtime, and Storage).
+- **Phase A (default):** `Content-Security-Policy-Report-Only` — violations are logged (browser console / DevTools) but requests are not blocked.
+- **Phase B:** set server-side **`PRACTITIONER_CSP_ENFORCE=true`** (e.g. hosting env at build time) to send **`Content-Security-Policy`** instead of Report-Only. Remove or flip the env after sustained clean reports.
+- **Allowed origins (summary):**
+  - **`'self'`** — same-origin navigation, API routes, and Next.js assets.
+  - **Supabase project** — `https`/`wss` (or `http`/`ws` for local CLI) origins derived from `NEXT_PUBLIC_SUPABASE_URL` for REST, Auth, Realtime, and Storage.
+  - **Local development** — extra `connect-src` entries for common Next/Nx ports and `localhost`/`127.0.0.1:54321 so Report-Only stays usable during `next dev` (HMR and local Supabase).
+- **Directives (summary):** `default-src 'self'`; `script-src` includes `'unsafe-inline'` (required for the theme bootstrap inline script and typical Next.js inline handling; **nonces** are the long-term tightening path per [Next.js CSP](https://nextjs.org/docs/app/guides/content-security-policy)); `'unsafe-eval'` is added **in development only** for React/Next tooling; `style-src 'unsafe-inline'` for Tailwind/Next; `img-src` includes `data:`/`blob:` (e.g. TOTP QR); `connect-src` as above; `frame-ancestors 'none'`; `frame-src 'none'`; `upgrade-insecure-requests` in **production** when the Supabase URL is `https://…`.
+- **Reporting:** there is no dedicated violation collector in-repo yet; Phase A still helps via DevTools. A future **`report-to`** / **`Reporting-Endpoints`** endpoint can be added without changing the staged model.
+- Status: **Phase A** deployed by default; **Phase B** is opt-in via env until operators confirm low violation noise.
+
 ### 6) Media storage security
 
 - Intent: media confidentiality is provided by private bucket + RLS + TLS + platform encryption at rest, not client-managed DEKs.
@@ -178,6 +192,7 @@ Core implementation artifacts:
 - `apps/web/src/lib/auth-provider.tsx`
 - `apps/web/src/app/dashboard/page.tsx`
 - `apps/practitioner/src/lib/practitioner-device-trust.ts` (trusted-device UX; see XSS warning in file and subsection above)
+- `apps/practitioner/next.config.js`, `apps/practitioner/csp-config.js` (practitioner CSP; see “Practitioner Content-Security-Policy” above)
 
 Primary design references:
 
