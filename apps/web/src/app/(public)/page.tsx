@@ -1,5 +1,6 @@
 'use client';
 
+import { EpisodeStartHomeCta } from '../../components/episode-flow/EpisodeStartHomeCta';
 import { useAuth } from '../../lib/auth-provider';
 import Link from 'next/link';
 
@@ -32,7 +33,8 @@ export default function Index() {
             dashboard.
           </p>
 
-          <div className="mt-8 space-y-3">
+          <div className="mt-8 space-y-4">
+            <EpisodeStartHomeCta />
             <Link
               href="/dashboard"
               className="block w-full rounded-full bg-app-primary py-3 text-center text-sm font-semibold text-white shadow-sm transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"

@@ -127,6 +127,25 @@ describe('web auth proxy', () => {
     );
   });
 
+  it('redirects unauthenticated user from episode routes to /login', async () => {
+    createServerClientMock.mockImplementation(() =>
+      Promise.resolve({
+        auth: {
+          getUser: jest.fn(async () => ({ data: { user: null } })),
+        },
+      } as unknown as ServerClient),
+    );
+
+    const result = await proxy(makeRequest('/episode/start'));
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        type: 'redirect',
+        location: 'https://example.com/login',
+      }),
+    );
+  });
+
   it('redirects unauthenticated user from preset routes to /login', async () => {
     createServerClientMock.mockImplementation(() =>
       Promise.resolve({
@@ -161,6 +180,25 @@ describe('web auth proxy', () => {
       expect.objectContaining({
         type: 'redirect',
         location: 'https://example.com/',
+      }),
+    );
+  });
+
+  it('does not treat lookalike paths as protected (e.g. /episode-foo)', async () => {
+    const getUser = jest.fn(async () => ({ data: { user: null } }));
+
+    createServerClientMock.mockReturnValue(
+      Promise.resolve({
+        auth: { getUser },
+      } as unknown as ServerClient),
+    );
+
+    const result = await proxy(makeRequest('/episode-foo'));
+
+    expect(getUser).toHaveBeenCalledTimes(1);
+    expect(result).toEqual(
+      expect.objectContaining({
+        type: 'next',
       }),
     );
   });

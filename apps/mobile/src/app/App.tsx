@@ -11,6 +11,7 @@ import { ForgotPasswordScreen } from './screens/ForgotPasswordScreen';
 import { MainTabNavigator } from './navigation/MainTabNavigator';
 import type { MainStackParamList } from './navigation/types';
 import { LoginScreen } from './screens/LoginScreen';
+import { EpisodeStartScreen } from './screens/EpisodeStartScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { SignupScreen } from './screens/SignupScreen';
 import { UpdatePasswordScreen } from './screens/UpdatePasswordScreen';
@@ -380,6 +381,11 @@ function AppBootstrap() {
               name="MainTabs"
               component={MainTabNavigator}
               options={{ headerShown: false }}
+            />
+            <MainStack.Screen
+              name="EpisodeStart"
+              component={EpisodeStartScreen}
+              options={{ title: 'Start an episode' }}
             />
             <MainStack.Screen
               name="Settings"

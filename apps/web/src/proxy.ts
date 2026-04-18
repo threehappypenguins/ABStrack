@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from './lib/supabase/server-client';
 
 // Protected routes that require authentication
-const protectedRoutes = ['/dashboard', '/presets'];
+const protectedRoutes = ['/dashboard', '/presets', '/episode'];
 
 /**
  * True when `pathname` is exactly `route` or a nested path under it (e.g. `/presets/x`), not

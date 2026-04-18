@@ -7,6 +7,7 @@ import {
 } from '@abstrack/supabase';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { mapAuthError } from '../auth-helpers';
+import { EpisodeStartHomeCta } from '../components/episode-flow/EpisodeStartHomeCta';
 import { AppNavigationShell } from '../components/AppNavigationShell';
 import { nw } from '../theme/app-nativewind-classes';
 
@@ -18,9 +19,13 @@ interface HealthCheckResult {
 
 type HomeScreenProps = {
   onGoToSettings: () => void;
+  onStartEpisode: () => void;
 };
 
-export function HomeScreen({ onGoToSettings }: HomeScreenProps) {
+export function HomeScreen({
+  onGoToSettings,
+  onStartEpisode,
+}: HomeScreenProps) {
   const isTestEnv =
     typeof process !== 'undefined' && process.env.NODE_ENV === 'test';
   const showHealthCheck = __DEV__ && !isTestEnv;
@@ -125,10 +130,13 @@ export function HomeScreen({ onGoToSettings }: HomeScreenProps) {
         contentContainerStyle={{
           flexGrow: 1,
           padding: 16,
-          justifyContent: 'center',
+          paddingBottom: 24,
+          justifyContent: 'flex-start',
         }}
         keyboardShouldPersistTaps="handled"
       >
+        <EpisodeStartHomeCta onStartEpisode={onStartEpisode} />
+
         <View className={`gap-3 rounded-xl p-4 ${nw.card} ${nw.cardShadow}`}>
           <Text
             className={`text-[22px] font-semibold ${nw.textInk}`}

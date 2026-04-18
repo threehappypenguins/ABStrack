@@ -86,8 +86,8 @@
 **Second half (April 16-19, school finished):**
 
 - [x] Database: migrations for (1) `episodes.health_marker_preset_id` (nullable FK to `health_marker_presets`, same-owner pattern as `symptom_preset_id`) and (2) **episode preset templates** table—each template row **requires both** `symptom_preset_id` and `health_marker_preset_id` (NOT NULL; CASCADE if either preset is deleted) + RLS; regenerate `database.types.ts` and clients per [SUPABASE_CLOUD_DEVELOPER.md](SUPABASE_CLOUD_DEVELOPER.md). Template rows must exist **before** the episode-start template picker can list choices ([PRD](PRD.md) §4, [user story](user-stories/episode-and-health-marker-flows.md))
-- [ ] **Settings:** UI to create/edit **episode templates** (pair a symptom preset with a health marker preset under one name, e.g. ABS vs CVS)—done when the user is well, so episode start stays one-tap
-- [ ] "I'm having an episode" button on home screen
+- [x] **Settings:** UI to create/edit **episode templates** (pair a symptom preset with a health marker preset under one name, e.g. ABS vs CVS)—done when the user is well, so episode start stays one-tap
+- [x] "I'm having an episode" button on home screen
 - [ ] Episode start: user selects **one episode template** per session; insert episode with both `symptom_preset_id` and `health_marker_preset_id` resolved from that template ([user story](user-stories/episode-and-health-marker-flows.md))
 - [ ] Prompt flow skeleton: step through symptoms one at a time, render correct input type per symptom
 - [ ] Episode data wired to Supabase: plaintext columns under RLS (no client-side field encryption)
