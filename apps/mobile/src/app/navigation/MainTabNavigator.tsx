@@ -6,9 +6,12 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
 import { HomeScreen } from '../screens/HomeScreen';
+import { EpisodeTemplatesNavigator } from './EpisodeTemplatesNavigator';
 import { HealthMarkerPresetsNavigator } from './HealthMarkerPresetsNavigator';
 import { SymptomPresetsNavigator } from './SymptomPresetsNavigator';
 import { useAppTheme } from '../theme/AppThemeContext';
+import { EpisodeTemplatesDraftProvider } from './EpisodeTemplatesDraftContext';
+import { EpisodeTemplatesLeavingGuardTabButton } from './EpisodeTemplatesLeavingGuardTabButton';
 import type { MainStackParamList, MainTabParamList } from './types';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -54,60 +57,77 @@ export function MainTabNavigator() {
   const { colors } = useAppTheme();
 
   return (
-    <Tab.Navigator
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.muted,
-        tabBarLabelPosition: 'below-icon',
-        tabBarShowLabel: true,
-        tabBarStyle: {
-          paddingTop: 4,
-          paddingBottom: 6,
-          minHeight: COMFORTABLE_TOUCH_TARGET_DP + 28,
-          backgroundColor: colors.surface,
-          borderTopColor: colors.border,
-          borderTopWidth: StyleSheet.hairlineWidth,
-        },
-        tabBarItemStyle: {
-          paddingVertical: 4,
-        },
-      }}
-    >
-      <Tab.Screen
-        name="Home"
-        options={{
-          tabBarLabel: 'Home',
-          tabBarAccessibilityLabel: 'Home',
-          tabBarIcon: tabBarIonIcon('home-outline'),
-        }}
+    <EpisodeTemplatesDraftProvider>
+      <Tab.Navigator
+        screenOptions={({ route }) => ({
+          headerShown: false,
+          tabBarActiveTintColor: colors.primary,
+          tabBarInactiveTintColor: colors.muted,
+          tabBarLabelPosition: 'below-icon',
+          tabBarShowLabel: true,
+          tabBarStyle: {
+            paddingTop: 4,
+            paddingBottom: 6,
+            minHeight: COMFORTABLE_TOUCH_TARGET_DP + 28,
+            backgroundColor: colors.surface,
+            borderTopColor: colors.border,
+            borderTopWidth: StyleSheet.hairlineWidth,
+          },
+          tabBarItemStyle: {
+            paddingVertical: 4,
+          },
+          tabBarButton: (props) => (
+            <EpisodeTemplatesLeavingGuardTabButton
+              {...props}
+              targetRoute={route.name as keyof MainTabParamList}
+            />
+          ),
+        })}
       >
-        {({ navigation }) => (
-          <HomeScreen
-            onGoToSettings={() => {
-              navigateFromHomeTabToSettings(navigation);
-            }}
-          />
-        )}
-      </Tab.Screen>
-      <Tab.Screen
-        name="SymptomPresets"
-        component={SymptomPresetsNavigator}
-        options={{
-          tabBarLabel: 'Symptoms',
-          tabBarAccessibilityLabel: 'Symptom presets',
-          tabBarIcon: tabBarIonIcon('medkit-outline'),
-        }}
-      />
-      <Tab.Screen
-        name="HealthMarkerPresets"
-        component={HealthMarkerPresetsNavigator}
-        options={{
-          tabBarLabel: 'Markers',
-          tabBarAccessibilityLabel: 'Health marker presets',
-          tabBarIcon: tabBarIonIcon('pulse-outline'),
-        }}
-      />
-    </Tab.Navigator>
+        <Tab.Screen
+          name="Home"
+          options={{
+            tabBarLabel: 'Home',
+            tabBarAccessibilityLabel: 'Home',
+            tabBarIcon: tabBarIonIcon('home-outline'),
+          }}
+        >
+          {({ navigation }) => (
+            <HomeScreen
+              onGoToSettings={() => {
+                navigateFromHomeTabToSettings(navigation);
+              }}
+            />
+          )}
+        </Tab.Screen>
+        <Tab.Screen
+          name="SymptomPresets"
+          component={SymptomPresetsNavigator}
+          options={{
+            tabBarLabel: 'Symptoms',
+            tabBarAccessibilityLabel: 'Symptom presets',
+            tabBarIcon: tabBarIonIcon('medkit-outline'),
+          }}
+        />
+        <Tab.Screen
+          name="HealthMarkerPresets"
+          component={HealthMarkerPresetsNavigator}
+          options={{
+            tabBarLabel: 'Markers',
+            tabBarAccessibilityLabel: 'Health marker presets',
+            tabBarIcon: tabBarIonIcon('pulse-outline'),
+          }}
+        />
+        <Tab.Screen
+          name="EpisodeTemplates"
+          component={EpisodeTemplatesNavigator}
+          options={{
+            tabBarLabel: 'Templates',
+            tabBarAccessibilityLabel: 'Episode templates',
+            tabBarIcon: tabBarIonIcon('layers-outline'),
+          }}
+        />
+      </Tab.Navigator>
+    </EpisodeTemplatesDraftProvider>
   );
 }

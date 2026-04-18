@@ -68,3 +68,10 @@ export {
   updateSymptomPreset,
   validateReorderLineIds,
 } from './lib/preset-data.js';
+export {
+  createEpisodeTemplate,
+  deleteEpisodeTemplate,
+  getEpisodeTemplateById,
+  listEpisodeTemplates,
+  updateEpisodeTemplate,
+} from './lib/episode-template-data.js';

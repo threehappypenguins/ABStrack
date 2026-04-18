@@ -535,6 +535,9 @@ describe('mobile auth state sync', () => {
 
     fireEvent.press(await findByLabelText('Health marker presets'));
     expect(await findByTestId('health-marker-preset-list-screen')).toBeTruthy();
+
+    fireEvent.press(await findByLabelText('Episode templates'));
+    expect(await findByTestId('episode-template-list-screen')).toBeTruthy();
   });
 
   test('exposes the re-authentication toggle in settings', async () => {

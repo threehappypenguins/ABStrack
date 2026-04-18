@@ -249,6 +249,9 @@ importers:
       '@expo/metro-config':
         specifier: '*'
         version: 54.0.14(expo@54.0.33)
+      '@expo/react-native-action-sheet':
+        specifier: ^4.1.1
+        version: 4.1.1(@types/react@19.1.17)(react@19.1.0)
       '@expo/vector-icons':
         specifier: '*'
         version: 15.1.1(expo-font@14.0.11(expo@54.0.33)(react-native@0.81.5(@babel/core@7.29.0)(@react-native/metro-config@0.85.0(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.0)(@react-native/metro-config@0.85.0(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
@@ -2107,6 +2110,14 @@ packages:
       }
     peerDependencies:
       expo: '*'
+
+  '@expo/react-native-action-sheet@4.1.1':
+    resolution:
+      {
+        integrity: sha512-4KRaba2vhqDRR7ObBj6nrD5uJw8ePoNHdIOMETTpgGTX7StUbrF4j/sfrP1YUyaPEa1P8FXdwG6pB+2WtrJd1A==,
+      }
+    peerDependencies:
+      react: '>=18.0.0'
 
   '@expo/schema-utils@0.1.8':
     resolution:
@@ -5377,6 +5388,14 @@ packages:
       {
         integrity: sha512-olP3sd1qOEe5dXTSaFvQG+02VdRXcdytWLAZsAq1PecU8uqQAhkrnbli7DagjtXKW/Bl7YJbUsa8MPcuc8LHEQ==,
       }
+
+  '@types/hoist-non-react-statics@3.3.7':
+    resolution:
+      {
+        integrity: sha512-PQTyIulDkIDro8P+IHbKCsw7U2xxBYflVzW/FgWdCAePD9xGSidgA76/GeJ6lBKoblyhf9pBY763gbrN+1dI8g==,
+      }
+    peerDependencies:
+      '@types/react': ~19.1.0
 
   '@types/http-cache-semantics@4.2.0':
     resolution:
@@ -9888,6 +9907,12 @@ packages:
     resolution:
       {
         integrity: sha512-Yg3HgaG4CqgyowtYjX/FsnPAuZdHOqSMtnbpylbptsQ9nwwSKsy6uRWcGO5RK0EqiX12q8HvDWKgeAVajRO5DA==,
+      }
+
+  hoist-non-react-statics@3.3.2:
+    resolution:
+      {
+        integrity: sha512-/gGivxi8JPKWNm/W0jSmzcMPpfpPLc3dY/6GxhX2hQ9iGj3aDfklV4ET7NjKpSinLpJ5vafa9iiGIEZg10SfBw==,
       }
 
   homedir-polyfill@1.0.3:
@@ -18254,6 +18279,14 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  '@expo/react-native-action-sheet@4.1.1(@types/react@19.1.17)(react@19.1.0)':
+    dependencies:
+      '@types/hoist-non-react-statics': 3.3.7(@types/react@19.1.17)
+      hoist-non-react-statics: 3.3.2
+      react: 19.1.0
+    transitivePeerDependencies:
+      - '@types/react'
+
   '@expo/schema-utils@0.1.8': {}
 
   '@expo/sdk-runtime-versions@1.0.0': {}
@@ -21057,6 +21090,11 @@ snapshots:
   '@types/graceful-fs@4.1.9':
     dependencies:
       '@types/node': 20.19.9
+
+  '@types/hoist-non-react-statics@3.3.7(@types/react@19.1.17)':
+    dependencies:
+      '@types/react': 19.1.17
+      hoist-non-react-statics: 3.3.2
 
   '@types/http-cache-semantics@4.2.0': {}
 
@@ -24219,6 +24257,10 @@ snapshots:
   hermes-parser@0.33.3:
     dependencies:
       hermes-estree: 0.33.3
+
+  hoist-non-react-statics@3.3.2:
+    dependencies:
+      react-is: 16.13.1
 
   homedir-polyfill@1.0.3:
     dependencies:
