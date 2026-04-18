@@ -52,18 +52,17 @@ const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
  *
  * @returns Whether device trust reads/writes are allowed for this process.
  *
- * **Use bracket access** for this key: `process.env['NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST']`.
- * An earlier change to dotted `process.env.NEXT_PUBLIC_…` relied on compile-time inlining; when
- * the flag was missing from the inlining pass (wrong app `.env` path, cache, or first build), the
- * flag read as always-off and the trust read path scrubbed `localStorage` on every read — breaking
- * device trust. Bracket reads resolve like other runtime `NEXT_PUBLIC_*` usage in Next dev.
+ * **Next.js client bundles:** `NEXT_PUBLIC_*` values are substituted at build time when the key is
+ * referenced as **`process.env.NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST`** (dot access). Bracket
+ * access (`process.env['…']`) is often **not** inlined, which can leave the runtime value missing
+ * and incorrectly fall back to the “unset” default — so per-environment disable would not apply.
  */
 export function isPractitionerMfaDeviceTrustEnabled(): boolean {
   let raw: string | undefined;
   try {
     raw =
       typeof process !== 'undefined' && process.env != null
-        ? process.env['NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST']
+        ? process.env.NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST
         : undefined;
   } catch {
     return false;
