@@ -197,28 +197,28 @@ export type Database = {
       episode_templates: {
         Row: {
           created_at: string
-          health_marker_preset_id: string | null
+          health_marker_preset_id: string
           id: string
           name: string
-          symptom_preset_id: string | null
+          symptom_preset_id: string
           updated_at: string
           user_id: string
         }
         Insert: {
           created_at?: string
-          health_marker_preset_id?: string | null
+          health_marker_preset_id: string
           id?: string
           name: string
-          symptom_preset_id?: string | null
+          symptom_preset_id: string
           updated_at?: string
           user_id: string
         }
         Update: {
           created_at?: string
-          health_marker_preset_id?: string | null
+          health_marker_preset_id?: string
           id?: string
           name?: string
-          symptom_preset_id?: string | null
+          symptom_preset_id?: string
           updated_at?: string
           user_id?: string
         }
