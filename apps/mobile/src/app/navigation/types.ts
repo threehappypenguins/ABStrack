@@ -32,5 +32,7 @@ export type MainTabParamList = {
 
 export type MainStackParamList = {
   MainTabs: undefined;
+  /** Episode logging entry: shell until template selection and prompts ship. */
+  EpisodeStart: undefined;
   Settings: undefined;
 };

@@ -540,6 +540,53 @@ describe('mobile auth state sync', () => {
     expect(await findByTestId('episode-template-list-screen')).toBeTruthy();
   });
 
+  test('opens episode start shell from home episode CTA', async () => {
+    const signedInSession = {
+      access_token: 'access',
+      refresh_token: 'refresh',
+      token_type: 'bearer',
+      expires_in: 3600,
+      expires_at: 9999999999,
+      user: { id: 'user-1' },
+    } as unknown as Session;
+
+    const mockClient = {
+      auth: {
+        getSession: jest.fn(async () => ({
+          data: { session: signedInSession },
+        })),
+        getUser: jest.fn(async () => ({
+          data: { user: { id: 'user-1' } },
+          error: null,
+        })),
+        signOut: jest.fn(async () => ({ error: null })),
+        onAuthStateChange: jest.fn(() => ({
+          data: {
+            subscription: {
+              unsubscribe: jest.fn(),
+            },
+          },
+        })),
+      },
+      from: jest.fn(() => ({
+        select: jest.fn(() => ({
+          order: jest.fn(() => ({
+            order: jest.fn(() => Promise.resolve({ data: [], error: null })),
+          })),
+        })),
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    jest.mocked(SecureStore.getItemAsync).mockResolvedValue('false');
+    jest.mocked(getMobileSupabaseClient).mockReturnValue(mockClient);
+
+    const { findByLabelText, findByTestId } = render(<App />);
+
+    expect(await findByTestId('episode-start-home-cta')).toBeTruthy();
+    fireEvent.press(await findByLabelText("I'm having an episode"));
+    expect(await findByTestId('episode-start-screen-title')).toBeTruthy();
+  });
+
   test('exposes the re-authentication toggle in settings', async () => {
     const signedInSession = {
       access_token: 'access',

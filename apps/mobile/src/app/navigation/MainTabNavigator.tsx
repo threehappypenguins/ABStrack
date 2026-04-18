@@ -35,6 +35,19 @@ function navigateFromHomeTabToSettings(
   stackNavigation.navigate('Settings');
 }
 
+function navigateFromHomeTabToEpisodeStart(
+  navigation: BottomTabNavigationProp<MainTabParamList, 'Home'>,
+) {
+  const stackNavigation =
+    navigation.getParent<NativeStackNavigationProp<MainStackParamList>>();
+  if (stackNavigation == null) {
+    throw new Error(
+      'MainTabNavigator: expected native stack parent (MainStack) to open EpisodeStart.',
+    );
+  }
+  stackNavigation.navigate('EpisodeStart');
+}
+
 type IonName = React.ComponentProps<typeof Ionicons>['name'];
 
 /**
@@ -96,6 +109,9 @@ export function MainTabNavigator() {
             <HomeScreen
               onGoToSettings={() => {
                 navigateFromHomeTabToSettings(navigation);
+              }}
+              onStartEpisode={() => {
+                navigateFromHomeTabToEpisodeStart(navigation);
               }}
             />
           )}
