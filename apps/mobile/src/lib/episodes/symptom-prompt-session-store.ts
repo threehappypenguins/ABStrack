@@ -1,110 +1,15 @@
-import type {
-  SymptomPromptAnswer,
-  SymptomPromptAnswers,
-  SymptomPromptSessionState,
-  Uuid,
+import type { SymptomPromptSessionState, Uuid } from '@abstrack/types';
+import {
+  createInitialSymptomPromptSession,
+  sanitizeSymptomPromptActiveIndex,
+  sanitizeSymptomPromptAnswers,
 } from '@abstrack/types';
-import { createInitialSymptomPromptSession } from '@abstrack/types';
 
 /**
  * In-memory session store so symptom prompt progress survives leaving and re-opening the
  * prompt screen during one app session (same episode id).
  */
 const sessions = new Map<Uuid, SymptomPromptSessionState>();
-
-/** Matches severity UI (1–5 scale); integers only. */
-const SEVERITY_MIN = 1;
-const SEVERITY_MAX = 5;
-
-function sanitizeActiveIndex(value: unknown): number | null {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return null;
-  }
-  return Math.max(0, Math.floor(value));
-}
-
-/**
- * Keeps only well-shaped {@link SymptomPromptAnswer} values so malformed in-memory state cannot crash the UI.
- */
-function sanitizeAnswerEntry(value: unknown): SymptomPromptAnswer | null {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return null;
-  }
-  const o = value as Record<string, unknown>;
-  const t = o.type;
-  if (
-    t !== 'yes_no' &&
-    t !== 'severity_scale' &&
-    t !== 'free_text' &&
-    t !== 'photo' &&
-    t !== 'video'
-  ) {
-    return null;
-  }
-  const v = o.value;
-  switch (t) {
-    case 'yes_no':
-      if (typeof v === 'boolean' || v === null) {
-        return { type: 'yes_no', value: v };
-      }
-      return null;
-    case 'severity_scale': {
-      if (v === null) {
-        return { type: 'severity_scale', value: null };
-      }
-      if (typeof v !== 'number' || !Number.isFinite(v)) {
-        return null;
-      }
-      if (Number.isInteger(v) && v >= SEVERITY_MIN && v <= SEVERITY_MAX) {
-        return { type: 'severity_scale', value: v };
-      }
-      return { type: 'severity_scale', value: null };
-    }
-    case 'free_text':
-      if (typeof v === 'string') {
-        return { type: 'free_text', value: v };
-      }
-      return null;
-    case 'photo':
-      if (v === null) {
-        return { type: 'photo', value: null };
-      }
-      return null;
-    case 'video':
-      if (v === null) {
-        return { type: 'video', value: null };
-      }
-      return null;
-    default:
-      return null;
-  }
-}
-
-/** Rejects keys that must not be assigned when copying untrusted shapes into an object. */
-function isSafeAnswerKey(key: string): boolean {
-  return key !== '__proto__' && key !== 'constructor' && key !== 'prototype';
-}
-
-function sanitizeAnswers(answers: unknown): SymptomPromptAnswers {
-  if (
-    typeof answers !== 'object' ||
-    answers === null ||
-    Array.isArray(answers)
-  ) {
-    return {};
-  }
-  const out = Object.create(null) as SymptomPromptAnswers;
-  for (const [key, val] of Object.entries(answers)) {
-    if (!isSafeAnswerKey(key)) {
-      continue;
-    }
-    const cleaned = sanitizeAnswerEntry(val);
-    if (cleaned !== null) {
-      out[key] = cleaned;
-    }
-  }
-  return out;
-}
 
 function sanitizeStoredState(
   raw: SymptomPromptSessionState,
@@ -116,11 +21,11 @@ function sanitizeStoredState(
   ) {
     return createInitialSymptomPromptSession();
   }
-  const activeIndex = sanitizeActiveIndex(raw.activeIndex);
+  const activeIndex = sanitizeSymptomPromptActiveIndex(raw.activeIndex);
   if (activeIndex === null) {
     return createInitialSymptomPromptSession();
   }
-  return { activeIndex, answers: sanitizeAnswers(raw.answers) };
+  return { activeIndex, answers: sanitizeSymptomPromptAnswers(raw.answers) };
 }
 
 /**

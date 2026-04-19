@@ -68,12 +68,17 @@ export function SymptomPromptScreen() {
     () => getSymptomPromptSession(episodeId).answers,
   );
   const answersRef = useRef(answers);
+  const activeIndexRef = useRef(activeIndex);
   /** Bumps on each `load()` start and on effect cleanup so in-flight loads ignore stale results after unmount, retry, or param change. */
   const loadGenRef = useRef(0);
 
   useEffect(() => {
     answersRef.current = answers;
   }, [answers]);
+
+  useEffect(() => {
+    activeIndexRef.current = activeIndex;
+  }, [activeIndex]);
 
   const persist = useCallback(
     (nextIndex: number, nextAnswers: typeof answers) => {
@@ -108,6 +113,7 @@ export function SymptomPromptScreen() {
       setLines(result.data);
       const session = getSymptomPromptSession(episodeId);
       const idx = clampIndex(session.activeIndex, result.data.length);
+      activeIndexRef.current = idx;
       setActiveIndex(idx);
       setAnswers(session.answers);
       answersRef.current = session.answers;
@@ -136,6 +142,7 @@ export function SymptomPromptScreen() {
 
   useEffect(() => {
     const s = getSymptomPromptSession(episodeId);
+    activeIndexRef.current = s.activeIndex;
     setActiveIndex(s.activeIndex);
     setAnswers(s.answers);
     answersRef.current = s.answers;
@@ -165,12 +172,14 @@ export function SymptomPromptScreen() {
     };
     answersRef.current = merged;
     setAnswers(merged);
-    persist(activeIndex, merged);
+    persist(activeIndexRef.current, merged);
   };
 
   const goBackStep = () => {
-    if (activeIndex > 0) {
-      const next = activeIndex - 1;
+    const idx = activeIndexRef.current;
+    if (idx > 0) {
+      const next = idx - 1;
+      activeIndexRef.current = next;
       setActiveIndex(next);
       persist(next, answersRef.current);
       announce(`Back to step ${next + 1} of ${lines.length}.`);
@@ -184,8 +193,10 @@ export function SymptomPromptScreen() {
       setPhase('complete');
       return;
     }
-    if (activeIndex < lines.length - 1) {
-      const next = activeIndex + 1;
+    const idx = activeIndexRef.current;
+    if (idx < lines.length - 1) {
+      const next = idx + 1;
+      activeIndexRef.current = next;
       setActiveIndex(next);
       persist(next, answersRef.current);
       return;

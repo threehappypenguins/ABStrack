@@ -235,10 +235,11 @@ export function SymptomPromptFlow({
 
   const goBackStep = () => {
     flushPendingTextPersist();
-    if (activeIndex > 0) {
-      const next = activeIndex - 1;
-      setActiveIndex(next);
+    const idx = activeIndexRef.current;
+    if (idx > 0) {
+      const next = idx - 1;
       activeIndexRef.current = next;
+      setActiveIndex(next);
       persistImmediate(next, answersRef.current);
       announce(`Back to step ${next + 1} of ${lines.length}.`, {
         politeness: 'polite',
@@ -254,10 +255,11 @@ export function SymptomPromptFlow({
       setPhase('complete');
       return;
     }
-    if (activeIndex < lines.length - 1) {
-      const next = activeIndex + 1;
-      setActiveIndex(next);
+    const idx = activeIndexRef.current;
+    if (idx < lines.length - 1) {
+      const next = idx + 1;
       activeIndexRef.current = next;
+      setActiveIndex(next);
       persistImmediate(next, answersRef.current);
       return;
     }
