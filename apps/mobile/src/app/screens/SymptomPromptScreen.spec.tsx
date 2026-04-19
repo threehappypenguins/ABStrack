@@ -50,16 +50,18 @@ jest.mock('@abstrack/ui/native', () => {
 
 const episodeId = 'episode-1';
 const symptomPresetId = 'preset-sym-1';
+const symptomPresetIdB = 'preset-sym-2';
 
 function makeLine(
   id: string,
   sortOrder: number,
   symptomName: string,
   responseType: PresetSymptomRow['response_type'],
+  presetId: string = symptomPresetId,
 ): PresetSymptomRow {
   return {
     id,
-    preset_id: symptomPresetId,
+    preset_id: presetId,
     sort_order: sortOrder,
     symptom_name: symptomName,
     response_type: responseType,
@@ -169,6 +171,58 @@ describe('SymptomPromptScreen', () => {
     fireEvent.press(screen.getByLabelText('Go back to previous screen'));
 
     expect(mockGoBack).toHaveBeenCalled();
+  });
+
+  test('changing symptomPresetId after completion shows prompting again for new lines', async () => {
+    const lineOnly = makeLine(
+      'line-only',
+      0,
+      'Fatigue',
+      'yes_no',
+      symptomPresetIdB,
+    );
+
+    const screen = render(<SymptomPromptScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Step 1 of 2')).toBeTruthy();
+    });
+
+    fireEvent.press(screen.getByLabelText('Next symptom'));
+    await waitFor(() => {
+      expect(screen.getByLabelText('Finish symptom list')).toBeTruthy();
+    });
+    fireEvent.press(screen.getByLabelText('Finish symptom list'));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/You reached the end of your symptom list/),
+      ).toBeTruthy();
+    });
+
+    jest.mocked(listPresetSymptomsForPreset).mockResolvedValue({
+      ok: true,
+      data: [lineOnly],
+    });
+    jest.mocked(useRoute).mockReturnValue({
+      key: 'SymptomPrompt',
+      name: 'SymptomPrompt',
+      params: { episodeId, symptomPresetId: symptomPresetIdB },
+    } as never);
+
+    screen.rerender(<SymptomPromptScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Step 1 of 1')).toBeTruthy();
+    });
+    expect(screen.getByText('Fatigue')).toBeTruthy();
+    expect(
+      screen.queryByText(/You reached the end of your symptom list/),
+    ).toBeNull();
+    expect(listPresetSymptomsForPreset).toHaveBeenCalledWith(
+      expect.objectContaining({ mockClient: true }),
+      symptomPresetIdB,
+    );
   });
 
   test('Finish shows completion and Return home clears session and resets stack', async () => {

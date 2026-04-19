@@ -2,7 +2,13 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import type {
   PresetSymptomRow,
   SymptomPromptAnswer,
@@ -83,7 +89,7 @@ export function SymptomPromptFlow({
     answersRef.current = answers;
   }, [answers]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const outgoingEpisodeId = episodeIdRef.current;
     if (textPersistTimerRef.current !== null) {
       clearTimeout(textPersistTimerRef.current);
@@ -101,7 +107,7 @@ export function SymptomPromptFlow({
     activeIndexRef.current = s.activeIndex;
     setPhase('prompting');
     setHydrated(true);
-  }, [episodeId]);
+  }, [episodeId, symptomPresetId]);
 
   const flushPendingTextPersist = useCallback(() => {
     if (textPersistTimerRef.current === null) {
@@ -145,6 +151,7 @@ export function SymptomPromptFlow({
 
     setStatus('loading');
     setErrorMessage(null);
+    setPhase('prompting');
     const supabase = createBrowserClient();
     const result = await listPresetSymptomsForPreset(supabase, symptomPresetId);
     if (stale()) {

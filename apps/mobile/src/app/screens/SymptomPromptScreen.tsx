@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import type { RouteProp } from '@react-navigation/native';
 import {
@@ -96,6 +102,7 @@ export function SymptomPromptScreen() {
 
     setStatus('loading');
     setErrorMessage(null);
+    setPhase('prompting');
     try {
       const supabase = getMobileSupabaseClient();
       const result = await listPresetSymptomsForPreset(
@@ -140,14 +147,14 @@ export function SymptomPromptScreen() {
     };
   }, [load]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const s = getSymptomPromptSession(episodeId);
     activeIndexRef.current = s.activeIndex;
     setActiveIndex(s.activeIndex);
     setAnswers(s.answers);
     answersRef.current = s.answers;
     setPhase('prompting');
-  }, [episodeId]);
+  }, [episodeId, symptomPresetId]);
 
   const currentLine = lines[activeIndex] ?? null;
   const stepLabel =
