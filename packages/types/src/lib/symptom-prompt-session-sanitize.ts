@@ -103,7 +103,7 @@ export function sanitizeSymptomPromptAnswers(
     answers === null ||
     Array.isArray(answers)
   ) {
-    return {};
+    return Object.create(null) as SymptomPromptAnswers;
   }
   const out = Object.create(null) as SymptomPromptAnswers;
   for (const [key, val] of Object.entries(answers)) {
