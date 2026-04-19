@@ -531,7 +531,7 @@ export function SymptomPromptFlow({
             className="mt-2 text-sm text-amber-800 dark:text-amber-200"
             role="status"
           >
-            Could not save to the server: {persistError}
+            Could not sync with the server: {persistError}
           </p>
         ) : null}
       </div>

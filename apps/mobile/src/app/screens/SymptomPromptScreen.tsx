@@ -423,7 +423,7 @@ export function SymptomPromptScreen() {
             className={`text-sm text-amber-800 dark:text-amber-200`}
             maxFontSizeMultiplier={2}
           >
-            Could not save to the server: {persistError}
+            Could not sync with the server: {persistError}
           </Text>
         ) : null}
 

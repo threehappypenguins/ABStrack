@@ -2,6 +2,10 @@
 -- Partial index: only rows tied to an episode (episode_id IS NOT NULL) with a preset line id.
 -- Ad-hoc / NULL episode_id rows are out of scope for this uniqueness rule.
 
+-- Hold an exclusive lock for the whole migration transaction so no concurrent writer can insert a
+-- duplicate (episode_id, preset_symptom_id) between the DELETE and CREATE UNIQUE INDEX.
+LOCK TABLE public.episode_symptoms IN EXCLUSIVE MODE;
+
 -- Remove duplicate (episode_id, preset_symptom_id) rows if any exist before creating the index.
 -- Keep the newest row per pair so we do not discard the latest user-entered answer (older rows are races/legacy).
 WITH ranked AS (
