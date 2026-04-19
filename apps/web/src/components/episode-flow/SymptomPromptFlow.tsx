@@ -6,6 +6,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -107,6 +108,8 @@ export function SymptomPromptFlow({
    */
   const serverPersistGenerationRef = useRef(0);
 
+  const supabase = useMemo(() => createBrowserClient(), []);
+
   /**
    * Resolves the signed-in user id for RLS writes, caching on {@link userIdRef}.
    * Used by `load()` (before inputs enable) and as a fallback in {@link executeServerPersist}.
@@ -141,7 +144,6 @@ export function SymptomPromptFlow({
       const targetEpisodeId = episodeIdRef.current;
       const generation = ++serverPersistGenerationRef.current;
       void (async () => {
-        const supabase = createBrowserClient();
         const uid = await resolveSessionUserId(supabase);
         if (generation !== serverPersistGenerationRef.current) {
           return;
@@ -173,7 +175,7 @@ export function SymptomPromptFlow({
         }
       })();
     },
-    [resolveSessionUserId],
+    [resolveSessionUserId, supabase],
   );
 
   /**
@@ -296,7 +298,6 @@ export function SymptomPromptFlow({
     setErrorMessage(null);
     setPersistError(null);
     setPhase('prompting');
-    const supabase = createBrowserClient();
     const uid = await resolveSessionUserId(supabase);
     if (stale()) {
       return;
@@ -326,7 +327,8 @@ export function SymptomPromptFlow({
       ? episodeSymptomRowsToAnswersMap(fromServer.data)
       : {};
     const session = getSymptomPromptSession(episodeId);
-    const mergedAnswers = { ...session.answers, ...serverAnswers };
+    // Session overlays server so local drafts survive hydrate (debounced/offline/failed sync).
+    const mergedAnswers = { ...serverAnswers, ...session.answers };
     const idx = clampIndex(session.activeIndex, result.data.length);
     setActiveIndex(idx);
     setAnswers(mergedAnswers);
@@ -340,7 +342,7 @@ export function SymptomPromptFlow({
       setPersistError(fromServer.error.message);
     }
     setStatus('ready');
-  }, [episodeId, symptomPresetId, resolveSessionUserId]);
+  }, [episodeId, symptomPresetId, resolveSessionUserId, supabase]);
 
   useEffect(() => {
     void load();

@@ -289,7 +289,8 @@ export function SymptomPromptScreen() {
         ? episodeSymptomRowsToAnswersMap(fromServer.data)
         : {};
       const session = getSymptomPromptSession(episodeId);
-      const mergedAnswers = { ...session.answers, ...serverAnswers };
+      // Session overlays server so local drafts survive hydrate (debounced/offline/failed sync).
+      const mergedAnswers = { ...serverAnswers, ...session.answers };
       const idx = clampIndex(session.activeIndex, result.data.length);
       activeIndexRef.current = idx;
       setActiveIndex(idx);
