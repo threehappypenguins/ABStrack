@@ -6,6 +6,10 @@ import type {
   SymptomResponseType,
 } from '@abstrack/types';
 
+/** Visible focus ring on the card when the visually hidden radio is focused with keyboard (see `sr-only` inputs). */
+const radioLabelFocusVisibleClass =
+  'has-[input:focus-visible]:outline-none has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-app-ring has-[input:focus-visible]:ring-offset-2 has-[input:focus-visible]:ring-offset-app-bg';
+
 export type SymptomPromptResponseFieldProps = {
   line: PresetSymptomRow;
   answer: SymptomPromptAnswer | undefined;
@@ -61,7 +65,7 @@ export function SymptomPromptResponseField({
             return (
               <label
                 key={which}
-                className={`flex min-h-[56px] cursor-pointer items-center justify-center rounded-xl border-2 px-4 py-4 text-base font-semibold transition ${
+                className={`flex min-h-[56px] cursor-pointer items-center justify-center rounded-xl border-2 px-4 py-4 text-base font-semibold transition ${radioLabelFocusVisibleClass} ${
                   selected
                     ? 'border-app-primary bg-app-primary/10 text-app-ink ring-1 ring-app-primary/20'
                     : 'border-app-border/90 bg-app-surface text-app-ink hover:border-app-border'
@@ -97,7 +101,7 @@ export function SymptomPromptResponseField({
             return (
               <label
                 key={n}
-                className={`flex h-14 min-w-[52px] cursor-pointer items-center justify-center rounded-xl border-2 px-3 text-base font-semibold transition ${
+                className={`flex h-14 min-w-[52px] cursor-pointer items-center justify-center rounded-xl border-2 px-3 text-base font-semibold transition ${radioLabelFocusVisibleClass} ${
                   selected
                     ? 'border-app-primary bg-app-primary/10 text-app-ink ring-1 ring-app-primary/20'
                     : 'border-app-border/90 bg-app-surface text-app-ink hover:border-app-border'

@@ -89,7 +89,7 @@ export function EpisodeStartScreen() {
 
       if (result.data.length === 1) {
         if (singleTemplateAutoSucceededCycleIdRef.current === cycleId) {
-          setStatus('ready');
+          // Stay on `loading` until `navigation.replace` unmounts — `ready` would flash the chooser if `load` re-runs.
           return;
         }
         if (singleTemplateAutoInFlightRef.current) {
