@@ -80,6 +80,15 @@ function sanitizeAnswerEntry(value: unknown): SymptomPromptAnswer | null {
   }
 }
 
+/** Rejects keys that must not be assigned when copying untrusted shapes into an object. */
+function isSafeAnswerKey(key: string): boolean {
+  return (
+    key !== '__proto__' &&
+    key !== 'constructor' &&
+    key !== 'prototype'
+  );
+}
+
 function sanitizeAnswers(answers: unknown): SymptomPromptAnswers {
   if (
     typeof answers !== 'object' ||
@@ -88,8 +97,11 @@ function sanitizeAnswers(answers: unknown): SymptomPromptAnswers {
   ) {
     return {};
   }
-  const out: SymptomPromptAnswers = {};
+  const out = Object.create(null) as SymptomPromptAnswers;
   for (const [key, val] of Object.entries(answers)) {
+    if (!isSafeAnswerKey(key)) {
+      continue;
+    }
     const cleaned = sanitizeAnswerEntry(val);
     if (cleaned !== null) {
       out[key] = cleaned;

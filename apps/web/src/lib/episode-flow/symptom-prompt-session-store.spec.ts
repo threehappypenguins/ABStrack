@@ -93,6 +93,17 @@ describe('symptom-prompt-session-store', () => {
     });
   });
 
+  it('getSymptomPromptSession does not copy prototype-polluting answer keys', () => {
+    const answers = JSON.parse(
+      '{"__proto__":{"type":"yes_no","value":true},"constructor":{"type":"yes_no","value":false},"prototype":{"type":"yes_no","value":true},"legit":{"type":"yes_no","value":false}}',
+    ) as Record<string, unknown>;
+    setStored('ep-1', { activeIndex: 0, answers });
+    expect(getSymptomPromptSession('ep-1')).toEqual({
+      activeIndex: 0,
+      answers: { legit: { type: 'yes_no', value: false } },
+    });
+  });
+
   it('getSymptomPromptSession keeps severity_scale only for integers 1–5 or null', () => {
     setStored('ep-1', {
       activeIndex: 0,
