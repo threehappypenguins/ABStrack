@@ -1,6 +1,7 @@
 /**
  * Episode row + `episode_symptoms` persistence against **Supabase Cloud** with RLS (patient session).
  * Skips without `SUPABASE_SECRET_KEY` and public URL/key — see **docs/SUPABASE_CLOUD_DEVELOPER.md**.
+ * Disposable user emails/ids are logged only when `ABSTRACK_PRESET_INTEGRATION_LOG=1` (avoids PII in CI).
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { PresetSymptomRow } from '@abstrack/types';
@@ -132,12 +133,14 @@ describe.skipIf(!episodeFoundationReady)(
         throw signB.error;
       }
 
-      console.info('[episode-foundation.integration] Disposable users', {
-        emailA,
-        emailB,
-        userAId,
-        userBId,
-      });
+      if (process.env.ABSTRACK_PRESET_INTEGRATION_LOG === '1') {
+        console.info('[episode-foundation.integration] Disposable users', {
+          emailA,
+          emailB,
+          userAId,
+          userBId,
+        });
+      }
     }, 120_000);
 
     afterAll(async () => {

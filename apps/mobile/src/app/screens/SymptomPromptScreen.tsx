@@ -84,12 +84,39 @@ export function SymptomPromptScreen() {
   );
   const answersRef = useRef(answers);
   const activeIndexRef = useRef(activeIndex);
+  const episodeIdRef = useRef(episodeId);
   const serverPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  /** Latest debounced free-text payload for Supabase; read in {@link flushPendingServerPersist}. */
+  const pendingServerFreeTextPersistRef = useRef<{
+    line: PresetSymptomRow;
+    answer: SymptomPromptAnswer;
+  } | null>(null);
   const userIdRef = useRef<string | null>(null);
   /** Bumps on each `load()` start and on effect cleanup so in-flight loads ignore stale results after unmount, retry, or param change. */
   const loadGenRef = useRef(0);
+
+  /**
+   * Caches the auth user id on {@link userIdRef}. Called from {@link load} before `ready`, and
+   * from {@link executeServerPersist} so writes never depend on a separate mount-only `getUser()`.
+   */
+  const resolveSessionUserId = useCallback(
+    async (
+      supabase: ReturnType<typeof getMobileSupabaseClient>,
+    ): Promise<string | null> => {
+      if (userIdRef.current) {
+        return userIdRef.current;
+      }
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      const id = user?.id ?? null;
+      userIdRef.current = id;
+      return id;
+    },
+    [],
+  );
 
   useEffect(() => {
     answersRef.current = answers;
@@ -99,31 +126,87 @@ export function SymptomPromptScreen() {
     activeIndexRef.current = activeIndex;
   }, [activeIndex]);
 
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const supabase = getMobileSupabaseClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!cancelled) {
-        userIdRef.current = user?.id ?? null;
+  const executeServerPersist = useCallback(
+    (line: PresetSymptomRow, answer: SymptomPromptAnswer) => {
+      void (async () => {
+        const supabase = getMobileSupabaseClient();
+        const uid = await resolveSessionUserId(supabase);
+        if (!uid) {
+          setPersistError(
+            'Your session could not be verified. Try signing in again.',
+          );
+          return;
+        }
+        const r = await upsertEpisodeSymptomAnswer(supabase, {
+          userId: uid,
+          episodeId: episodeIdRef.current,
+          line,
+          answer,
+        });
+        if (!r.ok) {
+          setPersistError(r.error.message);
+        } else {
+          setPersistError(null);
+        }
+      })();
+    },
+    [resolveSessionUserId],
+  );
+
+  /**
+   * Cancels the debounced server timer, then **immediately** persists the latest free-text
+   * `{ line, answer }` from {@link pendingServerFreeTextPersistRef} (if any). Call from
+   * Next/Back, `useLayoutEffect` (episode change), and unmount so the last keystrokes are not lost.
+   */
+  const flushPendingServerPersist = useCallback(() => {
+    if (serverPersistTimerRef.current !== null) {
+      clearTimeout(serverPersistTimerRef.current);
+      serverPersistTimerRef.current = null;
+    }
+    const pending = pendingServerFreeTextPersistRef.current;
+    pendingServerFreeTextPersistRef.current = null;
+    if (!pending) {
+      return;
+    }
+    executeServerPersist(pending.line, pending.answer);
+  }, [executeServerPersist]);
+
+  /**
+   * Schedules or runs a server upsert. User id is **not** read here: {@link executeServerPersist}
+   * always calls {@link resolveSessionUserId} so the first answer after load cannot silently skip.
+   */
+  const schedulePersistToSupabase = useCallback(
+    (line: PresetSymptomRow, answer: SymptomPromptAnswer) => {
+      if (answer.type === 'free_text') {
+        pendingServerFreeTextPersistRef.current = { line, answer };
+        if (serverPersistTimerRef.current !== null) {
+          clearTimeout(serverPersistTimerRef.current);
+        }
+        serverPersistTimerRef.current = setTimeout(() => {
+          serverPersistTimerRef.current = null;
+          const pending = pendingServerFreeTextPersistRef.current;
+          pendingServerFreeTextPersistRef.current = null;
+          if (pending) {
+            executeServerPersist(pending.line, pending.answer);
+          }
+        }, SERVER_SYMPTOM_PERSIST_DEBOUNCE_MS);
+      } else {
+        pendingServerFreeTextPersistRef.current = null;
+        if (serverPersistTimerRef.current !== null) {
+          clearTimeout(serverPersistTimerRef.current);
+          serverPersistTimerRef.current = null;
+        }
+        executeServerPersist(line, answer);
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    },
+    [executeServerPersist],
+  );
 
   useEffect(() => {
     return () => {
-      if (serverPersistTimerRef.current === null) {
-        return;
-      }
-      clearTimeout(serverPersistTimerRef.current);
-      serverPersistTimerRef.current = null;
+      flushPendingServerPersist();
     };
-  }, []);
+  }, [flushPendingServerPersist]);
 
   const persist = useCallback(
     (nextIndex: number, nextAnswers: typeof answers) => {
@@ -131,51 +214,6 @@ export function SymptomPromptScreen() {
         activeIndex: nextIndex,
         answers: nextAnswers,
       });
-    },
-    [episodeId],
-  );
-
-  const flushPendingServerPersist = useCallback(() => {
-    if (serverPersistTimerRef.current === null) {
-      return;
-    }
-    clearTimeout(serverPersistTimerRef.current);
-    serverPersistTimerRef.current = null;
-  }, []);
-
-  const schedulePersistToSupabase = useCallback(
-    (line: PresetSymptomRow, answer: SymptomPromptAnswer) => {
-      const uid = userIdRef.current;
-      if (!uid) {
-        return;
-      }
-      const run = () => {
-        void (async () => {
-          const supabase = getMobileSupabaseClient();
-          const r = await upsertEpisodeSymptomAnswer(supabase, {
-            userId: uid,
-            episodeId,
-            line,
-            answer,
-          });
-          if (!r.ok) {
-            setPersistError(r.error.message);
-          } else {
-            setPersistError(null);
-          }
-        })();
-      };
-      if (answer.type === 'free_text') {
-        if (serverPersistTimerRef.current !== null) {
-          clearTimeout(serverPersistTimerRef.current);
-        }
-        serverPersistTimerRef.current = setTimeout(() => {
-          serverPersistTimerRef.current = null;
-          run();
-        }, SERVER_SYMPTOM_PERSIST_DEBOUNCE_MS);
-      } else {
-        run();
-      }
     },
     [episodeId],
   );
@@ -190,6 +228,17 @@ export function SymptomPromptScreen() {
     setPhase('prompting');
     try {
       const supabase = getMobileSupabaseClient();
+      const uid = await resolveSessionUserId(supabase);
+      if (stale()) {
+        return;
+      }
+      if (!uid) {
+        setErrorMessage(
+          'You must be signed in to save symptom answers. Try signing in again.',
+        );
+        setStatus('error');
+        return;
+      }
       const result = await listPresetSymptomsForPreset(
         supabase,
         symptomPresetId,
@@ -237,7 +286,7 @@ export function SymptomPromptScreen() {
       setErrorMessage(message);
       setStatus('error');
     }
-  }, [episodeId, symptomPresetId]);
+  }, [episodeId, symptomPresetId, resolveSessionUserId]);
 
   useEffect(() => {
     void load();
@@ -247,10 +296,8 @@ export function SymptomPromptScreen() {
   }, [load]);
 
   useLayoutEffect(() => {
-    if (serverPersistTimerRef.current !== null) {
-      clearTimeout(serverPersistTimerRef.current);
-      serverPersistTimerRef.current = null;
-    }
+    flushPendingServerPersist();
+    episodeIdRef.current = episodeId;
     const s = getSymptomPromptSession(episodeId);
     activeIndexRef.current = s.activeIndex;
     setActiveIndex(s.activeIndex);
@@ -261,7 +308,7 @@ export function SymptomPromptScreen() {
     setErrorMessage(null);
     setPersistError(null);
     setLines([]);
-  }, [episodeId, symptomPresetId]);
+  }, [episodeId, symptomPresetId, flushPendingServerPersist]);
 
   const currentLine = lines[activeIndex] ?? null;
   const stepLabel =

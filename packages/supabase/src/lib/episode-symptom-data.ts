@@ -5,9 +5,57 @@ import type {
   Uuid,
 } from '@abstrack/types';
 import { symptomPromptAnswerToResponseColumns } from '@abstrack/types';
+import { PresetDataError } from './preset-data-error.js';
 import type { PresetDataResult } from './preset-data.js';
 import { wrap } from './preset-data.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
+
+function isPostgresUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: string }).code === '23505'
+  );
+}
+
+/**
+ * Loads all `episode_symptoms` rows for one episode step, oldest first (canonical row is first).
+ *
+ * @internal
+ */
+async function fetchEpisodeSymptomRowsForLine(
+  client: AbstrackSupabaseClient,
+  episodeId: Uuid,
+  presetSymptomId: Uuid,
+): Promise<{ data: EpisodeSymptomRow[]; error: unknown }> {
+  const r = await client
+    .from('episode_symptoms')
+    .select('*')
+    .eq('episode_id', episodeId)
+    .eq('preset_symptom_id', presetSymptomId)
+    .order('created_at', { ascending: true })
+    .order('id', { ascending: true });
+  return {
+    data: (r.data ?? []) as EpisodeSymptomRow[],
+    error: r.error,
+  };
+}
+
+/**
+ * Deletes duplicate rows by id (keeps the canonical row outside this call).
+ *
+ * @internal
+ */
+async function deleteEpisodeSymptomRowsByIds(
+  client: AbstrackSupabaseClient,
+  ids: Uuid[],
+): Promise<{ error: unknown }> {
+  if (ids.length === 0) {
+    return { error: null };
+  }
+  return client.from('episode_symptoms').delete().in('id', ids);
+}
 
 /**
  * Lists logged symptom rows for one episode (ordered like the preset).
@@ -35,7 +83,8 @@ export async function listEpisodeSymptomsForEpisode(
 
 /**
  * Inserts or updates one `episode_symptoms` row for a preset line (one row per episode + preset line).
- * Values are stored as plaintext columns under RLS (no client-side encryption).
+ * If multiple rows exist for the same pair (legacy data or pre-migration races), keeps the oldest row
+ * by `created_at` / `id` and deletes the rest before updating. Values are plaintext columns under RLS.
  *
  * @param client - Supabase client (RLS applies).
  * @param args.userId - Must match the episode owner (`episodes.user_id`) for patient-owned episodes.
@@ -55,36 +104,57 @@ export async function upsertEpisodeSymptomAnswer(
   const { userId, episodeId, line, answer } = args;
   const response = symptomPromptAnswerToResponseColumns(answer);
 
-  return wrap(async () => {
-    const existing = await client
-      .from('episode_symptoms')
-      .select('*')
-      .eq('episode_id', episodeId)
-      .eq('preset_symptom_id', line.id)
-      .limit(2);
+  const responsePayload = {
+    symptom_name: line.symptom_name,
+    sort_order: line.sort_order,
+    response_type: response.response_type,
+    response_boolean: response.response_boolean,
+    response_severity: response.response_severity,
+    response_text: response.response_text,
+  };
 
-    if (existing.error) {
-      return { data: null, error: existing.error };
+  return wrap(async () => {
+    const fetched = await fetchEpisodeSymptomRowsForLine(
+      client,
+      episodeId,
+      line.id,
+    );
+    if (fetched.error) {
+      return { data: null, error: fetched.error };
     }
 
-    const rows = (existing.data ?? []) as EpisodeSymptomRow[];
-    const first = rows[0];
+    let rows = fetched.data;
 
-    if (first) {
+    if (rows.length > 1) {
+      const duplicateIds = rows.slice(1).map((r) => r.id);
+      const { error: delError } = await deleteEpisodeSymptomRowsByIds(
+        client,
+        duplicateIds,
+      );
+      if (delError) {
+        return {
+          data: null,
+          error: new PresetDataError(
+            'conflict',
+            'Could not fix duplicate symptom entries. Try again or contact support.',
+            delError,
+          ),
+        };
+      }
+      rows = [rows[0]];
+    }
+
+    if (rows.length === 1) {
       const upd = await client
         .from('episode_symptoms')
-        .update({
-          symptom_name: line.symptom_name,
-          sort_order: line.sort_order,
-          response_type: response.response_type,
-          response_boolean: response.response_boolean,
-          response_severity: response.response_severity,
-          response_text: response.response_text,
-        })
-        .eq('id', first.id)
+        .update(responsePayload)
+        .eq('id', rows[0].id)
         .select('*')
         .single();
-      return { data: upd.data as EpisodeSymptomRow | null, error: upd.error };
+      return {
+        data: upd.data as EpisodeSymptomRow | null,
+        error: upd.error,
+      };
     }
 
     const ins = await client
@@ -93,15 +163,57 @@ export async function upsertEpisodeSymptomAnswer(
         user_id: userId,
         episode_id: episodeId,
         preset_symptom_id: line.id,
-        symptom_name: line.symptom_name,
-        sort_order: line.sort_order,
-        response_type: response.response_type,
-        response_boolean: response.response_boolean,
-        response_severity: response.response_severity,
-        response_text: response.response_text,
+        ...responsePayload,
       })
       .select('*')
       .single();
-    return { data: ins.data as EpisodeSymptomRow | null, error: ins.error };
+
+    if (ins.error && isPostgresUniqueViolation(ins.error)) {
+      const afterRace = await fetchEpisodeSymptomRowsForLine(
+        client,
+        episodeId,
+        line.id,
+      );
+      if (afterRace.error) {
+        return { data: null, error: afterRace.error };
+      }
+      let r2 = afterRace.data;
+      if (r2.length > 1) {
+        const duplicateIds = r2.slice(1).map((r) => r.id);
+        const { error: delError } = await deleteEpisodeSymptomRowsByIds(
+          client,
+          duplicateIds,
+        );
+        if (delError) {
+          return {
+            data: null,
+            error: new PresetDataError(
+              'conflict',
+              'Could not save this symptom answer. Try again.',
+              delError,
+            ),
+          };
+        }
+        r2 = [r2[0]];
+      }
+      if (r2.length === 0) {
+        return { data: null, error: ins.error };
+      }
+      const upd = await client
+        .from('episode_symptoms')
+        .update(responsePayload)
+        .eq('id', r2[0].id)
+        .select('*')
+        .single();
+      return {
+        data: upd.data as EpisodeSymptomRow | null,
+        error: upd.error,
+      };
+    }
+
+    return {
+      data: ins.data as EpisodeSymptomRow | null,
+      error: ins.error,
+    };
   });
 }

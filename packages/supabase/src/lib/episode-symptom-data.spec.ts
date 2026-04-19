@@ -14,6 +14,21 @@ const line: PresetSymptomRow = {
   updated_at: '2026-04-18T12:00:00.000Z',
 };
 
+/** Matches `.select().eq().eq().order().order()` from `fetchEpisodeSymptomRowsForLine`. */
+function chainSelectEpisodeLine(data: unknown): Record<string, unknown> {
+  return {
+    select: vi.fn(() => ({
+      eq: vi.fn(() => ({
+        eq: vi.fn(() => ({
+          order: vi.fn(() => ({
+            order: vi.fn(async () => ({ data, error: null })),
+          })),
+        })),
+      })),
+    })),
+  };
+}
+
 describe('upsertEpisodeSymptomAnswer', () => {
   it('inserts when no existing row', async () => {
     const inserted = {
@@ -32,21 +47,11 @@ describe('upsertEpisodeSymptomAnswer', () => {
     };
     let fromCalls = 0;
     const client = {
-      from: vi.fn(() => {
+      from: vi.fn((table: string) => {
         fromCalls += 1;
         if (fromCalls === 1) {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                eq: vi.fn(() => ({
-                  limit: vi.fn(async () => ({
-                    data: [],
-                    error: null,
-                  })),
-                })),
-              })),
-            })),
-          };
+          expect(table).toBe('episode_symptoms');
+          return chainSelectEpisodeLine([]);
         }
         return {
           insert: vi.fn(() => ({
@@ -96,25 +101,15 @@ describe('upsertEpisodeSymptomAnswer', () => {
       from: vi.fn(() => {
         fromCalls += 1;
         if (fromCalls === 1) {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                eq: vi.fn(() => ({
-                  limit: vi.fn(async () => ({
-                    data: [
-                      {
-                        id: existingId,
-                        user_id: 'u1',
-                        episode_id: 'ep-1',
-                        preset_symptom_id: line.id,
-                      },
-                    ],
-                    error: null,
-                  })),
-                })),
-              })),
-            })),
-          };
+          return chainSelectEpisodeLine([
+            {
+              id: existingId,
+              user_id: 'u1',
+              episode_id: 'ep-1',
+              preset_symptom_id: line.id,
+              created_at: '2026-04-18T12:00:00.000Z',
+            },
+          ]);
         }
         return {
           update: vi.fn(() => ({
@@ -143,5 +138,80 @@ describe('upsertEpisodeSymptomAnswer', () => {
       expect(result.data.response_boolean).toBe(false);
     }
     expect(fromCalls).toBe(2);
+  });
+
+  it('deletes duplicate rows then updates the oldest', async () => {
+    const keepId = 'es-keep';
+    const dropId = 'es-drop';
+    const updated = {
+      id: keepId,
+      user_id: 'u1',
+      episode_id: 'ep-1',
+      preset_symptom_id: line.id,
+      symptom_name: line.symptom_name,
+      response_type: 'yes_no',
+      response_boolean: true,
+      response_severity: null,
+      response_text: null,
+      sort_order: 0,
+      created_at: '2026-04-18T12:00:00.000Z',
+      updated_at: '2026-04-18T12:02:00.000Z',
+    };
+    let fromCalls = 0;
+    const client = {
+      from: vi.fn(() => {
+        fromCalls += 1;
+        if (fromCalls === 1) {
+          return chainSelectEpisodeLine([
+            {
+              id: keepId,
+              user_id: 'u1',
+              episode_id: 'ep-1',
+              preset_symptom_id: line.id,
+              created_at: '2026-04-18T12:00:00.000Z',
+            },
+            {
+              id: dropId,
+              user_id: 'u1',
+              episode_id: 'ep-1',
+              preset_symptom_id: line.id,
+              created_at: '2026-04-18T12:00:01.000Z',
+            },
+          ]);
+        }
+        if (fromCalls === 2) {
+          return {
+            delete: vi.fn(() => ({
+              in: vi.fn(async () => ({ error: null })),
+            })),
+          };
+        }
+        return {
+          update: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              select: vi.fn(() => ({
+                single: vi.fn(async () => ({
+                  data: updated,
+                  error: null,
+                })),
+              })),
+            })),
+          })),
+        };
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await upsertEpisodeSymptomAnswer(client, {
+      userId: 'u1',
+      episodeId: 'ep-1',
+      line,
+      answer: { type: 'yes_no', value: true },
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.id).toBe(keepId);
+    }
+    expect(fromCalls).toBe(3);
   });
 });

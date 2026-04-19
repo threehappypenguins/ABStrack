@@ -1,0 +1,32 @@
+-- One answer row per preset symptom line within an episode (prevents duplicates and races).
+-- Partial index: only rows tied to an episode (episode_id IS NOT NULL) with a preset line id.
+-- Ad-hoc / NULL episode_id rows are out of scope for this uniqueness rule.
+
+-- Remove duplicate (episode_id, preset_symptom_id) rows if any exist before creating the index.
+WITH ranked AS (
+  SELECT
+    id,
+    ROW_NUMBER() OVER (
+      PARTITION BY episode_id, preset_symptom_id
+      ORDER BY
+        created_at ASC,
+        id ASC
+    ) AS rn
+  FROM public.episode_symptoms
+  WHERE
+    episode_id IS NOT NULL
+    AND preset_symptom_id IS NOT NULL
+)
+DELETE FROM public.episode_symptoms es
+USING ranked r
+WHERE
+  es.id = r.id
+  AND r.rn > 1;
+
+CREATE UNIQUE INDEX IF NOT EXISTS episode_symptoms_episode_id_preset_symptom_id_uidx
+  ON public.episode_symptoms (episode_id, preset_symptom_id)
+  WHERE
+    episode_id IS NOT NULL
+    AND preset_symptom_id IS NOT NULL;
+
+COMMENT ON INDEX public.episode_symptoms_episode_id_preset_symptom_id_uidx IS 'At most one logged answer per preset symptom step per episode (episode_symptoms upsert).';
