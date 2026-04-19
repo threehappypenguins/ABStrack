@@ -2,8 +2,12 @@
 -- Partial index: only rows tied to an episode (episode_id IS NOT NULL) with a preset line id.
 -- Ad-hoc / NULL episode_id rows are out of scope for this uniqueness rule.
 
--- Hold an exclusive lock for the whole migration transaction so no concurrent writer can insert a
--- duplicate (episode_id, preset_symptom_id) between the DELETE and CREATE UNIQUE INDEX.
+-- Explicit transaction: LOCK TABLE requires a transaction block (SQLSTATE 25P01 if applied
+-- statement-by-statement). Local `supabase db reset` can run migrations outside an outer txn.
+BEGIN;
+
+-- Hold an exclusive lock for this transaction so no concurrent writer can insert a duplicate
+-- (episode_id, preset_symptom_id) between the DELETE and CREATE UNIQUE INDEX.
 LOCK TABLE public.episode_symptoms IN EXCLUSIVE MODE;
 
 -- Remove duplicate (episode_id, preset_symptom_id) rows if any exist before creating the index.
@@ -35,3 +39,5 @@ CREATE UNIQUE INDEX IF NOT EXISTS episode_symptoms_episode_id_preset_symptom_id_
     AND preset_symptom_id IS NOT NULL;
 
 COMMENT ON INDEX public.episode_symptoms_episode_id_preset_symptom_id_uidx IS 'At most one logged answer per preset symptom step per episode (episode_symptoms upsert).';
+
+COMMIT;
