@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { PresetSymptomRow } from '@abstrack/types';
-import { upsertEpisodeSymptomAnswer } from './episode-symptom-data.js';
+import {
+  listEpisodeSymptomsForEpisode,
+  upsertEpisodeSymptomAnswer,
+} from './episode-symptom-data.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
 
 const line: PresetSymptomRow = {
@@ -29,7 +32,63 @@ function chainSelectEpisodeLine(data: unknown): Record<string, unknown> {
   };
 }
 
+describe('listEpisodeSymptomsForEpisode', () => {
+  it('orders by sort_order asc, then created_at desc, then id desc', async () => {
+    const orderCalls: { column: string; ascending: boolean }[] = [];
+    const orderFn = vi.fn((column: string, opts?: { ascending?: boolean }) => {
+      orderCalls.push({
+        column,
+        ascending: opts?.ascending ?? true,
+      });
+      if (orderCalls.length < 3) {
+        return { order: orderFn };
+      }
+      return Promise.resolve({ data: [], error: null });
+    });
+    const client = {
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            order: orderFn,
+          })),
+        })),
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await listEpisodeSymptomsForEpisode(client, 'ep-1');
+
+    expect(result.ok).toBe(true);
+    expect(orderCalls).toEqual([
+      { column: 'sort_order', ascending: true },
+      { column: 'created_at', ascending: false },
+      { column: 'id', ascending: false },
+    ]);
+  });
+});
+
 describe('upsertEpisodeSymptomAnswer', () => {
+  it('returns validation_error when answer.type does not match line.response_type', async () => {
+    const client = {
+      from: vi.fn(() => {
+        throw new Error('should not query');
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await upsertEpisodeSymptomAnswer(client, {
+      userId: 'u1',
+      episodeId: 'ep-1',
+      line: { ...line, response_type: 'free_text' },
+      answer: { type: 'yes_no', value: true },
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('validation_error');
+      expect(result.error.message).toContain('symptom line');
+    }
+    expect(client.from).not.toHaveBeenCalled();
+  });
+
   it('inserts when no existing row', async () => {
     const inserted = {
       id: 'es-1',

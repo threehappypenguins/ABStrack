@@ -58,7 +58,10 @@ async function deleteEpisodeSymptomRowsByIds(
 }
 
 /**
- * Lists logged symptom rows for one episode (ordered like the preset).
+ * Lists logged symptom rows for one episode (preset order, then stable duplicate ordering).
+ *
+ * Orders by `sort_order` ASC, then `created_at` DESC, then `id` DESC so legacy duplicate rows for the
+ * same preset line list the canonical row first (same tie-break as upsert / migration / client map).
  *
  * @param client - Supabase client (RLS applies).
  * @param episodeId - `episodes.id`.
@@ -73,7 +76,8 @@ export async function listEpisodeSymptomsForEpisode(
       .select('*')
       .eq('episode_id', episodeId)
       .order('sort_order', { ascending: true })
-      .order('id', { ascending: true });
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false });
     return {
       data: (r.data ?? []) as EpisodeSymptomRow[],
       error: r.error,
@@ -90,7 +94,7 @@ export async function listEpisodeSymptomsForEpisode(
  * @param args.userId - Must match the episode owner (`episodes.user_id`) for patient-owned episodes.
  * @param args.episodeId - `episodes.id`.
  * @param args.line - Active preset symptom line (defines `preset_symptom_id`, name, sort order).
- * @param args.answer - Current answer for that line.
+ * @param args.answer - Current answer for that line (`answer.type` must match `line.response_type`).
  */
 export async function upsertEpisodeSymptomAnswer(
   client: AbstrackSupabaseClient,
@@ -102,6 +106,17 @@ export async function upsertEpisodeSymptomAnswer(
   },
 ): Promise<PresetDataResult<EpisodeSymptomRow>> {
   const { userId, episodeId, line, answer } = args;
+
+  if (answer.type !== line.response_type) {
+    return {
+      ok: false,
+      error: new PresetDataError(
+        'validation_error',
+        'Answer type does not match this symptom line.',
+      ),
+    };
+  }
+
   const response = symptomPromptAnswerToResponseColumns(answer);
 
   const responsePayload = {
