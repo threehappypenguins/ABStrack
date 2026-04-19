@@ -102,7 +102,8 @@ export function SymptomPromptFlow({
   const loadGenRef = useRef(0);
   /**
    * Monotonic id for `executeServerPersist` attempts; bumped on each new persist and on episode
-   * change so out-of-order async completions do not clobber {@link persistError}.
+   * change so out-of-order async completions do not clobber {@link persistError}. Episode id is
+   * captured per attempt so flushes during navigation cannot attach errors to the wrong episode.
    */
   const serverPersistGenerationRef = useRef(0);
 
@@ -137,6 +138,7 @@ export function SymptomPromptFlow({
 
   const executeServerPersist = useCallback(
     (line: PresetSymptomRow, answer: SymptomPromptAnswer) => {
+      const targetEpisodeId = episodeIdRef.current;
       const generation = ++serverPersistGenerationRef.current;
       void (async () => {
         const supabase = createBrowserClient();
@@ -145,18 +147,23 @@ export function SymptomPromptFlow({
           return;
         }
         if (!uid) {
-          setPersistError(
-            'Your session could not be verified. Try signing in again.',
-          );
+          if (episodeIdRef.current === targetEpisodeId) {
+            setPersistError(
+              'Your session could not be verified. Try signing in again.',
+            );
+          }
           return;
         }
         const r = await upsertEpisodeSymptomAnswer(supabase, {
           userId: uid,
-          episodeId: episodeIdRef.current,
+          episodeId: targetEpisodeId,
           line,
           answer,
         });
         if (generation !== serverPersistGenerationRef.current) {
+          return;
+        }
+        if (episodeIdRef.current !== targetEpisodeId) {
           return;
         }
         if (!r.ok) {

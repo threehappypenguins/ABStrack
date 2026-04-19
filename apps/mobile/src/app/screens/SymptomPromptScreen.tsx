@@ -99,6 +99,8 @@ export function SymptomPromptScreen() {
   /**
    * Latest server-persist generation. Incremented per {@link executeServerPersist} attempt and
    * before flush on episode change / unmount so older in-flight writes cannot update {@link persistError}.
+   * Each attempt also captures the episode id at call time so a flushed write after navigation cannot
+   * surface errors for the wrong episode ({@link executeServerPersist}).
    */
   const serverPersistGenerationRef = useRef(0);
 
@@ -132,12 +134,13 @@ export function SymptomPromptScreen() {
   }, [activeIndex]);
 
   /**
-   * Each call bumps {@link serverPersistGenerationRef}; after each `await`, if the captured
-   * generation no longer matches the ref, this attempt is stale and must not update
-   * {@link persistError} (avoids out-of-order failures/successes).
+   * Each call bumps {@link serverPersistGenerationRef} and captures the current episode id so flushes
+   * during navigation still write to the correct episode and do not update {@link persistError} for
+   * the wrong screen after the route has advanced.
    */
   const executeServerPersist = useCallback(
     (line: PresetSymptomRow, answer: SymptomPromptAnswer) => {
+      const targetEpisodeId = episodeIdRef.current;
       const generation = ++serverPersistGenerationRef.current;
       void (async () => {
         const supabase = getMobileSupabaseClient();
@@ -146,18 +149,23 @@ export function SymptomPromptScreen() {
           return;
         }
         if (!uid) {
-          setPersistError(
-            'Your session could not be verified. Try signing in again.',
-          );
+          if (episodeIdRef.current === targetEpisodeId) {
+            setPersistError(
+              'Your session could not be verified. Try signing in again.',
+            );
+          }
           return;
         }
         const r = await upsertEpisodeSymptomAnswer(supabase, {
           userId: uid,
-          episodeId: episodeIdRef.current,
+          episodeId: targetEpisodeId,
           line,
           answer,
         });
         if (generation !== serverPersistGenerationRef.current) {
+          return;
+        }
+        if (episodeIdRef.current !== targetEpisodeId) {
           return;
         }
         if (!r.ok) {
