@@ -3,9 +3,16 @@
  *
  * @param props - Props.
  * @param props.title - Accessible name for the loading region.
+ * @param props.message - Visible status line (defaults to “Loading…”).
  * @returns Loading section.
  */
-export function PageLoading({ title }: { title: string }) {
+export function PageLoading({
+  title,
+  message = 'Loading…',
+}: {
+  title: string;
+  message?: string;
+}) {
   return (
     <section
       className="rounded-2xl border border-app-border/90 bg-app-surface p-6 shadow-soft ring-1 ring-[color:var(--app-ring-slate)]"
@@ -17,7 +24,7 @@ export function PageLoading({ title }: { title: string }) {
           className="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-app-primary border-t-transparent"
           aria-hidden
         />
-        <p className="text-sm font-medium text-app-muted">Loading…</p>
+        <p className="text-sm font-medium text-app-muted">{message}</p>
       </div>
     </section>
   );

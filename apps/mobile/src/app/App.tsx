@@ -12,6 +12,7 @@ import { MainTabNavigator } from './navigation/MainTabNavigator';
 import type { MainStackParamList } from './navigation/types';
 import { LoginScreen } from './screens/LoginScreen';
 import { EpisodeStartScreen } from './screens/EpisodeStartScreen';
+import { SymptomPromptScreen } from './screens/SymptomPromptScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { SignupScreen } from './screens/SignupScreen';
 import { UpdatePasswordScreen } from './screens/UpdatePasswordScreen';
@@ -387,6 +388,14 @@ function AppBootstrap() {
               component={EpisodeStartScreen}
               options={{
                 title: '',
+                headerBackTitle: 'Home',
+              }}
+            />
+            <MainStack.Screen
+              name="SymptomPrompt"
+              component={SymptomPromptScreen}
+              options={{
+                title: 'Symptoms',
                 headerBackTitle: 'Home',
               }}
             />
