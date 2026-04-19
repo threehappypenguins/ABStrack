@@ -218,9 +218,10 @@ describe('upsertEpisodeSymptomAnswer', () => {
     };
     let fromCalls = 0;
     const client = {
-      from: vi.fn(() => {
+      from: vi.fn((table: string) => {
         fromCalls += 1;
         if (fromCalls === 1) {
+          expect(table).toBe('episode_symptoms');
           return chainSelectEpisodeLine([
             {
               id: newestId,
@@ -239,6 +240,20 @@ describe('upsertEpisodeSymptomAnswer', () => {
           ]);
         }
         if (fromCalls === 2) {
+          expect(table).toBe('episode_media');
+          return {
+            update: vi.fn((payload: { episode_symptom_id: string }) => {
+              expect(payload).toEqual({ episode_symptom_id: newestId });
+              return {
+                eq: vi.fn(() => ({
+                  in: vi.fn(async () => ({ error: null })),
+                })),
+              };
+            }),
+          };
+        }
+        if (fromCalls === 3) {
+          expect(table).toBe('episode_symptoms');
           return {
             delete: vi.fn(() => ({
               in: vi.fn(async () => ({ error: null })),
@@ -271,7 +286,7 @@ describe('upsertEpisodeSymptomAnswer', () => {
     if (result.ok) {
       expect(result.data.id).toBe(newestId);
     }
-    expect(fromCalls).toBe(3);
+    expect(fromCalls).toBe(4);
   });
 
   it('on insert unique violation (23505), refetches and updates the concurrent row', async () => {

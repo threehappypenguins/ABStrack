@@ -43,6 +43,34 @@ async function fetchEpisodeSymptomRowsForLine(
 }
 
 /**
+ * Moves `episode_media` rows off duplicate `episode_symptoms` ids before those rows are deleted.
+ * `episode_media_symptom_step_fk` is `ON DELETE CASCADE`; without this, storage metadata would be
+ * dropped with the duplicate symptom row.
+ *
+ * @internal
+ */
+async function reassignEpisodeMediaToCanonicalSymptomRow(
+  client: AbstrackSupabaseClient,
+  args: {
+    episodeId: Uuid;
+    canonicalEpisodeSymptomId: Uuid;
+    duplicateEpisodeSymptomIds: Uuid[];
+  },
+): Promise<{ error: unknown }> {
+  const { episodeId, canonicalEpisodeSymptomId, duplicateEpisodeSymptomIds } =
+    args;
+  if (duplicateEpisodeSymptomIds.length === 0) {
+    return { error: null };
+  }
+  const r = await client
+    .from('episode_media')
+    .update({ episode_symptom_id: canonicalEpisodeSymptomId })
+    .eq('episode_id', episodeId)
+    .in('episode_symptom_id', duplicateEpisodeSymptomIds);
+  return { error: r.error };
+}
+
+/**
  * Deletes duplicate rows by id (keeps the canonical row outside this call).
  *
  * @internal
@@ -55,6 +83,63 @@ async function deleteEpisodeSymptomRowsByIds(
     return { error: null };
   }
   return client.from('episode_symptoms').delete().in('id', ids);
+}
+
+/** User-facing copy when dedupe fails on the initial fetch path. */
+const DUPLICATE_SYMPTOM_CONFLICT_FIX =
+  'Could not fix duplicate symptom entries. Try again or contact support.';
+
+/** User-facing copy when dedupe fails after a unique race on insert. */
+const DUPLICATE_SYMPTOM_CONFLICT_SAVE =
+  'Could not save this symptom answer. Try again.';
+
+/**
+ * If `rows` has more than one line for the same preset step (newest first), repoints
+ * `episode_media`, deletes duplicate `episode_symptoms` rows, and returns `[canonical]`.
+ * Otherwise returns `rows` unchanged.
+ *
+ * @internal
+ */
+async function dedupeEpisodeSymptomRowsForLine(
+  client: AbstrackSupabaseClient,
+  episodeId: Uuid,
+  rows: EpisodeSymptomRow[],
+  conflictMessage: string,
+): Promise<
+  | { ok: true; rows: EpisodeSymptomRow[] }
+  | { ok: false; error: PresetDataError }
+> {
+  if (rows.length <= 1) {
+    return { ok: true, rows };
+  }
+  const canonicalId = rows[0].id;
+  const duplicateIds = rows.slice(1).map((r) => r.id);
+
+  const { error: mediaError } = await reassignEpisodeMediaToCanonicalSymptomRow(
+    client,
+    {
+      episodeId,
+      canonicalEpisodeSymptomId: canonicalId,
+      duplicateEpisodeSymptomIds: duplicateIds,
+    },
+  );
+  if (mediaError) {
+    return {
+      ok: false,
+      error: new PresetDataError('conflict', conflictMessage, mediaError),
+    };
+  }
+  const { error: delError } = await deleteEpisodeSymptomRowsByIds(
+    client,
+    duplicateIds,
+  );
+  if (delError) {
+    return {
+      ok: false,
+      error: new PresetDataError('conflict', conflictMessage, delError),
+    };
+  }
+  return { ok: true, rows: [rows[0]] };
 }
 
 /**
@@ -88,7 +173,8 @@ export async function listEpisodeSymptomsForEpisode(
 /**
  * Inserts or updates one `episode_symptoms` row for a preset line (one row per episode + preset line).
  * If multiple rows exist for the same pair (legacy data or pre-migration races), keeps the newest row
- * by `created_at` / `id` and deletes the rest before updating. Values are plaintext columns under RLS.
+ * by `created_at` / `id`, repoints `episode_media` off duplicate ids (CASCADE), deletes the rest,
+ * then updates. Values are plaintext columns under RLS.
  *
  * @param client - Supabase client (RLS applies).
  * @param args.userId - Must match the episode owner (`episodes.user_id`) for patient-owned episodes.
@@ -140,24 +226,16 @@ export async function upsertEpisodeSymptomAnswer(
 
     let rows = fetched.data;
 
-    if (rows.length > 1) {
-      const duplicateIds = rows.slice(1).map((r) => r.id);
-      const { error: delError } = await deleteEpisodeSymptomRowsByIds(
-        client,
-        duplicateIds,
-      );
-      if (delError) {
-        return {
-          data: null,
-          error: new PresetDataError(
-            'conflict',
-            'Could not fix duplicate symptom entries. Try again or contact support.',
-            delError,
-          ),
-        };
-      }
-      rows = [rows[0]];
+    const initialDedupe = await dedupeEpisodeSymptomRowsForLine(
+      client,
+      episodeId,
+      rows,
+      DUPLICATE_SYMPTOM_CONFLICT_FIX,
+    );
+    if (!initialDedupe.ok) {
+      return { data: null, error: initialDedupe.error };
     }
+    rows = initialDedupe.rows;
 
     if (rows.length === 1) {
       const upd = await client
@@ -193,24 +271,16 @@ export async function upsertEpisodeSymptomAnswer(
         return { data: null, error: afterRace.error };
       }
       let r2 = afterRace.data;
-      if (r2.length > 1) {
-        const duplicateIds = r2.slice(1).map((r) => r.id);
-        const { error: delError } = await deleteEpisodeSymptomRowsByIds(
-          client,
-          duplicateIds,
-        );
-        if (delError) {
-          return {
-            data: null,
-            error: new PresetDataError(
-              'conflict',
-              'Could not save this symptom answer. Try again.',
-              delError,
-            ),
-          };
-        }
-        r2 = [r2[0]];
+      const raceDedupe = await dedupeEpisodeSymptomRowsForLine(
+        client,
+        episodeId,
+        r2,
+        DUPLICATE_SYMPTOM_CONFLICT_SAVE,
+      );
+      if (!raceDedupe.ok) {
+        return { data: null, error: raceDedupe.error };
       }
+      r2 = raceDedupe.rows;
       if (r2.length === 0) {
         return { data: null, error: ins.error };
       }
