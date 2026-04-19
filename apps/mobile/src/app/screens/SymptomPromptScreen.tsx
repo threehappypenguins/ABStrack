@@ -154,6 +154,9 @@ export function SymptomPromptScreen() {
     setAnswers(s.answers);
     answersRef.current = s.answers;
     setPhase('prompting');
+    setStatus('loading');
+    setErrorMessage(null);
+    setLines([]);
   }, [episodeId, symptomPresetId]);
 
   const currentLine = lines[activeIndex] ?? null;

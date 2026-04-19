@@ -106,6 +106,9 @@ export function SymptomPromptFlow({
     answersRef.current = s.answers;
     activeIndexRef.current = s.activeIndex;
     setPhase('prompting');
+    setStatus('loading');
+    setErrorMessage(null);
+    setLines([]);
     setHydrated(true);
   }, [episodeId, symptomPresetId]);
 
