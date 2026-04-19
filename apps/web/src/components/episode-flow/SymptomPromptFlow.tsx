@@ -100,6 +100,11 @@ export function SymptomPromptFlow({
   const userIdRef = useRef<string | null>(null);
   /** Bumps on each `load()` start and on effect cleanup so in-flight loads ignore stale results after unmount, retry, or param change. */
   const loadGenRef = useRef(0);
+  /**
+   * Monotonic id for `executeServerPersist` attempts; bumped on each new persist and on episode
+   * change so out-of-order async completions do not clobber {@link persistError}.
+   */
+  const serverPersistGenerationRef = useRef(0);
 
   /**
    * Resolves the signed-in user id for RLS writes, caching on {@link userIdRef}.
@@ -132,9 +137,13 @@ export function SymptomPromptFlow({
 
   const executeServerPersist = useCallback(
     (line: PresetSymptomRow, answer: SymptomPromptAnswer) => {
+      const generation = ++serverPersistGenerationRef.current;
       void (async () => {
         const supabase = createBrowserClient();
         const uid = await resolveSessionUserId(supabase);
+        if (generation !== serverPersistGenerationRef.current) {
+          return;
+        }
         if (!uid) {
           setPersistError(
             'Your session could not be verified. Try signing in again.',
@@ -147,6 +156,9 @@ export function SymptomPromptFlow({
           line,
           answer,
         });
+        if (generation !== serverPersistGenerationRef.current) {
+          return;
+        }
         if (!r.ok) {
           setPersistError(r.error.message);
         } else {
@@ -211,6 +223,7 @@ export function SymptomPromptFlow({
         answers: answersRef.current,
       });
     }
+    serverPersistGenerationRef.current += 1;
     flushPendingServerPersist();
     episodeIdRef.current = episodeId;
     const s = getSymptomPromptSession(episodeId);
@@ -253,6 +266,7 @@ export function SymptomPromptFlow({
 
   useEffect(() => {
     return () => {
+      serverPersistGenerationRef.current += 1;
       flushPendingServerPersist();
     };
   }, [flushPendingServerPersist]);

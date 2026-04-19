@@ -80,18 +80,47 @@ export function symptomPromptAnswerToResponseColumns(
 }
 
 /**
+ * Prefer `a` over `b` when both rows are for the same preset line — matches upsert/dedupe
+ * (`created_at` DESC, `id` DESC) so hydration agrees with the canonical DB row.
+ */
+function episodeSymptomRowIsCanonicalOver(
+  a: EpisodeSymptomRow,
+  b: EpisodeSymptomRow,
+): boolean {
+  const ta = new Date(a.created_at).getTime();
+  const tb = new Date(b.created_at).getTime();
+  if (ta !== tb) {
+    return ta > tb;
+  }
+  return a.id > b.id;
+}
+
+/**
  * Builds {@link SymptomPromptAnswers} from persisted episode symptom rows (keyed by `preset_symptoms.id`).
+ *
+ * If multiple rows share a `preset_symptom_id` (legacy duplicates), keeps the same canonical row as
+ * server upsert / the unique-index migration: newest `created_at`, then `id` DESC.
  *
  * @param rows - Rows for one episode (same owner as the episode under RLS).
  */
 export function episodeSymptomRowsToAnswersMap(
   rows: EpisodeSymptomRow[],
 ): SymptomPromptAnswers {
-  const out: SymptomPromptAnswers = {};
+  const canonicalByPreset: Record<string, EpisodeSymptomRow> = {};
   for (const row of rows) {
-    if (row.preset_symptom_id) {
-      out[row.preset_symptom_id] = episodeSymptomRowToPromptAnswer(row);
+    if (!row.preset_symptom_id) {
+      continue;
     }
+    const key = row.preset_symptom_id;
+    const prev = canonicalByPreset[key];
+    if (!prev || episodeSymptomRowIsCanonicalOver(row, prev)) {
+      canonicalByPreset[key] = row;
+    }
+  }
+
+  const out: SymptomPromptAnswers = {};
+  for (const [presetId, row] of Object.entries(canonicalByPreset)) {
+    out[presetId] = episodeSymptomRowToPromptAnswer(row);
   }
   return out;
 }

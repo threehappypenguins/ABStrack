@@ -3,14 +3,15 @@
 -- Ad-hoc / NULL episode_id rows are out of scope for this uniqueness rule.
 
 -- Remove duplicate (episode_id, preset_symptom_id) rows if any exist before creating the index.
+-- Keep the newest row per pair so we do not discard the latest user-entered answer (older rows are races/legacy).
 WITH ranked AS (
   SELECT
     id,
     ROW_NUMBER() OVER (
       PARTITION BY episode_id, preset_symptom_id
       ORDER BY
-        created_at ASC,
-        id ASC
+        created_at DESC,
+        id DESC
     ) AS rn
   FROM public.episode_symptoms
   WHERE

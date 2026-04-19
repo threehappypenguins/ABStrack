@@ -83,4 +83,66 @@ describe('episode-symptom mapping', () => {
     ]);
     expect(map['ps-1']).toEqual({ type: 'yes_no', value: true });
   });
+
+  it('episodeSymptomRowsToAnswersMap keeps newest duplicate per preset_symptom_id', () => {
+    const older = {
+      ...baseRow,
+      id: '00000000-0000-4000-8000-000000000001',
+      preset_symptom_id: 'ps-1',
+      created_at: '2026-04-18T12:00:00.000Z',
+      response_type: 'yes_no' as const,
+      response_boolean: false,
+      response_severity: null,
+      response_text: null,
+    } as EpisodeSymptomRow;
+    const newer = {
+      ...baseRow,
+      id: '00000000-0000-4000-8000-000000000002',
+      preset_symptom_id: 'ps-1',
+      created_at: '2026-04-18T12:00:01.000Z',
+      response_type: 'yes_no' as const,
+      response_boolean: true,
+      response_severity: null,
+      response_text: null,
+    } as EpisodeSymptomRow;
+
+    expect(episodeSymptomRowsToAnswersMap([older, newer])['ps-1']).toEqual({
+      type: 'yes_no',
+      value: true,
+    });
+    expect(episodeSymptomRowsToAnswersMap([newer, older])['ps-1']).toEqual({
+      type: 'yes_no',
+      value: true,
+    });
+  });
+
+  it('episodeSymptomRowsToAnswersMap breaks created_at ties with id DESC', () => {
+    const lowerId = {
+      ...baseRow,
+      id: '00000000-0000-4000-8000-000000000001',
+      preset_symptom_id: 'ps-1',
+      created_at: '2026-04-18T12:00:00.000Z',
+      response_type: 'yes_no' as const,
+      response_boolean: false,
+      response_severity: null,
+      response_text: null,
+    } as EpisodeSymptomRow;
+    const higherId = {
+      ...baseRow,
+      id: '00000000-0000-4000-8000-000000000002',
+      preset_symptom_id: 'ps-1',
+      created_at: '2026-04-18T12:00:00.000Z',
+      response_type: 'yes_no' as const,
+      response_boolean: true,
+      response_severity: null,
+      response_text: null,
+    } as EpisodeSymptomRow;
+
+    expect(episodeSymptomRowsToAnswersMap([lowerId, higherId])['ps-1']).toEqual(
+      {
+        type: 'yes_no',
+        value: true,
+      },
+    );
+  });
 });

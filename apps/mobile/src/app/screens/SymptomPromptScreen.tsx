@@ -96,6 +96,11 @@ export function SymptomPromptScreen() {
   const userIdRef = useRef<string | null>(null);
   /** Bumps on each `load()` start and on effect cleanup so in-flight loads ignore stale results after unmount, retry, or param change. */
   const loadGenRef = useRef(0);
+  /**
+   * Latest server-persist generation. Incremented per {@link executeServerPersist} attempt and
+   * before flush on episode change / unmount so older in-flight writes cannot update {@link persistError}.
+   */
+  const serverPersistGenerationRef = useRef(0);
 
   /**
    * Caches the auth user id on {@link userIdRef}. Called from {@link load} before `ready`, and
@@ -126,11 +131,20 @@ export function SymptomPromptScreen() {
     activeIndexRef.current = activeIndex;
   }, [activeIndex]);
 
+  /**
+   * Each call bumps {@link serverPersistGenerationRef}; after each `await`, if the captured
+   * generation no longer matches the ref, this attempt is stale and must not update
+   * {@link persistError} (avoids out-of-order failures/successes).
+   */
   const executeServerPersist = useCallback(
     (line: PresetSymptomRow, answer: SymptomPromptAnswer) => {
+      const generation = ++serverPersistGenerationRef.current;
       void (async () => {
         const supabase = getMobileSupabaseClient();
         const uid = await resolveSessionUserId(supabase);
+        if (generation !== serverPersistGenerationRef.current) {
+          return;
+        }
         if (!uid) {
           setPersistError(
             'Your session could not be verified. Try signing in again.',
@@ -143,6 +157,9 @@ export function SymptomPromptScreen() {
           line,
           answer,
         });
+        if (generation !== serverPersistGenerationRef.current) {
+          return;
+        }
         if (!r.ok) {
           setPersistError(r.error.message);
         } else {
@@ -204,6 +221,7 @@ export function SymptomPromptScreen() {
 
   useEffect(() => {
     return () => {
+      serverPersistGenerationRef.current += 1;
       flushPendingServerPersist();
     };
   }, [flushPendingServerPersist]);
@@ -296,6 +314,7 @@ export function SymptomPromptScreen() {
   }, [load]);
 
   useLayoutEffect(() => {
+    serverPersistGenerationRef.current += 1;
     flushPendingServerPersist();
     episodeIdRef.current = episodeId;
     const s = getSymptomPromptSession(episodeId);

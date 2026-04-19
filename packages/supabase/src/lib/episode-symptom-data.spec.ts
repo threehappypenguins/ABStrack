@@ -14,7 +14,7 @@ const line: PresetSymptomRow = {
   updated_at: '2026-04-18T12:00:00.000Z',
 };
 
-/** Matches `.select().eq().eq().order().order()` from `fetchEpisodeSymptomRowsForLine`. */
+/** Matches `.select().eq().eq().order(created_at desc).order(id desc)` from `fetchEpisodeSymptomRowsForLine`. */
 function chainSelectEpisodeLine(data: unknown): Record<string, unknown> {
   return {
     select: vi.fn(() => ({
@@ -140,11 +140,11 @@ describe('upsertEpisodeSymptomAnswer', () => {
     expect(fromCalls).toBe(2);
   });
 
-  it('deletes duplicate rows then updates the oldest', async () => {
-    const keepId = 'es-keep';
-    const dropId = 'es-drop';
+  it('deletes duplicate rows then updates the newest', async () => {
+    const newestId = 'es-newest';
+    const olderId = 'es-older';
     const updated = {
-      id: keepId,
+      id: newestId,
       user_id: 'u1',
       episode_id: 'ep-1',
       preset_symptom_id: line.id,
@@ -164,18 +164,18 @@ describe('upsertEpisodeSymptomAnswer', () => {
         if (fromCalls === 1) {
           return chainSelectEpisodeLine([
             {
-              id: keepId,
-              user_id: 'u1',
-              episode_id: 'ep-1',
-              preset_symptom_id: line.id,
-              created_at: '2026-04-18T12:00:00.000Z',
-            },
-            {
-              id: dropId,
+              id: newestId,
               user_id: 'u1',
               episode_id: 'ep-1',
               preset_symptom_id: line.id,
               created_at: '2026-04-18T12:00:01.000Z',
+            },
+            {
+              id: olderId,
+              user_id: 'u1',
+              episode_id: 'ep-1',
+              preset_symptom_id: line.id,
+              created_at: '2026-04-18T12:00:00.000Z',
             },
           ]);
         }
@@ -210,7 +210,7 @@ describe('upsertEpisodeSymptomAnswer', () => {
 
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.data.id).toBe(keepId);
+      expect(result.data.id).toBe(newestId);
     }
     expect(fromCalls).toBe(3);
   });

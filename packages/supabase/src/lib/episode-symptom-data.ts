@@ -20,7 +20,7 @@ function isPostgresUniqueViolation(error: unknown): boolean {
 }
 
 /**
- * Loads all `episode_symptoms` rows for one episode step, oldest first (canonical row is first).
+ * Loads all `episode_symptoms` rows for one episode step, newest first (canonical row is first).
  *
  * @internal
  */
@@ -34,8 +34,8 @@ async function fetchEpisodeSymptomRowsForLine(
     .select('*')
     .eq('episode_id', episodeId)
     .eq('preset_symptom_id', presetSymptomId)
-    .order('created_at', { ascending: true })
-    .order('id', { ascending: true });
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false });
   return {
     data: (r.data ?? []) as EpisodeSymptomRow[],
     error: r.error,
@@ -83,7 +83,7 @@ export async function listEpisodeSymptomsForEpisode(
 
 /**
  * Inserts or updates one `episode_symptoms` row for a preset line (one row per episode + preset line).
- * If multiple rows exist for the same pair (legacy data or pre-migration races), keeps the oldest row
+ * If multiple rows exist for the same pair (legacy data or pre-migration races), keeps the newest row
  * by `created_at` / `id` and deletes the rest before updating. Values are plaintext columns under RLS.
  *
  * @param client - Supabase client (RLS applies).
