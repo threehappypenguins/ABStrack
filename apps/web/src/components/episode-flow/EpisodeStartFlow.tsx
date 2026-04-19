@@ -80,13 +80,6 @@ export function EpisodeStartFlow() {
           setLoadState('idle');
           return;
         }
-        if (!saveResult.data) {
-          setSelectedId(template.id);
-          setSubmitError('Could not start episode.');
-          announce('Could not start episode.', { politeness: 'assertive' });
-          setLoadState('idle');
-          return;
-        }
         singleTemplateAutoSucceededRef.current = true;
         announce('Episode started.', { politeness: 'polite' });
         // Stay on `loading` until navigation unmounts this view — `idle` would paint the chooser for a frame.
@@ -141,12 +134,6 @@ export function EpisodeStartFlow() {
       if (!result.ok) {
         setSubmitError(result.error.message);
         announce(result.error.message, { politeness: 'assertive' });
-        return;
-      }
-      if (!result.data) {
-        const message = 'Could not start episode.';
-        setSubmitError(message);
-        announce(message, { politeness: 'assertive' });
         return;
       }
       announce('Episode started.', { politeness: 'polite' });

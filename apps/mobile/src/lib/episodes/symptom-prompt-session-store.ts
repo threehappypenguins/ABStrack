@@ -12,6 +12,10 @@ import { createInitialSymptomPromptSession } from '@abstrack/types';
  */
 const sessions = new Map<Uuid, SymptomPromptSessionState>();
 
+/** Matches severity UI (1–5 scale); integers only. */
+const SEVERITY_MIN = 1;
+const SEVERITY_MAX = 5;
+
 function sanitizeActiveIndex(value: unknown): number | null {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     return null;
@@ -44,11 +48,18 @@ function sanitizeAnswerEntry(value: unknown): SymptomPromptAnswer | null {
         return { type: 'yes_no', value: v };
       }
       return null;
-    case 'severity_scale':
-      if (v === null || (typeof v === 'number' && Number.isFinite(v))) {
+    case 'severity_scale': {
+      if (v === null) {
+        return { type: 'severity_scale', value: null };
+      }
+      if (typeof v !== 'number' || !Number.isFinite(v)) {
+        return null;
+      }
+      if (Number.isInteger(v) && v >= SEVERITY_MIN && v <= SEVERITY_MAX) {
         return { type: 'severity_scale', value: v };
       }
-      return null;
+      return { type: 'severity_scale', value: null };
+    }
     case 'free_text':
       if (typeof v === 'string') {
         return { type: 'free_text', value: v };

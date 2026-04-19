@@ -7,6 +7,10 @@ import { createInitialSymptomPromptSession } from '@abstrack/types';
 
 const STORAGE_PREFIX = 'abstrack.symptomPrompt.';
 
+/** Matches severity UI (1–5 scale); integers only. */
+const SEVERITY_MIN = 1;
+const SEVERITY_MAX = 5;
+
 function storageKey(episodeId: string): string {
   return `${STORAGE_PREFIX}${episodeId}`;
 }
@@ -50,11 +54,18 @@ function sanitizeAnswerEntry(value: unknown): SymptomPromptAnswer | null {
         return { type: 'yes_no', value: v };
       }
       return null;
-    case 'severity_scale':
-      if (v === null || (typeof v === 'number' && Number.isFinite(v))) {
+    case 'severity_scale': {
+      if (v === null) {
+        return { type: 'severity_scale', value: null };
+      }
+      if (typeof v !== 'number' || !Number.isFinite(v)) {
+        return null;
+      }
+      if (Number.isInteger(v) && v >= SEVERITY_MIN && v <= SEVERITY_MAX) {
         return { type: 'severity_scale', value: v };
       }
-      return null;
+      return { type: 'severity_scale', value: null };
+    }
     case 'free_text':
       if (typeof v === 'string') {
         return { type: 'free_text', value: v };

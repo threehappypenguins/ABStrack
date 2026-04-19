@@ -82,13 +82,38 @@ describe('symptom-prompt-session-store', () => {
         badType: { type: 'unknown', value: null },
         badYesNo: { type: 'yes_no', value: 'yes' },
         badScale: { type: 'severity_scale', value: '3' },
+        badSeverityOor: { type: 'severity_scale', value: 99 },
+        badSeverityFloat: { type: 'severity_scale', value: 3.5 },
         badFreeText: { type: 'free_text', value: 12 },
         badPhoto: { type: 'photo', value: 'x' },
       } as unknown as SymptomPromptSessionState['answers'],
     });
     expect(getSymptomPromptSession(EP_1)).toEqual({
       activeIndex: 1,
-      answers: { good: { type: 'yes_no', value: true } },
+      answers: {
+        good: { type: 'yes_no', value: true },
+        badSeverityOor: { type: 'severity_scale', value: null },
+        badSeverityFloat: { type: 'severity_scale', value: null },
+      },
+    });
+  });
+
+  it('getSymptomPromptSession keeps severity_scale only for integers 1–5 or null', () => {
+    setSymptomPromptSession(EP_1, {
+      activeIndex: 0,
+      answers: {
+        a: { type: 'severity_scale', value: 1 },
+        b: { type: 'severity_scale', value: 5 },
+        c: { type: 'severity_scale', value: null },
+      },
+    });
+    expect(getSymptomPromptSession(EP_1)).toEqual({
+      activeIndex: 0,
+      answers: {
+        a: { type: 'severity_scale', value: 1 },
+        b: { type: 'severity_scale', value: 5 },
+        c: { type: 'severity_scale', value: null },
+      },
     });
   });
 

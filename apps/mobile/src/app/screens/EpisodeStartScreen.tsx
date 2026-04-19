@@ -117,13 +117,6 @@ export function EpisodeStartScreen() {
             setStatus('ready');
             return;
           }
-          if (!saveResult.data) {
-            setSelectedId(template.id);
-            setEpisodeStartError('Could not start episode.');
-            announce('Could not start episode.');
-            setStatus('ready');
-            return;
-          }
           singleTemplateAutoSucceededCycleIdRef.current = cycleId;
           announce('Episode started.');
           // Keep `loading` until navigation unmounts — `ready` would flash the template chooser briefly.
@@ -204,12 +197,6 @@ export function EpisodeStartScreen() {
       if (!result.ok) {
         setEpisodeStartError(result.error.message);
         announce(result.error.message);
-        return;
-      }
-      if (!result.data) {
-        const message = 'Could not start episode.';
-        setEpisodeStartError(message);
-        announce(message);
         return;
       }
       setEpisodeStartError(null);
