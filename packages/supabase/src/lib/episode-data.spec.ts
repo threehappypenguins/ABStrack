@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { EpisodeInsert, EpisodeRow } from '@abstrack/types';
-import { createEpisode } from './episode-data.js';
+import { createEpisode, getEpisodeById } from './episode-data.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
 
 describe('createEpisode', () => {
@@ -46,5 +46,43 @@ describe('createEpisode', () => {
       expect(result.data.health_marker_preset_id).toBe('hm-1');
     }
     expect(client.from).toHaveBeenCalledWith('episodes');
+  });
+});
+
+describe('getEpisodeById', () => {
+  it('returns the row when present', async () => {
+    const row: EpisodeRow = {
+      id: 'ep-1',
+      user_id: 'user-1',
+      symptom_preset_id: 'sym-1',
+      health_marker_preset_id: 'hm-1',
+      episode_type: 'Other',
+      episode_label: null,
+      note: null,
+      started_at: '2026-04-18T12:00:00.000Z',
+      ended_at: null,
+      created_at: '2026-04-18T12:00:00.000Z',
+      updated_at: '2026-04-18T12:00:00.000Z',
+    };
+    const maybeSingle = vi.fn(async () => ({
+      data: row,
+      error: null,
+    }));
+    const client = {
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            maybeSingle,
+          })),
+        })),
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await getEpisodeById(client, 'ep-1');
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data?.id).toBe('ep-1');
+    }
   });
 });

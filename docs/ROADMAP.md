@@ -72,7 +72,7 @@
 
 ---
 
-## Week 5: April 13-19 -- Auth Completion and Episode Logging Foundation
+## Week 5: April 13-19 -- Auth Completion and Episode Logging Foundation (COMPLETE)
 
 **Goal:** Round out authentication for all roles and lay the groundwork for the core episode logging feature.
 
@@ -90,7 +90,7 @@
 - [x] "I'm having an episode" button on home screen
 - [x] Episode start: user selects **one episode template** per session; insert episode with both `symptom_preset_id` and `health_marker_preset_id` resolved from that template ([user story](user-stories/episode-and-health-marker-flows.md))
 - [x] Prompt flow skeleton: step through symptoms one at a time, render correct input type per symptom
-- [ ] Episode data wired to Supabase: plaintext columns under RLS (no client-side field encryption)
+- [x] Episode data wired to Supabase: plaintext columns under RLS (no client-side field encryption)
 
 **Why this week:** The first half wraps up auth (config + server-mediated MFA verification). The second half lays episode logging foundation: schema for both preset IDs **and** templates, settings to define templates, then **I'm having an episode** → template picker → prompt skeleton.
 

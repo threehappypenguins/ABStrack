@@ -18,7 +18,12 @@ import type {
   SymptomPromptAnswer,
   SymptomPromptAnswers,
 } from '@abstrack/types';
-import { listPresetSymptomsForPreset } from '@abstrack/supabase';
+import { episodeSymptomRowsToAnswersMap } from '@abstrack/types';
+import {
+  listEpisodeSymptomsForEpisode,
+  listPresetSymptomsForPreset,
+  upsertEpisodeSymptomAnswer,
+} from '@abstrack/supabase';
 import { announce } from '@abstrack/ui/native';
 import { COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
@@ -50,6 +55,9 @@ function clampIndex(index: number, length: number): number {
   return Math.max(0, Math.min(i, length - 1));
 }
 
+/** Debounce Supabase writes for free-text answers (matches web episode flow). */
+const SERVER_SYMPTOM_PERSIST_DEBOUNCE_MS = 300;
+
 /**
  * Linear symptom stepper for the active episode’s selected preset (Week 5 skeleton).
  *
@@ -64,6 +72,7 @@ export function SymptomPromptScreen() {
     'loading',
   );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [persistError, setPersistError] = useState<string | null>(null);
   const [lines, setLines] = useState<PresetSymptomRow[]>([]);
   const [phase, setPhase] = useState<'prompting' | 'complete'>('prompting');
 
@@ -75,8 +84,46 @@ export function SymptomPromptScreen() {
   );
   const answersRef = useRef(answers);
   const activeIndexRef = useRef(activeIndex);
+  const episodeIdRef = useRef(episodeId);
+  const serverPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  /** Latest debounced free-text payload for Supabase; read in {@link flushPendingServerPersist}. */
+  const pendingServerFreeTextPersistRef = useRef<{
+    line: PresetSymptomRow;
+    answer: SymptomPromptAnswer;
+  } | null>(null);
+  const userIdRef = useRef<string | null>(null);
   /** Bumps on each `load()` start and on effect cleanup so in-flight loads ignore stale results after unmount, retry, or param change. */
   const loadGenRef = useRef(0);
+  /**
+   * Latest server-persist generation. Incremented per {@link executeServerPersist} attempt and
+   * before flush on episode change / unmount so older in-flight writes cannot update {@link persistError}.
+   * Each attempt also captures the episode id at call time so a flushed write after navigation cannot
+   * surface errors for the wrong episode ({@link executeServerPersist}).
+   */
+  const serverPersistGenerationRef = useRef(0);
+
+  /**
+   * Caches the auth user id on {@link userIdRef}. Called from {@link load} before `ready`, and
+   * from {@link executeServerPersist} so writes never depend on a separate mount-only `getUser()`.
+   */
+  const resolveSessionUserId = useCallback(
+    async (
+      supabase: ReturnType<typeof getMobileSupabaseClient>,
+    ): Promise<string | null> => {
+      if (userIdRef.current) {
+        return userIdRef.current;
+      }
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      const id = user?.id ?? null;
+      userIdRef.current = id;
+      return id;
+    },
+    [],
+  );
 
   useEffect(() => {
     answersRef.current = answers;
@@ -85,6 +132,107 @@ export function SymptomPromptScreen() {
   useEffect(() => {
     activeIndexRef.current = activeIndex;
   }, [activeIndex]);
+
+  /**
+   * Each call bumps {@link serverPersistGenerationRef} and captures the current episode id so flushes
+   * during navigation still write to the correct episode and do not update {@link persistError} for
+   * the wrong screen after the route has advanced.
+   */
+  const executeServerPersist = useCallback(
+    (line: PresetSymptomRow, answer: SymptomPromptAnswer) => {
+      const targetEpisodeId = episodeIdRef.current;
+      const generation = ++serverPersistGenerationRef.current;
+      void (async () => {
+        const supabase = getMobileSupabaseClient();
+        const uid = await resolveSessionUserId(supabase);
+        if (generation !== serverPersistGenerationRef.current) {
+          return;
+        }
+        if (!uid) {
+          if (episodeIdRef.current === targetEpisodeId) {
+            setPersistError(
+              'Your session could not be verified. Try signing in again.',
+            );
+          }
+          return;
+        }
+        const r = await upsertEpisodeSymptomAnswer(supabase, {
+          userId: uid,
+          episodeId: targetEpisodeId,
+          line,
+          answer,
+        });
+        if (generation !== serverPersistGenerationRef.current) {
+          return;
+        }
+        if (episodeIdRef.current !== targetEpisodeId) {
+          return;
+        }
+        if (!r.ok) {
+          setPersistError(r.error.message);
+        } else {
+          setPersistError(null);
+        }
+      })();
+    },
+    [resolveSessionUserId],
+  );
+
+  /**
+   * Cancels the debounced server timer, then **immediately** persists the latest free-text
+   * `{ line, answer }` from {@link pendingServerFreeTextPersistRef} (if any). Call from
+   * Next/Back, `useLayoutEffect` (episode change), and unmount so the last keystrokes are not lost.
+   */
+  const flushPendingServerPersist = useCallback(() => {
+    if (serverPersistTimerRef.current !== null) {
+      clearTimeout(serverPersistTimerRef.current);
+      serverPersistTimerRef.current = null;
+    }
+    const pending = pendingServerFreeTextPersistRef.current;
+    pendingServerFreeTextPersistRef.current = null;
+    if (!pending) {
+      return;
+    }
+    executeServerPersist(pending.line, pending.answer);
+  }, [executeServerPersist]);
+
+  /**
+   * Schedules or runs a server upsert. User id is **not** read here: {@link executeServerPersist}
+   * always calls {@link resolveSessionUserId} so the first answer after load cannot silently skip.
+   */
+  const schedulePersistToSupabase = useCallback(
+    (line: PresetSymptomRow, answer: SymptomPromptAnswer) => {
+      if (answer.type === 'free_text') {
+        pendingServerFreeTextPersistRef.current = { line, answer };
+        if (serverPersistTimerRef.current !== null) {
+          clearTimeout(serverPersistTimerRef.current);
+        }
+        serverPersistTimerRef.current = setTimeout(() => {
+          serverPersistTimerRef.current = null;
+          const pending = pendingServerFreeTextPersistRef.current;
+          pendingServerFreeTextPersistRef.current = null;
+          if (pending) {
+            executeServerPersist(pending.line, pending.answer);
+          }
+        }, SERVER_SYMPTOM_PERSIST_DEBOUNCE_MS);
+      } else {
+        pendingServerFreeTextPersistRef.current = null;
+        if (serverPersistTimerRef.current !== null) {
+          clearTimeout(serverPersistTimerRef.current);
+          serverPersistTimerRef.current = null;
+        }
+        executeServerPersist(line, answer);
+      }
+    },
+    [executeServerPersist],
+  );
+
+  useEffect(() => {
+    return () => {
+      serverPersistGenerationRef.current += 1;
+      flushPendingServerPersist();
+    };
+  }, [flushPendingServerPersist]);
 
   const persist = useCallback(
     (nextIndex: number, nextAnswers: typeof answers) => {
@@ -102,9 +250,21 @@ export function SymptomPromptScreen() {
 
     setStatus('loading');
     setErrorMessage(null);
+    setPersistError(null);
     setPhase('prompting');
     try {
       const supabase = getMobileSupabaseClient();
+      const uid = await resolveSessionUserId(supabase);
+      if (stale()) {
+        return;
+      }
+      if (!uid) {
+        setErrorMessage(
+          'You must be signed in to save symptom answers. Try signing in again.',
+        );
+        setStatus('error');
+        return;
+      }
       const result = await listPresetSymptomsForPreset(
         supabase,
         symptomPresetId,
@@ -118,16 +278,31 @@ export function SymptomPromptScreen() {
         return;
       }
       setLines(result.data);
+      const fromServer = await listEpisodeSymptomsForEpisode(
+        supabase,
+        episodeId,
+      );
+      if (stale()) {
+        return;
+      }
+      const serverAnswers = fromServer.ok
+        ? episodeSymptomRowsToAnswersMap(fromServer.data)
+        : {};
       const session = getSymptomPromptSession(episodeId);
+      // Session overlays server so local drafts survive hydrate (debounced/offline/failed sync).
+      const mergedAnswers = { ...serverAnswers, ...session.answers };
       const idx = clampIndex(session.activeIndex, result.data.length);
       activeIndexRef.current = idx;
       setActiveIndex(idx);
-      setAnswers(session.answers);
-      answersRef.current = session.answers;
+      setAnswers(mergedAnswers);
+      answersRef.current = mergedAnswers;
       setSymptomPromptSession(episodeId, {
         activeIndex: idx,
-        answers: session.answers,
+        answers: mergedAnswers,
       });
+      if (!fromServer.ok) {
+        setPersistError(fromServer.error.message);
+      }
       setStatus('ready');
     } catch (caught: unknown) {
       if (stale()) {
@@ -138,7 +313,7 @@ export function SymptomPromptScreen() {
       setErrorMessage(message);
       setStatus('error');
     }
-  }, [episodeId, symptomPresetId]);
+  }, [episodeId, symptomPresetId, resolveSessionUserId]);
 
   useEffect(() => {
     void load();
@@ -148,6 +323,9 @@ export function SymptomPromptScreen() {
   }, [load]);
 
   useLayoutEffect(() => {
+    serverPersistGenerationRef.current += 1;
+    flushPendingServerPersist();
+    episodeIdRef.current = episodeId;
     const s = getSymptomPromptSession(episodeId);
     activeIndexRef.current = s.activeIndex;
     setActiveIndex(s.activeIndex);
@@ -156,8 +334,9 @@ export function SymptomPromptScreen() {
     setPhase('prompting');
     setStatus('loading');
     setErrorMessage(null);
+    setPersistError(null);
     setLines([]);
-  }, [episodeId, symptomPresetId]);
+  }, [episodeId, symptomPresetId, flushPendingServerPersist]);
 
   const currentLine = lines[activeIndex] ?? null;
   const stepLabel =
@@ -183,9 +362,11 @@ export function SymptomPromptScreen() {
     answersRef.current = merged;
     setAnswers(merged);
     persist(activeIndexRef.current, merged);
+    schedulePersistToSupabase(currentLine, next);
   };
 
   const goBackStep = () => {
+    flushPendingServerPersist();
     const idx = activeIndexRef.current;
     if (idx > 0) {
       const next = idx - 1;
@@ -199,6 +380,7 @@ export function SymptomPromptScreen() {
   };
 
   const goNext = () => {
+    flushPendingServerPersist();
     if (lines.length === 0) {
       setPhase('complete');
       return;
@@ -235,6 +417,15 @@ export function SymptomPromptScreen() {
         >
           Episode symptoms
         </Text>
+        {persistError ? (
+          <Text
+            accessibilityLiveRegion="polite"
+            className={`text-sm text-amber-800 dark:text-amber-200`}
+            maxFontSizeMultiplier={2}
+          >
+            Could not sync with the server: {persistError}
+          </Text>
+        ) : null}
 
         {phase === 'complete' ? (
           <View className="gap-4" accessibilityLiveRegion="polite">

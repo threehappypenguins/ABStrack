@@ -1,8 +1,12 @@
 import * as React from 'react';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { CommonActions, DefaultTheme } from '@react-navigation/native';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { listPresetSymptomsForPreset } from '@abstrack/supabase';
+import {
+  listEpisodeSymptomsForEpisode,
+  listPresetSymptomsForPreset,
+  upsertEpisodeSymptomAnswer,
+} from '@abstrack/supabase';
 import { createInitialSymptomPromptSession } from '@abstrack/types';
 import type { PresetSymptomRow } from '@abstrack/types';
 
@@ -24,10 +28,19 @@ jest.mock('@react-navigation/native', () => ({
 
 jest.mock('@abstrack/supabase', () => ({
   listPresetSymptomsForPreset: jest.fn(),
+  listEpisodeSymptomsForEpisode: jest.fn(),
+  upsertEpisodeSymptomAnswer: jest.fn(),
 }));
 
 jest.mock('../../lib/supabase-wiring', () => ({
-  getMobileSupabaseClient: jest.fn(() => ({ mockClient: true })),
+  getMobileSupabaseClient: jest.fn(() => ({
+    mockClient: true,
+    auth: {
+      getUser: jest.fn(async () => ({
+        data: { user: { id: 'test-user-1' } },
+      })),
+    },
+  })),
 }));
 
 jest.mock('../../lib/episodes/symptom-prompt-session-store', () => ({
@@ -78,6 +91,9 @@ describe('SymptomPromptScreen', () => {
   const lineA = makeLine('line-a', 0, 'Nausea', 'yes_no');
   const lineB = makeLine('line-b', 1, 'Headache', 'severity_scale');
 
+  /** Single free-text line for debounce / flush tests. */
+  const lineFreeOnly = makeLine('line-ft', 0, 'Notes', 'free_text');
+
   beforeEach(() => {
     jest.clearAllMocks();
 
@@ -108,6 +124,144 @@ describe('SymptomPromptScreen', () => {
     jest.mocked(listPresetSymptomsForPreset).mockResolvedValue({
       ok: true,
       data: [lineA, lineB],
+    });
+    jest.mocked(listEpisodeSymptomsForEpisode).mockResolvedValue({
+      ok: true,
+      data: [],
+    });
+    jest.mocked(upsertEpisodeSymptomAnswer).mockResolvedValue({
+      ok: true,
+      data: {
+        id: 'es-1',
+        user_id: 'test-user-1',
+        episode_id: episodeId,
+        preset_symptom_id: lineA.id,
+        symptom_name: lineA.symptom_name,
+        response_type: 'yes_no',
+        response_boolean: null,
+        response_severity: null,
+        response_text: null,
+        sort_order: 0,
+        created_at: '2020-01-01T00:00:00Z',
+        updated_at: '2020-01-01T00:00:00Z',
+      },
+    });
+  });
+
+  test('non-free-text answer triggers upsertEpisodeSymptomAnswer', async () => {
+    const screen = render(<SymptomPromptScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Step 1 of 2')).toBeTruthy();
+    });
+
+    jest.mocked(upsertEpisodeSymptomAnswer).mockClear();
+
+    fireEvent.press(screen.getByText('yes'));
+
+    await waitFor(() => {
+      expect(upsertEpisodeSymptomAnswer).toHaveBeenCalledTimes(1);
+    });
+
+    expect(upsertEpisodeSymptomAnswer).toHaveBeenCalledWith(
+      expect.objectContaining({ mockClient: true }),
+      expect.objectContaining({
+        userId: 'test-user-1',
+        episodeId,
+        line: lineA,
+        answer: { type: 'yes_no', value: true },
+      }),
+    );
+  });
+
+  test('free_text changes debounce to a single upsert', async () => {
+    jest.mocked(listPresetSymptomsForPreset).mockResolvedValue({
+      ok: true,
+      data: [lineFreeOnly],
+    });
+
+    const screen = render(<SymptomPromptScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Step 1 of 1')).toBeTruthy();
+    });
+
+    jest.mocked(upsertEpisodeSymptomAnswer).mockClear();
+
+    jest.useFakeTimers();
+    try {
+      const input = screen.getByLabelText('Notes notes');
+      fireEvent.changeText(input, 'a');
+      fireEvent.changeText(input, 'ab');
+      expect(upsertEpisodeSymptomAnswer).not.toHaveBeenCalled();
+
+      await act(async () => {
+        jest.advanceTimersByTime(300);
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(upsertEpisodeSymptomAnswer).toHaveBeenCalledTimes(1);
+      });
+
+      expect(upsertEpisodeSymptomAnswer).toHaveBeenCalledWith(
+        expect.objectContaining({ mockClient: true }),
+        expect.objectContaining({
+          userId: 'test-user-1',
+          episodeId,
+          line: lineFreeOnly,
+          answer: { type: 'free_text', value: 'ab' },
+        }),
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('free_text flush on Next runs upsert without waiting for debounce', async () => {
+    const lineAfter = makeLine('line-after', 1, 'Tired', 'yes_no');
+    jest.mocked(listPresetSymptomsForPreset).mockResolvedValue({
+      ok: true,
+      data: [lineFreeOnly, lineAfter],
+    });
+
+    const screen = render(<SymptomPromptScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Step 1 of 2')).toBeTruthy();
+    });
+
+    jest.mocked(upsertEpisodeSymptomAnswer).mockClear();
+
+    jest.useFakeTimers();
+    try {
+      fireEvent.changeText(screen.getByLabelText('Notes notes'), 'draft');
+      expect(upsertEpisodeSymptomAnswer).not.toHaveBeenCalled();
+
+      fireEvent.press(screen.getByLabelText('Next symptom'));
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(upsertEpisodeSymptomAnswer).toHaveBeenCalledTimes(1);
+      });
+
+      expect(upsertEpisodeSymptomAnswer).toHaveBeenCalledWith(
+        expect.objectContaining({ mockClient: true }),
+        expect.objectContaining({
+          answer: { type: 'free_text', value: 'draft' },
+        }),
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+
+    await waitFor(() => {
+      expect(screen.getByText('Step 2 of 2')).toBeTruthy();
     });
   });
 

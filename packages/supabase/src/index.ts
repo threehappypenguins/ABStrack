@@ -75,4 +75,8 @@ export {
   listEpisodeTemplates,
   updateEpisodeTemplate,
 } from './lib/episode-template-data.js';
-export { createEpisode } from './lib/episode-data.js';
+export { createEpisode, getEpisodeById } from './lib/episode-data.js';
+export {
+  listEpisodeSymptomsForEpisode,
+  upsertEpisodeSymptomAnswer,
+} from './lib/episode-symptom-data.js';
