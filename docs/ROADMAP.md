@@ -72,7 +72,7 @@
 
 ---
 
-## Week 5: April 13-19 -- Auth Completion and Episode Logging Foundation
+## Week 5: April 13-19 -- Auth Completion and Episode Logging Foundation (COMPLETE)
 
 **Goal:** Round out authentication for all roles and lay the groundwork for the core episode logging feature.
 
