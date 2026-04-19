@@ -18,7 +18,12 @@ import type {
   SymptomPromptAnswer,
   SymptomPromptAnswers,
 } from '@abstrack/types';
-import { listPresetSymptomsForPreset } from '@abstrack/supabase';
+import { episodeSymptomRowsToAnswersMap } from '@abstrack/types';
+import {
+  listEpisodeSymptomsForEpisode,
+  listPresetSymptomsForPreset,
+  upsertEpisodeSymptomAnswer,
+} from '@abstrack/supabase';
 import { announce } from '@abstrack/ui/native';
 import { COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
@@ -50,6 +55,9 @@ function clampIndex(index: number, length: number): number {
   return Math.max(0, Math.min(i, length - 1));
 }
 
+/** Debounce Supabase writes for free-text answers (matches web episode flow). */
+const SERVER_SYMPTOM_PERSIST_DEBOUNCE_MS = 300;
+
 /**
  * Linear symptom stepper for the active episode’s selected preset (Week 5 skeleton).
  *
@@ -64,6 +72,7 @@ export function SymptomPromptScreen() {
     'loading',
   );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [persistError, setPersistError] = useState<string | null>(null);
   const [lines, setLines] = useState<PresetSymptomRow[]>([]);
   const [phase, setPhase] = useState<'prompting' | 'complete'>('prompting');
 
@@ -75,6 +84,10 @@ export function SymptomPromptScreen() {
   );
   const answersRef = useRef(answers);
   const activeIndexRef = useRef(activeIndex);
+  const serverPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const userIdRef = useRef<string | null>(null);
   /** Bumps on each `load()` start and on effect cleanup so in-flight loads ignore stale results after unmount, retry, or param change. */
   const loadGenRef = useRef(0);
 
@@ -86,6 +99,32 @@ export function SymptomPromptScreen() {
     activeIndexRef.current = activeIndex;
   }, [activeIndex]);
 
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const supabase = getMobileSupabaseClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!cancelled) {
+        userIdRef.current = user?.id ?? null;
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (serverPersistTimerRef.current === null) {
+        return;
+      }
+      clearTimeout(serverPersistTimerRef.current);
+      serverPersistTimerRef.current = null;
+    };
+  }, []);
+
   const persist = useCallback(
     (nextIndex: number, nextAnswers: typeof answers) => {
       setSymptomPromptSession(episodeId, {
@@ -96,12 +135,58 @@ export function SymptomPromptScreen() {
     [episodeId],
   );
 
+  const flushPendingServerPersist = useCallback(() => {
+    if (serverPersistTimerRef.current === null) {
+      return;
+    }
+    clearTimeout(serverPersistTimerRef.current);
+    serverPersistTimerRef.current = null;
+  }, []);
+
+  const schedulePersistToSupabase = useCallback(
+    (line: PresetSymptomRow, answer: SymptomPromptAnswer) => {
+      const uid = userIdRef.current;
+      if (!uid) {
+        return;
+      }
+      const run = () => {
+        void (async () => {
+          const supabase = getMobileSupabaseClient();
+          const r = await upsertEpisodeSymptomAnswer(supabase, {
+            userId: uid,
+            episodeId,
+            line,
+            answer,
+          });
+          if (!r.ok) {
+            setPersistError(r.error.message);
+          } else {
+            setPersistError(null);
+          }
+        })();
+      };
+      if (answer.type === 'free_text') {
+        if (serverPersistTimerRef.current !== null) {
+          clearTimeout(serverPersistTimerRef.current);
+        }
+        serverPersistTimerRef.current = setTimeout(() => {
+          serverPersistTimerRef.current = null;
+          run();
+        }, SERVER_SYMPTOM_PERSIST_DEBOUNCE_MS);
+      } else {
+        run();
+      }
+    },
+    [episodeId],
+  );
+
   const load = useCallback(async () => {
     const myGen = ++loadGenRef.current;
     const stale = () => myGen !== loadGenRef.current;
 
     setStatus('loading');
     setErrorMessage(null);
+    setPersistError(null);
     setPhase('prompting');
     try {
       const supabase = getMobileSupabaseClient();
@@ -118,16 +203,30 @@ export function SymptomPromptScreen() {
         return;
       }
       setLines(result.data);
+      const fromServer = await listEpisodeSymptomsForEpisode(
+        supabase,
+        episodeId,
+      );
+      if (stale()) {
+        return;
+      }
+      const serverAnswers = fromServer.ok
+        ? episodeSymptomRowsToAnswersMap(fromServer.data)
+        : {};
       const session = getSymptomPromptSession(episodeId);
+      const mergedAnswers = { ...session.answers, ...serverAnswers };
       const idx = clampIndex(session.activeIndex, result.data.length);
       activeIndexRef.current = idx;
       setActiveIndex(idx);
-      setAnswers(session.answers);
-      answersRef.current = session.answers;
+      setAnswers(mergedAnswers);
+      answersRef.current = mergedAnswers;
       setSymptomPromptSession(episodeId, {
         activeIndex: idx,
-        answers: session.answers,
+        answers: mergedAnswers,
       });
+      if (!fromServer.ok) {
+        setPersistError(fromServer.error.message);
+      }
       setStatus('ready');
     } catch (caught: unknown) {
       if (stale()) {
@@ -148,6 +247,10 @@ export function SymptomPromptScreen() {
   }, [load]);
 
   useLayoutEffect(() => {
+    if (serverPersistTimerRef.current !== null) {
+      clearTimeout(serverPersistTimerRef.current);
+      serverPersistTimerRef.current = null;
+    }
     const s = getSymptomPromptSession(episodeId);
     activeIndexRef.current = s.activeIndex;
     setActiveIndex(s.activeIndex);
@@ -156,6 +259,7 @@ export function SymptomPromptScreen() {
     setPhase('prompting');
     setStatus('loading');
     setErrorMessage(null);
+    setPersistError(null);
     setLines([]);
   }, [episodeId, symptomPresetId]);
 
@@ -183,9 +287,11 @@ export function SymptomPromptScreen() {
     answersRef.current = merged;
     setAnswers(merged);
     persist(activeIndexRef.current, merged);
+    schedulePersistToSupabase(currentLine, next);
   };
 
   const goBackStep = () => {
+    flushPendingServerPersist();
     const idx = activeIndexRef.current;
     if (idx > 0) {
       const next = idx - 1;
@@ -199,6 +305,7 @@ export function SymptomPromptScreen() {
   };
 
   const goNext = () => {
+    flushPendingServerPersist();
     if (lines.length === 0) {
       setPhase('complete');
       return;
@@ -235,6 +342,15 @@ export function SymptomPromptScreen() {
         >
           Episode symptoms
         </Text>
+        {persistError ? (
+          <Text
+            accessibilityLiveRegion="polite"
+            className={`text-sm text-amber-800 dark:text-amber-200`}
+            maxFontSizeMultiplier={2}
+          >
+            Could not save to the server: {persistError}
+          </Text>
+        ) : null}
 
         {phase === 'complete' ? (
           <View className="gap-4" accessibilityLiveRegion="polite">

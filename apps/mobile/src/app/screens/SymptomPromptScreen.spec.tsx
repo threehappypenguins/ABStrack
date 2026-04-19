@@ -2,7 +2,11 @@ import * as React from 'react';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { CommonActions, DefaultTheme } from '@react-navigation/native';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { listPresetSymptomsForPreset } from '@abstrack/supabase';
+import {
+  listEpisodeSymptomsForEpisode,
+  listPresetSymptomsForPreset,
+  upsertEpisodeSymptomAnswer,
+} from '@abstrack/supabase';
 import { createInitialSymptomPromptSession } from '@abstrack/types';
 import type { PresetSymptomRow } from '@abstrack/types';
 
@@ -24,10 +28,19 @@ jest.mock('@react-navigation/native', () => ({
 
 jest.mock('@abstrack/supabase', () => ({
   listPresetSymptomsForPreset: jest.fn(),
+  listEpisodeSymptomsForEpisode: jest.fn(),
+  upsertEpisodeSymptomAnswer: jest.fn(),
 }));
 
 jest.mock('../../lib/supabase-wiring', () => ({
-  getMobileSupabaseClient: jest.fn(() => ({ mockClient: true })),
+  getMobileSupabaseClient: jest.fn(() => ({
+    mockClient: true,
+    auth: {
+      getUser: jest.fn(async () => ({
+        data: { user: { id: 'test-user-1' } },
+      })),
+    },
+  })),
 }));
 
 jest.mock('../../lib/episodes/symptom-prompt-session-store', () => ({
@@ -108,6 +121,27 @@ describe('SymptomPromptScreen', () => {
     jest.mocked(listPresetSymptomsForPreset).mockResolvedValue({
       ok: true,
       data: [lineA, lineB],
+    });
+    jest.mocked(listEpisodeSymptomsForEpisode).mockResolvedValue({
+      ok: true,
+      data: [],
+    });
+    jest.mocked(upsertEpisodeSymptomAnswer).mockResolvedValue({
+      ok: true,
+      data: {
+        id: 'es-1',
+        user_id: 'test-user-1',
+        episode_id: episodeId,
+        preset_symptom_id: lineA.id,
+        symptom_name: lineA.symptom_name,
+        response_type: 'yes_no',
+        response_boolean: null,
+        response_severity: null,
+        response_text: null,
+        sort_order: 0,
+        created_at: '2020-01-01T00:00:00Z',
+        updated_at: '2020-01-01T00:00:00Z',
+      },
     });
   });
 

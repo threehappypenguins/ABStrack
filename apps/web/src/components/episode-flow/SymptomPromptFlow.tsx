@@ -14,8 +14,15 @@ import type {
   SymptomPromptAnswer,
   SymptomPromptAnswers,
 } from '@abstrack/types';
-import { createInitialSymptomPromptSession } from '@abstrack/types';
-import { listPresetSymptomsForPreset } from '@abstrack/supabase';
+import {
+  createInitialSymptomPromptSession,
+  episodeSymptomRowsToAnswersMap,
+} from '@abstrack/types';
+import {
+  listEpisodeSymptomsForEpisode,
+  listPresetSymptomsForPreset,
+  upsertEpisodeSymptomAnswer,
+} from '@abstrack/supabase';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
 import {
@@ -34,6 +41,9 @@ export type SymptomPromptFlowProps = {
 
 /** Delay before writing free-text drafts to `sessionStorage` (keystrokes stay snappy in React state). */
 const FREE_TEXT_PERSIST_DEBOUNCE_MS = 300;
+
+/** Same debounce for Supabase `episode_symptoms` writes (plaintext columns under RLS). */
+const SERVER_SYMPTOM_PERSIST_DEBOUNCE_MS = 300;
 
 function clampIndex(index: number, length: number): number {
   if (length <= 0) {
@@ -64,6 +74,7 @@ export function SymptomPromptFlow({
     'loading',
   );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [persistError, setPersistError] = useState<string | null>(null);
   const [lines, setLines] = useState<PresetSymptomRow[]>([]);
   const [phase, setPhase] = useState<'prompting' | 'complete'>('prompting');
 
@@ -78,8 +89,28 @@ export function SymptomPromptFlow({
   const textPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const serverPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const userIdRef = useRef<string | null>(null);
   /** Bumps on each `load()` start and on effect cleanup so in-flight loads ignore stale results after unmount, retry, or param change. */
   const loadGenRef = useRef(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const supabase = createBrowserClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!cancelled) {
+        userIdRef.current = user?.id ?? null;
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     activeIndexRef.current = activeIndex;
@@ -98,6 +129,10 @@ export function SymptomPromptFlow({
         activeIndex: activeIndexRef.current,
         answers: answersRef.current,
       });
+    }
+    if (serverPersistTimerRef.current !== null) {
+      clearTimeout(serverPersistTimerRef.current);
+      serverPersistTimerRef.current = null;
     }
     episodeIdRef.current = episodeId;
     const s = getSymptomPromptSession(episodeId);
@@ -138,6 +173,16 @@ export function SymptomPromptFlow({
     };
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (serverPersistTimerRef.current === null) {
+        return;
+      }
+      clearTimeout(serverPersistTimerRef.current);
+      serverPersistTimerRef.current = null;
+    };
+  }, []);
+
   const persistImmediate = useCallback(
     (nextIndex: number, nextAnswers: typeof answers) => {
       setSymptomPromptSession(episodeIdRef.current, {
@@ -148,12 +193,58 @@ export function SymptomPromptFlow({
     [],
   );
 
+  const flushPendingServerPersist = useCallback(() => {
+    if (serverPersistTimerRef.current === null) {
+      return;
+    }
+    clearTimeout(serverPersistTimerRef.current);
+    serverPersistTimerRef.current = null;
+  }, []);
+
+  const schedulePersistToSupabase = useCallback(
+    (line: PresetSymptomRow, answer: SymptomPromptAnswer) => {
+      const uid = userIdRef.current;
+      if (!uid) {
+        return;
+      }
+      const run = () => {
+        void (async () => {
+          const supabase = createBrowserClient();
+          const r = await upsertEpisodeSymptomAnswer(supabase, {
+            userId: uid,
+            episodeId: episodeIdRef.current,
+            line,
+            answer,
+          });
+          if (!r.ok) {
+            setPersistError(r.error.message);
+          } else {
+            setPersistError(null);
+          }
+        })();
+      };
+      if (answer.type === 'free_text') {
+        if (serverPersistTimerRef.current !== null) {
+          clearTimeout(serverPersistTimerRef.current);
+        }
+        serverPersistTimerRef.current = setTimeout(() => {
+          serverPersistTimerRef.current = null;
+          run();
+        }, SERVER_SYMPTOM_PERSIST_DEBOUNCE_MS);
+      } else {
+        run();
+      }
+    },
+    [],
+  );
+
   const load = useCallback(async () => {
     const myGen = ++loadGenRef.current;
     const stale = () => myGen !== loadGenRef.current;
 
     setStatus('loading');
     setErrorMessage(null);
+    setPersistError(null);
     setPhase('prompting');
     const supabase = createBrowserClient();
     const result = await listPresetSymptomsForPreset(supabase, symptomPresetId);
@@ -166,16 +257,27 @@ export function SymptomPromptFlow({
       return;
     }
     setLines(result.data);
+    const fromServer = await listEpisodeSymptomsForEpisode(supabase, episodeId);
+    if (stale()) {
+      return;
+    }
+    const serverAnswers = fromServer.ok
+      ? episodeSymptomRowsToAnswersMap(fromServer.data)
+      : {};
     const session = getSymptomPromptSession(episodeId);
+    const mergedAnswers = { ...session.answers, ...serverAnswers };
     const idx = clampIndex(session.activeIndex, result.data.length);
     setActiveIndex(idx);
-    setAnswers(session.answers);
-    answersRef.current = session.answers;
+    setAnswers(mergedAnswers);
+    answersRef.current = mergedAnswers;
     activeIndexRef.current = idx;
     setSymptomPromptSession(episodeId, {
       activeIndex: idx,
-      answers: session.answers,
+      answers: mergedAnswers,
     });
+    if (!fromServer.ok) {
+      setPersistError(fromServer.error.message);
+    }
     setStatus('ready');
   }, [episodeId, symptomPresetId]);
 
@@ -219,6 +321,7 @@ export function SymptomPromptFlow({
     };
     answersRef.current = merged;
     setAnswers(merged);
+    schedulePersistToSupabase(currentLine, next);
 
     if (next.type === 'free_text') {
       if (textPersistTimerRef.current !== null) {
@@ -245,6 +348,7 @@ export function SymptomPromptFlow({
 
   const goBackStep = () => {
     flushPendingTextPersist();
+    flushPendingServerPersist();
     const idx = activeIndexRef.current;
     if (idx > 0) {
       const next = idx - 1;
@@ -261,6 +365,7 @@ export function SymptomPromptFlow({
 
   const goNext = () => {
     flushPendingTextPersist();
+    flushPendingServerPersist();
     if (lines.length === 0) {
       setPhase('complete');
       return;
@@ -358,6 +463,14 @@ export function SymptomPromptFlow({
         <h1 className="mt-4 text-2xl font-bold tracking-tight text-app-ink">
           Episode symptoms
         </h1>
+        {persistError ? (
+          <p
+            className="mt-2 text-sm text-amber-800 dark:text-amber-200"
+            role="status"
+          >
+            Could not save to the server: {persistError}
+          </p>
+        ) : null}
       </div>
 
       <p className="text-base font-medium text-app-muted">{stepLabel}</p>
