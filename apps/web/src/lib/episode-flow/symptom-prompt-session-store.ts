@@ -88,11 +88,7 @@ function sanitizeAnswerEntry(value: unknown): SymptomPromptAnswer | null {
 
 /** Rejects keys that must not be assigned when copying untrusted JSON into an object. */
 function isSafeAnswerKey(key: string): boolean {
-  return (
-    key !== '__proto__' &&
-    key !== 'constructor' &&
-    key !== 'prototype'
-  );
+  return key !== '__proto__' && key !== 'constructor' && key !== 'prototype';
 }
 
 function sanitizeAnswers(answers: unknown): SymptomPromptAnswers {
