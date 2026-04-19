@@ -91,27 +91,40 @@ export function SymptomPromptScreen() {
 
     setStatus('loading');
     setErrorMessage(null);
-    const supabase = getMobileSupabaseClient();
-    const result = await listPresetSymptomsForPreset(supabase, symptomPresetId);
-    if (stale()) {
-      return;
-    }
-    if (!result.ok) {
-      setErrorMessage(result.error.message);
+    try {
+      const supabase = getMobileSupabaseClient();
+      const result = await listPresetSymptomsForPreset(
+        supabase,
+        symptomPresetId,
+      );
+      if (stale()) {
+        return;
+      }
+      if (!result.ok) {
+        setErrorMessage(result.error.message);
+        setStatus('error');
+        return;
+      }
+      setLines(result.data);
+      const session = getSymptomPromptSession(episodeId);
+      const idx = clampIndex(session.activeIndex, result.data.length);
+      setActiveIndex(idx);
+      setAnswers(session.answers);
+      answersRef.current = session.answers;
+      setSymptomPromptSession(episodeId, {
+        activeIndex: idx,
+        answers: session.answers,
+      });
+      setStatus('ready');
+    } catch (caught: unknown) {
+      if (stale()) {
+        return;
+      }
+      const message =
+        caught instanceof Error ? caught.message : 'Could not load symptoms.';
+      setErrorMessage(message);
       setStatus('error');
-      return;
     }
-    setLines(result.data);
-    const session = getSymptomPromptSession(episodeId);
-    const idx = clampIndex(session.activeIndex, result.data.length);
-    setActiveIndex(idx);
-    setAnswers(session.answers);
-    answersRef.current = session.answers;
-    setSymptomPromptSession(episodeId, {
-      activeIndex: idx,
-      answers: session.answers,
-    });
-    setStatus('ready');
   }, [episodeId, symptomPresetId]);
 
   useEffect(() => {
