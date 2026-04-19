@@ -11,21 +11,24 @@ import {
  */
 const sessions = new Map<Uuid, SymptomPromptSessionState>();
 
-function sanitizeStoredState(
-  raw: SymptomPromptSessionState,
-): SymptomPromptSessionState {
+function sanitizeStoredState(raw: unknown): SymptomPromptSessionState {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    return createInitialSymptomPromptSession();
+  }
+  const o = raw as Record<string, unknown>;
+  const answers = o['answers'];
   if (
-    typeof raw.answers !== 'object' ||
-    raw.answers === null ||
-    Array.isArray(raw.answers)
+    typeof answers !== 'object' ||
+    answers === null ||
+    Array.isArray(answers)
   ) {
     return createInitialSymptomPromptSession();
   }
-  const activeIndex = sanitizeSymptomPromptActiveIndex(raw.activeIndex);
+  const activeIndex = sanitizeSymptomPromptActiveIndex(o['activeIndex']);
   if (activeIndex === null) {
     return createInitialSymptomPromptSession();
   }
-  return { activeIndex, answers: sanitizeSymptomPromptAnswers(raw.answers) };
+  return { activeIndex, answers: sanitizeSymptomPromptAnswers(answers) };
 }
 
 /**

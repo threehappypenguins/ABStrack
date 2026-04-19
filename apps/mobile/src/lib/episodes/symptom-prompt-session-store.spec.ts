@@ -21,6 +21,24 @@ describe('symptom-prompt-session-store', () => {
     }
   });
 
+  it('getSymptomPromptSession returns initial state when stored root is null', () => {
+    setSymptomPromptSession(EP_1, null as unknown as SymptomPromptSessionState);
+    expect(getSymptomPromptSession(EP_1)).toEqual(initial);
+  });
+
+  it('getSymptomPromptSession returns initial state when stored root is not an object', () => {
+    setSymptomPromptSession(
+      EP_1,
+      'oops' as unknown as SymptomPromptSessionState,
+    );
+    expect(getSymptomPromptSession(EP_1)).toEqual(initial);
+  });
+
+  it('getSymptomPromptSession returns initial state when stored root is an array', () => {
+    setSymptomPromptSession(EP_1, [] as unknown as SymptomPromptSessionState);
+    expect(getSymptomPromptSession(EP_1)).toEqual(initial);
+  });
+
   it('getSymptomPromptSession returns initial state when activeIndex is NaN', () => {
     setSymptomPromptSession(EP_1, {
       activeIndex: NaN,
