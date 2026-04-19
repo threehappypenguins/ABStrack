@@ -54,7 +54,7 @@ export function EpisodeStartFlow() {
 
     if (result.data.length === 1) {
       if (singleTemplateAutoSucceededRef.current) {
-        setLoadState('idle');
+        // Stay on `loading` until `router.replace` unmounts — `idle` would flash the chooser (e.g. Strict Mode re-runs).
         return;
       }
       if (singleTemplateAutoInFlightRef.current) {

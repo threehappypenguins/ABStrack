@@ -72,6 +72,39 @@ describe('symptom-prompt-session-store', () => {
     expect(getSymptomPromptSession(EP_1)).toEqual(initial);
   });
 
+  it('getSymptomPromptSession drops malformed answer entries but keeps valid ones and activeIndex', () => {
+    setSymptomPromptSession(EP_1, {
+      activeIndex: 1,
+      answers: {
+        good: { type: 'yes_no', value: true },
+        badNull: null,
+        badString: 'x',
+        badType: { type: 'unknown', value: null },
+        badYesNo: { type: 'yes_no', value: 'yes' },
+        badScale: { type: 'severity_scale', value: '3' },
+        badFreeText: { type: 'free_text', value: 12 },
+        badPhoto: { type: 'photo', value: 'x' },
+      } as unknown as SymptomPromptSessionState['answers'],
+    });
+    expect(getSymptomPromptSession(EP_1)).toEqual({
+      activeIndex: 1,
+      answers: { good: { type: 'yes_no', value: true } },
+    });
+  });
+
+  it('getSymptomPromptSession returns empty answers when all entries are invalid', () => {
+    setSymptomPromptSession(EP_1, {
+      activeIndex: 2,
+      answers: {
+        x: { type: 'yes_no', value: [] },
+      } as unknown as SymptomPromptSessionState['answers'],
+    });
+    expect(getSymptomPromptSession(EP_1)).toEqual({
+      activeIndex: 2,
+      answers: {},
+    });
+  });
+
   it('keeps state isolated per episode id', () => {
     setSymptomPromptSession(EP_A, {
       activeIndex: 1,

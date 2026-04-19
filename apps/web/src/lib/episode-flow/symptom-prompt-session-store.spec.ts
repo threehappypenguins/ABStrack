@@ -67,6 +67,37 @@ describe('symptom-prompt-session-store', () => {
     expect(getSymptomPromptSession('ep-1')).toEqual(initial);
   });
 
+  it('getSymptomPromptSession drops corrupted answer entries but keeps valid ones and activeIndex', () => {
+    setStored('ep-1', {
+      activeIndex: 1,
+      answers: {
+        good: { type: 'yes_no', value: true },
+        badString: 'not-an-object',
+        badNull: null,
+        badType: { type: 'unknown', value: null },
+        badYesNo: { type: 'yes_no', value: 'yes' },
+        badScale: { type: 'severity_scale', value: '3' },
+        badFreeText: { type: 'free_text', value: 12 },
+        badPhoto: { type: 'photo', value: 'x' },
+      },
+    });
+    expect(getSymptomPromptSession('ep-1')).toEqual({
+      activeIndex: 1,
+      answers: { good: { type: 'yes_no', value: true } },
+    });
+  });
+
+  it('getSymptomPromptSession returns empty answers when all entries are invalid', () => {
+    setStored('ep-1', {
+      activeIndex: 2,
+      answers: { x: { type: 'yes_no', value: [] } },
+    });
+    expect(getSymptomPromptSession('ep-1')).toEqual({
+      activeIndex: 2,
+      answers: {},
+    });
+  });
+
   it('clearSymptomPromptSession removes key', () => {
     setStored('ep-1', { activeIndex: 0, answers: {} });
     clearSymptomPromptSession('ep-1');

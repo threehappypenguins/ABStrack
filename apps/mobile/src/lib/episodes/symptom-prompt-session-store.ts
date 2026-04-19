@@ -1,4 +1,9 @@
-import type { SymptomPromptSessionState, Uuid } from '@abstrack/types';
+import type {
+  SymptomPromptAnswer,
+  SymptomPromptAnswers,
+  SymptomPromptSessionState,
+  Uuid,
+} from '@abstrack/types';
 import { createInitialSymptomPromptSession } from '@abstrack/types';
 
 /**
@@ -12,6 +17,74 @@ function sanitizeActiveIndex(value: unknown): number | null {
     return null;
   }
   return Math.max(0, Math.floor(value));
+}
+
+/**
+ * Keeps only well-shaped {@link SymptomPromptAnswer} values so malformed in-memory state cannot crash the UI.
+ */
+function sanitizeAnswerEntry(value: unknown): SymptomPromptAnswer | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return null;
+  }
+  const o = value as Record<string, unknown>;
+  const t = o.type;
+  if (
+    t !== 'yes_no' &&
+    t !== 'severity_scale' &&
+    t !== 'free_text' &&
+    t !== 'photo' &&
+    t !== 'video'
+  ) {
+    return null;
+  }
+  const v = o.value;
+  switch (t) {
+    case 'yes_no':
+      if (typeof v === 'boolean' || v === null) {
+        return { type: 'yes_no', value: v };
+      }
+      return null;
+    case 'severity_scale':
+      if (v === null || (typeof v === 'number' && Number.isFinite(v))) {
+        return { type: 'severity_scale', value: v };
+      }
+      return null;
+    case 'free_text':
+      if (typeof v === 'string') {
+        return { type: 'free_text', value: v };
+      }
+      return null;
+    case 'photo':
+      if (v === null) {
+        return { type: 'photo', value: null };
+      }
+      return null;
+    case 'video':
+      if (v === null) {
+        return { type: 'video', value: null };
+      }
+      return null;
+    default:
+      return null;
+  }
+}
+
+function sanitizeAnswers(answers: unknown): SymptomPromptAnswers {
+  if (
+    typeof answers !== 'object' ||
+    answers === null ||
+    Array.isArray(answers)
+  ) {
+    return {};
+  }
+  const out: SymptomPromptAnswers = {};
+  for (const [key, val] of Object.entries(answers)) {
+    const cleaned = sanitizeAnswerEntry(val);
+    if (cleaned !== null) {
+      out[key] = cleaned;
+    }
+  }
+  return out;
 }
 
 function sanitizeStoredState(
@@ -28,7 +101,7 @@ function sanitizeStoredState(
   if (activeIndex === null) {
     return createInitialSymptomPromptSession();
   }
-  return { activeIndex, answers: raw.answers };
+  return { activeIndex, answers: sanitizeAnswers(raw.answers) };
 }
 
 /**
