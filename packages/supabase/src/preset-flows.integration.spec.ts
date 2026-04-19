@@ -76,16 +76,21 @@ if (
 /**
  * Deletes disposable Auth users and surfaces `auth.admin.deleteUser` failures (rate limits,
  * network, etc.) so the suite does not silently leak users.
+ * Failure lines omit emails unless `ABSTRACK_PRESET_INTEGRATION_LOG=1` (reduces PII in CI logs).
  */
 async function deleteDisposableAuthUsers(
   adminClient: ReturnType<typeof getSupabaseAdminClient>,
   users: ReadonlyArray<{ id: string; label: string; email: string }>,
 ): Promise<void> {
+  const logPii = process.env.ABSTRACK_PRESET_INTEGRATION_LOG === '1';
   const failures: string[] = [];
   for (const { id, label, email } of users) {
     const { error } = await adminClient.auth.admin.deleteUser(id);
     if (error) {
-      failures.push(`${label} id=${id} (${email}): ${error.message}`);
+      const line = logPii
+        ? `${label} id=${id} (${email}): ${error.message}`
+        : `${label} id=${id}: ${error.message}`;
+      failures.push(line);
     }
   }
   if (failures.length > 0) {

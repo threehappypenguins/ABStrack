@@ -2,6 +2,7 @@
  * Episode row + `episode_symptoms` persistence against **Supabase Cloud** with RLS (patient session).
  * Skips without `SUPABASE_SECRET_KEY` and public URL/key — see **docs/SUPABASE_CLOUD_DEVELOPER.md**.
  * Disposable user emails/ids are logged only when `ABSTRACK_PRESET_INTEGRATION_LOG=1` (avoids PII in CI).
+ * `auth.admin.deleteUser` failure lines omit emails unless that flag is set.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { PresetSymptomRow } from '@abstrack/types';
@@ -50,11 +51,15 @@ async function deleteDisposableAuthUsers(
   admin: ReturnType<typeof getSupabaseAdminClient>,
   users: ReadonlyArray<{ id: string; label: string; email: string }>,
 ): Promise<void> {
+  const logPii = process.env.ABSTRACK_PRESET_INTEGRATION_LOG === '1';
   const failures: string[] = [];
   for (const { id, label, email } of users) {
     const { error } = await admin.auth.admin.deleteUser(id);
     if (error) {
-      failures.push(`${label} id=${id} (${email}): ${error.message}`);
+      const line = logPii
+        ? `${label} id=${id} (${email}): ${error.message}`
+        : `${label} id=${id}: ${error.message}`;
+      failures.push(line);
     }
   }
   if (failures.length > 0) {
