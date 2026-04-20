@@ -150,8 +150,10 @@ export function SymptomPromptFlow({
   const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
   const pendingLeaveRef = useRef<PendingLeaveAction | null>(null);
   /**
-   * Stays true once this mount ever saw `resumeFromEntry` so stripping `resume` from the URL does
-   * not flip {@link load} behavior when the server re-renders with updated search params.
+   * When `episodeId` / `symptomPresetId` change, the layout reset syncs this to `resumeFromEntry` so a
+   * new episode is not stuck in “resume from home” after visiting with `?resume=1` earlier.
+   * While the route is unchanged, `resumeFromEntry` may become true later, or the URL may strip
+   * `resume` after load — the render latch below keeps intent stable for that case.
    */
   const resumeFromHomeIntentRef = useRef(!!resumeFromEntry);
   if (resumeFromEntry) {
@@ -389,6 +391,7 @@ export function SymptomPromptFlow({
       });
     }
     flushPendingServerPersist();
+    resumeFromHomeIntentRef.current = !!resumeFromEntry;
     episodeIdRef.current = episodeId;
     const s = getSymptomPromptSession(episodeId);
     setActiveIndex(s.activeIndex);

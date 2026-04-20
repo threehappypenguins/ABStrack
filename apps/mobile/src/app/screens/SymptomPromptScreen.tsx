@@ -83,10 +83,8 @@ export function SymptomPromptScreen() {
     resume: resumeFromEntry = false,
   } = route.params;
 
+  /** Synced in {@link useLayoutEffect} when route params change so a latched “resume” does not apply to the next episode while this screen stays mounted. */
   const resumeFromHomeIntentRef = useRef(!!resumeFromEntry);
-  if (resumeFromEntry) {
-    resumeFromHomeIntentRef.current = true;
-  }
 
   const [status, setStatus] = useState<'loading' | 'error' | 'ready'>(
     'loading',
@@ -484,6 +482,7 @@ export function SymptomPromptScreen() {
 
   useLayoutEffect(() => {
     flushPendingServerPersist();
+    resumeFromHomeIntentRef.current = !!resumeFromEntry;
     episodeIdRef.current = episodeId;
     const s = getSymptomPromptSession(episodeId);
     activeIndexRef.current = s.activeIndex;
@@ -495,7 +494,7 @@ export function SymptomPromptScreen() {
     setErrorMessage(null);
     setPersistError(null);
     setLines([]);
-  }, [episodeId, symptomPresetId, flushPendingServerPersist]);
+  }, [episodeId, symptomPresetId, resumeFromEntry, flushPendingServerPersist]);
 
   const currentLine = lines[activeIndex] ?? null;
   const currentAnswer = currentLine ? answers[currentLine.id] : undefined;
