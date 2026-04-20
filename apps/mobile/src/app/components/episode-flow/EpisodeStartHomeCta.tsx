@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Platform, Pressable, Text, View } from 'react-native';
 import { announce } from '@abstrack/ui/native';
 import { nw } from '../../theme/app-nativewind-classes';
 
@@ -22,8 +22,9 @@ export type EpisodeStartHomeCtaProps = {
 
 /**
  * Prominent home entry point for episode logging: large touch target, high-contrast primary
- * control, and supporting copy for VoiceOver and TalkBack. Shows **Resume episode** when
- * {@link ActiveEpisodeHomeSummary} is provided.
+ * control, and supporting copy for VoiceOver and TalkBack. CTA mode updates use
+ * `accessibilityLiveRegion` on Android only and `announce()` elsewhere so assistive output is not
+ * duplicated. Shows **Resume episode** when {@link ActiveEpisodeHomeSummary} is provided.
  *
  * @param props - Props.
  * @returns Episode CTA section for the home screen.
@@ -45,6 +46,12 @@ export function EpisodeStartHomeCta({
       return;
     }
     prevResumeRef.current = hasResume;
+    // Android: TalkBack announces `accessibilityLiveRegion` on the description Text — skip
+    // `announce` to avoid duplicate output. Other platforms: rely on `announce` (iOS VoiceOver;
+    // web/other builds do not use the Android live region).
+    if (Platform.OS === 'android') {
+      return;
+    }
     if (hasResume) {
       void announce(
         'You have an episode in progress. Resume episode is the primary action.',
@@ -76,7 +83,9 @@ export function EpisodeStartHomeCta({
       <Text
         className={`text-base leading-relaxed ${nw.textMuted}`}
         maxFontSizeMultiplier={2}
-        accessibilityLiveRegion="polite"
+        accessibilityLiveRegion={
+          Platform.OS === 'android' ? 'polite' : undefined
+        }
       >
         {activeEpisodeLoading && 'Checking for an episode in progress…'}
         {!activeEpisodeLoading &&

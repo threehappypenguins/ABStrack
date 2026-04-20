@@ -151,5 +151,17 @@ describe('symptom-prompt-session', () => {
       const placement = computeSymptomResumePlacement([a], {});
       expect(placement).toEqual({ activeIndex: 0, phase: 'prompting' });
     });
+
+    it('returns index 0 and prompting when the preset has no symptom lines', () => {
+      expect(computeSymptomResumePlacement([], {})).toEqual({
+        activeIndex: 0,
+        phase: 'prompting',
+      });
+      expect(
+        computeSymptomResumePlacement([], {
+          'orphan-id': { type: 'yes_no', value: true },
+        }),
+      ).toEqual({ activeIndex: 0, phase: 'prompting' });
+    });
   });
 });

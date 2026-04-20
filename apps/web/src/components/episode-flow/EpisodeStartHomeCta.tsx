@@ -1,9 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { getActiveEpisodeForUser } from '@abstrack/supabase';
-import { useAnnounce } from '@abstrack/ui/a11y-web';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
 import { useAuth } from '@/lib/auth-provider';
 
@@ -15,7 +14,10 @@ export type EpisodeStartHomeCtaProps = {
 type CtaMode = 'loading' | 'resume' | 'start';
 
 /**
- * Builds the symptom flow URL with resume placement so the stepper opens at the correct line.
+ * Builds the `/episode/[id]/symptoms` URL for continuing an active episode: `symptomPresetId`
+ * selects the preset, and `resume=1` tells {@link SymptomPromptFlow} to hydrate with resume logic.
+ * The step index is **not** in the query string; it is computed in the flow from merged server +
+ * session answers (and related resume handling).
  *
  * @param episodeId - `episodes.id`.
  * @param symptomPresetId - `symptom_presets.id` on the episode row.
@@ -33,8 +35,8 @@ function buildResumeEpisodeHref(
 
 /**
  * Prominent home entry for episode logging: detects an active episode and offers **Resume** as the
- * primary action; otherwise **I'm having an episode** starts a new flow. Announces mode changes for
- * assistive tech.
+ * primary action; otherwise **I'm having an episode** starts a new flow. CTA mode is conveyed to
+ * assistive technologies via a single `aria-live` status region (no duplicate transient announce).
  *
  * @param props - Props.
  * @returns Section with primary CTA for signed-in users.
@@ -48,15 +50,9 @@ export function EpisodeStartHomeCta({
   const statusId = `episode-start-home-cta-status${instanceId}`;
 
   const { session, loading: authLoading } = useAuth();
-  const { announce } = useAnnounce();
-  const announcedFromLoadingRef = useRef(false);
 
   const [ctaMode, setCtaMode] = useState<CtaMode>('loading');
   const [resumeHref, setResumeHref] = useState<string | null>(null);
-
-  useEffect(() => {
-    announcedFromLoadingRef.current = false;
-  }, [session?.user?.id]);
 
   useEffect(() => {
     if (authLoading) {
@@ -101,26 +97,6 @@ export function EpisodeStartHomeCta({
       cancelled = true;
     };
   }, [authLoading, session?.user?.id]);
-
-  useEffect(() => {
-    if (ctaMode === 'loading' || authLoading) {
-      return;
-    }
-    if (!announcedFromLoadingRef.current) {
-      announcedFromLoadingRef.current = true;
-      if (ctaMode === 'resume') {
-        announce(
-          'You have an episode in progress. Resume episode is available as the primary action.',
-          { politeness: 'polite' },
-        );
-      } else {
-        announce(
-          'No episode in progress. You can start logging a new episode.',
-          { politeness: 'polite' },
-        );
-      }
-    }
-  }, [announce, authLoading, ctaMode]);
 
   const primaryLinkClass =
     'inline-flex min-h-[56px] w-full items-center justify-center rounded-xl bg-red-700 px-5 py-4 text-center text-base font-semibold leading-snug text-white shadow-md outline-none ring-2 ring-transparent transition hover:bg-red-800 focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-red-50 dark:bg-red-600 dark:hover:bg-red-500 dark:focus-visible:ring-offset-red-950';
