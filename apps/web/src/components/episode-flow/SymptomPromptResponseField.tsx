@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, type KeyboardEvent } from 'react';
+import { useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { PresetSymptomRow, SymptomPromptAnswer } from '@abstrack/types';
 import { createDefaultSymptomPromptAnswer } from '@abstrack/types';
 
@@ -29,8 +29,26 @@ function SymptomYesNoRadiogroup({
   disabled: boolean;
 }) {
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
-  /** Roving tabindex: selected option, or first when none (matches WAI radiogroup tab order). */
-  const tabStopIndex = v === true ? 0 : v === false ? 1 : 0;
+  /**
+   * When `v` is null (no selection / deselected), keeps the tab stop on the last-focused or
+   * last-clicked option so focus does not stay on a button with `tabIndex={-1}`.
+   */
+  const [rovingIdx, setRovingIdx] = useState(0);
+  useLayoutEffect(() => {
+    if (v === true) {
+      setRovingIdx(0);
+    } else if (v === false) {
+      setRovingIdx(1);
+    } else {
+      const ae =
+        typeof document !== 'undefined' ? document.activeElement : null;
+      const i = itemRefs.current.findIndex((el) => el === ae);
+      if (i >= 0) {
+        setRovingIdx(i);
+      }
+    }
+  }, [v]);
+  const tabStopIndex = v === null ? rovingIdx : v === true ? 0 : 1;
 
   const getFocusedIdx = (): number => {
     const ae = typeof document !== 'undefined' ? document.activeElement : null;
@@ -100,10 +118,16 @@ function SymptomYesNoRadiogroup({
             tabIndex={i === tabStopIndex ? 0 : -1}
             disabled={disabled}
             onClick={() => {
+              const next = selected ? null : boolVal;
               onChange({
                 type: 'yes_no',
-                value: selected ? null : boolVal,
+                value: next,
               });
+              if (next === null) {
+                requestAnimationFrame(() => {
+                  itemRefs.current[i]?.focus();
+                });
+              }
             }}
             className={`flex min-h-[56px] cursor-pointer items-center justify-center rounded-xl border-2 px-4 py-4 text-base font-semibold transition ${radioLabelFocusVisibleClass} ${
               selected
@@ -133,7 +157,21 @@ function SymptomSeverityRadiogroup({
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const values = [1, 2, 3, 4, 5] as const;
   const len = values.length;
-  const tabStopIndex = sev !== null ? sev - 1 : 0;
+  /** When `sev` is null, preserves roving tab stop after deselect (same idea as yes/no). */
+  const [rovingIdx, setRovingIdx] = useState(0);
+  useLayoutEffect(() => {
+    if (sev !== null) {
+      setRovingIdx(sev - 1);
+    } else {
+      const ae =
+        typeof document !== 'undefined' ? document.activeElement : null;
+      const i = itemRefs.current.findIndex((el) => el === ae);
+      if (i >= 0) {
+        setRovingIdx(i);
+      }
+    }
+  }, [sev]);
+  const tabStopIndex = sev !== null ? sev - 1 : rovingIdx;
 
   const getFocusedIdx = (): number => {
     const ae = typeof document !== 'undefined' ? document.activeElement : null;
@@ -201,10 +239,16 @@ function SymptomSeverityRadiogroup({
             tabIndex={i === tabStopIndex ? 0 : -1}
             disabled={disabled}
             onClick={() => {
+              const next = selected ? null : n;
               onChange({
                 type: 'severity_scale',
-                value: selected ? null : n,
+                value: next,
               });
+              if (next === null) {
+                requestAnimationFrame(() => {
+                  itemRefs.current[i]?.focus();
+                });
+              }
             }}
             className={`flex h-14 min-w-[52px] cursor-pointer items-center justify-center rounded-xl border-2 px-3 text-base font-semibold transition ${radioLabelFocusVisibleClass} ${
               selected
