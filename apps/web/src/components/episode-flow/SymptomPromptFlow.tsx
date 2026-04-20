@@ -59,6 +59,11 @@ function clampIndex(index: number, length: number): number {
   return Math.max(0, Math.min(i, length - 1));
 }
 
+/** Queue key so the same preset symptom id does not serialize writes across episodes. */
+function lineWriteQueueKey(episodeId: string, presetSymptomId: string): string {
+  return `${episodeId}:${presetSymptomId}`;
+}
+
 /**
  * Linear symptom stepper for the active episode’s preset (Week 5 skeleton).
  *
@@ -100,7 +105,10 @@ export function SymptomPromptFlow({
     line: PresetSymptomRow;
     answer: SymptomPromptAnswer;
   } | null>(null);
-  /** Per-line write queue so upsert/delete requests execute in user action order. */
+  /**
+   * Per (episode, preset symptom) write queue so upsert/delete requests execute in user action
+   * order within an episode only — not across `episodeId` changes while mounted.
+   */
   const lineWriteQueueRef = useRef<Map<string, Promise<void>>>(new Map());
   const userIdRef = useRef<string | null>(null);
   /** Bumps on each `load()` start and on effect cleanup so in-flight loads ignore stale results after unmount, retry, or param change. */
@@ -158,9 +166,10 @@ export function SymptomPromptFlow({
       /** Captured at enqueue so queued work cannot attach to a later episode after route change. */
       const enqueueEpisodeId = episodeIdRef.current;
       const enqueueEpoch = serverPersistEpochRef.current;
+      const queueKey = lineWriteQueueKey(enqueueEpisodeId, line.id);
 
       const queues = lineWriteQueueRef.current;
-      const previous = queues.get(line.id) ?? Promise.resolve();
+      const previous = queues.get(queueKey) ?? Promise.resolve();
       const next = previous
         .catch(() => {
           // Keep the chain alive so later writes still run.
@@ -199,10 +208,10 @@ export function SymptomPromptFlow({
             }
           }
         });
-      queues.set(line.id, next);
+      queues.set(queueKey, next);
       void next.finally(() => {
-        if (queues.get(line.id) === next) {
-          queues.delete(line.id);
+        if (queues.get(queueKey) === next) {
+          queues.delete(queueKey);
         }
       });
     },
@@ -213,9 +222,10 @@ export function SymptomPromptFlow({
     (line: PresetSymptomRow) => {
       const enqueueEpisodeId = episodeIdRef.current;
       const enqueueEpoch = serverPersistEpochRef.current;
+      const queueKey = lineWriteQueueKey(enqueueEpisodeId, line.id);
 
       const queues = lineWriteQueueRef.current;
-      const previous = queues.get(line.id) ?? Promise.resolve();
+      const previous = queues.get(queueKey) ?? Promise.resolve();
       const next = previous
         .catch(() => {
           // Keep the chain alive so later writes still run.
@@ -252,10 +262,10 @@ export function SymptomPromptFlow({
             }
           }
         });
-      queues.set(line.id, next);
+      queues.set(queueKey, next);
       void next.finally(() => {
-        if (queues.get(line.id) === next) {
-          queues.delete(line.id);
+        if (queues.get(queueKey) === next) {
+          queues.delete(queueKey);
         }
       });
     },

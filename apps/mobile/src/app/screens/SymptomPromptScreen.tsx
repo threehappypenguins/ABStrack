@@ -60,6 +60,11 @@ function clampIndex(index: number, length: number): number {
   return Math.max(0, Math.min(i, length - 1));
 }
 
+/** Queue key so the same preset symptom id does not serialize writes across episodes. */
+function lineWriteQueueKey(episodeId: string, presetSymptomId: string): string {
+  return `${episodeId}:${presetSymptomId}`;
+}
+
 /** Debounce Supabase writes for free-text answers (matches web episode flow). */
 const SERVER_SYMPTOM_PERSIST_DEBOUNCE_MS = 300;
 
@@ -98,7 +103,10 @@ export function SymptomPromptScreen() {
     line: PresetSymptomRow;
     answer: SymptomPromptAnswer;
   } | null>(null);
-  /** Per-line write queue so upsert/delete requests execute in user action order. */
+  /**
+   * Per (episode, preset symptom) write queue — ordering is within the active episode only, not
+   * across `episodeId` changes while this screen stays mounted.
+   */
   const lineWriteQueueRef = useRef<Map<string, Promise<void>>>(new Map());
   const userIdRef = useRef<string | null>(null);
   /** Bumps on each `load()` start and on effect cleanup so in-flight loads ignore stale results after unmount, retry, or param change. */
@@ -152,9 +160,10 @@ export function SymptomPromptScreen() {
     (line: PresetSymptomRow, answer: SymptomPromptAnswer) => {
       const enqueueEpisodeId = episodeIdRef.current;
       const enqueueEpoch = serverPersistEpochRef.current;
+      const queueKey = lineWriteQueueKey(enqueueEpisodeId, line.id);
 
       const queues = lineWriteQueueRef.current;
-      const previous = queues.get(line.id) ?? Promise.resolve();
+      const previous = queues.get(queueKey) ?? Promise.resolve();
       const next = previous
         .catch(() => {
           // Keep the chain alive so later writes still run.
@@ -196,10 +205,10 @@ export function SymptomPromptScreen() {
             setPersistError(null);
           }
         });
-      queues.set(line.id, next);
+      queues.set(queueKey, next);
       void next.finally(() => {
-        if (queues.get(line.id) === next) {
-          queues.delete(line.id);
+        if (queues.get(queueKey) === next) {
+          queues.delete(queueKey);
         }
       });
     },
@@ -210,9 +219,10 @@ export function SymptomPromptScreen() {
     (line: PresetSymptomRow) => {
       const enqueueEpisodeId = episodeIdRef.current;
       const enqueueEpoch = serverPersistEpochRef.current;
+      const queueKey = lineWriteQueueKey(enqueueEpisodeId, line.id);
 
       const queues = lineWriteQueueRef.current;
-      const previous = queues.get(line.id) ?? Promise.resolve();
+      const previous = queues.get(queueKey) ?? Promise.resolve();
       const next = previous
         .catch(() => {
           // Keep the chain alive so later writes still run.
@@ -252,10 +262,10 @@ export function SymptomPromptScreen() {
             setPersistError(null);
           }
         });
-      queues.set(line.id, next);
+      queues.set(queueKey, next);
       void next.finally(() => {
-        if (queues.get(line.id) === next) {
-          queues.delete(line.id);
+        if (queues.get(queueKey) === next) {
+          queues.delete(queueKey);
         }
       });
     },
