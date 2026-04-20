@@ -93,24 +93,39 @@ describe('mobile auth state sync', () => {
   const invalidOrExpiredMessage =
     'This reset link is invalid or expired. Request a new one.';
 
+  /**
+   * Supabase registers multiple `onAuthStateChange` listeners (e.g. App + HomeScreen). Tests must
+   * broadcast to every subscriber; a single stored callback misses App when Home overwrites it.
+   */
+  function multiSubscriberOnAuthStateChange() {
+    const callbacks: Array<
+      (event: string, session: Session | null) => void
+    > = [];
+    const onAuthStateChange = jest.fn((callback) => {
+      callbacks.push(callback);
+      return {
+        data: {
+          subscription: {
+            unsubscribe: jest.fn(),
+          },
+        },
+      };
+    });
+    const emitAuth = (event: string, session: Session | null) => {
+      for (const cb of callbacks) {
+        cb(event, session);
+      }
+    };
+    return { onAuthStateChange, emitAuth };
+  }
+
   test('returns to Login after SIGNED_OUT even if auth route was Signup', async () => {
-    let authStateListener:
-      | ((event: string, session: Session | null) => void)
-      | null = null;
+    const { onAuthStateChange, emitAuth } = multiSubscriberOnAuthStateChange();
 
     const mockClient = {
       auth: {
         getSession: jest.fn(async () => ({ data: { session: null } })),
-        onAuthStateChange: jest.fn((callback) => {
-          authStateListener = callback;
-          return {
-            data: {
-              subscription: {
-                unsubscribe: jest.fn(),
-              },
-            },
-          };
-        }),
+        onAuthStateChange,
       },
     } as unknown as AbstrackSupabaseClient;
 
@@ -131,7 +146,7 @@ describe('mobile auth state sync', () => {
     });
 
     await act(async () => {
-      authStateListener?.('SIGNED_IN', {
+      emitAuth('SIGNED_IN', {
         access_token: 'access',
         refresh_token: 'refresh',
         token_type: 'bearer',
@@ -146,7 +161,7 @@ describe('mobile auth state sync', () => {
     });
 
     await act(async () => {
-      authStateListener?.('SIGNED_OUT', null);
+      emitAuth('SIGNED_OUT', null);
     });
 
     await waitFor(() => {
@@ -156,23 +171,12 @@ describe('mobile auth state sync', () => {
   });
 
   test('switches between auth stack and main stack from auth events', async () => {
-    let authStateListener:
-      | ((event: string, session: Session | null) => void)
-      | null = null;
+    const { onAuthStateChange, emitAuth } = multiSubscriberOnAuthStateChange();
 
     const mockClient = {
       auth: {
         getSession: jest.fn(async () => ({ data: { session: null } })),
-        onAuthStateChange: jest.fn((callback) => {
-          authStateListener = callback;
-          return {
-            data: {
-              subscription: {
-                unsubscribe: jest.fn(),
-              },
-            },
-          };
-        }),
+        onAuthStateChange,
       },
     } as unknown as AbstrackSupabaseClient;
 
@@ -184,10 +188,10 @@ describe('mobile auth state sync', () => {
       expect(getByText('Login')).toBeTruthy();
     });
 
-    expect(authStateListener).toBeTruthy();
+    expect(onAuthStateChange).toHaveBeenCalled();
 
     await act(async () => {
-      authStateListener?.('SIGNED_IN', {
+      emitAuth('SIGNED_IN', {
         access_token: 'access',
         refresh_token: 'refresh',
         token_type: 'bearer',
@@ -202,7 +206,7 @@ describe('mobile auth state sync', () => {
     });
 
     await act(async () => {
-      authStateListener?.('SIGNED_OUT', null);
+      emitAuth('SIGNED_OUT', null);
     });
 
     await waitFor(() => {
@@ -640,9 +644,7 @@ describe('mobile auth state sync', () => {
         } as unknown as ReturnType<typeof AppState.addEventListener>;
       });
 
-    let authStateListener:
-      | ((event: string, session: Session | null) => void)
-      | null = null;
+    const { onAuthStateChange, emitAuth } = multiSubscriberOnAuthStateChange();
 
     const signedInSession = {
       access_token: 'access',
@@ -654,7 +656,7 @@ describe('mobile auth state sync', () => {
     } as unknown as Session;
 
     const signOut = jest.fn(async () => {
-      authStateListener?.('SIGNED_OUT', null);
+      emitAuth('SIGNED_OUT', null);
       return { error: null };
     });
 
@@ -665,16 +667,7 @@ describe('mobile auth state sync', () => {
           error: null,
         })),
         signOut,
-        onAuthStateChange: jest.fn((callback) => {
-          authStateListener = callback;
-          return {
-            data: {
-              subscription: {
-                unsubscribe: jest.fn(),
-              },
-            },
-          };
-        }),
+        onAuthStateChange,
       },
     } as unknown as AbstrackSupabaseClient;
 

@@ -1,5 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   getActiveEpisodeForUser,
   getAuthUser,
@@ -45,16 +46,17 @@ export function HomeScreen({
     useState<ActiveEpisodeHomeSummary | null>(null);
   const [activeEpisodeLoading, setActiveEpisodeLoading] = useState(true);
 
-  useEffect(() => {
-    let cancelled = false;
-    const loadActiveEpisode = async () => {
+  const loadActiveEpisode = useCallback(
+    async (cancel?: { cancelled: boolean }) => {
+      const stale = () => cancel?.cancelled === true;
+
       setActiveEpisodeLoading(true);
       try {
         const mobileSupabase = getMobileSupabaseClient();
         const {
           data: { user },
         } = await mobileSupabase.auth.getUser();
-        if (cancelled) {
+        if (stale()) {
           return;
         }
         if (!user) {
@@ -62,7 +64,7 @@ export function HomeScreen({
           return;
         }
         const result = await getActiveEpisodeForUser(mobileSupabase, user.id);
-        if (cancelled) {
+        if (stale()) {
           return;
         }
         if (!result.ok || !result.data?.symptom_preset_id) {
@@ -74,20 +76,41 @@ export function HomeScreen({
           symptomPresetId: result.data.symptom_preset_id,
         });
       } catch {
-        if (!cancelled) {
+        if (!stale()) {
           setActiveEpisode(null);
         }
       } finally {
-        if (!cancelled) {
+        if (!stale()) {
           setActiveEpisodeLoading(false);
         }
       }
-    };
-    void loadActiveEpisode();
+    },
+    [],
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      const cancel = { cancelled: false };
+      void loadActiveEpisode(cancel);
+      return () => {
+        cancel.cancelled = true;
+      };
+    }, [loadActiveEpisode]),
+  );
+
+  useEffect(() => {
+    const supabase = getMobileSupabaseClient();
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
+        void loadActiveEpisode();
+      }
+    });
     return () => {
-      cancelled = true;
+      subscription.unsubscribe();
     };
-  }, []);
+  }, [loadActiveEpisode]);
 
   useEffect(() => {
     isMountedRef.current = true;
