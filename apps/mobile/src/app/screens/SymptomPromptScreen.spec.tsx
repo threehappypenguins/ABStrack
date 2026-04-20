@@ -410,7 +410,13 @@ describe('SymptomPromptScreen', () => {
     });
   });
 
-  test('restores activeIndex from session after load', async () => {
+  test('resume: false restores activeIndex from session after load', async () => {
+    jest.mocked(useRoute).mockReturnValue({
+      key: 'SymptomPrompt',
+      name: 'SymptomPrompt',
+      params: { episodeId, symptomPresetId, resume: false },
+    } as never);
+
     jest.mocked(getSymptomPromptSession).mockReturnValue({
       activeIndex: 1,
       answers: {},
@@ -423,6 +429,136 @@ describe('SymptomPromptScreen', () => {
     });
 
     expect(screen.getByText('Headache')).toBeTruthy();
+  });
+
+  test('resume: false uses session index even when server has progress on earlier lines', async () => {
+    jest.mocked(useRoute).mockReturnValue({
+      key: 'SymptomPrompt',
+      name: 'SymptomPrompt',
+      params: { episodeId, symptomPresetId, resume: false },
+    } as never);
+
+    jest.mocked(getSymptomPromptSession).mockReturnValue({
+      activeIndex: 0,
+      answers: {},
+    });
+
+    jest.mocked(listEpisodeSymptomsForEpisode).mockResolvedValue({
+      ok: true,
+      data: [
+        {
+          id: 'es-a',
+          user_id: 'test-user-1',
+          episode_id: episodeId,
+          preset_symptom_id: lineA.id,
+          symptom_name: lineA.symptom_name,
+          response_type: 'yes_no',
+          response_boolean: true,
+          response_severity: null,
+          response_text: null,
+          sort_order: 0,
+          created_at: '2020-01-01T00:00:00Z',
+          updated_at: '2020-01-01T00:00:00Z',
+        },
+      ],
+    });
+
+    const screen = render(<SymptomPromptScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Step 1 of 2')).toBeTruthy();
+    });
+    expect(screen.getByText('Nausea')).toBeTruthy();
+  });
+
+  test('resume: true lands on first unanswered line from merged server+session', async () => {
+    jest.mocked(useRoute).mockReturnValue({
+      key: 'SymptomPrompt',
+      name: 'SymptomPrompt',
+      params: { episodeId, symptomPresetId, resume: true },
+    } as never);
+
+    jest.mocked(getSymptomPromptSession).mockReturnValue({
+      activeIndex: 0,
+      answers: {},
+    });
+
+    jest.mocked(listEpisodeSymptomsForEpisode).mockResolvedValue({
+      ok: true,
+      data: [
+        {
+          id: 'es-a',
+          user_id: 'test-user-1',
+          episode_id: episodeId,
+          preset_symptom_id: lineA.id,
+          symptom_name: lineA.symptom_name,
+          response_type: 'yes_no',
+          response_boolean: true,
+          response_severity: null,
+          response_text: null,
+          sort_order: 0,
+          created_at: '2020-01-01T00:00:00Z',
+          updated_at: '2020-01-01T00:00:00Z',
+        },
+      ],
+    });
+
+    const screen = render(<SymptomPromptScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Step 2 of 2')).toBeTruthy();
+    });
+    expect(screen.getByText('Headache')).toBeTruthy();
+  });
+
+  test('resume: true shows complete phase when every line is answered on the server', async () => {
+    jest.mocked(useRoute).mockReturnValue({
+      key: 'SymptomPrompt',
+      name: 'SymptomPrompt',
+      params: { episodeId, symptomPresetId, resume: true },
+    } as never);
+
+    jest.mocked(listEpisodeSymptomsForEpisode).mockResolvedValue({
+      ok: true,
+      data: [
+        {
+          id: 'es-a',
+          user_id: 'test-user-1',
+          episode_id: episodeId,
+          preset_symptom_id: lineA.id,
+          symptom_name: lineA.symptom_name,
+          response_type: 'yes_no',
+          response_boolean: true,
+          response_severity: null,
+          response_text: null,
+          sort_order: 0,
+          created_at: '2020-01-01T00:00:00Z',
+          updated_at: '2020-01-01T00:00:00Z',
+        },
+        {
+          id: 'es-b',
+          user_id: 'test-user-1',
+          episode_id: episodeId,
+          preset_symptom_id: lineB.id,
+          symptom_name: lineB.symptom_name,
+          response_type: 'severity_scale',
+          response_boolean: null,
+          response_severity: 3,
+          response_text: null,
+          sort_order: 1,
+          created_at: '2020-01-01T00:00:00Z',
+          updated_at: '2020-01-01T00:00:00Z',
+        },
+      ],
+    });
+
+    const screen = render(<SymptomPromptScreen />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/You reached the end of your symptom list/),
+      ).toBeTruthy();
+    });
   });
 
   test('Skip on free-text flushes immediately after answer is cleared', async () => {
