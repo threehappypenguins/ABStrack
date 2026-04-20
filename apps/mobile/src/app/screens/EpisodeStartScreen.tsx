@@ -273,10 +273,26 @@ export function EpisodeStartScreen() {
         announce(end.error.message);
         return;
       }
-      announce('Previous episode closed. You can start a new one.');
-      const token = focusCancelRef.current;
-      if (token != null) {
-        void load(token, focusCycleIdRef.current);
+      // Reload start flow before any success announcement so UI matches server state; always await
+      // `load` (fallback cancel token if focus ref is unset).
+      await load(
+        focusCancelRef.current ?? { cancelled: false },
+        focusCycleIdRef.current,
+      );
+      if (!end.data.didEnd) {
+        return;
+      }
+      const verify = await getActiveEpisodeForUser(supabase, row.user_id);
+      if (!verify.ok) {
+        setEpisodeStartError(verify.error.message);
+        return;
+      }
+      if (!verify.data) {
+        announce('Previous episode closed. You can start a new one.');
+      } else {
+        setEpisodeStartError(
+          'We could not confirm your previous episode is closed. Try Continue this episode or try again.',
+        );
       }
     } finally {
       setResolvingActiveGate(false);

@@ -81,21 +81,24 @@ export async function getActiveEpisodeForUser(
 }
 
 /**
- * Sets `ended_at` on an episode that is still active (`ended_at IS NULL`). If the row is already
- * ended, the update is a no-op and the call still succeeds — callers can proceed to start a new
- * episode. Uses the same RLS as other `episodes` updates.
+ * Sets `ended_at` on an episode that is still active (`ended_at IS NULL`). Uses the same RLS as
+ * other `episodes` updates.
  *
  * @param client - Supabase client (RLS applies).
  * @param episodeId - `episodes.id` to close.
  * @param endedAt - Timestamp for `ended_at` (defaults to now, ISO string).
+ * @returns On success, `didEnd` is `true` if exactly one active row was updated. `didEnd` is
+ * `false` when the update matched no rows: e.g. the episode was already ended, `episodeId` does
+ * not exist, or RLS hid the row from the update. Callers must not treat `didEnd: false` as proof
+ * the episode was closed.
  */
 export async function endEpisodeIfStillActive(
   client: AbstrackSupabaseClient,
   episodeId: Uuid,
   endedAt: string = new Date().toISOString(),
-): Promise<PresetDataResult<void>> {
+): Promise<PresetDataResult<{ didEnd: boolean }>> {
   try {
-    const { error } = await client
+    const { data, error } = await client
       .from('episodes')
       .update({ ended_at: endedAt })
       .eq('id', episodeId)
@@ -105,9 +108,7 @@ export async function endEpisodeIfStillActive(
     if (error) {
       return { ok: false, error: toPresetDataError(error) };
     }
-    // When the row was already ended (or not visible under RLS), the update matches no rows — still
-    // OK for “start a new episode” flows that assume no active row remains.
-    return { ok: true, data: undefined };
+    return { ok: true, data: { didEnd: data != null } };
   } catch (caught) {
     return { ok: false, error: toPresetDataError(caught) };
   }

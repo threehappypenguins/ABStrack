@@ -14,25 +14,10 @@ import {
   listEpisodeTemplates,
 } from '@abstrack/supabase';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
+import { buildResumeEpisodeHref } from '@/lib/episode-flow/resume-episode-href';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
 import { useAuth } from '@/lib/auth-provider';
 import { PageLoading } from '@/components/page-states/PageLoading';
-
-/**
- * Builds the `/episode/[id]/symptoms` URL for continuing an active episode (matches home CTA).
- *
- * @param episodeId - `episodes.id`.
- * @param symptomPresetId - `symptom_presets.id` on the episode row.
- */
-function buildResumeEpisodeHref(
-  episodeId: string,
-  symptomPresetId: string,
-): string {
-  const q = new URLSearchParams();
-  q.set('symptomPresetId', symptomPresetId);
-  q.set('resume', '1');
-  return `/episode/${episodeId}/symptoms?${q.toString()}`;
-}
 
 /**
  * Impaired-friendly episode start: load templates; if there is exactly one template, create the
@@ -171,10 +156,24 @@ export function EpisodeStartFlow() {
         announce(end.error.message, { politeness: 'assertive' });
         return;
       }
-      announce('Previous episode closed. You can start a new one.', {
-        politeness: 'polite',
-      });
       await refresh();
+      if (!end.data.didEnd) {
+        return;
+      }
+      const verify = await getActiveEpisodeForUser(supabase, session.user.id);
+      if (!verify.ok) {
+        setSubmitError(verify.error.message);
+        return;
+      }
+      if (!verify.data) {
+        announce('Previous episode closed. You can start a new one.', {
+          politeness: 'polite',
+        });
+      } else {
+        setSubmitError(
+          'We could not confirm your previous episode is closed. Try Continue this episode or try again.',
+        );
+      }
     } finally {
       setResolvingActiveBlock(false);
     }
@@ -277,8 +276,9 @@ export function EpisodeStartFlow() {
           role="status"
           aria-live="polite"
         >
-          An unfinished episode is already open. Use Continue this episode or
-          End this episode and start a new one.
+          {canResume
+            ? 'An unfinished episode is already open. Actions: Continue this episode, or End this episode and start a new one.'
+            : 'An unfinished episode is already open. Preset data is missing, so you cannot continue. Action: End this episode and start a new one.'}
         </p>
         {submitError ? (
           <p className="text-sm text-red-700 dark:text-red-300" role="alert">

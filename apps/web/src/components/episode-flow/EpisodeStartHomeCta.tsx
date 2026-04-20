@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useId, useState } from 'react';
 import { getActiveEpisodeForUser } from '@abstrack/supabase';
+import { buildResumeEpisodeHref } from '@/lib/episode-flow/resume-episode-href';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
 import { useAuth } from '@/lib/auth-provider';
 
@@ -12,26 +13,6 @@ export type EpisodeStartHomeCtaProps = {
 };
 
 type CtaMode = 'loading' | 'resume' | 'start';
-
-/**
- * Builds the `/episode/[id]/symptoms` URL for continuing an active episode: `symptomPresetId`
- * selects the preset, and `resume=1` tells {@link SymptomPromptFlow} to hydrate with resume logic.
- * The step index is **not** in the query string; it is computed in the flow from merged server +
- * session answers (and related resume handling).
- *
- * @param episodeId - `episodes.id`.
- * @param symptomPresetId - `symptom_presets.id` on the episode row.
- * @returns Path under `/episode/[id]/symptoms`.
- */
-function buildResumeEpisodeHref(
-  episodeId: string,
-  symptomPresetId: string,
-): string {
-  const q = new URLSearchParams();
-  q.set('symptomPresetId', symptomPresetId);
-  q.set('resume', '1');
-  return `/episode/${episodeId}/symptoms?${q.toString()}`;
-}
 
 /**
  * Prominent home entry for episode logging: detects an active episode and offers **Continue this

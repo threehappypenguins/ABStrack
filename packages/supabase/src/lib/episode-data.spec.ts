@@ -187,10 +187,13 @@ describe('endEpisodeIfStillActive', () => {
     );
 
     expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.didEnd).toBe(true);
+    }
     expect(client.from).toHaveBeenCalledWith('episodes');
   });
 
-  it('succeeds when the row was already ended (no row returned)', async () => {
+  it('returns didEnd false when the row was already ended (no row returned)', async () => {
     const maybeSingle = vi.fn(async () => ({ data: null, error: null }));
     const client = {
       from: vi.fn(() => ({
@@ -209,5 +212,8 @@ describe('endEpisodeIfStillActive', () => {
     const result = await endEpisodeIfStillActive(client, 'ep-1');
 
     expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.didEnd).toBe(false);
+    }
   });
 });
