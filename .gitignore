@@ -5,6 +5,9 @@ dist
 tmp
 out-tsc
 
+# TypeScript incremental build caches (noisy; do not commit)
+*.tsbuildinfo
+
 # dependencies
 node_modules
 

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { EpisodeInsert, EpisodeRow } from '@abstrack/types';
 import {
   createEpisode,
+  endEpisodeIfStillActive,
   getActiveEpisodeForUser,
   getEpisodeById,
 } from './episode-data.js';
@@ -155,6 +156,64 @@ describe('getActiveEpisodeForUser', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.data).toBeNull();
+    }
+  });
+});
+
+describe('endEpisodeIfStillActive', () => {
+  it('updates ended_at when the row is still active', async () => {
+    const maybeSingle = vi.fn(async () => ({
+      data: { id: 'ep-1' },
+      error: null,
+    }));
+    const client = {
+      from: vi.fn(() => ({
+        update: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            is: vi.fn(() => ({
+              select: vi.fn(() => ({
+                maybeSingle,
+              })),
+            })),
+          })),
+        })),
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await endEpisodeIfStillActive(
+      client,
+      'ep-1',
+      '2026-04-20T12:00:00.000Z',
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.didEnd).toBe(true);
+    }
+    expect(client.from).toHaveBeenCalledWith('episodes');
+  });
+
+  it('returns didEnd false when the row was already ended (no row returned)', async () => {
+    const maybeSingle = vi.fn(async () => ({ data: null, error: null }));
+    const client = {
+      from: vi.fn(() => ({
+        update: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            is: vi.fn(() => ({
+              select: vi.fn(() => ({
+                maybeSingle,
+              })),
+            })),
+          })),
+        })),
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await endEpisodeIfStillActive(client, 'ep-1');
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.didEnd).toBe(false);
     }
   });
 });

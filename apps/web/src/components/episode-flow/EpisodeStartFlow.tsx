@@ -3,9 +3,18 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
-import type { EpisodeTemplateWithPresetsRow } from '@abstrack/types';
-import { createEpisode, listEpisodeTemplates } from '@abstrack/supabase';
+import type {
+  EpisodeRow,
+  EpisodeTemplateWithPresetsRow,
+} from '@abstrack/types';
+import {
+  createEpisode,
+  endEpisodeIfStillActive,
+  getActiveEpisodeForUser,
+  listEpisodeTemplates,
+} from '@abstrack/supabase';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
+import { buildResumeEpisodeHref } from '@/lib/episode-flow/resume-episode-href';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
 import { useAuth } from '@/lib/auth-provider';
 import { PageLoading } from '@/components/page-states/PageLoading';
@@ -34,6 +43,10 @@ export function EpisodeStartFlow() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  /** Open episode (`ended_at` null) — blocks starting another until resume or explicit end. */
+  const [blockingActiveEpisode, setBlockingActiveEpisode] =
+    useState<EpisodeRow | null>(null);
+  const [resolvingActiveBlock, setResolvingActiveBlock] = useState(false);
 
   const refresh = useCallback(async (): Promise<void> => {
     const userId = session?.user?.id;
@@ -44,6 +57,20 @@ export function EpisodeStartFlow() {
     setLoadState('loading');
     setLoadError(null);
     setSubmitError(null);
+    setBlockingActiveEpisode(null);
+
+    const activeResult = await getActiveEpisodeForUser(supabase, userId);
+    if (!activeResult.ok) {
+      setLoadState('error');
+      setLoadError(activeResult.error.message);
+      return;
+    }
+    if (activeResult.data) {
+      setBlockingActiveEpisode(activeResult.data);
+      setLoadState('idle');
+      return;
+    }
+
     const result = await listEpisodeTemplates(supabase);
     if (!result.ok) {
       setLoadState('error');
@@ -112,6 +139,52 @@ export function EpisodeStartFlow() {
     void refresh();
   }, [authLoading, session?.user?.id, refresh]);
 
+  const onEndActiveEpisodeAndStartNew = useCallback(async (): Promise<void> => {
+    if (!session?.user?.id || !blockingActiveEpisode || resolvingActiveBlock) {
+      return;
+    }
+    setResolvingActiveBlock(true);
+    setSubmitError(null);
+    try {
+      const supabase = createBrowserClient();
+      const end = await endEpisodeIfStillActive(
+        supabase,
+        blockingActiveEpisode.id,
+      );
+      if (!end.ok) {
+        setSubmitError(end.error.message);
+        announce(end.error.message, { politeness: 'assertive' });
+        return;
+      }
+      await refresh();
+      if (!end.data.didEnd) {
+        return;
+      }
+      const verify = await getActiveEpisodeForUser(supabase, session.user.id);
+      if (!verify.ok) {
+        setSubmitError(verify.error.message);
+        return;
+      }
+      if (!verify.data) {
+        announce('Previous episode closed. You can start a new one.', {
+          politeness: 'polite',
+        });
+      } else {
+        setSubmitError(
+          'We could not confirm your previous episode is closed. Try Continue this episode or try again.',
+        );
+      }
+    } finally {
+      setResolvingActiveBlock(false);
+    }
+  }, [
+    announce,
+    blockingActiveEpisode,
+    refresh,
+    resolvingActiveBlock,
+    session?.user?.id,
+  ]);
+
   const onSubmit = async (): Promise<void> => {
     if (!session?.user?.id || selectedId === null || submitting) {
       return;
@@ -167,6 +240,75 @@ export function EpisodeStartFlow() {
         >
           Sign in
         </Link>
+      </div>
+    );
+  }
+
+  if (blockingActiveEpisode) {
+    const presetId = blockingActiveEpisode.symptom_preset_id;
+    const canResume = typeof presetId === 'string' && presetId.length > 0;
+    const gateStatusId = `episode-start-active-gate-status${groupLegendId}`;
+    const primaryLinkClass =
+      'inline-flex min-h-[56px] w-full items-center justify-center rounded-xl bg-red-700 px-5 py-4 text-center text-base font-semibold leading-snug text-white shadow-md outline-none ring-2 ring-transparent transition hover:bg-red-800 focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-red-50 dark:bg-red-600 dark:hover:bg-red-500 dark:focus-visible:ring-offset-red-950';
+    const secondaryButtonClass =
+      'inline-flex min-h-[56px] w-full items-center justify-center rounded-xl border-2 border-app-border bg-app-surface px-5 py-4 text-center text-base font-semibold leading-snug text-app-ink shadow-sm outline-none transition hover:bg-app-surface/80 focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-600 dark:bg-neutral-900/60';
+
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-app-ink">
+            Episode already in progress
+          </h1>
+          <p className="mt-2 text-base leading-relaxed text-app-ink">
+            You already have one episode open that is not finished. Only one
+            episode can be open at a time. Choose what to do next.
+          </p>
+          {!canResume ? (
+            <p className="mt-3 text-sm leading-relaxed text-app-muted">
+              This episode is missing preset data, so it cannot be resumed. End
+              this episode to start a new one.
+            </p>
+          ) : null}
+        </div>
+        <p
+          id={gateStatusId}
+          className="sr-only"
+          role="status"
+          aria-live="polite"
+        >
+          {canResume
+            ? 'An unfinished episode is already open. Actions: Continue this episode, or End this episode and start a new one.'
+            : 'An unfinished episode is already open. Preset data is missing, so you cannot continue. Action: End this episode and start a new one.'}
+        </p>
+        {submitError ? (
+          <p className="text-sm text-red-700 dark:text-red-300" role="alert">
+            {submitError}
+          </p>
+        ) : null}
+        <div className="flex flex-col gap-3 sm:max-w-md">
+          {canResume ? (
+            <Link
+              href={buildResumeEpisodeHref(blockingActiveEpisode.id, presetId)}
+              className={primaryLinkClass}
+              aria-describedby={gateStatusId}
+            >
+              Continue this episode
+            </Link>
+          ) : null}
+          <button
+            type="button"
+            className={canResume ? secondaryButtonClass : primaryLinkClass}
+            disabled={resolvingActiveBlock}
+            aria-describedby={gateStatusId}
+            onClick={() => {
+              void onEndActiveEpisodeAndStartNew();
+            }}
+          >
+            {resolvingActiveBlock
+              ? 'Closing episode…'
+              : 'End this episode and start a new one'}
+          </button>
+        </div>
       </div>
     );
   }

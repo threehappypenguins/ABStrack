@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useId, useState } from 'react';
 import { getActiveEpisodeForUser } from '@abstrack/supabase';
+import { buildResumeEpisodeHref } from '@/lib/episode-flow/resume-episode-href';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
 import { useAuth } from '@/lib/auth-provider';
 
@@ -14,28 +15,9 @@ export type EpisodeStartHomeCtaProps = {
 type CtaMode = 'loading' | 'resume' | 'start';
 
 /**
- * Builds the `/episode/[id]/symptoms` URL for continuing an active episode: `symptomPresetId`
- * selects the preset, and `resume=1` tells {@link SymptomPromptFlow} to hydrate with resume logic.
- * The step index is **not** in the query string; it is computed in the flow from merged server +
- * session answers (and related resume handling).
- *
- * @param episodeId - `episodes.id`.
- * @param symptomPresetId - `symptom_presets.id` on the episode row.
- * @returns Path under `/episode/[id]/symptoms`.
- */
-function buildResumeEpisodeHref(
-  episodeId: string,
-  symptomPresetId: string,
-): string {
-  const q = new URLSearchParams();
-  q.set('symptomPresetId', symptomPresetId);
-  q.set('resume', '1');
-  return `/episode/${episodeId}/symptoms?${q.toString()}`;
-}
-
-/**
- * Prominent home entry for episode logging: detects an active episode and offers **Resume** as the
- * primary action; otherwise **I'm having an episode** starts a new flow. CTA mode is conveyed to
+ * Prominent home entry for episode logging: detects an active episode and offers **Continue this
+ * episode** as the primary action; otherwise **I'm having an episode** starts a new flow. CTA mode
+ * is conveyed to
  * assistive technologies via a single `aria-live` status region (no duplicate transient announce).
  *
  * @param props - Props.
@@ -115,14 +97,14 @@ export function EpisodeStartHomeCta({
       <p id={descId} className="mt-1.5 text-sm leading-relaxed text-app-muted">
         {ctaMode === 'loading' && 'Checking for an episode in progress…'}
         {ctaMode === 'resume' &&
-          'You have an episode in progress. Continue where you left off in the guided symptom flow.'}
+          'You have an episode in progress. Continue this episode to pick up where you left off in the guided symptom flow.'}
         {ctaMode === 'start' &&
           'Opens the guided flow to record what you are experiencing during this episode.'}
       </p>
       <p id={statusId} className="sr-only" role="status" aria-live="polite">
         {ctaMode === 'loading' && 'Checking for an in-progress episode.'}
         {ctaMode === 'resume' &&
-          'An episode is in progress. Primary action: Resume episode.'}
+          'An episode is in progress. Primary action: Continue this episode.'}
         {ctaMode === 'start' &&
           'No episode in progress. Primary action: start a new episode.'}
       </p>
@@ -141,7 +123,7 @@ export function EpisodeStartHomeCta({
             className={primaryLinkClass}
             aria-describedby={`${descId} ${statusId}`}
           >
-            Resume episode
+            Continue this episode
           </Link>
         )}
         {ctaMode === 'start' && (
