@@ -250,6 +250,11 @@ export function SymptomPromptFlow({
 
   const schedulePersistToSupabase = useCallback(
     (line: PresetSymptomRow, answer: SymptomPromptAnswer) => {
+      if (!symptomPromptAnswerHasValue(answer)) {
+        cancelPendingServerPersist();
+        executeServerDelete(line);
+        return;
+      }
       if (answer.type === 'free_text') {
         pendingServerFreeTextPersistRef.current = { line, answer };
         if (serverPersistTimerRef.current !== null) {
@@ -272,7 +277,7 @@ export function SymptomPromptFlow({
         executeServerPersist(line, answer);
       }
     },
-    [executeServerPersist],
+    [cancelPendingServerPersist, executeServerDelete, executeServerPersist],
   );
 
   useLayoutEffect(() => {
@@ -504,6 +509,9 @@ export function SymptomPromptFlow({
       'Exit symptom flow? If you exit now, you will return home. Starting again creates a new episode.',
     );
     if (shouldExit) {
+      flushPendingTextPersist();
+      flushPendingServerPersist();
+      allowNavigationRef.current = true;
       router.push('/dashboard');
     } else {
       announce('Stayed on the current symptom step.', {

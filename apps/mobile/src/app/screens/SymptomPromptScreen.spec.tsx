@@ -94,6 +94,7 @@ describe('SymptomPromptScreen', () => {
 
   const lineA = makeLine('line-a', 0, 'Nausea', 'yes_no');
   const lineB = makeLine('line-b', 1, 'Headache', 'severity_scale');
+  const lineSeverityOnly = makeLine('line-sev', 0, 'Pain', 'severity_scale');
 
   /** Single free-text line for debounce / flush tests. */
   const lineFreeOnly = makeLine('line-ft', 0, 'Notes', 'free_text');
@@ -181,6 +182,44 @@ describe('SymptomPromptScreen', () => {
         answer: { type: 'yes_no', value: true },
       }),
     );
+  });
+
+  test('deselecting severity clears server row via delete (no null upsert)', async () => {
+    jest.mocked(listPresetSymptomsForPreset).mockResolvedValue({
+      ok: true,
+      data: [lineSeverityOnly],
+    });
+    const screen = render(<SymptomPromptScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Step 1 of 1')).toBeTruthy();
+    });
+
+    fireEvent.press(screen.getByLabelText('Severity 3'));
+    await waitFor(() => {
+      expect(upsertEpisodeSymptomAnswer).toHaveBeenCalledWith(
+        expect.objectContaining({ mockClient: true }),
+        expect.objectContaining({
+          line: lineSeverityOnly,
+          answer: { type: 'severity_scale', value: 3 },
+        }),
+      );
+    });
+
+    jest.mocked(upsertEpisodeSymptomAnswer).mockClear();
+    jest.mocked(deleteEpisodeSymptomAnswer).mockClear();
+    fireEvent.press(screen.getByLabelText('Severity 3'));
+
+    await waitFor(() => {
+      expect(deleteEpisodeSymptomAnswer).toHaveBeenCalledWith(
+        expect.objectContaining({ mockClient: true }),
+        expect.objectContaining({
+          episodeId,
+          presetSymptomId: lineSeverityOnly.id,
+        }),
+      );
+    });
+    expect(upsertEpisodeSymptomAnswer).not.toHaveBeenCalled();
   });
 
   test('free_text changes debounce to a single upsert', async () => {

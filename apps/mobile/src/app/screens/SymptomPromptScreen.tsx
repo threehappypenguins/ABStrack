@@ -259,6 +259,11 @@ export function SymptomPromptScreen() {
    */
   const schedulePersistToSupabase = useCallback(
     (line: PresetSymptomRow, answer: SymptomPromptAnswer) => {
+      if (!symptomPromptAnswerHasValue(answer)) {
+        cancelPendingServerPersist();
+        executeServerDelete(line);
+        return;
+      }
       if (answer.type === 'free_text') {
         pendingServerFreeTextPersistRef.current = { line, answer };
         if (serverPersistTimerRef.current !== null) {
@@ -281,7 +286,7 @@ export function SymptomPromptScreen() {
         executeServerPersist(line, answer);
       }
     },
-    [executeServerPersist],
+    [cancelPendingServerPersist, executeServerDelete, executeServerPersist],
   );
 
   useEffect(() => {
@@ -456,10 +461,11 @@ export function SymptomPromptScreen() {
 
   const requestExitToPreviousScreen = useCallback(() => {
     confirmExitFlow(() => {
+      flushPendingServerPersist();
       allowRemovalRef.current = true;
       navigation.goBack();
     });
-  }, [confirmExitFlow, navigation]);
+  }, [confirmExitFlow, flushPendingServerPersist, navigation]);
 
   useEffect(() => {
     const unsub = navigation.addListener('beforeRemove', (e) => {
@@ -469,12 +475,13 @@ export function SymptomPromptScreen() {
       }
       e.preventDefault();
       confirmExitFlow(() => {
+        flushPendingServerPersist();
         allowRemovalRef.current = true;
         navigation.dispatch(e.data.action);
       });
     });
     return unsub;
-  }, [confirmExitFlow, navigation, phase]);
+  }, [confirmExitFlow, flushPendingServerPersist, navigation, phase]);
 
   const onExitFlowPress = () => {
     requestExitToPreviousScreen();
