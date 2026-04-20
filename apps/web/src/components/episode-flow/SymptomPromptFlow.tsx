@@ -106,11 +106,12 @@ export function SymptomPromptFlow({
   /** Bumps on each `load()` start and on effect cleanup so in-flight loads ignore stale results after unmount, retry, or param change. */
   const loadGenRef = useRef(0);
   /**
-   * Monotonic id for `executeServerPersist` attempts; bumped on each new persist and on episode
-   * change so out-of-order async completions do not clobber {@link persistError}. Episode id is
-   * captured per attempt so flushes during navigation cannot attach errors to the wrong episode.
+   * Bumped only on episode change, unmount, and {@link cancelPendingServerPersist} so in-flight
+   * work can be abandoned without clobbering UI after navigation. Each write captures the epoch at
+   * enqueue time (does not bump per write) so parallel writes to different symptom lines still
+   * surface their own errors when they complete.
    */
-  const serverPersistGenerationRef = useRef(0);
+  const serverPersistEpochRef = useRef(0);
   const allowNavigationRef = useRef(false);
 
   const supabase = useMemo(() => createBrowserClient(), []);
@@ -154,9 +155,9 @@ export function SymptomPromptFlow({
         })
         .then(async () => {
           const targetEpisodeId = episodeIdRef.current;
-          const generation = ++serverPersistGenerationRef.current;
+          const epochAtStart = serverPersistEpochRef.current;
           const uid = await resolveSessionUserId(supabase);
-          if (generation !== serverPersistGenerationRef.current) {
+          if (epochAtStart !== serverPersistEpochRef.current) {
             return;
           }
           if (!uid) {
@@ -173,7 +174,7 @@ export function SymptomPromptFlow({
             line,
             answer,
           });
-          if (generation !== serverPersistGenerationRef.current) {
+          if (epochAtStart !== serverPersistEpochRef.current) {
             return;
           }
           if (episodeIdRef.current !== targetEpisodeId) {
@@ -205,9 +206,9 @@ export function SymptomPromptFlow({
         })
         .then(async () => {
           const targetEpisodeId = episodeIdRef.current;
-          const generation = ++serverPersistGenerationRef.current;
+          const epochAtStart = serverPersistEpochRef.current;
           const uid = await resolveSessionUserId(supabase);
-          if (generation !== serverPersistGenerationRef.current) {
+          if (epochAtStart !== serverPersistEpochRef.current) {
             return;
           }
           if (!uid) {
@@ -222,7 +223,7 @@ export function SymptomPromptFlow({
             episodeId: targetEpisodeId,
             presetSymptomId: line.id,
           });
-          if (generation !== serverPersistGenerationRef.current) {
+          if (epochAtStart !== serverPersistEpochRef.current) {
             return;
           }
           if (episodeIdRef.current !== targetEpisodeId) {
@@ -271,7 +272,7 @@ export function SymptomPromptFlow({
       serverPersistTimerRef.current = null;
     }
     pendingServerFreeTextPersistRef.current = null;
-    serverPersistGenerationRef.current += 1;
+    serverPersistEpochRef.current += 1;
   }, []);
 
   const schedulePersistToSupabase = useCallback(
@@ -316,7 +317,7 @@ export function SymptomPromptFlow({
         answers: answersRef.current,
       });
     }
-    serverPersistGenerationRef.current += 1;
+    serverPersistEpochRef.current += 1;
     flushPendingServerPersist();
     episodeIdRef.current = episodeId;
     const s = getSymptomPromptSession(episodeId);
@@ -359,7 +360,7 @@ export function SymptomPromptFlow({
 
   useEffect(() => {
     return () => {
-      serverPersistGenerationRef.current += 1;
+      serverPersistEpochRef.current += 1;
       flushPendingServerPersist();
     };
   }, [flushPendingServerPersist]);

@@ -104,12 +104,11 @@ export function SymptomPromptScreen() {
   /** Bumps on each `load()` start and on effect cleanup so in-flight loads ignore stale results after unmount, retry, or param change. */
   const loadGenRef = useRef(0);
   /**
-   * Latest server-persist generation. Incremented per {@link executeServerPersist} attempt and
-   * before flush on episode change / unmount so older in-flight writes cannot update {@link persistError}.
-   * Each attempt also captures the episode id at call time so a flushed write after navigation cannot
-   * surface errors for the wrong episode ({@link executeServerPersist}).
+   * Bumped on episode change, unmount, and {@link cancelPendingServerPersist}. Each write captures
+   * the epoch at enqueue time (not per write) so parallel writes to different lines still report
+   * their own completion/errors.
    */
-  const serverPersistGenerationRef = useRef(0);
+  const serverPersistEpochRef = useRef(0);
   const allowRemovalRef = useRef(false);
 
   /**
@@ -141,11 +140,6 @@ export function SymptomPromptScreen() {
     activeIndexRef.current = activeIndex;
   }, [activeIndex]);
 
-  /**
-   * Each call bumps {@link serverPersistGenerationRef} and captures the current episode id so flushes
-   * during navigation still write to the correct episode and do not update {@link persistError} for
-   * the wrong screen after the route has advanced.
-   */
   const executeServerPersist = useCallback(
     (line: PresetSymptomRow, answer: SymptomPromptAnswer) => {
       const queues = lineWriteQueueRef.current;
@@ -156,10 +150,10 @@ export function SymptomPromptScreen() {
         })
         .then(async () => {
           const targetEpisodeId = episodeIdRef.current;
-          const generation = ++serverPersistGenerationRef.current;
+          const epochAtStart = serverPersistEpochRef.current;
           const supabase = getMobileSupabaseClient();
           const uid = await resolveSessionUserId(supabase);
-          if (generation !== serverPersistGenerationRef.current) {
+          if (epochAtStart !== serverPersistEpochRef.current) {
             return;
           }
           if (!uid) {
@@ -176,7 +170,7 @@ export function SymptomPromptScreen() {
             line,
             answer,
           });
-          if (generation !== serverPersistGenerationRef.current) {
+          if (epochAtStart !== serverPersistEpochRef.current) {
             return;
           }
           if (episodeIdRef.current !== targetEpisodeId) {
@@ -208,10 +202,10 @@ export function SymptomPromptScreen() {
         })
         .then(async () => {
           const targetEpisodeId = episodeIdRef.current;
-          const generation = ++serverPersistGenerationRef.current;
+          const epochAtStart = serverPersistEpochRef.current;
           const supabase = getMobileSupabaseClient();
           const uid = await resolveSessionUserId(supabase);
-          if (generation !== serverPersistGenerationRef.current) {
+          if (epochAtStart !== serverPersistEpochRef.current) {
             return;
           }
           if (!uid) {
@@ -226,7 +220,7 @@ export function SymptomPromptScreen() {
             episodeId: targetEpisodeId,
             presetSymptomId: line.id,
           });
-          if (generation !== serverPersistGenerationRef.current) {
+          if (epochAtStart !== serverPersistEpochRef.current) {
             return;
           }
           if (episodeIdRef.current !== targetEpisodeId) {
@@ -276,7 +270,7 @@ export function SymptomPromptScreen() {
       serverPersistTimerRef.current = null;
     }
     pendingServerFreeTextPersistRef.current = null;
-    serverPersistGenerationRef.current += 1;
+    serverPersistEpochRef.current += 1;
   }, []);
 
   /**
@@ -317,7 +311,7 @@ export function SymptomPromptScreen() {
 
   useEffect(() => {
     return () => {
-      serverPersistGenerationRef.current += 1;
+      serverPersistEpochRef.current += 1;
       flushPendingServerPersist();
     };
   }, [flushPendingServerPersist]);
@@ -411,7 +405,7 @@ export function SymptomPromptScreen() {
   }, [load]);
 
   useLayoutEffect(() => {
-    serverPersistGenerationRef.current += 1;
+    serverPersistEpochRef.current += 1;
     flushPendingServerPersist();
     episodeIdRef.current = episodeId;
     const s = getSymptomPromptSession(episodeId);

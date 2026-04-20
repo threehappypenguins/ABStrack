@@ -1,5 +1,6 @@
 'use client';
 
+import { useRef, type KeyboardEvent } from 'react';
 import type { PresetSymptomRow, SymptomPromptAnswer } from '@abstrack/types';
 import { createDefaultSymptomPromptAnswer } from '@abstrack/types';
 
@@ -13,6 +14,211 @@ export type SymptomPromptResponseFieldProps = {
   onChange: (next: SymptomPromptAnswer) => void;
   disabled: boolean;
 };
+
+type YesNoValue = boolean | null;
+
+function SymptomYesNoRadiogroup({
+  line,
+  v,
+  onChange,
+  disabled,
+}: {
+  line: PresetSymptomRow;
+  v: YesNoValue;
+  onChange: (next: SymptomPromptAnswer) => void;
+  disabled: boolean;
+}) {
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  /** Roving tabindex: selected option, or first when none (matches WAI radiogroup tab order). */
+  const tabStopIndex = v === true ? 0 : v === false ? 1 : 0;
+
+  const getFocusedIdx = (): number => {
+    const ae = typeof document !== 'undefined' ? document.activeElement : null;
+    const i = itemRefs.current.findIndex((el) => el === ae);
+    return i >= 0 ? i : tabStopIndex;
+  };
+
+  const moveTo = (nextIdx: number) => {
+    const boolVal = nextIdx === 0;
+    onChange({
+      type: 'yes_no',
+      value: boolVal,
+    });
+    requestAnimationFrame(() => {
+      itemRefs.current[nextIdx]?.focus();
+    });
+  };
+
+  const onGroupKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (disabled) {
+      return;
+    }
+    const len = 2;
+    const cur = getFocusedIdx();
+    const { key } = e;
+    if (key === 'ArrowDown' || key === 'ArrowRight') {
+      e.preventDefault();
+      moveTo((cur + 1) % len);
+      return;
+    }
+    if (key === 'ArrowUp' || key === 'ArrowLeft') {
+      e.preventDefault();
+      moveTo((cur - 1 + len) % len);
+      return;
+    }
+    if (key === 'Home') {
+      e.preventDefault();
+      moveTo(0);
+      return;
+    }
+    if (key === 'End') {
+      e.preventDefault();
+      moveTo(len - 1);
+    }
+  };
+
+  return (
+    <div
+      role="radiogroup"
+      aria-label={`${line.symptom_name} yes or no`}
+      className="flex flex-col gap-3"
+      onKeyDown={onGroupKeyDown}
+    >
+      {(['yes', 'no'] as const).map((which, i) => {
+        const boolVal = which === 'yes';
+        const selected = v === boolVal;
+        return (
+          <button
+            key={which}
+            ref={(el) => {
+              itemRefs.current[i] = el;
+            }}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            aria-label={which}
+            tabIndex={i === tabStopIndex ? 0 : -1}
+            disabled={disabled}
+            onClick={() => {
+              onChange({
+                type: 'yes_no',
+                value: selected ? null : boolVal,
+              });
+            }}
+            className={`flex min-h-[56px] cursor-pointer items-center justify-center rounded-xl border-2 px-4 py-4 text-base font-semibold transition ${radioLabelFocusVisibleClass} ${
+              selected
+                ? 'border-app-primary bg-app-primary/10 text-app-ink ring-1 ring-app-primary/20'
+                : 'border-app-border/90 bg-app-surface text-app-ink hover:border-app-border'
+            } ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
+          >
+            <span className="capitalize">{which}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function SymptomSeverityRadiogroup({
+  line,
+  sev,
+  onChange,
+  disabled,
+}: {
+  line: PresetSymptomRow;
+  sev: number | null;
+  onChange: (next: SymptomPromptAnswer) => void;
+  disabled: boolean;
+}) {
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const values = [1, 2, 3, 4, 5] as const;
+  const len = values.length;
+  const tabStopIndex = sev !== null ? sev - 1 : 0;
+
+  const getFocusedIdx = (): number => {
+    const ae = typeof document !== 'undefined' ? document.activeElement : null;
+    const i = itemRefs.current.findIndex((el) => el === ae);
+    return i >= 0 ? i : tabStopIndex;
+  };
+
+  const moveTo = (index: number) => {
+    const n = values[index];
+    onChange({
+      type: 'severity_scale',
+      value: n,
+    });
+    requestAnimationFrame(() => {
+      itemRefs.current[index]?.focus();
+    });
+  };
+
+  const onGroupKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (disabled) {
+      return;
+    }
+    const cur = getFocusedIdx();
+    const { key } = e;
+    if (key === 'ArrowDown' || key === 'ArrowRight') {
+      e.preventDefault();
+      moveTo((cur + 1) % len);
+      return;
+    }
+    if (key === 'ArrowUp' || key === 'ArrowLeft') {
+      e.preventDefault();
+      moveTo((cur - 1 + len) % len);
+      return;
+    }
+    if (key === 'Home') {
+      e.preventDefault();
+      moveTo(0);
+      return;
+    }
+    if (key === 'End') {
+      e.preventDefault();
+      moveTo(len - 1);
+    }
+  };
+
+  return (
+    <div
+      role="radiogroup"
+      aria-label={`${line.symptom_name} severity 1 to 5`}
+      className="flex flex-wrap gap-2"
+      onKeyDown={onGroupKeyDown}
+    >
+      {values.map((n, i) => {
+        const selected = sev === n;
+        return (
+          <button
+            key={n}
+            ref={(el) => {
+              itemRefs.current[i] = el;
+            }}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            aria-label={`Severity ${n}`}
+            tabIndex={i === tabStopIndex ? 0 : -1}
+            disabled={disabled}
+            onClick={() => {
+              onChange({
+                type: 'severity_scale',
+                value: selected ? null : n,
+              });
+            }}
+            className={`flex h-14 min-w-[52px] cursor-pointer items-center justify-center rounded-xl border-2 px-3 text-base font-semibold transition ${radioLabelFocusVisibleClass} ${
+              selected
+                ? 'border-app-primary bg-app-primary/10 text-app-ink ring-1 ring-app-primary/20'
+                : 'border-app-border/90 bg-app-surface text-app-ink hover:border-app-border'
+            } ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
+          >
+            {n}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 /**
  * Renders the capture UI for one preset symptom line (Week 5 skeleton: no media pipeline).
@@ -33,76 +239,23 @@ export function SymptomPromptResponseField({
     case 'yes_no': {
       const v = effective.type === 'yes_no' ? effective.value : null;
       return (
-        <div
-          role="radiogroup"
-          aria-label={`${line.symptom_name} yes or no`}
-          className="flex flex-col gap-3"
-        >
-          {(['yes', 'no'] as const).map((which) => {
-            const boolVal = which === 'yes';
-            const selected = v === boolVal;
-            return (
-              <button
-                key={which}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                aria-label={which}
-                disabled={disabled}
-                onClick={() => {
-                  onChange({
-                    type: 'yes_no',
-                    value: selected ? null : boolVal,
-                  });
-                }}
-                className={`flex min-h-[56px] cursor-pointer items-center justify-center rounded-xl border-2 px-4 py-4 text-base font-semibold transition ${radioLabelFocusVisibleClass} ${
-                  selected
-                    ? 'border-app-primary bg-app-primary/10 text-app-ink ring-1 ring-app-primary/20'
-                    : 'border-app-border/90 bg-app-surface text-app-ink hover:border-app-border'
-                } ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
-              >
-                <span className="capitalize">{which}</span>
-              </button>
-            );
-          })}
-        </div>
+        <SymptomYesNoRadiogroup
+          line={line}
+          v={v}
+          onChange={onChange}
+          disabled={disabled}
+        />
       );
     }
     case 'severity_scale': {
       const sev = effective.type === 'severity_scale' ? effective.value : null;
       return (
-        <div
-          role="radiogroup"
-          aria-label={`${line.symptom_name} severity 1 to 5`}
-          className="flex flex-wrap gap-2"
-        >
-          {[1, 2, 3, 4, 5].map((n) => {
-            const selected = sev === n;
-            return (
-              <button
-                key={n}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                aria-label={`Severity ${n}`}
-                disabled={disabled}
-                onClick={() => {
-                  onChange({
-                    type: 'severity_scale',
-                    value: selected ? null : n,
-                  });
-                }}
-                className={`flex h-14 min-w-[52px] cursor-pointer items-center justify-center rounded-xl border-2 px-3 text-base font-semibold transition ${radioLabelFocusVisibleClass} ${
-                  selected
-                    ? 'border-app-primary bg-app-primary/10 text-app-ink ring-1 ring-app-primary/20'
-                    : 'border-app-border/90 bg-app-surface text-app-ink hover:border-app-border'
-                } ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
-              >
-                {n}
-              </button>
-            );
-          })}
-        </div>
+        <SymptomSeverityRadiogroup
+          line={line}
+          sev={sev}
+          onChange={onChange}
+          disabled={disabled}
+        />
       );
     }
     case 'free_text': {
