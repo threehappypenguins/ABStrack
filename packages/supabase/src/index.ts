@@ -80,6 +80,7 @@ export {
   endEpisodeIfStillActive,
   getActiveEpisodeForUser,
   getEpisodeById,
+  listCompletedEpisodesForUser,
 } from './lib/episode-data.js';
 export {
   deleteEpisodeSymptomAnswer,

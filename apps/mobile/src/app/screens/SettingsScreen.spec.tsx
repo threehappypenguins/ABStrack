@@ -6,6 +6,16 @@ import { useAppTheme } from '../theme/AppThemeContext';
 import { lightAppColors } from '../theme/app-colors';
 import { SettingsScreen } from './SettingsScreen';
 
+jest.mock('@react-navigation/native', () => {
+  const actual = jest.requireActual('@react-navigation/native');
+  return {
+    ...actual,
+    useNavigation: () => ({
+      navigate: jest.fn(),
+    }),
+  };
+});
+
 jest.mock('../reauth-preference', () => ({
   getRequireReauthOnOpenPreference: jest.fn(() => Promise.resolve(false)),
   setRequireReauthOnOpenPreference: jest.fn(() => Promise.resolve()),

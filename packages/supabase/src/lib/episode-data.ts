@@ -81,6 +81,38 @@ export async function getActiveEpisodeForUser(
 }
 
 /**
+ * Lists the caller’s completed episodes (`ended_at IS NOT NULL`), newest first. Uses the same RLS
+ * as other `episodes` reads.
+ *
+ * @param client - Supabase client (RLS applies).
+ * @param userId - `auth.users.id` / `episodes.user_id`.
+ * @param options - `limit` caps rows (default 25).
+ * @returns Completed episode rows, or a {@link PresetDataError} on failure.
+ */
+export async function listCompletedEpisodesForUser(
+  client: AbstrackSupabaseClient,
+  userId: Uuid,
+  options: { limit?: number } = {},
+): Promise<PresetDataResult<EpisodeRow[]>> {
+  const limit = options.limit ?? 25;
+  try {
+    const { data, error } = await client
+      .from('episodes')
+      .select('*')
+      .eq('user_id', userId)
+      .not('ended_at', 'is', null)
+      .order('ended_at', { ascending: false })
+      .limit(limit);
+    if (error) {
+      return { ok: false, error: toPresetDataError(error) };
+    }
+    return { ok: true, data: (data ?? []) as EpisodeRow[] };
+  } catch (caught) {
+    return { ok: false, error: toPresetDataError(caught) };
+  }
+}
+
+/**
  * Sets `ended_at` on an episode that is still active (`ended_at IS NULL`). Uses the same RLS as
  * other `episodes` updates.
  *

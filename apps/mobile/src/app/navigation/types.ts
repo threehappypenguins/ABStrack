@@ -32,6 +32,8 @@ export type MainTabParamList = {
 
 export type MainStackParamList = {
   MainTabs: undefined;
+  /** Active and recent episodes with resume for the in-progress row. */
+  Episodes: undefined;
   /** Episode logging entry: shell until template selection and prompts ship. */
   EpisodeStart: undefined;
   /** Linear symptom prompts for the active episode (preset lines). */
