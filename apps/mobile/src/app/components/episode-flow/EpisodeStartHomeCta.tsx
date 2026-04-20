@@ -24,7 +24,7 @@ export type EpisodeStartHomeCtaProps = {
  * Prominent home entry point for episode logging: large touch target, high-contrast primary
  * control, and supporting copy for VoiceOver and TalkBack. CTA mode updates use
  * `accessibilityLiveRegion` on Android only and `announce()` elsewhere so assistive output is not
- * duplicated. Shows **Resume episode** when {@link ActiveEpisodeHomeSummary} is provided.
+ * duplicated. Shows **Continue this episode** when {@link ActiveEpisodeHomeSummary} is provided.
  *
  * @param props - Props.
  * @returns Episode CTA section for the home screen.
@@ -54,7 +54,7 @@ export function EpisodeStartHomeCta({
     }
     if (hasResume) {
       void announce(
-        'You have an episode in progress. Resume episode is the primary action.',
+        'You have an episode in progress. Continue this episode is the primary action.',
         { politeness: 'polite' },
       );
     } else {
@@ -90,7 +90,7 @@ export function EpisodeStartHomeCta({
         {activeEpisodeLoading && 'Checking for an episode in progress…'}
         {!activeEpisodeLoading &&
           showResume &&
-          'You have an episode in progress. Continue where you left off in the guided symptom flow.'}
+          'You have an episode in progress. Continue this episode to pick up where you left off in the guided symptom flow.'}
         {!activeEpisodeLoading &&
           !showResume &&
           'Opens the guided flow to record what you are experiencing during this episode.'}
@@ -111,7 +111,7 @@ export function EpisodeStartHomeCta({
       ) : showResume && activeEpisode ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Resume episode"
+          accessibilityLabel="Continue this episode"
           accessibilityHint="Opens your in-progress episode at the next symptom step"
           accessibilityState={{ disabled: false }}
           onPress={() => onResumeEpisode(activeEpisode)}
@@ -121,7 +121,7 @@ export function EpisodeStartHomeCta({
             className="text-center text-[18px] font-semibold text-white"
             maxFontSizeMultiplier={2}
           >
-            Resume episode
+            Continue this episode
           </Text>
         </Pressable>
       ) : (

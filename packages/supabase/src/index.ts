@@ -77,6 +77,7 @@ export {
 } from './lib/episode-template-data.js';
 export {
   createEpisode,
+  endEpisodeIfStillActive,
   getActiveEpisodeForUser,
   getEpisodeById,
 } from './lib/episode-data.js';

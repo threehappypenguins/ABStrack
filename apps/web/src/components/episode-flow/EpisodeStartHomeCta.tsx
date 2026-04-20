@@ -34,8 +34,9 @@ function buildResumeEpisodeHref(
 }
 
 /**
- * Prominent home entry for episode logging: detects an active episode and offers **Resume** as the
- * primary action; otherwise **I'm having an episode** starts a new flow. CTA mode is conveyed to
+ * Prominent home entry for episode logging: detects an active episode and offers **Continue this
+ * episode** as the primary action; otherwise **I'm having an episode** starts a new flow. CTA mode
+ * is conveyed to
  * assistive technologies via a single `aria-live` status region (no duplicate transient announce).
  *
  * @param props - Props.
@@ -115,14 +116,14 @@ export function EpisodeStartHomeCta({
       <p id={descId} className="mt-1.5 text-sm leading-relaxed text-app-muted">
         {ctaMode === 'loading' && 'Checking for an episode in progress…'}
         {ctaMode === 'resume' &&
-          'You have an episode in progress. Continue where you left off in the guided symptom flow.'}
+          'You have an episode in progress. Continue this episode to pick up where you left off in the guided symptom flow.'}
         {ctaMode === 'start' &&
           'Opens the guided flow to record what you are experiencing during this episode.'}
       </p>
       <p id={statusId} className="sr-only" role="status" aria-live="polite">
         {ctaMode === 'loading' && 'Checking for an in-progress episode.'}
         {ctaMode === 'resume' &&
-          'An episode is in progress. Primary action: Resume episode.'}
+          'An episode is in progress. Primary action: Continue this episode.'}
         {ctaMode === 'start' &&
           'No episode in progress. Primary action: start a new episode.'}
       </p>
@@ -141,7 +142,7 @@ export function EpisodeStartHomeCta({
             className={primaryLinkClass}
             aria-describedby={`${descId} ${statusId}`}
           >
-            Resume episode
+            Continue this episode
           </Link>
         )}
         {ctaMode === 'start' && (

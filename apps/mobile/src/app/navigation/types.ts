@@ -38,7 +38,7 @@ export type MainStackParamList = {
   SymptomPrompt: {
     episodeId: string;
     symptomPresetId: string;
-    /** When true, initial step is derived from saved answers (e.g. home “Resume episode”). */
+    /** When true, initial step is derived from saved answers (e.g. home “Continue this episode”). */
     resume?: boolean;
   };
   Settings: undefined;
