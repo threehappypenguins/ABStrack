@@ -241,6 +241,19 @@ export function SymptomPromptScreen() {
   }, [executeServerPersist]);
 
   /**
+   * Cancels pending debounced free-text upserts and invalidates older in-flight persists.
+   * Used on skip/delete so delayed upserts cannot recreate deleted symptom rows.
+   */
+  const cancelPendingServerPersist = useCallback(() => {
+    if (serverPersistTimerRef.current !== null) {
+      clearTimeout(serverPersistTimerRef.current);
+      serverPersistTimerRef.current = null;
+    }
+    pendingServerFreeTextPersistRef.current = null;
+    serverPersistGenerationRef.current += 1;
+  }, []);
+
+  /**
    * Schedules or runs a server upsert. User id is **not** read here: {@link executeServerPersist}
    * always calls {@link resolveSessionUserId} so the first answer after load cannot silently skip.
    */
@@ -493,7 +506,7 @@ export function SymptomPromptScreen() {
     if (!currentLine) {
       return;
     }
-    flushPendingServerPersist();
+    cancelPendingServerPersist();
     const skippedAnswer = createDefaultSymptomPromptAnswer(
       currentLine.response_type,
     );

@@ -235,6 +235,19 @@ export function SymptomPromptFlow({
     executeServerPersist(pending.line, pending.answer);
   }, [executeServerPersist]);
 
+  /**
+   * Cancels any pending debounced free-text upsert and invalidates older in-flight persists.
+   * Used before skip/delete so a delayed upsert cannot recreate a row after delete.
+   */
+  const cancelPendingServerPersist = useCallback(() => {
+    if (serverPersistTimerRef.current !== null) {
+      clearTimeout(serverPersistTimerRef.current);
+      serverPersistTimerRef.current = null;
+    }
+    pendingServerFreeTextPersistRef.current = null;
+    serverPersistGenerationRef.current += 1;
+  }, []);
+
   const schedulePersistToSupabase = useCallback(
     (line: PresetSymptomRow, answer: SymptomPromptAnswer) => {
       if (answer.type === 'free_text') {
@@ -556,6 +569,8 @@ export function SymptomPromptFlow({
         event.stopPropagation();
         return;
       }
+      flushPendingTextPersist();
+      flushPendingServerPersist();
       allowNavigationRef.current = true;
     };
 
@@ -573,7 +588,7 @@ export function SymptomPromptFlow({
       document.removeEventListener('click', onDocumentClick, true);
       window.removeEventListener('beforeunload', onBeforeUnload);
     };
-  }, [phase]);
+  }, [flushPendingServerPersist, flushPendingTextPersist, phase]);
 
   const goNext = () => {
     flushPendingTextPersist();
@@ -586,7 +601,7 @@ export function SymptomPromptFlow({
       return;
     }
     flushPendingTextPersist();
-    flushPendingServerPersist();
+    cancelPendingServerPersist();
     const skippedAnswer = createDefaultSymptomPromptAnswer(
       currentLine.response_type,
     );
