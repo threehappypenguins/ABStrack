@@ -385,6 +385,9 @@ describe('deleteEpisodeSymptomAnswer', () => {
     });
 
     expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toBe(true);
+    }
     expect(eqEpisode).toHaveBeenCalledWith('episode_id', 'ep-1');
     expect(eqPreset).toHaveBeenCalledWith('preset_symptom_id', 'ps-line-1');
   });

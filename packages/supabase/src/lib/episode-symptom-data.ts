@@ -325,6 +325,9 @@ export async function deleteEpisodeSymptomAnswer(
       .delete()
       .eq('episode_id', episodeId)
       .eq('preset_symptom_id', presetSymptomId);
-    return { data: true, error: r.error };
+    return {
+      data: r.error ? null : true,
+      error: r.error,
+    };
   });
 }

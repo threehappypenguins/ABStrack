@@ -839,7 +839,7 @@ export function SymptomPromptFlow({
       <ConfirmDialog
         open={discardDialogOpen}
         title="Exit symptom flow?"
-        description="If you exit now, you will return home. Starting again creates a new episode."
+        description="If you exit now, you will return to the dashboard. Starting again creates a new episode."
         confirmLabel="Exit"
         cancelLabel="Stay"
         onConfirm={() => {
