@@ -142,6 +142,9 @@ export function SymptomPromptScreen() {
 
   const executeServerPersist = useCallback(
     (line: PresetSymptomRow, answer: SymptomPromptAnswer) => {
+      const enqueueEpisodeId = episodeIdRef.current;
+      const enqueueEpoch = serverPersistEpochRef.current;
+
       const queues = lineWriteQueueRef.current;
       const previous = queues.get(line.id) ?? Promise.resolve();
       const next = previous
@@ -149,15 +152,20 @@ export function SymptomPromptScreen() {
           // Keep the chain alive so later writes still run.
         })
         .then(async () => {
-          const targetEpisodeId = episodeIdRef.current;
-          const epochAtStart = serverPersistEpochRef.current;
+          if (enqueueEpoch !== serverPersistEpochRef.current) {
+            return;
+          }
+          const targetEpisodeId = enqueueEpisodeId;
           const supabase = getMobileSupabaseClient();
           const uid = await resolveSessionUserId(supabase);
-          if (epochAtStart !== serverPersistEpochRef.current) {
+          if (enqueueEpoch !== serverPersistEpochRef.current) {
             return;
           }
           if (!uid) {
-            if (episodeIdRef.current === targetEpisodeId) {
+            if (
+              episodeIdRef.current === enqueueEpisodeId &&
+              enqueueEpoch === serverPersistEpochRef.current
+            ) {
               setPersistError(
                 'Your session could not be verified. Try signing in again.',
               );
@@ -170,10 +178,10 @@ export function SymptomPromptScreen() {
             line,
             answer,
           });
-          if (epochAtStart !== serverPersistEpochRef.current) {
+          if (enqueueEpoch !== serverPersistEpochRef.current) {
             return;
           }
-          if (episodeIdRef.current !== targetEpisodeId) {
+          if (episodeIdRef.current !== enqueueEpisodeId) {
             return;
           }
           if (!r.ok) {
@@ -194,6 +202,9 @@ export function SymptomPromptScreen() {
 
   const executeServerDelete = useCallback(
     (line: PresetSymptomRow) => {
+      const enqueueEpisodeId = episodeIdRef.current;
+      const enqueueEpoch = serverPersistEpochRef.current;
+
       const queues = lineWriteQueueRef.current;
       const previous = queues.get(line.id) ?? Promise.resolve();
       const next = previous
@@ -201,15 +212,20 @@ export function SymptomPromptScreen() {
           // Keep the chain alive so later writes still run.
         })
         .then(async () => {
-          const targetEpisodeId = episodeIdRef.current;
-          const epochAtStart = serverPersistEpochRef.current;
+          if (enqueueEpoch !== serverPersistEpochRef.current) {
+            return;
+          }
+          const targetEpisodeId = enqueueEpisodeId;
           const supabase = getMobileSupabaseClient();
           const uid = await resolveSessionUserId(supabase);
-          if (epochAtStart !== serverPersistEpochRef.current) {
+          if (enqueueEpoch !== serverPersistEpochRef.current) {
             return;
           }
           if (!uid) {
-            if (episodeIdRef.current === targetEpisodeId) {
+            if (
+              episodeIdRef.current === enqueueEpisodeId &&
+              enqueueEpoch === serverPersistEpochRef.current
+            ) {
               setPersistError(
                 'Your session could not be verified. Try signing in again.',
               );
@@ -220,10 +236,10 @@ export function SymptomPromptScreen() {
             episodeId: targetEpisodeId,
             presetSymptomId: line.id,
           });
-          if (epochAtStart !== serverPersistEpochRef.current) {
+          if (enqueueEpoch !== serverPersistEpochRef.current) {
             return;
           }
-          if (episodeIdRef.current !== targetEpisodeId) {
+          if (episodeIdRef.current !== enqueueEpisodeId) {
             return;
           }
           if (!r.ok) {
