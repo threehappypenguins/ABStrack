@@ -1,10 +1,7 @@
 import React from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
-import type {
-  PresetSymptomRow,
-  SymptomPromptAnswer,
-  SymptomResponseType,
-} from '@abstrack/types';
+import type { PresetSymptomRow, SymptomPromptAnswer } from '@abstrack/types';
+import { createDefaultSymptomPromptAnswer } from '@abstrack/types';
 import { COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
 import { useAppTheme } from '../../theme/AppThemeContext';
 import { nw } from '../../theme/app-nativewind-classes';
@@ -15,25 +12,6 @@ export type SymptomPromptResponseFieldProps = {
   onChange: (next: SymptomPromptAnswer) => void;
   disabled: boolean;
 };
-
-function defaultAnswerForType(type: SymptomResponseType): SymptomPromptAnswer {
-  switch (type) {
-    case 'yes_no':
-      return { type: 'yes_no', value: null };
-    case 'severity_scale':
-      return { type: 'severity_scale', value: null };
-    case 'free_text':
-      return { type: 'free_text', value: '' };
-    case 'photo':
-      return { type: 'photo', value: null };
-    case 'video':
-      return { type: 'video', value: null };
-    default: {
-      const _exhaustive: never = type;
-      return _exhaustive;
-    }
-  }
-}
 
 /**
  * Renders the capture UI for one preset symptom line (Week 5 skeleton: no media pipeline).
@@ -48,7 +26,8 @@ export function SymptomPromptResponseField({
   disabled,
 }: SymptomPromptResponseFieldProps) {
   const { colors } = useAppTheme();
-  const effective = answer ?? defaultAnswerForType(line.response_type);
+  const effective =
+    answer ?? createDefaultSymptomPromptAnswer(line.response_type);
 
   switch (line.response_type) {
     case 'yes_no': {

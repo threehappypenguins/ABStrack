@@ -102,7 +102,7 @@
 
 **Tasks:**
 
-- [x] Complete episode prompt flow:
+- [ ] Complete episode prompt flow:
   - All symptom input types functioning (yes/no, severity 1-5, free text)
   - Health marker entry **after** symptoms, using the **health marker preset** stored on the episode row (`health_marker_preset_id`) ([PRD](PRD.md) §4)
   - "Add additional symptoms/markers" free-text entry at end

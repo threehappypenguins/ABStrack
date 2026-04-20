@@ -17,9 +17,12 @@ import type {
   PresetSymptomRow,
   SymptomPromptAnswer,
   SymptomPromptAnswers,
-  SymptomResponseType,
 } from '@abstrack/types';
-import { episodeSymptomRowsToAnswersMap } from '@abstrack/types';
+import {
+  createDefaultSymptomPromptAnswer,
+  episodeSymptomRowsToAnswersMap,
+  symptomPromptAnswerHasValue,
+} from '@abstrack/types';
 import {
   deleteEpisodeSymptomAnswer,
   listEpisodeSymptomsForEpisode,
@@ -55,46 +58,6 @@ function clampIndex(index: number, length: number): number {
   }
   const i = Math.trunc(index);
   return Math.max(0, Math.min(i, length - 1));
-}
-
-function defaultAnswerForType(type: SymptomResponseType): SymptomPromptAnswer {
-  switch (type) {
-    case 'yes_no':
-      return { type: 'yes_no', value: null };
-    case 'severity_scale':
-      return { type: 'severity_scale', value: null };
-    case 'free_text':
-      return { type: 'free_text', value: '' };
-    case 'photo':
-      return { type: 'photo', value: null };
-    case 'video':
-      return { type: 'video', value: null };
-    default: {
-      const _exhaustive: never = type;
-      return _exhaustive;
-    }
-  }
-}
-
-function hasAnswerValue(answer: SymptomPromptAnswer | undefined): boolean {
-  if (!answer) {
-    return false;
-  }
-  switch (answer.type) {
-    case 'yes_no':
-      return answer.value !== null;
-    case 'severity_scale':
-      return answer.value !== null;
-    case 'free_text':
-      return answer.value.trim().length > 0;
-    case 'photo':
-    case 'video':
-      return false;
-    default: {
-      const _exhaustive: never = answer;
-      return _exhaustive;
-    }
-  }
 }
 
 /** Debounce Supabase writes for free-text answers (matches web episode flow). */
@@ -421,7 +384,7 @@ export function SymptomPromptScreen() {
 
   const currentLine = lines[activeIndex] ?? null;
   const currentAnswer = currentLine ? answers[currentLine.id] : undefined;
-  const currentLineAnswered = hasAnswerValue(currentAnswer);
+  const currentLineAnswered = symptomPromptAnswerHasValue(currentAnswer);
   const canProceedWithNext = !currentLine || currentLineAnswered;
   const canSkipCurrentLine = Boolean(currentLine) && !currentLineAnswered;
   const stepLabel =
@@ -531,7 +494,9 @@ export function SymptomPromptScreen() {
       return;
     }
     flushPendingServerPersist();
-    const skippedAnswer = defaultAnswerForType(currentLine.response_type);
+    const skippedAnswer = createDefaultSymptomPromptAnswer(
+      currentLine.response_type,
+    );
     const merged: SymptomPromptAnswers = {
       ...answersRef.current,
       [currentLine.id]: skippedAnswer,
