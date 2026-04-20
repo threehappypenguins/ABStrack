@@ -63,26 +63,27 @@ export function SymptomPromptResponseField({
             const boolVal = which === 'yes';
             const selected = v === boolVal;
             return (
-              <label
+              <button
                 key={which}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                aria-label={which}
+                disabled={disabled}
+                onClick={() => {
+                  onChange({
+                    type: 'yes_no',
+                    value: selected ? null : boolVal,
+                  });
+                }}
                 className={`flex min-h-[56px] cursor-pointer items-center justify-center rounded-xl border-2 px-4 py-4 text-base font-semibold transition ${radioLabelFocusVisibleClass} ${
                   selected
                     ? 'border-app-primary bg-app-primary/10 text-app-ink ring-1 ring-app-primary/20'
                     : 'border-app-border/90 bg-app-surface text-app-ink hover:border-app-border'
                 } ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
               >
-                <input
-                  type="radio"
-                  className="sr-only"
-                  name={`symptom-yesno-${line.id}`}
-                  checked={selected}
-                  disabled={disabled}
-                  onChange={() => {
-                    onChange({ type: 'yes_no', value: boolVal });
-                  }}
-                />
                 <span className="capitalize">{which}</span>
-              </label>
+              </button>
             );
           })}
         </div>
@@ -99,26 +100,27 @@ export function SymptomPromptResponseField({
           {[1, 2, 3, 4, 5].map((n) => {
             const selected = sev === n;
             return (
-              <label
+              <button
                 key={n}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                aria-label={`Severity ${n}`}
+                disabled={disabled}
+                onClick={() => {
+                  onChange({
+                    type: 'severity_scale',
+                    value: selected ? null : n,
+                  });
+                }}
                 className={`flex h-14 min-w-[52px] cursor-pointer items-center justify-center rounded-xl border-2 px-3 text-base font-semibold transition ${radioLabelFocusVisibleClass} ${
                   selected
                     ? 'border-app-primary bg-app-primary/10 text-app-ink ring-1 ring-app-primary/20'
                     : 'border-app-border/90 bg-app-surface text-app-ink hover:border-app-border'
                 } ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
               >
-                <input
-                  type="radio"
-                  className="sr-only"
-                  name={`symptom-sev-${line.id}`}
-                  checked={selected}
-                  disabled={disabled}
-                  onChange={() => {
-                    onChange({ type: 'severity_scale', value: n });
-                  }}
-                />
                 {n}
-              </label>
+              </button>
             );
           })}
         </div>
@@ -147,8 +149,8 @@ export function SymptomPromptResponseField({
           role="status"
           className="rounded-xl border border-dashed border-app-border/90 bg-app-surface/80 p-6 text-center text-sm leading-relaxed text-app-ink"
         >
-          Photo capture will open here during an episode. This step is a
-          placeholder for now.
+          Photo symptom capture is coming in a later update. For now, use Next
+          or Skip symptom to continue this episode flow.
         </div>
       );
     case 'video':
@@ -157,8 +159,8 @@ export function SymptomPromptResponseField({
           role="status"
           className="rounded-xl border border-dashed border-app-border/90 bg-app-surface/80 p-6 text-center text-sm leading-relaxed text-app-ink"
         >
-          Video capture will open here during an episode. This step is a
-          placeholder for now.
+          Video symptom capture is coming in a later update. For now, use Next
+          or Skip symptom to continue this episode flow.
         </div>
       );
     default: {

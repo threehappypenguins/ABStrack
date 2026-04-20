@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   useCallback,
@@ -14,12 +13,14 @@ import type {
   PresetSymptomRow,
   SymptomPromptAnswer,
   SymptomPromptAnswers,
+  SymptomResponseType,
 } from '@abstrack/types';
 import {
   createInitialSymptomPromptSession,
   episodeSymptomRowsToAnswersMap,
 } from '@abstrack/types';
 import {
+  deleteEpisodeSymptomAnswer,
   listEpisodeSymptomsForEpisode,
   listPresetSymptomsForPreset,
   upsertEpisodeSymptomAnswer,
@@ -55,6 +56,46 @@ function clampIndex(index: number, length: number): number {
   }
   const i = Math.trunc(index);
   return Math.max(0, Math.min(i, length - 1));
+}
+
+function defaultAnswerForType(type: SymptomResponseType): SymptomPromptAnswer {
+  switch (type) {
+    case 'yes_no':
+      return { type: 'yes_no', value: null };
+    case 'severity_scale':
+      return { type: 'severity_scale', value: null };
+    case 'free_text':
+      return { type: 'free_text', value: '' };
+    case 'photo':
+      return { type: 'photo', value: null };
+    case 'video':
+      return { type: 'video', value: null };
+    default: {
+      const _exhaustive: never = type;
+      return _exhaustive;
+    }
+  }
+}
+
+function hasAnswerValue(answer: SymptomPromptAnswer | undefined): boolean {
+  if (!answer) {
+    return false;
+  }
+  switch (answer.type) {
+    case 'yes_no':
+      return answer.value !== null;
+    case 'severity_scale':
+      return answer.value !== null;
+    case 'free_text':
+      return answer.value.trim().length > 0;
+    case 'photo':
+    case 'video':
+      return false;
+    default: {
+      const _exhaustive: never = answer;
+      return _exhaustive;
+    }
+  }
 }
 
 /**
@@ -107,6 +148,7 @@ export function SymptomPromptFlow({
    * captured per attempt so flushes during navigation cannot attach errors to the wrong episode.
    */
   const serverPersistGenerationRef = useRef(0);
+  const allowNavigationRef = useRef(false);
 
   const supabase = useMemo(() => createBrowserClient(), []);
 
@@ -161,6 +203,43 @@ export function SymptomPromptFlow({
           episodeId: targetEpisodeId,
           line,
           answer,
+        });
+        if (generation !== serverPersistGenerationRef.current) {
+          return;
+        }
+        if (episodeIdRef.current !== targetEpisodeId) {
+          return;
+        }
+        if (!r.ok) {
+          setPersistError(r.error.message);
+        } else {
+          setPersistError(null);
+        }
+      })();
+    },
+    [resolveSessionUserId, supabase],
+  );
+
+  const executeServerDelete = useCallback(
+    (line: PresetSymptomRow) => {
+      const targetEpisodeId = episodeIdRef.current;
+      const generation = ++serverPersistGenerationRef.current;
+      void (async () => {
+        const uid = await resolveSessionUserId(supabase);
+        if (generation !== serverPersistGenerationRef.current) {
+          return;
+        }
+        if (!uid) {
+          if (episodeIdRef.current === targetEpisodeId) {
+            setPersistError(
+              'Your session could not be verified. Try signing in again.',
+            );
+          }
+          return;
+        }
+        const r = await deleteEpisodeSymptomAnswer(supabase, {
+          episodeId: targetEpisodeId,
+          presetSymptomId: line.id,
         });
         if (generation !== serverPersistGenerationRef.current) {
           return;
@@ -352,6 +431,10 @@ export function SymptomPromptFlow({
   }, [load]);
 
   const currentLine = lines[activeIndex] ?? null;
+  const currentAnswer = currentLine ? answers[currentLine.id] : undefined;
+  const currentLineAnswered = hasAnswerValue(currentAnswer);
+  const canProceedWithNext = !currentLine || currentLineAnswered;
+  const canSkipCurrentLine = Boolean(currentLine) && !currentLineAnswered;
   const stepLabel =
     lines.length === 0
       ? 'No symptoms'
@@ -409,26 +492,7 @@ export function SymptomPromptFlow({
     }
   };
 
-  const goBackStep = () => {
-    flushPendingTextPersist();
-    flushPendingServerPersist();
-    const idx = activeIndexRef.current;
-    if (idx > 0) {
-      const next = idx - 1;
-      activeIndexRef.current = next;
-      setActiveIndex(next);
-      persistImmediate(next, answersRef.current);
-      announce(`Back to step ${next + 1} of ${lines.length}.`, {
-        politeness: 'polite',
-      });
-    } else {
-      router.push('/dashboard');
-    }
-  };
-
-  const goNext = () => {
-    flushPendingTextPersist();
-    flushPendingServerPersist();
+  const advanceToNextStep = () => {
     if (lines.length === 0) {
       setPhase('complete');
       return;
@@ -443,6 +507,127 @@ export function SymptomPromptFlow({
     }
     setPhase('complete');
     announce('Symptom list complete.', { politeness: 'polite' });
+  };
+
+  const goBackStep = () => {
+    flushPendingTextPersist();
+    flushPendingServerPersist();
+    const idx = activeIndexRef.current;
+    if (idx <= 0) {
+      return;
+    }
+    const next = idx - 1;
+    activeIndexRef.current = next;
+    setActiveIndex(next);
+    persistImmediate(next, answersRef.current);
+    announce(`Back to step ${next + 1} of ${lines.length}.`, {
+      politeness: 'polite',
+    });
+  };
+
+  const confirmExitFlow = () => {
+    const shouldExit = window.confirm(
+      'Exit symptom flow? If you exit now, you will return home. Starting again creates a new episode.',
+    );
+    if (shouldExit) {
+      router.push('/dashboard');
+    } else {
+      announce('Stayed on the current symptom step.', {
+        politeness: 'polite',
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (phase !== 'prompting') {
+      return;
+    }
+    const confirmMessage =
+      'Exit symptom flow? If you exit now, you will return home. Starting again creates a new episode.';
+
+    const onDocumentClick = (event: MouseEvent) => {
+      if (allowNavigationRef.current) {
+        return;
+      }
+      if (event.defaultPrevented) {
+        return;
+      }
+      if (event.button !== 0) {
+        return;
+      }
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+        return;
+      }
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+      const anchor = target.closest('a[href]');
+      if (!(anchor instanceof HTMLAnchorElement)) {
+        return;
+      }
+      if (anchor.target && anchor.target !== '_self') {
+        return;
+      }
+      if (anchor.hasAttribute('download')) {
+        return;
+      }
+      const destination = new URL(anchor.href, window.location.href);
+      const current = new URL(window.location.href);
+      if (destination.href === current.href) {
+        return;
+      }
+      const shouldLeave = window.confirm(confirmMessage);
+      if (!shouldLeave) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      allowNavigationRef.current = true;
+    };
+
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (allowNavigationRef.current) {
+        return;
+      }
+      event.preventDefault();
+      event.returnValue = '';
+    };
+
+    document.addEventListener('click', onDocumentClick, true);
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => {
+      document.removeEventListener('click', onDocumentClick, true);
+      window.removeEventListener('beforeunload', onBeforeUnload);
+    };
+  }, [phase]);
+
+  const goNext = () => {
+    flushPendingTextPersist();
+    flushPendingServerPersist();
+    advanceToNextStep();
+  };
+
+  const skipCurrentSymptom = () => {
+    if (!currentLine) {
+      return;
+    }
+    flushPendingTextPersist();
+    flushPendingServerPersist();
+    const skippedAnswer = defaultAnswerForType(currentLine.response_type);
+    const merged: SymptomPromptAnswers = {
+      ...answersRef.current,
+      [currentLine.id]: skippedAnswer,
+    };
+    answersRef.current = merged;
+    setAnswers(merged);
+    setSymptomPromptSession(episodeIdRef.current, {
+      activeIndex: activeIndexRef.current,
+      answers: merged,
+    });
+    executeServerDelete(currentLine);
+    announce(`Skipped ${currentLine.symptom_name}.`, { politeness: 'polite' });
+    advanceToNextStep();
   };
 
   const onFinishToDashboard = () => {
@@ -516,12 +701,13 @@ export function SymptomPromptFlow({
     <div className="space-y-6">
       <div>
         <p className="text-sm font-medium text-app-muted">
-          <Link
-            href="/dashboard"
+          <button
+            type="button"
+            onClick={confirmExitFlow}
             className="rounded-md text-app-primary underline decoration-app-primary/40 underline-offset-2 outline-none transition hover:text-app-ink hover:decoration-app-primary focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
           >
             ← Back to dashboard
-          </Link>
+          </button>
         </p>
         <h1 className="mt-4 text-2xl font-bold tracking-tight text-app-ink">
           Episode symptoms
@@ -570,14 +756,34 @@ export function SymptomPromptFlow({
       <div className="flex flex-col gap-3 sm:flex-row">
         <button
           type="button"
+          disabled={activeIndex === 0}
           className="inline-flex min-h-[56px] flex-1 items-center justify-center rounded-xl border border-app-border bg-app-surface px-4 text-base font-semibold text-app-ink shadow-sm transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
           onClick={goBackStep}
         >
-          {activeIndex === 0 ? 'Exit to dashboard' : 'Back'}
+          Back
         </button>
+        {currentLine ? (
+          <button
+            type="button"
+            disabled={!canSkipCurrentLine}
+            className={`inline-flex min-h-[56px] flex-1 items-center justify-center rounded-xl border border-app-border bg-app-surface px-4 text-base font-semibold text-app-ink shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg ${
+              canSkipCurrentLine
+                ? 'hover:bg-app-surface/80'
+                : 'cursor-not-allowed opacity-50'
+            }`}
+            onClick={skipCurrentSymptom}
+          >
+            Skip symptom
+          </button>
+        ) : null}
         <button
           type="button"
-          className="inline-flex min-h-[56px] flex-1 items-center justify-center rounded-xl bg-red-700 px-4 text-base font-semibold text-white shadow-md transition hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg dark:bg-red-600 dark:hover:bg-red-500"
+          disabled={!canProceedWithNext}
+          className={`inline-flex min-h-[56px] flex-1 items-center justify-center rounded-xl px-4 text-base font-semibold text-white shadow-md transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg dark:bg-red-600 ${
+            canProceedWithNext
+              ? 'bg-red-700 hover:bg-red-800 dark:hover:bg-red-500'
+              : 'cursor-not-allowed bg-red-400 opacity-60 dark:bg-red-800'
+          }`}
           onClick={goNext}
         >
           {lines.length === 0
@@ -587,6 +793,13 @@ export function SymptomPromptFlow({
               : 'Next'}
         </button>
       </div>
+      <button
+        type="button"
+        className="inline-flex min-h-[44px] items-center justify-center rounded-lg px-3 py-2 text-base font-medium text-app-muted transition hover:text-app-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+        onClick={confirmExitFlow}
+      >
+        Exit symptom flow
+      </button>
     </div>
   );
 }

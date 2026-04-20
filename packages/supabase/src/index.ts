@@ -77,6 +77,7 @@ export {
 } from './lib/episode-template-data.js';
 export { createEpisode, getEpisodeById } from './lib/episode-data.js';
 export {
+  deleteEpisodeSymptomAnswer,
   listEpisodeSymptomsForEpisode,
   upsertEpisodeSymptomAnswer,
 } from './lib/episode-symptom-data.js';

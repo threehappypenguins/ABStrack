@@ -102,13 +102,19 @@
 
 **Tasks:**
 
-- [ ] Complete episode prompt flow:
+- [x] Complete episode prompt flow:
   - All symptom input types functioning (yes/no, severity 1-5, free text)
   - Health marker entry **after** symptoms, using the **health marker preset** stored on the episode row (`health_marker_preset_id`) ([PRD](PRD.md) §4)
   - "Add additional symptoms/markers" free-text entry at end
   - Episode type selection (ABS / Other) with custom label
   - Episode notes
   - Episode end flow (records `ended_at` timestamp and duration)
+- [ ] Active episode lifecycle and management (no overlap with prompt controls):
+  - Home screen detects active episode (`ended_at IS NULL`) and shows **Resume episode** as the primary continuation path
+  - Prevent accidental duplicate starts when an active episode exists (clear routing/copy for resume vs start-new)
+  - Add an **Episodes** management surface for active + recent episodes (secondary navigation, not primary impaired-user path)
+  - Add explicit **Cancel accidental episode start** flow for active episodes with destructive confirmation copy
+  - Define and implement episode deletion rules + confirmations (what can be deleted, when, and what related rows are removed)
 - [ ] Impaired-user UI polish: large text, large buttons, minimal cognitive load, high contrast mode
 - [ ] Food diary:
   - Standalone food entry from home screen

@@ -69,7 +69,10 @@ export function SymptomPromptResponseField({
                 accessibilityState={{ selected, disabled }}
                 disabled={disabled}
                 onPress={() => {
-                  onChange({ type: 'yes_no', value: boolVal });
+                  onChange({
+                    type: 'yes_no',
+                    value: selected ? null : boolVal,
+                  });
                 }}
                 style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
                 className={`items-center justify-center rounded-xl border-2 px-4 py-4 active:opacity-90 ${
@@ -108,7 +111,10 @@ export function SymptomPromptResponseField({
                 accessibilityState={{ selected, disabled }}
                 disabled={disabled}
                 onPress={() => {
-                  onChange({ type: 'severity_scale', value: n });
+                  onChange({
+                    type: 'severity_scale',
+                    value: selected ? null : n,
+                  });
                 }}
                 style={{
                   minWidth: COMFORTABLE_TOUCH_TARGET_DP,
@@ -160,8 +166,8 @@ export function SymptomPromptResponseField({
             className={`text-center text-base leading-relaxed ${nw.textInk}`}
             maxFontSizeMultiplier={2}
           >
-            Photo capture will open here during an episode. This step is a
-            placeholder for now.
+            Photo symptom capture is coming in a later update. For now, use Next
+            or Skip to continue this episode flow.
           </Text>
         </View>
       );
@@ -175,8 +181,8 @@ export function SymptomPromptResponseField({
             className={`text-center text-base leading-relaxed ${nw.textInk}`}
             maxFontSizeMultiplier={2}
           >
-            Video capture will open here during an episode. This step is a
-            placeholder for now.
+            Video symptom capture is coming in a later update. For now, use Next
+            or Skip to continue this episode flow.
           </Text>
         </View>
       );
