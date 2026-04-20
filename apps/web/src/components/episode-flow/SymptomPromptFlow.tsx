@@ -566,6 +566,10 @@ export function SymptomPromptFlow({
       if (!(anchor instanceof HTMLAnchorElement)) {
         return;
       }
+      const rawHref = anchor.getAttribute('href');
+      if (rawHref?.startsWith('#')) {
+        return;
+      }
       if (anchor.target && anchor.target !== '_self') {
         return;
       }
@@ -574,6 +578,14 @@ export function SymptomPromptFlow({
       }
       const destination = new URL(anchor.href, window.location.href);
       const current = new URL(window.location.href);
+      if (
+        destination.origin === current.origin &&
+        destination.pathname === current.pathname &&
+        destination.search === current.search &&
+        destination.hash !== current.hash
+      ) {
+        return;
+      }
       if (destination.href === current.href) {
         return;
       }

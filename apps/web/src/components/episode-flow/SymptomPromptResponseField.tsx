@@ -6,9 +6,9 @@ import type {
   SymptomResponseType,
 } from '@abstrack/types';
 
-/** Visible focus ring on the card when the visually hidden radio is focused with keyboard (see `sr-only` inputs). */
+/** Visible focus ring on keyboard-focused radio buttons (`button[role="radio"]`). */
 const radioLabelFocusVisibleClass =
-  'has-[input:focus-visible]:outline-none has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-app-ring has-[input:focus-visible]:ring-offset-2 has-[input:focus-visible]:ring-offset-app-bg';
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg';
 
 export type SymptomPromptResponseFieldProps = {
   line: PresetSymptomRow;
