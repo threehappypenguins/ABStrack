@@ -4,7 +4,7 @@ import { SymptomPromptFlow } from '@/components/episode-flow/SymptomPromptFlow';
 type PageProps = {
   /** Next.js 16 passes dynamic route params as a Promise (await before use). */
   params: Promise<{ episodeId: string }>;
-  searchParams: Promise<{ symptomPresetId?: string }>;
+  searchParams: Promise<{ symptomPresetId?: string; resume?: string }>;
 };
 
 /**
@@ -18,7 +18,9 @@ export default async function EpisodeSymptomsPage({
   searchParams,
 }: PageProps) {
   const { episodeId } = await params;
-  const { symptomPresetId } = await searchParams;
+  const { symptomPresetId, resume } = await searchParams;
+  const resumeFromEntry =
+    resume === '1' || resume === 'true' || resume === 'yes';
 
   if (!symptomPresetId) {
     return (
@@ -46,6 +48,7 @@ export default async function EpisodeSymptomsPage({
     <SymptomPromptFlow
       episodeId={episodeId}
       symptomPresetId={symptomPresetId}
+      resumeFromEntry={resumeFromEntry}
     />
   );
 }

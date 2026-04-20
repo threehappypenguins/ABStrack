@@ -1,4 +1,4 @@
-import type { SymptomResponseType, Uuid } from './types.js';
+import type { PresetSymptomRow, SymptomResponseType, Uuid } from './types.js';
 
 /**
  * One stored answer for a preset symptom line during the Week 5 traversal skeleton.
@@ -89,4 +89,46 @@ export function symptomPromptAnswerHasValue(
       return _exhaustive;
     }
   }
+}
+
+/**
+ * Whether local session storage has meaningful traversal state (not the default empty session).
+ * Used to prefer the saved step index when resuming an episode on the same device.
+ *
+ * @param session - Stored session for one episode.
+ * @returns `true` when the user advanced past the first step and/or has draft answers keyed by line.
+ */
+export function hasSymptomSessionTraversalProgress(
+  session: SymptomPromptSessionState,
+): boolean {
+  if (session.activeIndex > 0) {
+    return true;
+  }
+  return Object.keys(session.answers).length > 0;
+}
+
+/**
+ * Picks the step index and completion phase when entering the symptom flow from a “resume” entry
+ * (e.g. home), using merged server + local answers. Walks preset lines in order and stops at the
+ * first line without a meaningful answer; if every line is filled, returns the last index and
+ * `complete` so the UI can show the completion state.
+ *
+ * @param lines - Ordered preset symptom lines for the episode’s symptom preset.
+ * @param mergedAnswers - Server-backed answers overlaid with session drafts.
+ * @returns Active index and whether the list is already complete.
+ */
+export function computeSymptomResumePlacement(
+  lines: PresetSymptomRow[],
+  mergedAnswers: SymptomPromptAnswers,
+): { activeIndex: number; phase: 'prompting' | 'complete' } {
+  if (lines.length === 0) {
+    return { activeIndex: 0, phase: 'prompting' };
+  }
+  const firstUnanswered = lines.findIndex(
+    (line) => !symptomPromptAnswerHasValue(mergedAnswers[line.id]),
+  );
+  if (firstUnanswered === -1) {
+    return { activeIndex: lines.length - 1, phase: 'complete' };
+  }
+  return { activeIndex: firstUnanswered, phase: 'prompting' };
 }

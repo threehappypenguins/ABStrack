@@ -5,6 +5,7 @@ import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
+import type { ActiveEpisodeHomeSummary } from '../components/episode-flow/EpisodeStartHomeCta';
 import { HomeScreen } from '../screens/HomeScreen';
 import { EpisodeTemplatesNavigator } from './EpisodeTemplatesNavigator';
 import { HealthMarkerPresetsNavigator } from './HealthMarkerPresetsNavigator';
@@ -46,6 +47,24 @@ function navigateFromHomeTabToEpisodeStart(
     );
   }
   stackNavigation.navigate('EpisodeStart');
+}
+
+function navigateFromHomeTabToSymptomPromptResume(
+  navigation: BottomTabNavigationProp<MainTabParamList, 'Home'>,
+  episode: ActiveEpisodeHomeSummary,
+) {
+  const stackNavigation =
+    navigation.getParent<NativeStackNavigationProp<MainStackParamList>>();
+  if (stackNavigation == null) {
+    throw new Error(
+      'MainTabNavigator: expected native stack parent (MainStack) to open SymptomPrompt.',
+    );
+  }
+  stackNavigation.navigate('SymptomPrompt', {
+    episodeId: episode.episodeId,
+    symptomPresetId: episode.symptomPresetId,
+    resume: true,
+  });
 }
 
 type IonName = React.ComponentProps<typeof Ionicons>['name'];
@@ -112,6 +131,9 @@ export function MainTabNavigator() {
               }}
               onStartEpisode={() => {
                 navigateFromHomeTabToEpisodeStart(navigation);
+              }}
+              onResumeEpisode={(episode) => {
+                navigateFromHomeTabToSymptomPromptResume(navigation, episode);
               }}
             />
           )}
