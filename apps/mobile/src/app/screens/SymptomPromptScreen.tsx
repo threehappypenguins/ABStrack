@@ -495,13 +495,24 @@ export function SymptomPromptScreen() {
     );
   }, []);
 
-  const requestExitToPreviousScreen = useCallback(() => {
+  /** Matches {@link onFinishToHome}: reset stack to MainTabs so copy matches behavior (not `goBack`). */
+  const exitSymptomFlowToHome = useCallback(() => {
+    flushPendingServerPersist();
+    clearSymptomPromptSession(episodeId);
+    allowRemovalRef.current = true;
+    navigation.dispatch(
+      CommonActions.reset({
+        index: 0,
+        routes: [{ name: 'MainTabs' }],
+      }),
+    );
+  }, [episodeId, flushPendingServerPersist, navigation]);
+
+  const requestExitToHome = useCallback(() => {
     confirmExitFlow(() => {
-      flushPendingServerPersist();
-      allowRemovalRef.current = true;
-      navigation.goBack();
+      exitSymptomFlowToHome();
     });
-  }, [confirmExitFlow, flushPendingServerPersist, navigation]);
+  }, [confirmExitFlow, exitSymptomFlowToHome]);
 
   useEffect(() => {
     const unsub = navigation.addListener('beforeRemove', (e) => {
@@ -511,16 +522,14 @@ export function SymptomPromptScreen() {
       }
       e.preventDefault();
       confirmExitFlow(() => {
-        flushPendingServerPersist();
-        allowRemovalRef.current = true;
-        navigation.dispatch(e.data.action);
+        exitSymptomFlowToHome();
       });
     });
     return unsub;
-  }, [confirmExitFlow, flushPendingServerPersist, navigation, phase]);
+  }, [confirmExitFlow, exitSymptomFlowToHome, navigation, phase]);
 
   const onExitFlowPress = () => {
-    requestExitToPreviousScreen();
+    requestExitToHome();
   };
 
   const advanceToNextStep = () => {
@@ -675,24 +684,22 @@ export function SymptomPromptScreen() {
                 ) : null}
 
                 <View className="mt-6 gap-3">
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Previous symptom"
-                    accessibilityState={{ disabled: activeIndex === 0 }}
-                    disabled={activeIndex === 0}
-                    onPress={goBackStep}
-                    style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
-                    className={`w-full items-center justify-center rounded-xl border-2 border-app-border bg-app-bg px-3 py-4 dark:border-app-border-dark dark:bg-app-bg-dark ${
-                      activeIndex === 0 ? 'opacity-50' : 'active:opacity-90'
-                    }`}
-                  >
-                    <Text
-                      className={`text-center text-[17px] font-semibold ${nw.textInk}`}
-                      maxFontSizeMultiplier={2}
+                  {activeIndex > 0 ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Previous symptom"
+                      onPress={goBackStep}
+                      style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                      className="w-full items-center justify-center rounded-xl border-2 border-app-border bg-app-bg px-3 py-4 active:opacity-90 dark:border-app-border-dark dark:bg-app-bg-dark"
                     >
-                      Back
-                    </Text>
-                  </Pressable>
+                      <Text
+                        className={`text-center text-[17px] font-semibold ${nw.textInk}`}
+                        maxFontSizeMultiplier={2}
+                      >
+                        Back
+                      </Text>
+                    </Pressable>
+                  ) : null}
                   {currentLine ? (
                     <Pressable
                       accessibilityRole="button"

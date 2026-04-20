@@ -796,14 +796,15 @@ export function SymptomPromptFlow({
       ) : null}
 
       <div className="flex flex-col gap-3 sm:flex-row">
-        <button
-          type="button"
-          disabled={activeIndex === 0}
-          className="inline-flex min-h-[56px] flex-1 items-center justify-center rounded-xl border border-app-border bg-app-surface px-4 text-base font-semibold text-app-ink shadow-sm transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
-          onClick={goBackStep}
-        >
-          Back
-        </button>
+        {activeIndex > 0 ? (
+          <button
+            type="button"
+            className="inline-flex min-h-[56px] flex-1 items-center justify-center rounded-xl border border-app-border bg-app-surface px-4 text-base font-semibold text-app-ink shadow-sm transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+            onClick={goBackStep}
+          >
+            Back
+          </button>
+        ) : null}
         {currentLine ? (
           <button
             type="button"
