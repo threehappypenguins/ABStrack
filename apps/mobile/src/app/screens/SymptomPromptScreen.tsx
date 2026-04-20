@@ -104,11 +104,12 @@ export function SymptomPromptScreen() {
   /** Bumps on each `load()` start and on effect cleanup so in-flight loads ignore stale results after unmount, retry, or param change. */
   const loadGenRef = useRef(0);
   /**
-   * Bumped on episode change, unmount, and {@link cancelPendingServerPersist}. Each write captures
-   * the epoch at enqueue time (not per write) so parallel writes to different lines still report
-   * their own completion/errors.
+   * Bumped only by {@link cancelPendingServerPersist}. Gates {@link setPersistError} when a cancel
+   * invalidates UI feedback; queued writes still run for the episode id captured at enqueue time.
    */
   const serverPersistEpochRef = useRef(0);
+  /** Suppresses {@link setPersistError} after unmount. */
+  const isMountedRef = useRef(true);
   const allowRemovalRef = useRef(false);
 
   /**
@@ -140,6 +141,13 @@ export function SymptomPromptScreen() {
     activeIndexRef.current = activeIndex;
   }, [activeIndex]);
 
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   const executeServerPersist = useCallback(
     (line: PresetSymptomRow, answer: SymptomPromptAnswer) => {
       const enqueueEpisodeId = episodeIdRef.current;
@@ -152,17 +160,12 @@ export function SymptomPromptScreen() {
           // Keep the chain alive so later writes still run.
         })
         .then(async () => {
-          if (enqueueEpoch !== serverPersistEpochRef.current) {
-            return;
-          }
           const targetEpisodeId = enqueueEpisodeId;
           const supabase = getMobileSupabaseClient();
           const uid = await resolveSessionUserId(supabase);
-          if (enqueueEpoch !== serverPersistEpochRef.current) {
-            return;
-          }
           if (!uid) {
             if (
+              isMountedRef.current &&
               episodeIdRef.current === enqueueEpisodeId &&
               enqueueEpoch === serverPersistEpochRef.current
             ) {
@@ -179,6 +182,9 @@ export function SymptomPromptScreen() {
             answer,
           });
           if (enqueueEpoch !== serverPersistEpochRef.current) {
+            return;
+          }
+          if (!isMountedRef.current) {
             return;
           }
           if (episodeIdRef.current !== enqueueEpisodeId) {
@@ -212,17 +218,12 @@ export function SymptomPromptScreen() {
           // Keep the chain alive so later writes still run.
         })
         .then(async () => {
-          if (enqueueEpoch !== serverPersistEpochRef.current) {
-            return;
-          }
           const targetEpisodeId = enqueueEpisodeId;
           const supabase = getMobileSupabaseClient();
           const uid = await resolveSessionUserId(supabase);
-          if (enqueueEpoch !== serverPersistEpochRef.current) {
-            return;
-          }
           if (!uid) {
             if (
+              isMountedRef.current &&
               episodeIdRef.current === enqueueEpisodeId &&
               enqueueEpoch === serverPersistEpochRef.current
             ) {
@@ -237,6 +238,9 @@ export function SymptomPromptScreen() {
             presetSymptomId: line.id,
           });
           if (enqueueEpoch !== serverPersistEpochRef.current) {
+            return;
+          }
+          if (!isMountedRef.current) {
             return;
           }
           if (episodeIdRef.current !== enqueueEpisodeId) {
@@ -327,7 +331,8 @@ export function SymptomPromptScreen() {
 
   useEffect(() => {
     return () => {
-      serverPersistEpochRef.current += 1;
+      // Do not bump serverPersistEpochRef here — queued per-line writes should still reach Supabase;
+      // isMountedRef gates setPersistError after unmount.
       flushPendingServerPersist();
     };
   }, [flushPendingServerPersist]);
@@ -421,7 +426,6 @@ export function SymptomPromptScreen() {
   }, [load]);
 
   useLayoutEffect(() => {
-    serverPersistEpochRef.current += 1;
     flushPendingServerPersist();
     episodeIdRef.current = episodeId;
     const s = getSymptomPromptSession(episodeId);

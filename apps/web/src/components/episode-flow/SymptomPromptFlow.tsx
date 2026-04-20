@@ -106,12 +106,13 @@ export function SymptomPromptFlow({
   /** Bumps on each `load()` start and on effect cleanup so in-flight loads ignore stale results after unmount, retry, or param change. */
   const loadGenRef = useRef(0);
   /**
-   * Bumped only on episode change, unmount, and {@link cancelPendingServerPersist} so in-flight
-   * work can be abandoned without clobbering UI after navigation. Each write captures the epoch at
-   * enqueue time (does not bump per write) so parallel writes to different symptom lines still
-   * surface their own errors when they complete.
+   * Bumped only by {@link cancelPendingServerPersist}. Used with mount + episode id to gate
+   * {@link setPersistError} only — upsert/delete for the captured `enqueueEpisodeId` always runs
+   * so Supabase stays aligned when the user navigates or cancels debounced work.
    */
   const serverPersistEpochRef = useRef(0);
+  /** Suppresses {@link setPersistError} after unmount (epoch is not bumped on unmount). */
+  const isMountedRef = useRef(true);
   const allowNavigationRef = useRef(false);
 
   const supabase = useMemo(() => createBrowserClient(), []);
@@ -145,6 +146,13 @@ export function SymptomPromptFlow({
     answersRef.current = answers;
   }, [answers]);
 
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   const executeServerPersist = useCallback(
     (line: PresetSymptomRow, answer: SymptomPromptAnswer) => {
       /** Captured at enqueue so queued work cannot attach to a later episode after route change. */
@@ -158,16 +166,11 @@ export function SymptomPromptFlow({
           // Keep the chain alive so later writes still run.
         })
         .then(async () => {
-          if (enqueueEpoch !== serverPersistEpochRef.current) {
-            return;
-          }
           const targetEpisodeId = enqueueEpisodeId;
           const uid = await resolveSessionUserId(supabase);
-          if (enqueueEpoch !== serverPersistEpochRef.current) {
-            return;
-          }
           if (!uid) {
             if (
+              isMountedRef.current &&
               episodeIdRef.current === enqueueEpisodeId &&
               enqueueEpoch === serverPersistEpochRef.current
             ) {
@@ -183,16 +186,17 @@ export function SymptomPromptFlow({
             line,
             answer,
           });
-          if (enqueueEpoch !== serverPersistEpochRef.current) {
-            return;
-          }
-          if (episodeIdRef.current !== enqueueEpisodeId) {
-            return;
-          }
-          if (!r.ok) {
-            setPersistError(r.error.message);
-          } else {
-            setPersistError(null);
+          // Epoch/mount/episode gate UI only — the upsert above always ran for `targetEpisodeId`.
+          if (
+            isMountedRef.current &&
+            episodeIdRef.current === enqueueEpisodeId &&
+            enqueueEpoch === serverPersistEpochRef.current
+          ) {
+            if (!r.ok) {
+              setPersistError(r.error.message);
+            } else {
+              setPersistError(null);
+            }
           }
         });
       queues.set(line.id, next);
@@ -217,16 +221,11 @@ export function SymptomPromptFlow({
           // Keep the chain alive so later writes still run.
         })
         .then(async () => {
-          if (enqueueEpoch !== serverPersistEpochRef.current) {
-            return;
-          }
           const targetEpisodeId = enqueueEpisodeId;
           const uid = await resolveSessionUserId(supabase);
-          if (enqueueEpoch !== serverPersistEpochRef.current) {
-            return;
-          }
           if (!uid) {
             if (
+              isMountedRef.current &&
               episodeIdRef.current === enqueueEpisodeId &&
               enqueueEpoch === serverPersistEpochRef.current
             ) {
@@ -240,16 +239,17 @@ export function SymptomPromptFlow({
             episodeId: targetEpisodeId,
             presetSymptomId: line.id,
           });
-          if (enqueueEpoch !== serverPersistEpochRef.current) {
-            return;
-          }
-          if (episodeIdRef.current !== enqueueEpisodeId) {
-            return;
-          }
-          if (!r.ok) {
-            setPersistError(r.error.message);
-          } else {
-            setPersistError(null);
+          // Epoch/mount/episode gate UI only — the delete above always ran for `targetEpisodeId`.
+          if (
+            isMountedRef.current &&
+            episodeIdRef.current === enqueueEpisodeId &&
+            enqueueEpoch === serverPersistEpochRef.current
+          ) {
+            if (!r.ok) {
+              setPersistError(r.error.message);
+            } else {
+              setPersistError(null);
+            }
           }
         });
       queues.set(line.id, next);
@@ -334,7 +334,6 @@ export function SymptomPromptFlow({
         answers: answersRef.current,
       });
     }
-    serverPersistEpochRef.current += 1;
     flushPendingServerPersist();
     episodeIdRef.current = episodeId;
     const s = getSymptomPromptSession(episodeId);
@@ -377,7 +376,8 @@ export function SymptomPromptFlow({
 
   useEffect(() => {
     return () => {
-      serverPersistEpochRef.current += 1;
+      // Do not bump serverPersistEpochRef here — queued per-line writes should still reach Supabase;
+      // isMountedRef gates setPersistError after unmount.
       flushPendingServerPersist();
     };
   }, [flushPendingServerPersist]);
