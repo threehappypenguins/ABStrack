@@ -5,7 +5,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import type { RouteProp } from '@react-navigation/native';
 import {
   CommonActions,
@@ -18,8 +18,13 @@ import type {
   SymptomPromptAnswer,
   SymptomPromptAnswers,
 } from '@abstrack/types';
-import { episodeSymptomRowsToAnswersMap } from '@abstrack/types';
 import {
+  createDefaultSymptomPromptAnswer,
+  episodeSymptomRowsToAnswersMap,
+  symptomPromptAnswerHasValue,
+} from '@abstrack/types';
+import {
+  deleteEpisodeSymptomAnswer,
   listEpisodeSymptomsForEpisode,
   listPresetSymptomsForPreset,
   upsertEpisodeSymptomAnswer,
@@ -53,6 +58,11 @@ function clampIndex(index: number, length: number): number {
   }
   const i = Math.trunc(index);
   return Math.max(0, Math.min(i, length - 1));
+}
+
+/** Queue key so the same preset symptom id does not serialize writes across episodes. */
+function lineWriteQueueKey(episodeId: string, presetSymptomId: string): string {
+  return `${episodeId}:${presetSymptomId}`;
 }
 
 /** Debounce Supabase writes for free-text answers (matches web episode flow). */
@@ -93,16 +103,27 @@ export function SymptomPromptScreen() {
     line: PresetSymptomRow;
     answer: SymptomPromptAnswer;
   } | null>(null);
+  /**
+   * Per (episode, preset symptom) write queue — ordering is within the active episode only, not
+   * across `episodeId` changes while this screen stays mounted.
+   */
+  const lineWriteQueueRef = useRef<Map<string, Promise<void>>>(new Map());
   const userIdRef = useRef<string | null>(null);
   /** Bumps on each `load()` start and on effect cleanup so in-flight loads ignore stale results after unmount, retry, or param change. */
   const loadGenRef = useRef(0);
   /**
-   * Latest server-persist generation. Incremented per {@link executeServerPersist} attempt and
-   * before flush on episode change / unmount so older in-flight writes cannot update {@link persistError}.
-   * Each attempt also captures the episode id at call time so a flushed write after navigation cannot
-   * surface errors for the wrong episode ({@link executeServerPersist}).
+   * Bumped only by {@link cancelPendingServerPersist}. Gates {@link setPersistError} when a cancel
+   * invalidates UI feedback; queued writes still run for the episode id captured at enqueue time.
    */
-  const serverPersistGenerationRef = useRef(0);
+  const serverPersistEpochRef = useRef(0);
+  /**
+   * Monotonic id per enqueue; only matching completions update {@link setPersistError} so
+   * cross-line out-of-order results cannot clobber a newer failure or success state.
+   */
+  const persistUiAttemptRef = useRef(0);
+  /** Suppresses {@link setPersistError} after unmount. */
+  const isMountedRef = useRef(true);
+  const allowRemovalRef = useRef(false);
 
   /**
    * Caches the auth user id on {@link userIdRef}. Called from {@link load} before `ready`, and
@@ -133,47 +154,137 @@ export function SymptomPromptScreen() {
     activeIndexRef.current = activeIndex;
   }, [activeIndex]);
 
-  /**
-   * Each call bumps {@link serverPersistGenerationRef} and captures the current episode id so flushes
-   * during navigation still write to the correct episode and do not update {@link persistError} for
-   * the wrong screen after the route has advanced.
-   */
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   const executeServerPersist = useCallback(
     (line: PresetSymptomRow, answer: SymptomPromptAnswer) => {
-      const targetEpisodeId = episodeIdRef.current;
-      const generation = ++serverPersistGenerationRef.current;
-      void (async () => {
-        const supabase = getMobileSupabaseClient();
-        const uid = await resolveSessionUserId(supabase);
-        if (generation !== serverPersistGenerationRef.current) {
-          return;
-        }
-        if (!uid) {
-          if (episodeIdRef.current === targetEpisodeId) {
-            setPersistError(
-              'Your session could not be verified. Try signing in again.',
-            );
+      const enqueueEpisodeId = episodeIdRef.current;
+      const enqueueEpoch = serverPersistEpochRef.current;
+      persistUiAttemptRef.current += 1;
+      const attemptId = persistUiAttemptRef.current;
+      const queueKey = lineWriteQueueKey(enqueueEpisodeId, line.id);
+
+      const queues = lineWriteQueueRef.current;
+      const previous = queues.get(queueKey) ?? Promise.resolve();
+      const next = previous
+        .catch(() => {
+          // Keep the chain alive so later writes still run.
+        })
+        .then(async () => {
+          const targetEpisodeId = enqueueEpisodeId;
+          const supabase = getMobileSupabaseClient();
+          const uid = await resolveSessionUserId(supabase);
+          if (!uid) {
+            if (
+              isMountedRef.current &&
+              episodeIdRef.current === enqueueEpisodeId &&
+              enqueueEpoch === serverPersistEpochRef.current &&
+              attemptId === persistUiAttemptRef.current
+            ) {
+              setPersistError(
+                'Your session could not be verified. Try signing in again.',
+              );
+            }
+            return;
           }
-          return;
-        }
-        const r = await upsertEpisodeSymptomAnswer(supabase, {
-          userId: uid,
-          episodeId: targetEpisodeId,
-          line,
-          answer,
+          const r = await upsertEpisodeSymptomAnswer(supabase, {
+            userId: uid,
+            episodeId: targetEpisodeId,
+            line,
+            answer,
+          });
+          if (enqueueEpoch !== serverPersistEpochRef.current) {
+            return;
+          }
+          if (!isMountedRef.current) {
+            return;
+          }
+          if (episodeIdRef.current !== enqueueEpisodeId) {
+            return;
+          }
+          if (attemptId !== persistUiAttemptRef.current) {
+            return;
+          }
+          if (!r.ok) {
+            setPersistError(r.error.message);
+          } else {
+            setPersistError(null);
+          }
         });
-        if (generation !== serverPersistGenerationRef.current) {
-          return;
+      queues.set(queueKey, next);
+      void next.finally(() => {
+        if (queues.get(queueKey) === next) {
+          queues.delete(queueKey);
         }
-        if (episodeIdRef.current !== targetEpisodeId) {
-          return;
+      });
+    },
+    [resolveSessionUserId],
+  );
+
+  const executeServerDelete = useCallback(
+    (line: PresetSymptomRow) => {
+      const enqueueEpisodeId = episodeIdRef.current;
+      const enqueueEpoch = serverPersistEpochRef.current;
+      persistUiAttemptRef.current += 1;
+      const attemptId = persistUiAttemptRef.current;
+      const queueKey = lineWriteQueueKey(enqueueEpisodeId, line.id);
+
+      const queues = lineWriteQueueRef.current;
+      const previous = queues.get(queueKey) ?? Promise.resolve();
+      const next = previous
+        .catch(() => {
+          // Keep the chain alive so later writes still run.
+        })
+        .then(async () => {
+          const targetEpisodeId = enqueueEpisodeId;
+          const supabase = getMobileSupabaseClient();
+          const uid = await resolveSessionUserId(supabase);
+          if (!uid) {
+            if (
+              isMountedRef.current &&
+              episodeIdRef.current === enqueueEpisodeId &&
+              enqueueEpoch === serverPersistEpochRef.current &&
+              attemptId === persistUiAttemptRef.current
+            ) {
+              setPersistError(
+                'Your session could not be verified. Try signing in again.',
+              );
+            }
+            return;
+          }
+          const r = await deleteEpisodeSymptomAnswer(supabase, {
+            episodeId: targetEpisodeId,
+            presetSymptomId: line.id,
+          });
+          if (enqueueEpoch !== serverPersistEpochRef.current) {
+            return;
+          }
+          if (!isMountedRef.current) {
+            return;
+          }
+          if (episodeIdRef.current !== enqueueEpisodeId) {
+            return;
+          }
+          if (attemptId !== persistUiAttemptRef.current) {
+            return;
+          }
+          if (!r.ok) {
+            setPersistError(r.error.message);
+          } else {
+            setPersistError(null);
+          }
+        });
+      queues.set(queueKey, next);
+      void next.finally(() => {
+        if (queues.get(queueKey) === next) {
+          queues.delete(queueKey);
         }
-        if (!r.ok) {
-          setPersistError(r.error.message);
-        } else {
-          setPersistError(null);
-        }
-      })();
+      });
     },
     [resolveSessionUserId],
   );
@@ -197,11 +308,29 @@ export function SymptomPromptScreen() {
   }, [executeServerPersist]);
 
   /**
+   * Cancels pending debounced free-text upserts and invalidates older in-flight persists.
+   * Used on skip/delete so delayed upserts cannot recreate deleted symptom rows.
+   */
+  const cancelPendingServerPersist = useCallback(() => {
+    if (serverPersistTimerRef.current !== null) {
+      clearTimeout(serverPersistTimerRef.current);
+      serverPersistTimerRef.current = null;
+    }
+    pendingServerFreeTextPersistRef.current = null;
+    serverPersistEpochRef.current += 1;
+  }, []);
+
+  /**
    * Schedules or runs a server upsert. User id is **not** read here: {@link executeServerPersist}
    * always calls {@link resolveSessionUserId} so the first answer after load cannot silently skip.
    */
   const schedulePersistToSupabase = useCallback(
     (line: PresetSymptomRow, answer: SymptomPromptAnswer) => {
+      if (!symptomPromptAnswerHasValue(answer)) {
+        cancelPendingServerPersist();
+        executeServerDelete(line);
+        return;
+      }
       if (answer.type === 'free_text') {
         pendingServerFreeTextPersistRef.current = { line, answer };
         if (serverPersistTimerRef.current !== null) {
@@ -224,12 +353,13 @@ export function SymptomPromptScreen() {
         executeServerPersist(line, answer);
       }
     },
-    [executeServerPersist],
+    [cancelPendingServerPersist, executeServerDelete, executeServerPersist],
   );
 
   useEffect(() => {
     return () => {
-      serverPersistGenerationRef.current += 1;
+      // Do not bump serverPersistEpochRef here — queued per-line writes should still reach Supabase;
+      // isMountedRef gates setPersistError after unmount.
       flushPendingServerPersist();
     };
   }, [flushPendingServerPersist]);
@@ -323,7 +453,6 @@ export function SymptomPromptScreen() {
   }, [load]);
 
   useLayoutEffect(() => {
-    serverPersistGenerationRef.current += 1;
     flushPendingServerPersist();
     episodeIdRef.current = episodeId;
     const s = getSymptomPromptSession(episodeId);
@@ -339,6 +468,10 @@ export function SymptomPromptScreen() {
   }, [episodeId, symptomPresetId, flushPendingServerPersist]);
 
   const currentLine = lines[activeIndex] ?? null;
+  const currentAnswer = currentLine ? answers[currentLine.id] : undefined;
+  const currentLineAnswered = symptomPromptAnswerHasValue(currentAnswer);
+  const canProceedWithNext = !currentLine || currentLineAnswered;
+  const canSkipCurrentLine = Boolean(currentLine) && !currentLineAnswered;
   const stepLabel =
     lines.length === 0
       ? 'No symptoms'
@@ -368,19 +501,69 @@ export function SymptomPromptScreen() {
   const goBackStep = () => {
     flushPendingServerPersist();
     const idx = activeIndexRef.current;
-    if (idx > 0) {
-      const next = idx - 1;
-      activeIndexRef.current = next;
-      setActiveIndex(next);
-      persist(next, answersRef.current);
-      announce(`Back to step ${next + 1} of ${lines.length}.`);
-    } else {
-      navigation.goBack();
+    if (idx <= 0) {
+      return;
     }
+    const next = idx - 1;
+    activeIndexRef.current = next;
+    setActiveIndex(next);
+    persist(next, answersRef.current);
+    announce(`Back to step ${next + 1} of ${lines.length}.`);
   };
 
-  const goNext = () => {
+  const confirmExitFlow = useCallback((action: () => void) => {
+    Alert.alert(
+      'Exit symptom flow?',
+      'If you exit now, you will return home. Starting again creates a new episode.',
+      [
+        { text: 'Stay here', style: 'cancel' },
+        {
+          text: 'Exit',
+          style: 'destructive',
+          onPress: action,
+        },
+      ],
+    );
+  }, []);
+
+  /** Matches {@link onFinishToHome}: reset stack to MainTabs so copy matches behavior (not `goBack`). */
+  const exitSymptomFlowToHome = useCallback(() => {
     flushPendingServerPersist();
+    clearSymptomPromptSession(episodeId);
+    allowRemovalRef.current = true;
+    navigation.dispatch(
+      CommonActions.reset({
+        index: 0,
+        routes: [{ name: 'MainTabs' }],
+      }),
+    );
+  }, [episodeId, flushPendingServerPersist, navigation]);
+
+  const requestExitToHome = useCallback(() => {
+    confirmExitFlow(() => {
+      exitSymptomFlowToHome();
+    });
+  }, [confirmExitFlow, exitSymptomFlowToHome]);
+
+  useEffect(() => {
+    const unsub = navigation.addListener('beforeRemove', (e) => {
+      if (allowRemovalRef.current || phase === 'complete') {
+        allowRemovalRef.current = false;
+        return;
+      }
+      e.preventDefault();
+      confirmExitFlow(() => {
+        exitSymptomFlowToHome();
+      });
+    });
+    return unsub;
+  }, [confirmExitFlow, exitSymptomFlowToHome, navigation, phase]);
+
+  const onExitFlowPress = () => {
+    requestExitToHome();
+  };
+
+  const advanceToNextStep = () => {
     if (lines.length === 0) {
       setPhase('complete');
       return;
@@ -395,6 +578,31 @@ export function SymptomPromptScreen() {
     }
     setPhase('complete');
     announce('Symptom list complete.');
+  };
+
+  const goNext = () => {
+    flushPendingServerPersist();
+    advanceToNextStep();
+  };
+
+  const skipCurrentSymptom = () => {
+    if (!currentLine) {
+      return;
+    }
+    cancelPendingServerPersist();
+    const skippedAnswer = createDefaultSymptomPromptAnswer(
+      currentLine.response_type,
+    );
+    const merged: SymptomPromptAnswers = {
+      ...answersRef.current,
+      [currentLine.id]: skippedAnswer,
+    };
+    answersRef.current = merged;
+    setAnswers(merged);
+    persist(activeIndexRef.current, merged);
+    executeServerDelete(currentLine);
+    announce(`Skipped ${currentLine.symptom_name}.`);
+    advanceToNextStep();
   };
 
   const onFinishToHome = () => {
@@ -449,103 +657,143 @@ export function SymptomPromptScreen() {
             </Pressable>
           </View>
         ) : (
-          <AsyncScreenContainer
-            status={status}
-            loadingAccessibilityLabel="Loading symptom list"
-            errorTitle="Could not load symptoms"
-            errorMessage={errorMessage ?? undefined}
-            onRetry={() => {
-              void load();
-            }}
-          >
-            <ScrollView
-              className="flex-1"
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={{ paddingBottom: 24 }}
+          <>
+            <AsyncScreenContainer
+              status={status}
+              loadingAccessibilityLabel="Loading symptom list"
+              errorTitle="Could not load symptoms"
+              errorMessage={errorMessage ?? undefined}
+              onRetry={() => {
+                void load();
+              }}
             >
-              <Text
-                accessibilityRole="text"
-                className={`mb-2 text-base font-medium ${nw.textMuted}`}
-                maxFontSizeMultiplier={2}
+              <ScrollView
+                className="flex-1"
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ paddingBottom: 24 }}
               >
-                {stepLabel}
-              </Text>
-
-              {lines.length === 0 ? (
                 <Text
-                  className={`text-base leading-relaxed ${nw.textInk}`}
+                  accessibilityRole="text"
+                  className={`mb-2 text-base font-medium ${nw.textMuted}`}
                   maxFontSizeMultiplier={2}
                 >
-                  This preset has no symptoms yet. You can add symptoms under
-                  Templates when you are not in an episode.
+                  {stepLabel}
                 </Text>
-              ) : currentLine ? (
-                <View className="gap-4">
+
+                {lines.length === 0 ? (
                   <Text
-                    accessibilityRole="header"
-                    className={`text-xl font-semibold ${nw.textInk}`}
+                    className={`text-base leading-relaxed ${nw.textInk}`}
                     maxFontSizeMultiplier={2}
                   >
-                    {currentLine.symptom_name}
+                    This preset has no symptoms yet. You can add symptoms under
+                    Templates when you are not in an episode.
                   </Text>
-                  {currentLine.prompt_instruction ? (
+                ) : currentLine ? (
+                  <View className="gap-4">
                     <Text
-                      className={`text-base leading-relaxed ${nw.textMuted}`}
+                      accessibilityRole="header"
+                      className={`text-xl font-semibold ${nw.textInk}`}
                       maxFontSizeMultiplier={2}
                     >
-                      {currentLine.prompt_instruction}
+                      {currentLine.symptom_name}
                     </Text>
-                  ) : null}
-                  <SymptomPromptResponseField
-                    line={currentLine}
-                    answer={answers[currentLine.id]}
-                    onChange={onChangeAnswer}
-                    disabled={status !== 'ready'}
-                  />
-                </View>
-              ) : null}
+                    {currentLine.prompt_instruction ? (
+                      <Text
+                        className={`text-base leading-relaxed ${nw.textMuted}`}
+                        maxFontSizeMultiplier={2}
+                      >
+                        {currentLine.prompt_instruction}
+                      </Text>
+                    ) : null}
+                    <SymptomPromptResponseField
+                      line={currentLine}
+                      answer={answers[currentLine.id]}
+                      onChange={onChangeAnswer}
+                      disabled={status !== 'ready'}
+                    />
+                  </View>
+                ) : null}
 
-              <View className="mt-6 flex-row gap-3">
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    activeIndex === 0
-                      ? 'Go back to previous screen'
-                      : 'Previous symptom'
-                  }
-                  onPress={goBackStep}
-                  style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
-                  className="min-w-[120px] flex-1 items-center justify-center rounded-xl border-2 border-app-border bg-app-bg px-3 py-4 active:opacity-90 dark:border-app-border-dark dark:bg-app-bg-dark"
-                >
-                  <Text
-                    className={`text-center text-[17px] font-semibold ${nw.textInk}`}
-                    maxFontSizeMultiplier={2}
+                <View className="mt-6 gap-3">
+                  {activeIndex > 0 ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Previous symptom"
+                      onPress={goBackStep}
+                      style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                      className="w-full items-center justify-center rounded-xl border-2 border-app-border bg-app-bg px-3 py-4 active:opacity-90 dark:border-app-border-dark dark:bg-app-bg-dark"
+                    >
+                      <Text
+                        className={`text-center text-[17px] font-semibold ${nw.textInk}`}
+                        maxFontSizeMultiplier={2}
+                      >
+                        Back
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                  {currentLine ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Skip this symptom"
+                      accessibilityState={{ disabled: !canSkipCurrentLine }}
+                      disabled={!canSkipCurrentLine}
+                      onPress={skipCurrentSymptom}
+                      style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                      className={`w-full items-center justify-center rounded-xl border-2 border-app-border bg-app-bg px-3 py-4 dark:border-app-border-dark dark:bg-app-bg-dark ${
+                        canSkipCurrentLine ? 'active:opacity-90' : 'opacity-50'
+                      }`}
+                    >
+                      <Text
+                        className={`text-center text-[17px] font-semibold ${nw.textInk}`}
+                        maxFontSizeMultiplier={2}
+                      >
+                        Skip
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      lines.length > 0 && activeIndex >= lines.length - 1
+                        ? 'Finish symptom list'
+                        : 'Next symptom'
+                    }
+                    accessibilityState={{ disabled: !canProceedWithNext }}
+                    disabled={!canProceedWithNext}
+                    onPress={goNext}
+                    style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                    className={`w-full items-center justify-center rounded-xl px-3 py-4 dark:bg-red-600 ${
+                      canProceedWithNext
+                        ? 'bg-red-700 active:opacity-90'
+                        : 'bg-red-400 opacity-60 dark:bg-red-800'
+                    }`}
                   >
-                    {activeIndex === 0 ? 'Exit' : 'Back'}
-                  </Text>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    lines.length > 0 && activeIndex >= lines.length - 1
-                      ? 'Finish symptom list'
-                      : 'Next symptom'
-                  }
-                  onPress={goNext}
-                  style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
-                  className="min-w-[120px] flex-1 items-center justify-center rounded-xl bg-red-700 px-3 py-4 active:opacity-90 dark:bg-red-600"
-                >
-                  <Text className="text-center text-[17px] font-semibold text-white">
-                    {lines.length === 0
-                      ? 'Done'
-                      : activeIndex >= lines.length - 1
-                        ? 'Finish'
-                        : 'Next'}
-                  </Text>
-                </Pressable>
-              </View>
-            </ScrollView>
-          </AsyncScreenContainer>
+                    <Text className="text-center text-[17px] font-semibold text-white">
+                      {lines.length === 0
+                        ? 'Done'
+                        : activeIndex >= lines.length - 1
+                          ? 'Finish'
+                          : 'Next'}
+                    </Text>
+                  </Pressable>
+                </View>
+              </ScrollView>
+            </AsyncScreenContainer>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Exit symptom flow"
+              onPress={onExitFlowPress}
+              style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+              className="mt-auto w-full items-center justify-center rounded-lg px-3 py-3 active:opacity-80"
+            >
+              <Text
+                className={`text-base font-medium ${nw.textMuted}`}
+                maxFontSizeMultiplier={2}
+              >
+                Exit symptom flow
+              </Text>
+            </Pressable>
+          </>
         )}
       </View>
     </ScreenShell>

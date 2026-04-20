@@ -1,10 +1,7 @@
 import React from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
-import type {
-  PresetSymptomRow,
-  SymptomPromptAnswer,
-  SymptomResponseType,
-} from '@abstrack/types';
+import type { PresetSymptomRow, SymptomPromptAnswer } from '@abstrack/types';
+import { createDefaultSymptomPromptAnswer } from '@abstrack/types';
 import { COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
 import { useAppTheme } from '../../theme/AppThemeContext';
 import { nw } from '../../theme/app-nativewind-classes';
@@ -15,25 +12,6 @@ export type SymptomPromptResponseFieldProps = {
   onChange: (next: SymptomPromptAnswer) => void;
   disabled: boolean;
 };
-
-function defaultAnswerForType(type: SymptomResponseType): SymptomPromptAnswer {
-  switch (type) {
-    case 'yes_no':
-      return { type: 'yes_no', value: null };
-    case 'severity_scale':
-      return { type: 'severity_scale', value: null };
-    case 'free_text':
-      return { type: 'free_text', value: '' };
-    case 'photo':
-      return { type: 'photo', value: null };
-    case 'video':
-      return { type: 'video', value: null };
-    default: {
-      const _exhaustive: never = type;
-      return _exhaustive;
-    }
-  }
-}
 
 /**
  * Renders the capture UI for one preset symptom line (Week 5 skeleton: no media pipeline).
@@ -48,7 +26,8 @@ export function SymptomPromptResponseField({
   disabled,
 }: SymptomPromptResponseFieldProps) {
   const { colors } = useAppTheme();
-  const effective = answer ?? defaultAnswerForType(line.response_type);
+  const effective =
+    answer ?? createDefaultSymptomPromptAnswer(line.response_type);
 
   switch (line.response_type) {
     case 'yes_no': {
@@ -69,7 +48,10 @@ export function SymptomPromptResponseField({
                 accessibilityState={{ selected, disabled }}
                 disabled={disabled}
                 onPress={() => {
-                  onChange({ type: 'yes_no', value: boolVal });
+                  onChange({
+                    type: 'yes_no',
+                    value: selected ? null : boolVal,
+                  });
                 }}
                 style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
                 className={`items-center justify-center rounded-xl border-2 px-4 py-4 active:opacity-90 ${
@@ -108,7 +90,10 @@ export function SymptomPromptResponseField({
                 accessibilityState={{ selected, disabled }}
                 disabled={disabled}
                 onPress={() => {
-                  onChange({ type: 'severity_scale', value: n });
+                  onChange({
+                    type: 'severity_scale',
+                    value: selected ? null : n,
+                  });
                 }}
                 style={{
                   minWidth: COMFORTABLE_TOUCH_TARGET_DP,
@@ -160,8 +145,8 @@ export function SymptomPromptResponseField({
             className={`text-center text-base leading-relaxed ${nw.textInk}`}
             maxFontSizeMultiplier={2}
           >
-            Photo capture will open here during an episode. This step is a
-            placeholder for now.
+            Photo symptom capture is coming in a later update. For now, use Next
+            or Skip to continue this episode flow.
           </Text>
         </View>
       );
@@ -175,8 +160,8 @@ export function SymptomPromptResponseField({
             className={`text-center text-base leading-relaxed ${nw.textInk}`}
             maxFontSizeMultiplier={2}
           >
-            Video capture will open here during an episode. This step is a
-            placeholder for now.
+            Video symptom capture is coming in a later update. For now, use Next
+            or Skip to continue this episode flow.
           </Text>
         </View>
       );

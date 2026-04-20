@@ -1,8 +1,10 @@
 import * as React from 'react';
+import { Alert } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { CommonActions, DefaultTheme } from '@react-navigation/native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import {
+  deleteEpisodeSymptomAnswer,
   listEpisodeSymptomsForEpisode,
   listPresetSymptomsForPreset,
   upsertEpisodeSymptomAnswer,
@@ -27,6 +29,7 @@ jest.mock('@react-navigation/native', () => ({
 }));
 
 jest.mock('@abstrack/supabase', () => ({
+  deleteEpisodeSymptomAnswer: jest.fn(),
   listPresetSymptomsForPreset: jest.fn(),
   listEpisodeSymptomsForEpisode: jest.fn(),
   upsertEpisodeSymptomAnswer: jest.fn(),
@@ -87,9 +90,11 @@ function makeLine(
 describe('SymptomPromptScreen', () => {
   const mockGoBack = jest.fn();
   const mockDispatch = jest.fn();
+  const mockAddListener = jest.fn(() => jest.fn());
 
   const lineA = makeLine('line-a', 0, 'Nausea', 'yes_no');
   const lineB = makeLine('line-b', 1, 'Headache', 'severity_scale');
+  const lineSeverityOnly = makeLine('line-sev', 0, 'Pain', 'severity_scale');
 
   /** Single free-text line for debounce / flush tests. */
   const lineFreeOnly = makeLine('line-ft', 0, 'Notes', 'free_text');
@@ -106,6 +111,7 @@ describe('SymptomPromptScreen', () => {
     jest.mocked(useNavigation).mockReturnValue({
       goBack: mockGoBack,
       dispatch: mockDispatch,
+      addListener: mockAddListener,
     } as never);
 
     jest.mocked(useAppTheme).mockReturnValue({
@@ -146,6 +152,10 @@ describe('SymptomPromptScreen', () => {
         updated_at: '2020-01-01T00:00:00Z',
       },
     });
+    jest.mocked(deleteEpisodeSymptomAnswer).mockResolvedValue({
+      ok: true,
+      data: true,
+    });
   });
 
   test('non-free-text answer triggers upsertEpisodeSymptomAnswer', async () => {
@@ -172,6 +182,44 @@ describe('SymptomPromptScreen', () => {
         answer: { type: 'yes_no', value: true },
       }),
     );
+  });
+
+  test('deselecting severity clears server row via delete (no null upsert)', async () => {
+    jest.mocked(listPresetSymptomsForPreset).mockResolvedValue({
+      ok: true,
+      data: [lineSeverityOnly],
+    });
+    const screen = render(<SymptomPromptScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Step 1 of 1')).toBeTruthy();
+    });
+
+    fireEvent.press(screen.getByLabelText('Severity 3'));
+    await waitFor(() => {
+      expect(upsertEpisodeSymptomAnswer).toHaveBeenCalledWith(
+        expect.objectContaining({ mockClient: true }),
+        expect.objectContaining({
+          line: lineSeverityOnly,
+          answer: { type: 'severity_scale', value: 3 },
+        }),
+      );
+    });
+
+    jest.mocked(upsertEpisodeSymptomAnswer).mockClear();
+    jest.mocked(deleteEpisodeSymptomAnswer).mockClear();
+    fireEvent.press(screen.getByLabelText('Severity 3'));
+
+    await waitFor(() => {
+      expect(deleteEpisodeSymptomAnswer).toHaveBeenCalledWith(
+        expect.objectContaining({ mockClient: true }),
+        expect.objectContaining({
+          episodeId,
+          presetSymptomId: lineSeverityOnly.id,
+        }),
+      );
+    });
+    expect(upsertEpisodeSymptomAnswer).not.toHaveBeenCalled();
   });
 
   test('free_text changes debounce to a single upsert', async () => {
@@ -287,6 +335,7 @@ describe('SymptomPromptScreen', () => {
       expect(screen.getByText('Step 1 of 2')).toBeTruthy();
     });
 
+    fireEvent.press(screen.getByText('yes'));
     fireEvent.press(screen.getByLabelText('Next symptom'));
 
     await waitFor(() => {
@@ -294,9 +343,70 @@ describe('SymptomPromptScreen', () => {
     });
 
     expect(screen.getByText('Headache')).toBeTruthy();
-    expect(setSymptomPromptSession).toHaveBeenCalledWith(episodeId, {
+    expect(setSymptomPromptSession).toHaveBeenLastCalledWith(episodeId, {
       activeIndex: 1,
-      answers: {},
+      answers: { [lineA.id]: { type: 'yes_no', value: true } },
+    });
+  });
+
+  test('only one of Skip and Next is enabled based on answer presence', async () => {
+    const screen = render(<SymptomPromptScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Step 1 of 2')).toBeTruthy();
+    });
+
+    expect(
+      screen.getByLabelText('Skip this symptom').props.accessibilityState,
+    ).toEqual({
+      disabled: false,
+    });
+    expect(
+      screen.getByLabelText('Next symptom').props.accessibilityState,
+    ).toEqual({
+      disabled: true,
+    });
+
+    fireEvent.press(screen.getByText('yes'));
+
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText('Skip this symptom').props.accessibilityState,
+      ).toEqual({
+        disabled: true,
+      });
+    });
+    expect(
+      screen.getByLabelText('Next symptom').props.accessibilityState,
+    ).toEqual({
+      disabled: false,
+    });
+  });
+
+  test('Skip advances step and clears persisted answer for current symptom', async () => {
+    const screen = render(<SymptomPromptScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Step 1 of 2')).toBeTruthy();
+    });
+
+    jest.mocked(deleteEpisodeSymptomAnswer).mockClear();
+    fireEvent.press(screen.getByLabelText('Skip this symptom'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Step 2 of 2')).toBeTruthy();
+    });
+
+    expect(deleteEpisodeSymptomAnswer).toHaveBeenCalledWith(
+      expect.objectContaining({ mockClient: true }),
+      expect.objectContaining({
+        episodeId,
+        presetSymptomId: lineA.id,
+      }),
+    );
+    expect(setSymptomPromptSession).toHaveBeenCalledWith(episodeId, {
+      activeIndex: 0,
+      answers: { [lineA.id]: { type: 'yes_no', value: null } },
     });
   });
 
@@ -315,16 +425,59 @@ describe('SymptomPromptScreen', () => {
     expect(screen.getByText('Headache')).toBeTruthy();
   });
 
-  test('Back on step 0 calls navigation.goBack', async () => {
+  test('Skip on free-text flushes immediately after answer is cleared', async () => {
+    const lineAfter = makeLine('line-after', 1, 'Headache', 'severity_scale');
+    jest.mocked(listPresetSymptomsForPreset).mockResolvedValue({
+      ok: true,
+      data: [lineFreeOnly, lineAfter],
+    });
     const screen = render(<SymptomPromptScreen />);
 
     await waitFor(() => {
-      expect(screen.getByLabelText('Go back to previous screen')).toBeTruthy();
+      expect(screen.getByText('Step 1 of 2')).toBeTruthy();
     });
 
-    fireEvent.press(screen.getByLabelText('Go back to previous screen'));
+    fireEvent.changeText(screen.getByLabelText('Notes notes'), 'draft text');
+    jest.mocked(deleteEpisodeSymptomAnswer).mockClear();
 
-    expect(mockGoBack).toHaveBeenCalled();
+    const skipButton = screen.getByLabelText('Skip this symptom');
+    expect(skipButton.props.accessibilityState).toEqual({ disabled: true });
+
+    fireEvent.changeText(screen.getByLabelText('Notes notes'), '');
+    fireEvent.press(screen.getByLabelText('Skip this symptom'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Step 2 of 2')).toBeTruthy();
+    });
+
+    expect(deleteEpisodeSymptomAnswer).toHaveBeenCalledWith(
+      expect.objectContaining({ mockClient: true }),
+      expect.objectContaining({
+        episodeId,
+        presetSymptomId: lineFreeOnly.id,
+      }),
+    );
+  });
+
+  test('Exit symptom flow asks for confirmation before leaving', async () => {
+    const screen = render(<SymptomPromptScreen />);
+    const alertSpy = jest
+      .spyOn(Alert, 'alert')
+      .mockImplementation(() => undefined);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Exit symptom flow')).toBeTruthy();
+    });
+
+    fireEvent.press(screen.getByLabelText('Exit symptom flow'));
+
+    expect(alertSpy).toHaveBeenCalledWith(
+      'Exit symptom flow?',
+      'If you exit now, you will return home. Starting again creates a new episode.',
+      expect.any(Array),
+    );
+    expect(mockGoBack).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
   });
 
   test('changing symptomPresetId after completion shows prompting again for new lines', async () => {
@@ -342,10 +495,12 @@ describe('SymptomPromptScreen', () => {
       expect(screen.getByText('Step 1 of 2')).toBeTruthy();
     });
 
+    fireEvent.press(screen.getByText('yes'));
     fireEvent.press(screen.getByLabelText('Next symptom'));
     await waitFor(() => {
       expect(screen.getByLabelText('Finish symptom list')).toBeTruthy();
     });
+    fireEvent.press(screen.getByLabelText('Severity 1'));
     fireEvent.press(screen.getByLabelText('Finish symptom list'));
 
     await waitFor(() => {
@@ -386,12 +541,14 @@ describe('SymptomPromptScreen', () => {
       expect(screen.getByText('Step 1 of 2')).toBeTruthy();
     });
 
+    fireEvent.press(screen.getByText('yes'));
     fireEvent.press(screen.getByLabelText('Next symptom'));
 
     await waitFor(() => {
       expect(screen.getByLabelText('Finish symptom list')).toBeTruthy();
     });
 
+    fireEvent.press(screen.getByLabelText('Severity 1'));
     fireEvent.press(screen.getByLabelText('Finish symptom list'));
 
     await waitFor(() => {

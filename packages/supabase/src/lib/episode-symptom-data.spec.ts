@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { PresetSymptomRow } from '@abstrack/types';
 import {
+  deleteEpisodeSymptomAnswer,
   listEpisodeSymptomsForEpisode,
   upsertEpisodeSymptomAnswer,
 } from './episode-symptom-data.js';
@@ -363,5 +364,31 @@ describe('upsertEpisodeSymptomAnswer', () => {
       expect(result.data.response_boolean).toBe(true);
     }
     expect(fromCalls).toBe(4);
+  });
+});
+
+describe('deleteEpisodeSymptomAnswer', () => {
+  it('deletes rows by episode_id and preset_symptom_id', async () => {
+    const eqPreset = vi.fn(() => ({ error: null }));
+    const eqEpisode = vi.fn(() => ({ eq: eqPreset }));
+    const client = {
+      from: vi.fn(() => ({
+        delete: vi.fn(() => ({
+          eq: eqEpisode,
+        })),
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await deleteEpisodeSymptomAnswer(client, {
+      episodeId: 'ep-1',
+      presetSymptomId: 'ps-line-1',
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toBe(true);
+    }
+    expect(eqEpisode).toHaveBeenCalledWith('episode_id', 'ep-1');
+    expect(eqPreset).toHaveBeenCalledWith('preset_symptom_id', 'ps-line-1');
   });
 });

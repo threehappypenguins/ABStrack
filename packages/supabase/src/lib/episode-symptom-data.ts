@@ -302,3 +302,32 @@ export async function upsertEpisodeSymptomAnswer(
     };
   });
 }
+
+/**
+ * Deletes any persisted `episode_symptoms` rows for one preset line in an episode.
+ * Used when a user intentionally skips/clears a symptom so blank rows are not kept.
+ *
+ * @param client - Supabase client (RLS applies).
+ * @param args.episodeId - `episodes.id`.
+ * @param args.presetSymptomId - `preset_symptoms.id` for the current prompt line.
+ */
+export async function deleteEpisodeSymptomAnswer(
+  client: AbstrackSupabaseClient,
+  args: {
+    episodeId: Uuid;
+    presetSymptomId: Uuid;
+  },
+): Promise<PresetDataResult<boolean>> {
+  const { episodeId, presetSymptomId } = args;
+  return wrap(async () => {
+    const r = await client
+      .from('episode_symptoms')
+      .delete()
+      .eq('episode_id', episodeId)
+      .eq('preset_symptom_id', presetSymptomId);
+    return {
+      data: r.error ? null : true,
+      error: r.error,
+    };
+  });
+}
