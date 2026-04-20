@@ -130,7 +130,5 @@ export function computeSymptomResumePlacement(
   if (firstUnanswered === -1) {
     return { activeIndex: lines.length - 1, phase: 'complete' };
   }
-  const i = Math.trunc(firstUnanswered);
-  const clamped = Math.max(0, Math.min(i, lines.length - 1));
-  return { activeIndex: clamped, phase: 'prompting' };
+  return { activeIndex: firstUnanswered, phase: 'prompting' };
 }

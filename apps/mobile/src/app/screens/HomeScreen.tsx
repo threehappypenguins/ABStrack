@@ -46,9 +46,14 @@ export function HomeScreen({
     useState<ActiveEpisodeHomeSummary | null>(null);
   const [activeEpisodeLoading, setActiveEpisodeLoading] = useState(true);
 
+  /** Bumped on each load start and on blur/unmount so in-flight loads never win over newer work. */
+  const loadGenerationRef = useRef(0);
+
   const loadActiveEpisode = useCallback(
     async (cancel?: { cancelled: boolean }) => {
-      const stale = () => cancel?.cancelled === true;
+      const generation = ++loadGenerationRef.current;
+      const stale = () =>
+        cancel?.cancelled === true || generation !== loadGenerationRef.current;
 
       setActiveEpisodeLoading(true);
       try {
@@ -94,6 +99,7 @@ export function HomeScreen({
       void loadActiveEpisode(cancel);
       return () => {
         cancel.cancelled = true;
+        loadGenerationRef.current += 1;
       };
     }, [loadActiveEpisode]),
   );
@@ -109,6 +115,7 @@ export function HomeScreen({
     });
     return () => {
       subscription.unsubscribe();
+      loadGenerationRef.current += 1;
     };
   }, [loadActiveEpisode]);
 

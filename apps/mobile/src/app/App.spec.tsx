@@ -98,9 +98,8 @@ describe('mobile auth state sync', () => {
    * broadcast to every subscriber; a single stored callback misses App when Home overwrites it.
    */
   function multiSubscriberOnAuthStateChange() {
-    const callbacks: Array<
-      (event: string, session: Session | null) => void
-    > = [];
+    const callbacks: Array<(event: string, session: Session | null) => void> =
+      [];
     const onAuthStateChange = jest.fn((callback) => {
       callbacks.push(callback);
       return {
