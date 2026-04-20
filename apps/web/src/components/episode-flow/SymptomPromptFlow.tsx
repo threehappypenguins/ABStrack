@@ -100,6 +100,8 @@ export function SymptomPromptFlow({
     line: PresetSymptomRow;
     answer: SymptomPromptAnswer;
   } | null>(null);
+  /** Per-line write queue so upsert/delete requests execute in user action order. */
+  const lineWriteQueueRef = useRef<Map<string, Promise<void>>>(new Map());
   const userIdRef = useRef<string | null>(null);
   /** Bumps on each `load()` start and on effect cleanup so in-flight loads ignore stale results after unmount, retry, or param change. */
   const loadGenRef = useRef(0);
@@ -144,76 +146,100 @@ export function SymptomPromptFlow({
 
   const executeServerPersist = useCallback(
     (line: PresetSymptomRow, answer: SymptomPromptAnswer) => {
-      const targetEpisodeId = episodeIdRef.current;
-      const generation = ++serverPersistGenerationRef.current;
-      void (async () => {
-        const uid = await resolveSessionUserId(supabase);
-        if (generation !== serverPersistGenerationRef.current) {
-          return;
-        }
-        if (!uid) {
-          if (episodeIdRef.current === targetEpisodeId) {
-            setPersistError(
-              'Your session could not be verified. Try signing in again.',
-            );
+      const queues = lineWriteQueueRef.current;
+      const previous = queues.get(line.id) ?? Promise.resolve();
+      const next = previous
+        .catch(() => {
+          // Keep the chain alive so later writes still run.
+        })
+        .then(async () => {
+          const targetEpisodeId = episodeIdRef.current;
+          const generation = ++serverPersistGenerationRef.current;
+          const uid = await resolveSessionUserId(supabase);
+          if (generation !== serverPersistGenerationRef.current) {
+            return;
           }
-          return;
-        }
-        const r = await upsertEpisodeSymptomAnswer(supabase, {
-          userId: uid,
-          episodeId: targetEpisodeId,
-          line,
-          answer,
+          if (!uid) {
+            if (episodeIdRef.current === targetEpisodeId) {
+              setPersistError(
+                'Your session could not be verified. Try signing in again.',
+              );
+            }
+            return;
+          }
+          const r = await upsertEpisodeSymptomAnswer(supabase, {
+            userId: uid,
+            episodeId: targetEpisodeId,
+            line,
+            answer,
+          });
+          if (generation !== serverPersistGenerationRef.current) {
+            return;
+          }
+          if (episodeIdRef.current !== targetEpisodeId) {
+            return;
+          }
+          if (!r.ok) {
+            setPersistError(r.error.message);
+          } else {
+            setPersistError(null);
+          }
         });
-        if (generation !== serverPersistGenerationRef.current) {
-          return;
+      queues.set(line.id, next);
+      void next.finally(() => {
+        if (queues.get(line.id) === next) {
+          queues.delete(line.id);
         }
-        if (episodeIdRef.current !== targetEpisodeId) {
-          return;
-        }
-        if (!r.ok) {
-          setPersistError(r.error.message);
-        } else {
-          setPersistError(null);
-        }
-      })();
+      });
     },
     [resolveSessionUserId, supabase],
   );
 
   const executeServerDelete = useCallback(
     (line: PresetSymptomRow) => {
-      const targetEpisodeId = episodeIdRef.current;
-      const generation = ++serverPersistGenerationRef.current;
-      void (async () => {
-        const uid = await resolveSessionUserId(supabase);
-        if (generation !== serverPersistGenerationRef.current) {
-          return;
-        }
-        if (!uid) {
-          if (episodeIdRef.current === targetEpisodeId) {
-            setPersistError(
-              'Your session could not be verified. Try signing in again.',
-            );
+      const queues = lineWriteQueueRef.current;
+      const previous = queues.get(line.id) ?? Promise.resolve();
+      const next = previous
+        .catch(() => {
+          // Keep the chain alive so later writes still run.
+        })
+        .then(async () => {
+          const targetEpisodeId = episodeIdRef.current;
+          const generation = ++serverPersistGenerationRef.current;
+          const uid = await resolveSessionUserId(supabase);
+          if (generation !== serverPersistGenerationRef.current) {
+            return;
           }
-          return;
-        }
-        const r = await deleteEpisodeSymptomAnswer(supabase, {
-          episodeId: targetEpisodeId,
-          presetSymptomId: line.id,
+          if (!uid) {
+            if (episodeIdRef.current === targetEpisodeId) {
+              setPersistError(
+                'Your session could not be verified. Try signing in again.',
+              );
+            }
+            return;
+          }
+          const r = await deleteEpisodeSymptomAnswer(supabase, {
+            episodeId: targetEpisodeId,
+            presetSymptomId: line.id,
+          });
+          if (generation !== serverPersistGenerationRef.current) {
+            return;
+          }
+          if (episodeIdRef.current !== targetEpisodeId) {
+            return;
+          }
+          if (!r.ok) {
+            setPersistError(r.error.message);
+          } else {
+            setPersistError(null);
+          }
         });
-        if (generation !== serverPersistGenerationRef.current) {
-          return;
+      queues.set(line.id, next);
+      void next.finally(() => {
+        if (queues.get(line.id) === next) {
+          queues.delete(line.id);
         }
-        if (episodeIdRef.current !== targetEpisodeId) {
-          return;
-        }
-        if (!r.ok) {
-          setPersistError(r.error.message);
-        } else {
-          setPersistError(null);
-        }
-      })();
+      });
     },
     [resolveSessionUserId, supabase],
   );
