@@ -35,6 +35,11 @@ export type MainStackParamList = {
   /** Episode logging entry: shell until template selection and prompts ship. */
   EpisodeStart: undefined;
   /** Linear symptom prompts for the active episode (preset lines). */
-  SymptomPrompt: { episodeId: string; symptomPresetId: string };
+  SymptomPrompt: {
+    episodeId: string;
+    symptomPresetId: string;
+    /** When true, initial step is derived from saved answers (e.g. home “Resume episode”). */
+    resume?: boolean;
+  };
   Settings: undefined;
 };

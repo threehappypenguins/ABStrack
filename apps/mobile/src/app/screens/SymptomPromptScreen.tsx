@@ -19,6 +19,7 @@ import type {
   SymptomPromptAnswers,
 } from '@abstrack/types';
 import {
+  computeSymptomResumePlacement,
   createDefaultSymptomPromptAnswer,
   episodeSymptomRowsToAnswersMap,
   symptomPromptAnswerHasValue,
@@ -76,7 +77,16 @@ const SERVER_SYMPTOM_PERSIST_DEBOUNCE_MS = 300;
 export function SymptomPromptScreen() {
   const navigation = useNavigation<SymptomPromptNav>();
   const route = useRoute<SymptomPromptRoute>();
-  const { episodeId, symptomPresetId } = route.params;
+  const {
+    episodeId,
+    symptomPresetId,
+    resume: resumeFromEntry = false,
+  } = route.params;
+
+  const resumeFromHomeIntentRef = useRef(!!resumeFromEntry);
+  if (resumeFromEntry) {
+    resumeFromHomeIntentRef.current = true;
+  }
 
   const [status, setStatus] = useState<'loading' | 'error' | 'ready'>(
     'loading',
@@ -146,11 +156,11 @@ export function SymptomPromptScreen() {
     [],
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     answersRef.current = answers;
   }, [answers]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     activeIndexRef.current = activeIndex;
   }, [activeIndex]);
 
@@ -421,11 +431,31 @@ export function SymptomPromptScreen() {
       const session = getSymptomPromptSession(episodeId);
       // Session overlays server so local drafts survive hydrate (debounced/offline/failed sync).
       const mergedAnswers = { ...serverAnswers, ...session.answers };
-      const idx = clampIndex(session.activeIndex, result.data.length);
+      let idx: number;
+      let initialPhase: 'prompting' | 'complete' = 'prompting';
+      const treatAsResumeFromHome = resumeFromHomeIntentRef.current;
+      if (treatAsResumeFromHome) {
+        const placement = computeSymptomResumePlacement(
+          result.data,
+          mergedAnswers,
+        );
+        if (placement.phase === 'complete') {
+          idx = placement.activeIndex;
+          initialPhase = 'complete';
+        } else {
+          const sIdx = clampIndex(session.activeIndex, result.data.length);
+          const pIdx = placement.activeIndex;
+          idx = clampIndex(Math.max(sIdx, pIdx), result.data.length);
+          initialPhase = 'prompting';
+        }
+      } else {
+        idx = clampIndex(session.activeIndex, result.data.length);
+      }
       activeIndexRef.current = idx;
       setActiveIndex(idx);
       setAnswers(mergedAnswers);
       answersRef.current = mergedAnswers;
+      setPhase(initialPhase);
       setSymptomPromptSession(episodeId, {
         activeIndex: idx,
         answers: mergedAnswers,
@@ -514,7 +544,7 @@ export function SymptomPromptScreen() {
   const confirmExitFlow = useCallback((action: () => void) => {
     Alert.alert(
       'Exit symptom flow?',
-      'If you exit now, you will return home. Starting again creates a new episode.',
+      'If you exit now, you will return home. This episode stays open, your progress is saved, and you can resume from home when you are ready.',
       [
         { text: 'Stay here', style: 'cancel' },
         {
@@ -529,7 +559,10 @@ export function SymptomPromptScreen() {
   /** Matches {@link onFinishToHome}: reset stack to MainTabs so copy matches behavior (not `goBack`). */
   const exitSymptomFlowToHome = useCallback(() => {
     flushPendingServerPersist();
-    clearSymptomPromptSession(episodeId);
+    setSymptomPromptSession(episodeIdRef.current, {
+      activeIndex: activeIndexRef.current,
+      answers: answersRef.current,
+    });
     allowRemovalRef.current = true;
     navigation.dispatch(
       CommonActions.reset({
@@ -537,7 +570,7 @@ export function SymptomPromptScreen() {
         routes: [{ name: 'MainTabs' }],
       }),
     );
-  }, [episodeId, flushPendingServerPersist, navigation]);
+  }, [flushPendingServerPersist, navigation]);
 
   const requestExitToHome = useCallback(() => {
     confirmExitFlow(() => {

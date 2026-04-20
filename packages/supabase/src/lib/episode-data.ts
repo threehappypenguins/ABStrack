@@ -48,3 +48,34 @@ export async function getEpisodeById(
     return { ok: false, error: toPresetDataError(caught) };
   }
 }
+
+/**
+ * Returns the caller’s newest active episode (`ended_at IS NULL`), if any. Uses the same RLS as
+ * other `episodes` reads; when multiple active rows exist (unexpected), the most recently started
+ * wins.
+ *
+ * @param client - Supabase client (RLS applies).
+ * @param userId - `auth.users.id` / `episodes.user_id`.
+ * @returns The row, or `null` when there is no active episode.
+ */
+export async function getActiveEpisodeForUser(
+  client: AbstrackSupabaseClient,
+  userId: Uuid,
+): Promise<PresetDataResult<EpisodeRow | null>> {
+  try {
+    const { data, error } = await client
+      .from('episodes')
+      .select('*')
+      .eq('user_id', userId)
+      .is('ended_at', null)
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) {
+      return { ok: false, error: toPresetDataError(error) };
+    }
+    return { ok: true, data: data as EpisodeRow | null };
+  } catch (caught) {
+    return { ok: false, error: toPresetDataError(caught) };
+  }
+}

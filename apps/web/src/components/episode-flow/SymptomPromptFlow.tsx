@@ -15,6 +15,7 @@ import type {
   SymptomPromptAnswers,
 } from '@abstrack/types';
 import {
+  computeSymptomResumePlacement,
   createDefaultSymptomPromptAnswer,
   createInitialSymptomPromptSession,
   episodeSymptomRowsToAnswersMap,
@@ -45,6 +46,11 @@ export type SymptomPromptFlowProps = {
   episodeId: string;
   /** `symptom_presets.id` for the active episode (from template at start). */
   symptomPresetId: string;
+  /**
+   * When true (e.g. `?resume=1` from home), initial step follows merged server + session answers
+   * instead of session index alone.
+   */
+  resumeFromEntry?: boolean;
 };
 
 /** Delay before writing free-text drafts to `sessionStorage` (keystrokes stay snappy in React state). */
@@ -85,6 +91,7 @@ const SYMPTOM_FLOW_LEAVE_GUARD_EXEMPT_FORM_ID =
 export function SymptomPromptFlow({
   episodeId,
   symptomPresetId,
+  resumeFromEntry = false,
 }: SymptomPromptFlowProps) {
   const router = useRouter();
   const { announce } = useAnnounce();
@@ -142,6 +149,14 @@ export function SymptomPromptFlow({
 
   const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
   const pendingLeaveRef = useRef<PendingLeaveAction | null>(null);
+  /**
+   * Stays true once this mount ever saw `resumeFromEntry` so stripping `resume` from the URL does
+   * not flip {@link load} behavior when the server re-renders with updated search params.
+   */
+  const resumeFromHomeIntentRef = useRef(!!resumeFromEntry);
+  if (resumeFromEntry) {
+    resumeFromHomeIntentRef.current = true;
+  }
 
   const supabase = useMemo(() => createBrowserClient(), []);
 
@@ -166,11 +181,12 @@ export function SymptomPromptFlow({
     [],
   );
 
-  useEffect(() => {
+  /** Keep refs aligned before paint so exit / unmount persist cannot read a stale step after Next. */
+  useLayoutEffect(() => {
     activeIndexRef.current = activeIndex;
   }, [activeIndex]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     answersRef.current = answers;
   }, [answers]);
 
@@ -405,6 +421,10 @@ export function SymptomPromptFlow({
   const handleDiscardConfirm = useCallback(() => {
     flushPendingTextPersist();
     flushPendingServerPersist();
+    setSymptomPromptSession(episodeIdRef.current, {
+      activeIndex: activeIndexRef.current,
+      answers: answersRef.current,
+    });
     const action = pendingLeaveRef.current;
     pendingLeaveRef.current = null;
 
@@ -441,25 +461,14 @@ export function SymptomPromptFlow({
 
   useEffect(() => {
     return () => {
-      if (textPersistTimerRef.current === null) {
-        return;
-      }
-      clearTimeout(textPersistTimerRef.current);
-      textPersistTimerRef.current = null;
+      flushPendingTextPersist();
+      flushPendingServerPersist();
       setSymptomPromptSession(episodeIdRef.current, {
         activeIndex: activeIndexRef.current,
         answers: answersRef.current,
       });
     };
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      // Do not bump serverPersistEpochRef here — queued per-line writes should still reach Supabase;
-      // isMountedRef gates setPersistError after unmount.
-      flushPendingServerPersist();
-    };
-  }, [flushPendingServerPersist]);
+  }, [flushPendingServerPersist, flushPendingTextPersist]);
 
   const persistImmediate = useCallback(
     (nextIndex: number, nextAnswers: typeof answers) => {
@@ -510,11 +519,34 @@ export function SymptomPromptFlow({
     const session = getSymptomPromptSession(episodeId);
     // Session overlays server so local drafts survive hydrate (debounced/offline/failed sync).
     const mergedAnswers = { ...serverAnswers, ...session.answers };
-    const idx = clampIndex(session.activeIndex, result.data.length);
+    let idx: number;
+    let initialPhase: 'prompting' | 'complete' = 'prompting';
+    const treatAsResumeFromHome = resumeFromHomeIntentRef.current;
+    if (treatAsResumeFromHome) {
+      const placement = computeSymptomResumePlacement(
+        result.data,
+        mergedAnswers,
+      );
+      if (placement.phase === 'complete') {
+        idx = placement.activeIndex;
+        initialPhase = 'complete';
+      } else {
+        const sIdx = clampIndex(session.activeIndex, result.data.length);
+        const pIdx = placement.activeIndex;
+        // `session.activeIndex` can be 0 if persist ran before refs caught up with Next (fixed via
+        // useLayoutEffect). `placement` is first unanswered from merged server + session answers.
+        // Max covers stale 0 + answered first line → land on the second symptom as expected.
+        idx = clampIndex(Math.max(sIdx, pIdx), result.data.length);
+        initialPhase = 'prompting';
+      }
+    } else {
+      idx = clampIndex(session.activeIndex, result.data.length);
+    }
     setActiveIndex(idx);
     setAnswers(mergedAnswers);
     answersRef.current = mergedAnswers;
     activeIndexRef.current = idx;
+    setPhase(initialPhase);
     setSymptomPromptSession(episodeId, {
       activeIndex: idx,
       answers: mergedAnswers,
@@ -531,6 +563,21 @@ export function SymptomPromptFlow({
       loadGenRef.current += 1;
     };
   }, [load]);
+
+  useEffect(() => {
+    if (!resumeFromEntry || status !== 'ready') {
+      return;
+    }
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has('resume')) {
+      return;
+    }
+    url.searchParams.delete('resume');
+    router.replace(`${url.pathname}${url.search}${url.hash}`);
+  }, [resumeFromEntry, router, status]);
 
   const currentLine = lines[activeIndex] ?? null;
   const currentAnswer = currentLine ? answers[currentLine.id] : undefined;
@@ -839,7 +886,7 @@ export function SymptomPromptFlow({
       <ConfirmDialog
         open={discardDialogOpen}
         title="Exit symptom flow?"
-        description="If you exit now, you will return to the dashboard. Starting again creates a new episode."
+        description="If you exit now, you will return to the dashboard. This episode stays open, your progress is saved, and you can resume from home when you are ready."
         confirmLabel="Exit"
         cancelLabel="Stay"
         onConfirm={() => {

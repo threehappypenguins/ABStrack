@@ -1,13 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import {
+  getActiveEpisodeForUser,
   getAuthUser,
   healthCheckProfilesLimit1,
   signOut,
 } from '@abstrack/supabase';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { mapAuthError } from '../auth-helpers';
-import { EpisodeStartHomeCta } from '../components/episode-flow/EpisodeStartHomeCta';
+import {
+  EpisodeStartHomeCta,
+  type ActiveEpisodeHomeSummary,
+} from '../components/episode-flow/EpisodeStartHomeCta';
 import { AppNavigationShell } from '../components/AppNavigationShell';
 import { nw } from '../theme/app-nativewind-classes';
 
@@ -20,11 +24,13 @@ interface HealthCheckResult {
 type HomeScreenProps = {
   onGoToSettings: () => void;
   onStartEpisode: () => void;
+  onResumeEpisode: (episode: ActiveEpisodeHomeSummary) => void;
 };
 
 export function HomeScreen({
   onGoToSettings,
   onStartEpisode,
+  onResumeEpisode,
 }: HomeScreenProps) {
   const isTestEnv =
     typeof process !== 'undefined' && process.env.NODE_ENV === 'test';
@@ -35,6 +41,53 @@ export function HomeScreen({
   const [healthCheck, setHealthCheck] = useState<HealthCheckResult | null>(
     null,
   );
+  const [activeEpisode, setActiveEpisode] =
+    useState<ActiveEpisodeHomeSummary | null>(null);
+  const [activeEpisodeLoading, setActiveEpisodeLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadActiveEpisode = async () => {
+      setActiveEpisodeLoading(true);
+      try {
+        const mobileSupabase = getMobileSupabaseClient();
+        const {
+          data: { user },
+        } = await mobileSupabase.auth.getUser();
+        if (cancelled) {
+          return;
+        }
+        if (!user) {
+          setActiveEpisode(null);
+          return;
+        }
+        const result = await getActiveEpisodeForUser(mobileSupabase, user.id);
+        if (cancelled) {
+          return;
+        }
+        if (!result.ok || !result.data?.symptom_preset_id) {
+          setActiveEpisode(null);
+          return;
+        }
+        setActiveEpisode({
+          episodeId: result.data.id,
+          symptomPresetId: result.data.symptom_preset_id,
+        });
+      } catch {
+        if (!cancelled) {
+          setActiveEpisode(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setActiveEpisodeLoading(false);
+        }
+      }
+    };
+    void loadActiveEpisode();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -135,7 +188,12 @@ export function HomeScreen({
         }}
         keyboardShouldPersistTaps="handled"
       >
-        <EpisodeStartHomeCta onStartEpisode={onStartEpisode} />
+        <EpisodeStartHomeCta
+          onStartEpisode={onStartEpisode}
+          onResumeEpisode={onResumeEpisode}
+          activeEpisode={activeEpisode}
+          activeEpisodeLoading={activeEpisodeLoading}
+        />
 
         <View className={`gap-3 rounded-xl p-4 ${nw.card} ${nw.cardShadow}`}>
           <Text

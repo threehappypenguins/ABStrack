@@ -473,7 +473,7 @@ describe('SymptomPromptScreen', () => {
 
     expect(alertSpy).toHaveBeenCalledWith(
       'Exit symptom flow?',
-      'If you exit now, you will return home. Starting again creates a new episode.',
+      'If you exit now, you will return home. This episode stays open, your progress is saved, and you can resume from home when you are ready.',
       expect.any(Array),
     );
     expect(mockGoBack).not.toHaveBeenCalled();
