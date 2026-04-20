@@ -116,6 +116,11 @@ export function SymptomPromptScreen() {
    * invalidates UI feedback; queued writes still run for the episode id captured at enqueue time.
    */
   const serverPersistEpochRef = useRef(0);
+  /**
+   * Monotonic id per enqueue; only matching completions update {@link setPersistError} so
+   * cross-line out-of-order results cannot clobber a newer failure or success state.
+   */
+  const persistUiAttemptRef = useRef(0);
   /** Suppresses {@link setPersistError} after unmount. */
   const isMountedRef = useRef(true);
   const allowRemovalRef = useRef(false);
@@ -160,6 +165,8 @@ export function SymptomPromptScreen() {
     (line: PresetSymptomRow, answer: SymptomPromptAnswer) => {
       const enqueueEpisodeId = episodeIdRef.current;
       const enqueueEpoch = serverPersistEpochRef.current;
+      persistUiAttemptRef.current += 1;
+      const attemptId = persistUiAttemptRef.current;
       const queueKey = lineWriteQueueKey(enqueueEpisodeId, line.id);
 
       const queues = lineWriteQueueRef.current;
@@ -176,7 +183,8 @@ export function SymptomPromptScreen() {
             if (
               isMountedRef.current &&
               episodeIdRef.current === enqueueEpisodeId &&
-              enqueueEpoch === serverPersistEpochRef.current
+              enqueueEpoch === serverPersistEpochRef.current &&
+              attemptId === persistUiAttemptRef.current
             ) {
               setPersistError(
                 'Your session could not be verified. Try signing in again.',
@@ -199,6 +207,9 @@ export function SymptomPromptScreen() {
           if (episodeIdRef.current !== enqueueEpisodeId) {
             return;
           }
+          if (attemptId !== persistUiAttemptRef.current) {
+            return;
+          }
           if (!r.ok) {
             setPersistError(r.error.message);
           } else {
@@ -219,6 +230,8 @@ export function SymptomPromptScreen() {
     (line: PresetSymptomRow) => {
       const enqueueEpisodeId = episodeIdRef.current;
       const enqueueEpoch = serverPersistEpochRef.current;
+      persistUiAttemptRef.current += 1;
+      const attemptId = persistUiAttemptRef.current;
       const queueKey = lineWriteQueueKey(enqueueEpisodeId, line.id);
 
       const queues = lineWriteQueueRef.current;
@@ -235,7 +248,8 @@ export function SymptomPromptScreen() {
             if (
               isMountedRef.current &&
               episodeIdRef.current === enqueueEpisodeId &&
-              enqueueEpoch === serverPersistEpochRef.current
+              enqueueEpoch === serverPersistEpochRef.current &&
+              attemptId === persistUiAttemptRef.current
             ) {
               setPersistError(
                 'Your session could not be verified. Try signing in again.',
@@ -254,6 +268,9 @@ export function SymptomPromptScreen() {
             return;
           }
           if (episodeIdRef.current !== enqueueEpisodeId) {
+            return;
+          }
+          if (attemptId !== persistUiAttemptRef.current) {
             return;
           }
           if (!r.ok) {

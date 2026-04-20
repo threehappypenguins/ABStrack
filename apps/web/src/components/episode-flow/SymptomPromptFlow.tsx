@@ -29,10 +29,15 @@ import {
 import { useAnnounce } from '@abstrack/ui/a11y-web';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
 import {
+  useUnsavedChangesLeaveGuard,
+  type PendingLeaveAction,
+} from '@/lib/use-unsaved-changes-leave-guard';
+import {
   clearSymptomPromptSession,
   getSymptomPromptSession,
   setSymptomPromptSession,
 } from '@/lib/episode-flow/symptom-prompt-session-store';
+import { ConfirmDialog } from '../symptom-presets/ConfirmDialog';
 import { SymptomPromptResponseField } from './SymptomPromptResponseField';
 
 export type SymptomPromptFlowProps = {
@@ -63,6 +68,13 @@ function clampIndex(index: number, length: number): number {
 function lineWriteQueueKey(episodeId: string, presetSymptomId: string): string {
   return `${episodeId}:${presetSymptomId}`;
 }
+
+/**
+ * No form in this flow uses this id; the shared leave guard requires a truthy `exemptFormId` to
+ * register submit capture so non-exempt forms (all of them, here) are intercepted.
+ */
+const SYMPTOM_FLOW_LEAVE_GUARD_EXEMPT_FORM_ID =
+  '__symptom_prompt_leave_guard_no_exempt__';
 
 /**
  * Linear symptom stepper for the active episode’s preset (Week 5 skeleton).
@@ -119,9 +131,17 @@ export function SymptomPromptFlow({
    * so Supabase stays aligned when the user navigates or cancels debounced work.
    */
   const serverPersistEpochRef = useRef(0);
+  /**
+   * Increments on every enqueue of {@link executeServerPersist} / {@link executeServerDelete}.
+   * Completions only call {@link setPersistError} when their captured id still equals this ref so
+   * out-of-order finishes across lines cannot clear a newer failure (or show stale errors).
+   */
+  const persistUiAttemptRef = useRef(0);
   /** Suppresses {@link setPersistError} after unmount (epoch is not bumped on unmount). */
   const isMountedRef = useRef(true);
-  const allowNavigationRef = useRef(false);
+
+  const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
+  const pendingLeaveRef = useRef<PendingLeaveAction | null>(null);
 
   const supabase = useMemo(() => createBrowserClient(), []);
 
@@ -166,6 +186,8 @@ export function SymptomPromptFlow({
       /** Captured at enqueue so queued work cannot attach to a later episode after route change. */
       const enqueueEpisodeId = episodeIdRef.current;
       const enqueueEpoch = serverPersistEpochRef.current;
+      persistUiAttemptRef.current += 1;
+      const attemptId = persistUiAttemptRef.current;
       const queueKey = lineWriteQueueKey(enqueueEpisodeId, line.id);
 
       const queues = lineWriteQueueRef.current;
@@ -181,7 +203,8 @@ export function SymptomPromptFlow({
             if (
               isMountedRef.current &&
               episodeIdRef.current === enqueueEpisodeId &&
-              enqueueEpoch === serverPersistEpochRef.current
+              enqueueEpoch === serverPersistEpochRef.current &&
+              attemptId === persistUiAttemptRef.current
             ) {
               setPersistError(
                 'Your session could not be verified. Try signing in again.',
@@ -195,11 +218,12 @@ export function SymptomPromptFlow({
             line,
             answer,
           });
-          // Epoch/mount/episode gate UI only — the upsert above always ran for `targetEpisodeId`.
+          // Epoch/mount/episode/attempt gate UI only — the upsert above always ran for `targetEpisodeId`.
           if (
             isMountedRef.current &&
             episodeIdRef.current === enqueueEpisodeId &&
-            enqueueEpoch === serverPersistEpochRef.current
+            enqueueEpoch === serverPersistEpochRef.current &&
+            attemptId === persistUiAttemptRef.current
           ) {
             if (!r.ok) {
               setPersistError(r.error.message);
@@ -222,6 +246,8 @@ export function SymptomPromptFlow({
     (line: PresetSymptomRow) => {
       const enqueueEpisodeId = episodeIdRef.current;
       const enqueueEpoch = serverPersistEpochRef.current;
+      persistUiAttemptRef.current += 1;
+      const attemptId = persistUiAttemptRef.current;
       const queueKey = lineWriteQueueKey(enqueueEpisodeId, line.id);
 
       const queues = lineWriteQueueRef.current;
@@ -237,7 +263,8 @@ export function SymptomPromptFlow({
             if (
               isMountedRef.current &&
               episodeIdRef.current === enqueueEpisodeId &&
-              enqueueEpoch === serverPersistEpochRef.current
+              enqueueEpoch === serverPersistEpochRef.current &&
+              attemptId === persistUiAttemptRef.current
             ) {
               setPersistError(
                 'Your session could not be verified. Try signing in again.',
@@ -249,11 +276,12 @@ export function SymptomPromptFlow({
             episodeId: targetEpisodeId,
             presetSymptomId: line.id,
           });
-          // Epoch/mount/episode gate UI only — the delete above always ran for `targetEpisodeId`.
+          // Epoch/mount/episode/attempt gate UI only — the delete above always ran for `targetEpisodeId`.
           if (
             isMountedRef.current &&
             episodeIdRef.current === enqueueEpisodeId &&
-            enqueueEpoch === serverPersistEpochRef.current
+            enqueueEpoch === serverPersistEpochRef.current &&
+            attemptId === persistUiAttemptRef.current
           ) {
             if (!r.ok) {
               setPersistError(r.error.message);
@@ -369,6 +397,47 @@ export function SymptomPromptFlow({
       answers: answersRef.current,
     });
   }, []);
+
+  const onRequestDiscardDialog = useCallback(() => {
+    setDiscardDialogOpen(true);
+  }, []);
+
+  const handleDiscardConfirm = useCallback(() => {
+    flushPendingTextPersist();
+    flushPendingServerPersist();
+    const action = pendingLeaveRef.current;
+    pendingLeaveRef.current = null;
+
+    if (!action) {
+      router.push('/dashboard');
+      return;
+    }
+    if (action.kind === 'form') {
+      action.form.submit();
+      return;
+    }
+    const { href } = action;
+    let url: URL;
+    try {
+      url = new URL(href, window.location.origin);
+    } catch {
+      router.push('/dashboard');
+      return;
+    }
+    if (url.origin !== window.location.origin) {
+      window.location.assign(href);
+      return;
+    }
+    router.push(`${url.pathname}${url.search}${url.hash}`);
+  }, [flushPendingServerPersist, flushPendingTextPersist, router]);
+
+  useUnsavedChangesLeaveGuard({
+    active: phase === 'prompting' && status === 'ready',
+    dialogOpen: discardDialogOpen,
+    pendingLeaveRef,
+    onRequestDiscard: onRequestDiscardDialog,
+    exemptFormId: SYMPTOM_FLOW_LEAVE_GUARD_EXEMPT_FORM_ID,
+  });
 
   useEffect(() => {
     return () => {
@@ -558,99 +627,10 @@ export function SymptomPromptFlow({
     });
   };
 
-  const confirmExitFlow = () => {
-    const shouldExit = window.confirm(
-      'Exit symptom flow? If you exit now, you will return home. Starting again creates a new episode.',
-    );
-    if (shouldExit) {
-      flushPendingTextPersist();
-      flushPendingServerPersist();
-      allowNavigationRef.current = true;
-      router.push('/dashboard');
-    } else {
-      announce('Stayed on the current symptom step.', {
-        politeness: 'polite',
-      });
-    }
-  };
-
-  useEffect(() => {
-    if (phase !== 'prompting') {
-      return;
-    }
-    const confirmMessage =
-      'Exit symptom flow? If you exit now, you will return home. Starting again creates a new episode.';
-
-    const onDocumentClick = (event: MouseEvent) => {
-      if (allowNavigationRef.current) {
-        return;
-      }
-      if (event.defaultPrevented) {
-        return;
-      }
-      if (event.button !== 0) {
-        return;
-      }
-      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
-        return;
-      }
-      const target = event.target;
-      if (!(target instanceof Element)) {
-        return;
-      }
-      const anchor = target.closest('a[href]');
-      if (!(anchor instanceof HTMLAnchorElement)) {
-        return;
-      }
-      const rawHref = anchor.getAttribute('href');
-      if (rawHref?.startsWith('#')) {
-        return;
-      }
-      if (anchor.target && anchor.target !== '_self') {
-        return;
-      }
-      if (anchor.hasAttribute('download')) {
-        return;
-      }
-      const destination = new URL(anchor.href, window.location.href);
-      const current = new URL(window.location.href);
-      if (
-        destination.origin === current.origin &&
-        destination.pathname === current.pathname &&
-        destination.search === current.search &&
-        destination.hash !== current.hash
-      ) {
-        return;
-      }
-      if (destination.href === current.href) {
-        return;
-      }
-      const shouldLeave = window.confirm(confirmMessage);
-      if (!shouldLeave) {
-        event.preventDefault();
-        event.stopPropagation();
-        return;
-      }
-      flushPendingTextPersist();
-      flushPendingServerPersist();
-      allowNavigationRef.current = true;
-    };
-
-    const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (allowNavigationRef.current) {
-        return;
-      }
-      event.preventDefault();
-      event.returnValue = '';
-    };
-
-    document.addEventListener('click', onDocumentClick, true);
-    window.addEventListener('beforeunload', onBeforeUnload);
-    return () => {
-      document.removeEventListener('click', onDocumentClick, true);
-      window.removeEventListener('beforeunload', onBeforeUnload);
-    };
-  }, [flushPendingServerPersist, flushPendingTextPersist, phase]);
+  const confirmExitFlow = useCallback(() => {
+    pendingLeaveRef.current = { kind: 'href', href: '/dashboard' };
+    setDiscardDialogOpen(true);
+  }, []);
 
   const goNext = () => {
     flushPendingTextPersist();
@@ -750,109 +730,126 @@ export function SymptomPromptFlow({
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <p className="text-sm font-medium text-app-muted">
-          <button
-            type="button"
-            onClick={confirmExitFlow}
-            className="rounded-md text-app-primary underline decoration-app-primary/40 underline-offset-2 outline-none transition hover:text-app-ink hover:decoration-app-primary focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
-          >
-            ← Back to dashboard
-          </button>
-        </p>
-        <h1 className="mt-4 text-2xl font-bold tracking-tight text-app-ink">
-          Episode symptoms
-        </h1>
-        {persistError ? (
-          <p
-            className="mt-2 text-sm text-amber-800 dark:text-amber-200"
-            role="status"
-          >
-            Could not sync with the server: {persistError}
+    <>
+      <div className="space-y-6">
+        <div>
+          <p className="text-sm font-medium text-app-muted">
+            <button
+              type="button"
+              onClick={confirmExitFlow}
+              className="rounded-md text-app-primary underline decoration-app-primary/40 underline-offset-2 outline-none transition hover:text-app-ink hover:decoration-app-primary focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+            >
+              ← Back to dashboard
+            </button>
           </p>
-        ) : null}
-      </div>
-
-      <p className="text-base font-medium text-app-muted">{stepLabel}</p>
-
-      {lines.length === 0 ? (
-        <div
-          className="rounded-2xl border border-app-border/90 bg-app-surface p-6 shadow-soft ring-1 ring-[color:var(--app-ring-slate)] sm:p-8"
-          role="status"
-        >
-          <p className="text-sm leading-relaxed text-app-ink">
-            This preset has no symptoms yet. You can add symptoms under
-            Templates when you are not in an episode.
-          </p>
-        </div>
-      ) : currentLine ? (
-        <div className="space-y-4">
-          <h2 className="text-xl font-semibold text-app-ink">
-            {currentLine.symptom_name}
-          </h2>
-          {currentLine.prompt_instruction ? (
-            <p className="text-sm leading-relaxed text-app-muted">
-              {currentLine.prompt_instruction}
+          <h1 className="mt-4 text-2xl font-bold tracking-tight text-app-ink">
+            Episode symptoms
+          </h1>
+          {persistError ? (
+            <p
+              className="mt-2 text-sm text-amber-800 dark:text-amber-200"
+              role="status"
+            >
+              Could not sync with the server: {persistError}
             </p>
           ) : null}
-          <SymptomPromptResponseField
-            line={currentLine}
-            answer={answers[currentLine.id]}
-            onChange={onChangeAnswer}
-            disabled={status !== 'ready'}
-          />
         </div>
-      ) : null}
 
-      <div className="flex flex-col gap-3 sm:flex-row">
-        {activeIndex > 0 ? (
-          <button
-            type="button"
-            className="inline-flex min-h-[56px] flex-1 items-center justify-center rounded-xl border border-app-border bg-app-surface px-4 text-base font-semibold text-app-ink shadow-sm transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
-            onClick={goBackStep}
+        <p className="text-base font-medium text-app-muted">{stepLabel}</p>
+
+        {lines.length === 0 ? (
+          <div
+            className="rounded-2xl border border-app-border/90 bg-app-surface p-6 shadow-soft ring-1 ring-[color:var(--app-ring-slate)] sm:p-8"
+            role="status"
           >
-            Back
-          </button>
+            <p className="text-sm leading-relaxed text-app-ink">
+              This preset has no symptoms yet. You can add symptoms under
+              Templates when you are not in an episode.
+            </p>
+          </div>
+        ) : currentLine ? (
+          <div className="space-y-4">
+            <h2 className="text-xl font-semibold text-app-ink">
+              {currentLine.symptom_name}
+            </h2>
+            {currentLine.prompt_instruction ? (
+              <p className="text-sm leading-relaxed text-app-muted">
+                {currentLine.prompt_instruction}
+              </p>
+            ) : null}
+            <SymptomPromptResponseField
+              line={currentLine}
+              answer={answers[currentLine.id]}
+              onChange={onChangeAnswer}
+              disabled={status !== 'ready'}
+            />
+          </div>
         ) : null}
-        {currentLine ? (
+
+        <div className="flex flex-col gap-3 sm:flex-row">
+          {activeIndex > 0 ? (
+            <button
+              type="button"
+              className="inline-flex min-h-[56px] flex-1 items-center justify-center rounded-xl border border-app-border bg-app-surface px-4 text-base font-semibold text-app-ink shadow-sm transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+              onClick={goBackStep}
+            >
+              Back
+            </button>
+          ) : null}
+          {currentLine ? (
+            <button
+              type="button"
+              disabled={!canSkipCurrentLine}
+              className={`inline-flex min-h-[56px] flex-1 items-center justify-center rounded-xl border border-app-border bg-app-surface px-4 text-base font-semibold text-app-ink shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg ${
+                canSkipCurrentLine
+                  ? 'hover:bg-app-surface/80'
+                  : 'cursor-not-allowed opacity-50'
+              }`}
+              onClick={skipCurrentSymptom}
+            >
+              Skip symptom
+            </button>
+          ) : null}
           <button
             type="button"
-            disabled={!canSkipCurrentLine}
-            className={`inline-flex min-h-[56px] flex-1 items-center justify-center rounded-xl border border-app-border bg-app-surface px-4 text-base font-semibold text-app-ink shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg ${
-              canSkipCurrentLine
-                ? 'hover:bg-app-surface/80'
-                : 'cursor-not-allowed opacity-50'
+            disabled={!canProceedWithNext}
+            className={`inline-flex min-h-[56px] flex-1 items-center justify-center rounded-xl px-4 text-base font-semibold text-white shadow-md transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg dark:bg-red-600 ${
+              canProceedWithNext
+                ? 'bg-red-700 hover:bg-red-800 dark:hover:bg-red-500'
+                : 'cursor-not-allowed bg-red-400 opacity-60 dark:bg-red-800'
             }`}
-            onClick={skipCurrentSymptom}
+            onClick={goNext}
           >
-            Skip symptom
+            {lines.length === 0
+              ? 'Done'
+              : activeIndex >= lines.length - 1
+                ? 'Finish'
+                : 'Next'}
           </button>
-        ) : null}
+        </div>
         <button
           type="button"
-          disabled={!canProceedWithNext}
-          className={`inline-flex min-h-[56px] flex-1 items-center justify-center rounded-xl px-4 text-base font-semibold text-white shadow-md transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg dark:bg-red-600 ${
-            canProceedWithNext
-              ? 'bg-red-700 hover:bg-red-800 dark:hover:bg-red-500'
-              : 'cursor-not-allowed bg-red-400 opacity-60 dark:bg-red-800'
-          }`}
-          onClick={goNext}
+          className="inline-flex min-h-[44px] items-center justify-center rounded-lg px-3 py-2 text-base font-medium text-app-muted transition hover:text-app-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+          onClick={confirmExitFlow}
         >
-          {lines.length === 0
-            ? 'Done'
-            : activeIndex >= lines.length - 1
-              ? 'Finish'
-              : 'Next'}
+          Exit symptom flow
         </button>
       </div>
-      <button
-        type="button"
-        className="inline-flex min-h-[44px] items-center justify-center rounded-lg px-3 py-2 text-base font-medium text-app-muted transition hover:text-app-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
-        onClick={confirmExitFlow}
-      >
-        Exit symptom flow
-      </button>
-    </div>
+
+      <ConfirmDialog
+        open={discardDialogOpen}
+        title="Exit symptom flow?"
+        description="If you exit now, you will return home. Starting again creates a new episode."
+        confirmLabel="Exit"
+        cancelLabel="Stay"
+        onConfirm={() => {
+          handleDiscardConfirm();
+        }}
+        onClose={() => {
+          pendingLeaveRef.current = null;
+          setDiscardDialogOpen(false);
+        }}
+      />
+    </>
   );
 }
