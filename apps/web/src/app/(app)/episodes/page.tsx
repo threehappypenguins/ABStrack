@@ -5,10 +5,8 @@ import {
   getActiveEpisodeForUser,
   listCompletedEpisodesForUser,
 } from '@abstrack/supabase';
-import {
-  formatEpisodeInstant,
-  formatEpisodeTypeSummary,
-} from '@/lib/episodes/format-episode-meta';
+import { EpisodeLocaleInstant } from '@/components/episodes/EpisodeLocaleInstant';
+import { formatEpisodeTypeSummary } from '@/lib/episodes/format-episode-meta';
 import { buildResumeEpisodeHref } from '@/lib/episode-flow/resume-episode-href';
 import { createServerClient } from '@/lib/supabase/server-client';
 
@@ -119,7 +117,9 @@ export default async function EpisodesPage() {
             <dl className="mt-3 space-y-1.5 text-sm text-app-muted">
               <div className="flex flex-wrap gap-x-2">
                 <dt className="font-medium text-app-ink/80">Started</dt>
-                <dd>{formatEpisodeInstant(active.started_at)}</dd>
+                <dd>
+                  <EpisodeLocaleInstant iso={active.started_at} />
+                </dd>
               </div>
               <div className="flex flex-wrap gap-x-2">
                 <dt className="font-medium text-app-ink/80">Ended</dt>
@@ -189,12 +189,18 @@ export default async function EpisodesPage() {
                   <dl className="mt-2 space-y-1 text-sm text-app-muted">
                     <div className="flex flex-wrap gap-x-2">
                       <dt className="font-medium text-app-ink/80">Started</dt>
-                      <dd>{formatEpisodeInstant(ep.started_at)}</dd>
+                      <dd>
+                        <EpisodeLocaleInstant iso={ep.started_at} />
+                      </dd>
                     </div>
                     <div className="flex flex-wrap gap-x-2">
                       <dt className="font-medium text-app-ink/80">Ended</dt>
                       <dd>
-                        {ep.ended_at ? formatEpisodeInstant(ep.ended_at) : '—'}
+                        {ep.ended_at ? (
+                          <EpisodeLocaleInstant iso={ep.ended_at} />
+                        ) : (
+                          '—'
+                        )}
                       </dd>
                     </div>
                   </dl>

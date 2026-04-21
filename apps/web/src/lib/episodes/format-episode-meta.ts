@@ -1,6 +1,13 @@
 import type { EpisodeRow } from '@abstrack/types';
 
 /**
+ * Pure string helpers for episode rows safe to run in Server Components.
+ * For localized date/time strings, use {@link EpisodeLocaleInstant} from
+ * `@/components/episodes/EpisodeLocaleInstant` so formatting uses the viewer’s locale and time zone
+ * in the browser (not Node).
+ */
+
+/**
  * User-facing line for episode type and optional custom label.
  *
  * @param episode - Episode row fields used for display.
@@ -11,17 +18,4 @@ export function formatEpisodeTypeSummary(
 ): string {
   const label = episode.episode_label?.trim();
   return label ? `${episode.episode_type} — ${label}` : episode.episode_type;
-}
-
-/**
- * Formats an ISO timestamp for the user’s locale in the browser.
- *
- * @param iso - `IsoTimestamptz` string.
- * @returns Localized date and short time.
- */
-export function formatEpisodeInstant(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
 }

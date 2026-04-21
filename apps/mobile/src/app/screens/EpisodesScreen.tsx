@@ -91,7 +91,10 @@ export function EpisodesScreen() {
       }
     } catch {
       if (!stale()) {
-        setActiveError('Unable to load episodes.');
+        const message = 'Unable to load episodes.';
+        setActiveError(message);
+        setRecentError(message);
+        setActive(null);
         setRecent([]);
       }
     } finally {
