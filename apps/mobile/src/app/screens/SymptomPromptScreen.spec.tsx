@@ -92,6 +92,7 @@ function makeLine(
 describe('SymptomPromptScreen', () => {
   const mockGoBack = jest.fn();
   const mockDispatch = jest.fn();
+  const mockReplace = jest.fn();
   const mockAddListener = jest.fn(() => jest.fn());
 
   const lineA = makeLine('line-a', 0, 'Nausea', 'yes_no');
@@ -113,6 +114,7 @@ describe('SymptomPromptScreen', () => {
     jest.mocked(useNavigation).mockReturnValue({
       goBack: mockGoBack,
       dispatch: mockDispatch,
+      replace: mockReplace,
       addListener: mockAddListener,
     } as never);
 
@@ -517,7 +519,7 @@ describe('SymptomPromptScreen', () => {
     expect(screen.getByText('Headache')).toBeTruthy();
   });
 
-  test('resume: true shows complete phase when every line is answered on the server', async () => {
+  test('resume: true on fully answered symptoms lands on last step and Next routes to markers', async () => {
     jest.mocked(useRoute).mockReturnValue({
       key: 'SymptomPrompt',
       name: 'SymptomPrompt',
@@ -561,9 +563,13 @@ describe('SymptomPromptScreen', () => {
     const screen = render(<SymptomPromptScreen />);
 
     await waitFor(() => {
-      expect(
-        screen.getByText(/You reached the end of your symptom list/),
-      ).toBeTruthy();
+      expect(screen.getByText('Step 2 of 2')).toBeTruthy();
+    });
+    expect(screen.getByText('Headache')).toBeTruthy();
+    fireEvent.press(screen.getByLabelText('Next symptom'));
+    expect(mockReplace).toHaveBeenCalledWith('HealthMarkerPrompt', {
+      episodeId,
+      resume: true,
     });
   });
 
@@ -667,7 +673,7 @@ describe('SymptomPromptScreen', () => {
     alertSpy.mockRestore();
   });
 
-  test('changing symptomPresetId after completion shows prompting again for new lines', async () => {
+  test('changing symptomPresetId after fully answered resume state shows prompting for new lines', async () => {
     const lineOnly = makeLine(
       'line-only',
       0,
@@ -676,24 +682,49 @@ describe('SymptomPromptScreen', () => {
       symptomPresetIdB,
     );
 
+    jest.mocked(useRoute).mockReturnValue({
+      key: 'SymptomPrompt',
+      name: 'SymptomPrompt',
+      params: { episodeId, symptomPresetId, resume: true },
+    } as never);
+    jest.mocked(listEpisodeSymptomsForEpisode).mockResolvedValue({
+      ok: true,
+      data: [
+        {
+          id: 'es-a',
+          user_id: 'test-user-1',
+          episode_id: episodeId,
+          preset_symptom_id: lineA.id,
+          symptom_name: lineA.symptom_name,
+          response_type: 'yes_no',
+          response_boolean: true,
+          response_severity: null,
+          response_text: null,
+          sort_order: 0,
+          created_at: '2020-01-01T00:00:00Z',
+          updated_at: '2020-01-01T00:00:00Z',
+        },
+        {
+          id: 'es-b',
+          user_id: 'test-user-1',
+          episode_id: episodeId,
+          preset_symptom_id: lineB.id,
+          symptom_name: lineB.symptom_name,
+          response_type: 'severity_scale',
+          response_boolean: null,
+          response_severity: 3,
+          response_text: null,
+          sort_order: 1,
+          created_at: '2020-01-01T00:00:00Z',
+          updated_at: '2020-01-01T00:00:00Z',
+        },
+      ],
+    });
+
     const screen = render(<SymptomPromptScreen />);
 
     await waitFor(() => {
-      expect(screen.getByText('Step 1 of 2')).toBeTruthy();
-    });
-
-    fireEvent.press(screen.getByText('yes'));
-    fireEvent.press(screen.getByLabelText('Next symptom'));
-    await waitFor(() => {
-      expect(screen.getByLabelText('Finish symptom list')).toBeTruthy();
-    });
-    fireEvent.press(screen.getByLabelText('Severity 1'));
-    fireEvent.press(screen.getByLabelText('Finish symptom list'));
-
-    await waitFor(() => {
-      expect(
-        screen.getByText(/You reached the end of your symptom list/),
-      ).toBeTruthy();
+      expect(screen.getByText('Step 2 of 2')).toBeTruthy();
     });
 
     jest.mocked(listPresetSymptomsForPreset).mockResolvedValue({
@@ -721,7 +752,7 @@ describe('SymptomPromptScreen', () => {
     );
   });
 
-  test('Finish shows completion and Return home clears session and resets stack', async () => {
+  test('Next on last symptom transitions to health marker prompt and clears symptom session', async () => {
     const screen = render(<SymptomPromptScreen />);
 
     await waitFor(() => {
@@ -732,26 +763,16 @@ describe('SymptomPromptScreen', () => {
     fireEvent.press(screen.getByLabelText('Next symptom'));
 
     await waitFor(() => {
-      expect(screen.getByLabelText('Finish symptom list')).toBeTruthy();
+      expect(screen.getByLabelText('Next symptom')).toBeTruthy();
     });
 
     fireEvent.press(screen.getByLabelText('Severity 1'));
-    fireEvent.press(screen.getByLabelText('Finish symptom list'));
-
-    await waitFor(() => {
-      expect(
-        screen.getByText(/You reached the end of your symptom list/),
-      ).toBeTruthy();
-    });
-
-    fireEvent.press(screen.getByLabelText('Return to home'));
+    fireEvent.press(screen.getByLabelText('Next symptom'));
 
     expect(clearSymptomPromptSession).toHaveBeenCalledWith(episodeId);
-    expect(mockDispatch).toHaveBeenCalledWith(
-      CommonActions.reset({
-        index: 0,
-        routes: [{ name: 'MainTabs' }],
-      }),
-    );
+    expect(mockReplace).toHaveBeenCalledWith('HealthMarkerPrompt', {
+      episodeId,
+      resume: undefined,
+    });
   });
 });

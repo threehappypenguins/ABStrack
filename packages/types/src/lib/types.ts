@@ -414,9 +414,20 @@ export interface HealthMarkerRow {
   id: Uuid;
   user_id: Uuid;
   episode_id: Uuid | null;
+  /**
+   * `preset_health_markers.id` when this row is tied to a template line.
+   * The DB enforces: if `episode_id` is set, this must be non-null (`health_markers_episode_requires_preset_line`).
+   * If `episode_id` is null (PRD §5 General Wellness Logging — vitals without an episode), this may still
+   * be set when the user logs via a preset line, or null for rows that are not keyed to a line (e.g. wellness-only kinds).
+   */
+  preset_health_marker_id: Uuid | null;
   marker_kind: HealthMarkerKind;
   custom_name: string | null;
+  /** DB-generated from `custom_name` for unique upsert keys; present on reads; omit on writes (see {@link HealthMarkerInsert}). */
+  custom_name_key: string | null;
   custom_unit: string | null;
+  /** DB-generated from `custom_unit` for unique upsert keys; present on reads; omit on writes (see {@link HealthMarkerInsert}). */
+  custom_unit_key: string | null;
   value_numeric: number | null;
   systolic_numeric: number | null;
   diastolic_numeric: number | null;
@@ -432,6 +443,7 @@ export type HealthMarkerInsert = Pick<
 > & {
   id?: Uuid;
   episode_id?: Uuid | null;
+  preset_health_marker_id?: Uuid | null;
   custom_name?: string | null;
   custom_unit?: string | null;
   value_numeric?: number | null;
@@ -444,6 +456,7 @@ export type HealthMarkerUpdate = Partial<
   Pick<
     HealthMarkerRow,
     | 'episode_id'
+    | 'preset_health_marker_id'
     | 'marker_kind'
     | 'custom_name'
     | 'custom_unit'

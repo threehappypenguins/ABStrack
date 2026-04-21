@@ -156,6 +156,13 @@ export function mapSupabaseErrorToPresetDataError(
   }
 
   if (pg.code === '23503') {
+    if (combined.includes('health_markers_preset_health_marker_id_fkey')) {
+      return new PresetDataError(
+        'foreign_key_violation',
+        'Cannot delete this marker line: saved episode measurements still reference it. Keep the line, or change the preset only before it is used in an episode.',
+        error,
+      );
+    }
     return new PresetDataError(
       'foreign_key_violation',
       'That item is still linked to something else. Remove the link or pick a different value.',

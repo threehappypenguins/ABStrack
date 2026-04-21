@@ -1,0 +1,455 @@
+import { describe, expect, it, vi } from 'vitest';
+import type { PresetHealthMarkerRow } from '@abstrack/types';
+import {
+  listEpisodeHealthMarkersForEpisode,
+  upsertEpisodeHealthMarkerForLine,
+} from './episode-health-marker-data.js';
+import type { AbstrackSupabaseClient } from './supabase-client-type.js';
+
+const line: PresetHealthMarkerRow = {
+  id: 'phm-1',
+  preset_id: 'hm-preset-1',
+  sort_order: 0,
+  marker_kind: 'blood_glucose',
+  custom_name: null,
+  custom_unit: null,
+  created_at: '2026-04-18T12:00:00.000Z',
+  updated_at: '2026-04-18T12:00:00.000Z',
+};
+
+describe('listEpisodeHealthMarkersForEpisode', () => {
+  it('orders by recorded_at desc, then created_at desc, then id desc', async () => {
+    const orderCalls: { column: string; ascending: boolean }[] = [];
+    const orderFn = vi.fn((column: string, opts?: { ascending?: boolean }) => {
+      orderCalls.push({
+        column,
+        ascending: opts?.ascending ?? true,
+      });
+      if (orderCalls.length < 3) {
+        return { order: orderFn };
+      }
+      return Promise.resolve({ data: [], error: null });
+    });
+    const client = {
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            order: orderFn,
+          })),
+        })),
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await listEpisodeHealthMarkersForEpisode(client, 'ep-1');
+
+    expect(result.ok).toBe(true);
+    expect(orderCalls).toEqual([
+      { column: 'recorded_at', ascending: false },
+      { column: 'created_at', ascending: false },
+      { column: 'id', ascending: false },
+    ]);
+  });
+});
+
+describe('upsertEpisodeHealthMarkerForLine', () => {
+  it('returns validation_error when non-blood_pressure line omits valueNumeric', async () => {
+    const client = {
+      from: vi.fn(() => {
+        throw new Error('should not query');
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await upsertEpisodeHealthMarkerForLine(client, {
+      userId: 'u1',
+      episodeId: 'ep-1',
+      line,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('validation_error');
+      expect(result.error.message).toContain('measurement value');
+    }
+    expect(client.from).not.toHaveBeenCalled();
+  });
+
+  it('returns validation_error when non-blood_pressure valueNumeric is not finite', async () => {
+    const client = {
+      from: vi.fn(() => {
+        throw new Error('should not query');
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const nanResult = await upsertEpisodeHealthMarkerForLine(client, {
+      userId: 'u1',
+      episodeId: 'ep-1',
+      line,
+      valueNumeric: Number.NaN,
+    });
+    expect(nanResult.ok).toBe(false);
+    if (!nanResult.ok) {
+      expect(nanResult.error.message).toContain('valid number');
+    }
+
+    const infResult = await upsertEpisodeHealthMarkerForLine(client, {
+      userId: 'u1',
+      episodeId: 'ep-1',
+      line,
+      valueNumeric: Number.POSITIVE_INFINITY,
+    });
+    expect(infResult.ok).toBe(false);
+    if (!infResult.ok) {
+      expect(infResult.error.message).toContain('valid number');
+    }
+    expect(client.from).not.toHaveBeenCalled();
+  });
+
+  it('returns validation_error when blood_glucose line includes blood pressure fields', async () => {
+    const client = {
+      from: vi.fn(() => {
+        throw new Error('should not query');
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await upsertEpisodeHealthMarkerForLine(client, {
+      userId: 'u1',
+      episodeId: 'ep-1',
+      line,
+      valueNumeric: 120,
+      systolicNumeric: 120,
+      diastolicNumeric: 80,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('validation_error');
+      expect(result.error.message).toContain('single numeric value');
+    }
+    expect(client.from).not.toHaveBeenCalled();
+  });
+
+  it('returns validation_error when blood_pressure line uses valueNumeric', async () => {
+    const client = {
+      from: vi.fn(() => {
+        throw new Error('should not query');
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await upsertEpisodeHealthMarkerForLine(client, {
+      userId: 'u1',
+      episodeId: 'ep-1',
+      line: { ...line, marker_kind: 'blood_pressure' },
+      valueNumeric: 120,
+      systolicNumeric: 120,
+      diastolicNumeric: 80,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('validation_error');
+      expect(result.error.message).toContain('single number');
+    }
+    expect(client.from).not.toHaveBeenCalled();
+  });
+
+  it('returns validation_error when blood_pressure line is missing diastolic', async () => {
+    const client = {
+      from: vi.fn(() => {
+        throw new Error('should not query');
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await upsertEpisodeHealthMarkerForLine(client, {
+      userId: 'u1',
+      episodeId: 'ep-1',
+      line: { ...line, marker_kind: 'blood_pressure' },
+      systolicNumeric: 120,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('validation_error');
+      expect(result.error.message).toContain('systolic and diastolic');
+    }
+    expect(client.from).not.toHaveBeenCalled();
+  });
+
+  it('upserts blood_pressure with systolic/diastolic and null value_numeric', async () => {
+    const bpLine: PresetHealthMarkerRow = {
+      ...line,
+      marker_kind: 'blood_pressure',
+    };
+    const updated = {
+      id: 'hm-bp',
+      user_id: 'u1',
+      episode_id: 'ep-1',
+      preset_health_marker_id: 'phm-1',
+      marker_kind: 'blood_pressure',
+      custom_name: null,
+      custom_unit: null,
+      custom_name_key: '',
+      custom_unit_key: '',
+      value_numeric: null,
+      systolic_numeric: 118,
+      diastolic_numeric: 76,
+      notes: null,
+      recorded_at: '2026-04-18T12:05:00.000Z',
+      created_at: '2026-04-18T12:05:00.000Z',
+      updated_at: '2026-04-18T12:05:00.000Z',
+    };
+    const upsertMock = vi.fn((_payload: unknown, _opts: unknown) => ({
+      select: vi.fn(() => ({
+        single: vi.fn(async () => ({ data: updated, error: null })),
+      })),
+    }));
+    const client = {
+      from: vi.fn(() => ({
+        upsert: upsertMock,
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await upsertEpisodeHealthMarkerForLine(client, {
+      userId: 'u1',
+      episodeId: 'ep-1',
+      line: bpLine,
+      systolicNumeric: 118,
+      diastolicNumeric: 76,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(upsertMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        marker_kind: 'blood_pressure',
+        value_numeric: null,
+        systolic_numeric: 118,
+        diastolic_numeric: 76,
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it('returns validation_error when custom line is missing fields', async () => {
+    const client = {
+      from: vi.fn(() => {
+        throw new Error('should not query');
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await upsertEpisodeHealthMarkerForLine(client, {
+      userId: 'u1',
+      episodeId: 'ep-1',
+      line: {
+        ...line,
+        marker_kind: 'custom',
+        custom_name: '  ',
+        custom_unit: null,
+      },
+      valueNumeric: 1,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('validation_error');
+      expect(result.error.message).toContain('Enter a name');
+    }
+    expect(client.from).not.toHaveBeenCalled();
+  });
+
+  it('upserts (updates on conflict) when a row already exists for the line signature', async () => {
+    const existingId = 'hm-existing';
+    const updated = {
+      id: existingId,
+      user_id: 'u1',
+      episode_id: 'ep-1',
+      preset_health_marker_id: 'phm-1',
+      marker_kind: 'blood_glucose',
+      custom_name: null,
+      custom_unit: null,
+      custom_name_key: '',
+      custom_unit_key: '',
+      value_numeric: 120,
+      systolic_numeric: null,
+      diastolic_numeric: null,
+      notes: null,
+      recorded_at: '2026-04-18T12:05:00.000Z',
+      created_at: '2026-04-18T12:05:00.000Z',
+      updated_at: '2026-04-18T12:05:00.000Z',
+    };
+    const upsertMock = vi.fn((_payload: unknown, _opts: unknown) => ({
+      select: vi.fn(() => ({
+        single: vi.fn(async () => ({ data: updated, error: null })),
+      })),
+    }));
+    const client = {
+      from: vi.fn(() => ({
+        upsert: upsertMock,
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await upsertEpisodeHealthMarkerForLine(client, {
+      userId: 'u1',
+      episodeId: 'ep-1',
+      line,
+      valueNumeric: 120,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.id).toBe(existingId);
+      expect(result.data.value_numeric).toBe(120);
+    }
+    expect(upsertMock).toHaveBeenCalledTimes(1);
+    expect(upsertMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: 'u1',
+        episode_id: 'ep-1',
+        preset_health_marker_id: 'phm-1',
+        marker_kind: 'blood_glucose',
+        custom_name: null,
+        custom_unit: null,
+        value_numeric: 120,
+      }),
+      {
+        onConflict: 'episode_id,preset_health_marker_id',
+      },
+    );
+  });
+
+  /**
+   * First time saving a line, Postgres performs an INSERT as part of ON CONFLICT upsert.
+   * The client always sends one `.upsert` payload (no separate `.insert()` branch).
+   */
+  it('performs first save via upsert with full episode payload (insert branch inside Postgres)', async () => {
+    const inserted = {
+      id: 'hm-new',
+      user_id: 'u1',
+      episode_id: 'ep-1',
+      preset_health_marker_id: 'phm-1',
+      marker_kind: 'blood_glucose',
+      custom_name: null,
+      custom_unit: null,
+      custom_name_key: '',
+      custom_unit_key: '',
+      value_numeric: 88,
+      systolic_numeric: null,
+      diastolic_numeric: null,
+      notes: 'fasting',
+      recorded_at: '2026-04-18T12:00:00.000Z',
+      created_at: '2026-04-18T12:00:00.000Z',
+      updated_at: '2026-04-18T12:00:00.000Z',
+    };
+    const upsertMock = vi.fn((payload: Record<string, unknown>) => {
+      expect(payload).toEqual(
+        expect.objectContaining({
+          user_id: 'u1',
+          episode_id: 'ep-1',
+          preset_health_marker_id: 'phm-1',
+          marker_kind: 'blood_glucose',
+          custom_name: null,
+          custom_unit: null,
+          value_numeric: 88,
+          systolic_numeric: null,
+          diastolic_numeric: null,
+          notes: 'fasting',
+        }),
+      );
+      return {
+        select: vi.fn(() => ({
+          single: vi.fn(async () => ({ data: inserted, error: null })),
+        })),
+      };
+    });
+
+    const client = {
+      from: vi.fn(() => ({
+        upsert: upsertMock,
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await upsertEpisodeHealthMarkerForLine(client, {
+      userId: 'u1',
+      episodeId: 'ep-1',
+      line,
+      valueNumeric: 88,
+      notes: 'fasting',
+      recordedAt: '2026-04-18T12:00:00.000Z',
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.id).toBe('hm-new');
+      expect(result.data.value_numeric).toBe(88);
+    }
+    expect(upsertMock).toHaveBeenCalledTimes(1);
+    expect(upsertMock).toHaveBeenCalledWith(expect.any(Object), {
+      onConflict: 'episode_id,preset_health_marker_id',
+    });
+  });
+
+  it('first save normalizes trimmed custom_name and custom_unit on the upsert payload', async () => {
+    const customLine: PresetHealthMarkerRow = {
+      ...line,
+      id: 'phm-custom',
+      marker_kind: 'custom',
+      custom_name: '  Iron  ',
+      custom_unit: '  mg  ',
+    };
+    const inserted = {
+      id: 'hm-custom-1',
+      user_id: 'u1',
+      episode_id: 'ep-1',
+      preset_health_marker_id: 'phm-custom',
+      marker_kind: 'custom',
+      custom_name: 'Iron',
+      custom_unit: 'mg',
+      custom_name_key: 'Iron',
+      custom_unit_key: 'mg',
+      value_numeric: 12,
+      systolic_numeric: null,
+      diastolic_numeric: null,
+      notes: null,
+      recorded_at: '2026-04-18T12:00:00.000Z',
+      created_at: '2026-04-18T12:00:00.000Z',
+      updated_at: '2026-04-18T12:00:00.000Z',
+    };
+    const upsertMock = vi.fn((payload: Record<string, unknown>) => {
+      expect(payload).toEqual({
+        user_id: 'u1',
+        episode_id: 'ep-1',
+        preset_health_marker_id: 'phm-custom',
+        marker_kind: 'custom',
+        custom_name: 'Iron',
+        custom_unit: 'mg',
+        value_numeric: 12,
+        systolic_numeric: null,
+        diastolic_numeric: null,
+        notes: null,
+        recorded_at: '2026-04-18T12:00:00.000Z',
+      });
+      return {
+        select: vi.fn(() => ({
+          single: vi.fn(async () => ({ data: inserted, error: null })),
+        })),
+      };
+    });
+    const client = {
+      from: vi.fn(() => ({
+        upsert: upsertMock,
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await upsertEpisodeHealthMarkerForLine(client, {
+      userId: 'u1',
+      episodeId: 'ep-1',
+      line: customLine,
+      valueNumeric: 12,
+      recordedAt: '2026-04-18T12:00:00.000Z',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(upsertMock).toHaveBeenCalledTimes(1);
+    expect(upsertMock).toHaveBeenCalledWith(expect.any(Object), {
+      onConflict: 'episode_id,preset_health_marker_id',
+    });
+  });
+});

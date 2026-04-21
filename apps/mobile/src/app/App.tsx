@@ -13,6 +13,7 @@ import type { MainStackParamList } from './navigation/types';
 import { LoginScreen } from './screens/LoginScreen';
 import { EpisodeStartScreen } from './screens/EpisodeStartScreen';
 import { EpisodesScreen } from './screens/EpisodesScreen';
+import { HealthMarkerPromptScreen } from './screens/HealthMarkerPromptScreen';
 import { SymptomPromptScreen } from './screens/SymptomPromptScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { SignupScreen } from './screens/SignupScreen';
@@ -405,6 +406,14 @@ function AppBootstrap() {
               component={SymptomPromptScreen}
               options={{
                 title: 'Symptoms',
+                headerBackTitle: 'Home',
+              }}
+            />
+            <MainStack.Screen
+              name="HealthMarkerPrompt"
+              component={HealthMarkerPromptScreen}
+              options={{
+                title: 'Health markers',
                 headerBackTitle: 'Home',
               }}
             />

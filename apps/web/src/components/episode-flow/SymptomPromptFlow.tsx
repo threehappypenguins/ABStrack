@@ -104,7 +104,6 @@ export function SymptomPromptFlow({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [persistError, setPersistError] = useState<string | null>(null);
   const [lines, setLines] = useState<PresetSymptomRow[]>([]);
-  const [phase, setPhase] = useState<'prompting' | 'complete'>('prompting');
 
   const [activeIndex, setActiveIndex] = useState(0);
   const [answers, setAnswers] = useState(
@@ -147,6 +146,12 @@ export function SymptomPromptFlow({
   const persistUiAttemptRef = useRef(0);
   /** Suppresses {@link setPersistError} after unmount (epoch is not bumped on unmount). */
   const isMountedRef = useRef(true);
+  /**
+   * When true, unmount must not write `sessionStorage` (flush text debounce + snapshot). Set before
+   * {@link continueToHealthMarkers} or cancel-episode navigation so cleanup does not undo
+   * {@link clearSymptomPromptSession}.
+   */
+  const omitSymptomPromptSnapshotOnUnmountRef = useRef(false);
 
   const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
@@ -401,7 +406,6 @@ export function SymptomPromptFlow({
     setAnswers(s.answers);
     answersRef.current = s.answers;
     activeIndexRef.current = s.activeIndex;
-    setPhase('prompting');
     setStatus('loading');
     setErrorMessage(null);
     setLines([]);
@@ -458,7 +462,7 @@ export function SymptomPromptFlow({
   }, [flushPendingServerPersist, flushPendingTextPersist, router]);
 
   useUnsavedChangesLeaveGuard({
-    active: phase === 'prompting' && status === 'ready',
+    active: status === 'ready',
     dialogOpen: discardDialogOpen,
     pendingLeaveRef,
     onRequestDiscard: onRequestDiscardDialog,
@@ -467,12 +471,20 @@ export function SymptomPromptFlow({
 
   useEffect(() => {
     return () => {
-      flushPendingTextPersist();
+      const omit = omitSymptomPromptSnapshotOnUnmountRef.current;
+      if (!omit) {
+        flushPendingTextPersist();
+      } else if (textPersistTimerRef.current !== null) {
+        clearTimeout(textPersistTimerRef.current);
+        textPersistTimerRef.current = null;
+      }
       flushPendingServerPersist();
-      setSymptomPromptSession(episodeIdRef.current, {
-        activeIndex: activeIndexRef.current,
-        answers: answersRef.current,
-      });
+      if (!omit) {
+        setSymptomPromptSession(episodeIdRef.current, {
+          activeIndex: activeIndexRef.current,
+          answers: answersRef.current,
+        });
+      }
     };
   }, [flushPendingServerPersist, flushPendingTextPersist]);
 
@@ -493,7 +505,6 @@ export function SymptomPromptFlow({
     setStatus('loading');
     setErrorMessage(null);
     setPersistError(null);
-    setPhase('prompting');
     const uid = await resolveSessionUserId(supabase);
     if (stale()) {
       return;
@@ -526,7 +537,6 @@ export function SymptomPromptFlow({
     // Session overlays server so local drafts survive hydrate (debounced/offline/failed sync).
     const mergedAnswers = { ...serverAnswers, ...session.answers };
     let idx: number;
-    let initialPhase: 'prompting' | 'complete' = 'prompting';
     const treatAsResumeFromHome = resumeFromHomeIntentRef.current;
     if (treatAsResumeFromHome) {
       const placement = computeSymptomResumePlacement(
@@ -535,7 +545,6 @@ export function SymptomPromptFlow({
       );
       if (placement.phase === 'complete') {
         idx = placement.activeIndex;
-        initialPhase = 'complete';
       } else {
         const sIdx = clampIndex(session.activeIndex, result.data.length);
         const pIdx = placement.activeIndex;
@@ -543,7 +552,6 @@ export function SymptomPromptFlow({
         // useLayoutEffect). `placement` is first unanswered from merged server + session answers.
         // Max covers stale 0 + answered first line → land on the second symptom as expected.
         idx = clampIndex(Math.max(sIdx, pIdx), result.data.length);
-        initialPhase = 'prompting';
       }
     } else {
       idx = clampIndex(session.activeIndex, result.data.length);
@@ -552,7 +560,6 @@ export function SymptomPromptFlow({
     setAnswers(mergedAnswers);
     answersRef.current = mergedAnswers;
     activeIndexRef.current = idx;
-    setPhase(initialPhase);
     setSymptomPromptSession(episodeId, {
       activeIndex: idx,
       answers: mergedAnswers,
@@ -596,7 +603,7 @@ export function SymptomPromptFlow({
       : `Step ${activeIndex + 1} of ${lines.length}`;
 
   useEffect(() => {
-    if (!hydrated || phase !== 'prompting' || !currentLine) {
+    if (!hydrated || status !== 'ready' || !currentLine) {
       return;
     }
     announce(`${stepLabel}. ${currentLine.symptom_name}.`, {
@@ -608,7 +615,7 @@ export function SymptomPromptFlow({
     currentLine,
     hydrated,
     lines.length,
-    phase,
+    status,
     stepLabel,
   ]);
 
@@ -649,7 +656,7 @@ export function SymptomPromptFlow({
 
   const advanceToNextStep = () => {
     if (lines.length === 0) {
-      setPhase('complete');
+      continueToHealthMarkers();
       return;
     }
     const idx = activeIndexRef.current;
@@ -660,9 +667,24 @@ export function SymptomPromptFlow({
       persistImmediate(next, answersRef.current);
       return;
     }
-    setPhase('complete');
+    continueToHealthMarkers();
     announce('Symptom list complete.', { politeness: 'polite' });
   };
+
+  const continueToHealthMarkers = useCallback(() => {
+    omitSymptomPromptSnapshotOnUnmountRef.current = true;
+    clearSymptomPromptSession(episodeIdRef.current);
+    const q = new URLSearchParams();
+    if (resumeFromHomeIntentRef.current) {
+      q.set('resume', '1');
+    }
+    const query = q.toString();
+    router.replace(
+      `/episode/${episodeIdRef.current}/health-markers${
+        query ? `?${query}` : ''
+      }`,
+    );
+  }, [router]);
 
   const goBackStep = () => {
     flushPendingTextPersist();
@@ -711,6 +733,7 @@ export function SymptomPromptFlow({
         return false;
       }
       clearSymptomPromptSession(episodeIdRef.current);
+      omitSymptomPromptSnapshotOnUnmountRef.current = true;
       if (result.data.didCancel) {
         announce('Episode canceled. Resume is no longer available.', {
           politeness: 'polite',
@@ -760,38 +783,6 @@ export function SymptomPromptFlow({
     announce(`Skipped ${currentLine.symptom_name}.`, { politeness: 'polite' });
     advanceToNextStep();
   };
-
-  const onFinishToDashboard = () => {
-    clearSymptomPromptSession(episodeId);
-    router.push('/dashboard');
-  };
-
-  if (phase === 'complete') {
-    return (
-      <div className="space-y-4">
-        <h1 className="text-2xl font-bold tracking-tight text-app-ink">
-          Episode symptoms
-        </h1>
-        <div
-          className="rounded-2xl border border-app-border/90 bg-app-surface p-6 shadow-soft ring-1 ring-[color:var(--app-ring-slate)] sm:p-8"
-          role="status"
-          aria-live="polite"
-        >
-          <p className="text-sm leading-relaxed text-app-ink">
-            You reached the end of your symptom list for this episode. You can
-            return to the dashboard when you are ready.
-          </p>
-        </div>
-        <button
-          type="button"
-          className="inline-flex min-h-[56px] items-center justify-center rounded-xl bg-red-700 px-5 text-base font-semibold text-white shadow-md transition hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg dark:bg-red-600 dark:hover:bg-red-500"
-          onClick={onFinishToDashboard}
-        >
-          Back to dashboard
-        </button>
-      </div>
-    );
-  }
 
   if (status === 'loading') {
     return (
@@ -919,11 +910,7 @@ export function SymptomPromptFlow({
             }`}
             onClick={goNext}
           >
-            {lines.length === 0
-              ? 'Done'
-              : activeIndex >= lines.length - 1
-                ? 'Finish'
-                : 'Next'}
+            {lines.length === 0 ? 'Done' : 'Next'}
           </button>
         </div>
         <button

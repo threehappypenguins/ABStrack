@@ -42,6 +42,17 @@ describe('mapSupabaseErrorToPresetDataError', () => {
     expect(mapped?.code).toBe('foreign_key_violation');
   });
 
+  it('maps preset health marker line delete 23503 to specific copy', () => {
+    const mapped = mapSupabaseErrorToPresetDataError({
+      code: '23503',
+      message:
+        'update or delete on table "preset_health_markers" violates foreign key constraint "health_markers_preset_health_marker_id_fkey" on table "health_markers"',
+    });
+    expect(mapped?.code).toBe('foreign_key_violation');
+    expect(mapped?.message).toMatch(/Cannot delete this marker line/i);
+    expect(mapped?.message).toMatch(/episode measurements/i);
+  });
+
   it('maps reorder RPC tokens to validation_error', () => {
     for (const fragment of [
       'abstrack_preset_reorder_count_mismatch',

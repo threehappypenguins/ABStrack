@@ -23,6 +23,7 @@ import {
 } from './lib/episode-symptom-data.js';
 import {
   createHealthMarkerPreset,
+  createPresetHealthMarker,
   createPresetSymptom,
   createSymptomPreset,
   deleteHealthMarkerPreset,
@@ -174,6 +175,7 @@ describe.skipIf(!episodeFoundationReady)(
     describe.sequential('owner session — create / read', () => {
       let symptomPresetId: string;
       let healthMarkerPresetId: string;
+      let presetHealthMarkerLineId: string;
       let presetLineRow: PresetSymptomRow;
       let episodeId: string;
 
@@ -206,6 +208,16 @@ describe.skipIf(!episodeFoundationReady)(
           throw new Error(hp.error.message);
         }
         healthMarkerPresetId = hp.data.id;
+
+        const hmLine = await createPresetHealthMarker(clientA, {
+          preset_id: healthMarkerPresetId,
+          sort_order: 0,
+          marker_kind: 'heart_rate',
+        });
+        if (!hmLine.ok) {
+          throw new Error(hmLine.error.message);
+        }
+        presetHealthMarkerLineId = hmLine.data.id;
 
         const ep = await createEpisode(clientA, {
           user_id: userAId,
@@ -292,6 +304,7 @@ describe.skipIf(!episodeFoundationReady)(
           .insert({
             user_id: userAId,
             episode_id: episodeId,
+            preset_health_marker_id: presetHealthMarkerLineId,
             marker_kind: 'heart_rate',
             value_numeric: 88,
             recorded_at: new Date().toISOString(),
