@@ -52,6 +52,58 @@ describe('listEpisodeHealthMarkersForEpisode', () => {
 });
 
 describe('upsertEpisodeHealthMarkerForLine', () => {
+  it('returns validation_error when non-blood_pressure line omits valueNumeric', async () => {
+    const client = {
+      from: vi.fn(() => {
+        throw new Error('should not query');
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await upsertEpisodeHealthMarkerForLine(client, {
+      userId: 'u1',
+      episodeId: 'ep-1',
+      line,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('validation_error');
+      expect(result.error.message).toContain('measurement value');
+    }
+    expect(client.from).not.toHaveBeenCalled();
+  });
+
+  it('returns validation_error when non-blood_pressure valueNumeric is not finite', async () => {
+    const client = {
+      from: vi.fn(() => {
+        throw new Error('should not query');
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const nanResult = await upsertEpisodeHealthMarkerForLine(client, {
+      userId: 'u1',
+      episodeId: 'ep-1',
+      line,
+      valueNumeric: Number.NaN,
+    });
+    expect(nanResult.ok).toBe(false);
+    if (!nanResult.ok) {
+      expect(nanResult.error.message).toContain('valid number');
+    }
+
+    const infResult = await upsertEpisodeHealthMarkerForLine(client, {
+      userId: 'u1',
+      episodeId: 'ep-1',
+      line,
+      valueNumeric: Number.POSITIVE_INFINITY,
+    });
+    expect(infResult.ok).toBe(false);
+    if (!infResult.ok) {
+      expect(infResult.error.message).toContain('valid number');
+    }
+    expect(client.from).not.toHaveBeenCalled();
+  });
+
   it('returns validation_error when blood_glucose line includes blood pressure fields', async () => {
     const client = {
       from: vi.fn(() => {

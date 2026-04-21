@@ -18,6 +18,8 @@ function normalizeCustomField(value: string | null | undefined): string | null {
 
 /**
  * Ensures numeric columns match `marker_kind` (no DB CHECK today).
+ * Non-blood-pressure kinds require a finite `value_numeric` so episode-bound rows are not
+ * persisted without a measurement (resume logic keys off row existence).
  *
  * @returns User-facing message, or `null` when valid.
  */
@@ -49,6 +51,13 @@ function validateHealthMarkerNumericPayload(
 
   if (hasSys || hasDia) {
     return 'This marker uses a single numeric value, not blood pressure fields.';
+  }
+
+  if (!hasValue) {
+    return 'Enter a measurement value.';
+  }
+  if (!Number.isFinite(valueNumeric)) {
+    return 'Enter a valid number.';
   }
 
   return null;
@@ -94,7 +103,8 @@ export async function listEpisodeHealthMarkersForEpisode(
  * @param args.userId - Must match the episode owner (`episodes.user_id`) under RLS.
  * @param args.episodeId - `episodes.id`.
  * @param args.line - Active preset health marker line.
- * @param args.valueNumeric - Numeric value for non-blood-pressure kinds.
+ * @param args.valueNumeric - Required finite number for non-blood-pressure kinds (omitted or
+ *   non-finite values return `validation_error`).
  * @param args.systolicNumeric - Systolic value for blood pressure.
  * @param args.diastolicNumeric - Diastolic value for blood pressure.
  * @param args.notes - Optional free-text note.

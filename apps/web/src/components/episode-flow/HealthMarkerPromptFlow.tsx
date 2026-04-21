@@ -160,6 +160,10 @@ export function HealthMarkerPromptFlow({
   const [cancelingEpisode, setCancelingEpisode] = useState(false);
   const loadGenRef = useRef(0);
 
+  useEffect(() => {
+    setPersistFeedback(null);
+  }, [activeIndex]);
+
   const load = useCallback(async () => {
     const loadGen = ++loadGenRef.current;
     const isStale = () => loadGen !== loadGenRef.current;

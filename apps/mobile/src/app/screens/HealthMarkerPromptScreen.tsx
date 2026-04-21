@@ -181,6 +181,10 @@ export function HealthMarkerPromptScreen() {
   const [saving, setSaving] = useState(false);
   const [cancelingEpisode, setCancelingEpisode] = useState(false);
 
+  useEffect(() => {
+    setPersistFeedback(null);
+  }, [activeIndex]);
+
   const supabase = useMemo(() => getMobileSupabaseClient(), []);
   /** Bumps when the screen unmounts or `load` deps change so stale async work does not setState. */
   const loadGenerationRef = useRef(0);

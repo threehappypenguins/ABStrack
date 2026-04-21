@@ -14,7 +14,8 @@ describe('ChunkingSecureStore (via supabase-wiring)', () => {
 
   beforeEach(() => {
     mockStore = {};
-    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    // `test-setup.ts` already wraps `console.error` per test; swap implementation instead of nesting spies.
+    jest.mocked(console.error).mockImplementation(() => undefined);
     jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     jest
       .spyOn(SecureStore, 'getItemAsync')
