@@ -202,46 +202,52 @@ describe('EpisodesScreen', () => {
   });
 
   it('confirms and cancels active episode', async () => {
-    const alertSpy = jest.spyOn(require('react-native').Alert, 'alert');
-    const active = makeEpisodeRow({
-      id: 'ep-cancel',
-      symptom_preset_id: 'preset-1',
-    });
-    jest.mocked(getActiveEpisodeForUser).mockResolvedValue({
-      ok: true,
-      data: active,
-    });
+    const alertSpy = jest
+      .spyOn(require('react-native').Alert, 'alert')
+      .mockImplementation(() => undefined);
+    try {
+      const active = makeEpisodeRow({
+        id: 'ep-cancel',
+        symptom_preset_id: 'preset-1',
+      });
+      jest.mocked(getActiveEpisodeForUser).mockResolvedValue({
+        ok: true,
+        data: active,
+      });
 
-    render(<EpisodesScreen />);
+      render(<EpisodesScreen />);
 
-    expect(await screen.findByLabelText('Cancel episode')).toBeTruthy();
-    fireEvent.press(screen.getByLabelText('Cancel episode'));
+      expect(await screen.findByLabelText('Cancel episode')).toBeTruthy();
+      fireEvent.press(screen.getByLabelText('Cancel episode'));
 
-    expect(alertSpy).toHaveBeenCalledWith(
-      'Cancel this active episode?',
-      'Canceling will permanently remove this in-progress episode and any linked symptom or media entries. This cannot be undone.',
-      expect.any(Array),
-    );
-
-    const [, , buttons] = alertSpy.mock.calls[0] as [
-      string,
-      string,
-      Array<{ onPress?: () => void }>,
-    ];
-    await act(async () => {
-      buttons[1]?.onPress?.();
-    });
-
-    await waitFor(() => {
-      expect(cancelActiveEpisodeById).toHaveBeenCalledWith(
-        expect.anything(),
-        'ep-cancel',
+      expect(alertSpy).toHaveBeenCalledWith(
+        'Cancel this active episode?',
+        'Canceling will permanently remove this in-progress episode and any linked symptom or media entries. This cannot be undone.',
+        expect.any(Array),
       );
-    });
-    expect(clearSymptomPromptSession).toHaveBeenCalledWith('ep-cancel');
-    expect(announce).toHaveBeenCalledWith(
-      'Episode canceled. Resume is no longer available.',
-      { politeness: 'polite' },
-    );
+
+      const [, , buttons] = alertSpy.mock.calls[0] as [
+        string,
+        string,
+        Array<{ onPress?: () => void }>,
+      ];
+      await act(async () => {
+        buttons[1]?.onPress?.();
+      });
+
+      await waitFor(() => {
+        expect(cancelActiveEpisodeById).toHaveBeenCalledWith(
+          expect.anything(),
+          'ep-cancel',
+        );
+      });
+      expect(clearSymptomPromptSession).toHaveBeenCalledWith('ep-cancel');
+      expect(announce).toHaveBeenCalledWith(
+        'Episode canceled. Resume is no longer available.',
+        { politeness: 'polite' },
+      );
+    } finally {
+      alertSpy.mockRestore();
+    }
   });
 });
