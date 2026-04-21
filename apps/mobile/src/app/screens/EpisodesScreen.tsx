@@ -1,12 +1,15 @@
 import React, { useCallback, useRef, useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { EpisodeRow } from '@abstrack/types';
+import { announce } from '@abstrack/ui/native';
 import {
+  cancelActiveEpisodeById,
   getActiveEpisodeForUser,
   listCompletedEpisodesForUser,
 } from '@abstrack/supabase';
+import { clearSymptomPromptSession } from '../../lib/episodes/symptom-prompt-session-store';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { ScreenShell } from '../components/ScreenShell';
 import type { MainStackParamList } from '../navigation/types';
@@ -48,6 +51,7 @@ export function EpisodesScreen() {
   const [recentError, setRecentError] = useState<string | null>(null);
   const [active, setActive] = useState<EpisodeRow | null>(null);
   const [recent, setRecent] = useState<EpisodeRow[]>([]);
+  const [cancelingActiveEpisode, setCancelingActiveEpisode] = useState(false);
 
   const load = useCallback(async (cancel?: { cancelled: boolean }) => {
     const generation = ++loadGenRef.current;
@@ -127,6 +131,54 @@ export function EpisodesScreen() {
       resume: true,
     });
   };
+
+  const onCancelEpisode = useCallback(() => {
+    if (!active || cancelingActiveEpisode) {
+      return;
+    }
+    Alert.alert(
+      'Cancel this active episode?',
+      'Canceling will permanently remove this in-progress episode and any linked symptom or media entries. This cannot be undone.',
+      [
+        { text: 'Keep episode', style: 'cancel' },
+        {
+          text: 'Cancel episode',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              setCancelingActiveEpisode(true);
+              try {
+                const client = getMobileSupabaseClient();
+                const result = await cancelActiveEpisodeById(client, active.id);
+                if (!result.ok) {
+                  await announce(result.error.message, {
+                    politeness: 'assertive',
+                  });
+                  return;
+                }
+                clearSymptomPromptSession(active.id);
+                if (result.data.didCancel) {
+                  await announce(
+                    'Episode canceled. Resume is no longer available.',
+                    {
+                      politeness: 'polite',
+                    },
+                  );
+                } else {
+                  await announce('This episode is no longer active.', {
+                    politeness: 'polite',
+                  });
+                }
+                await load();
+              } finally {
+                setCancelingActiveEpisode(false);
+              }
+            })();
+          },
+        },
+      ],
+    );
+  }, [active, cancelingActiveEpisode, load]);
 
   const resumeSummary: ActiveEpisodeHomeSummary | null =
     active && active.symptom_preset_id
@@ -225,6 +277,24 @@ export function EpisodesScreen() {
                   from the episode start screen.
                 </Text>
               )}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Cancel episode"
+                accessibilityHint="Permanently removes this in-progress episode"
+                accessibilityState={{ disabled: cancelingActiveEpisode }}
+                onPress={onCancelEpisode}
+                disabled={cancelingActiveEpisode}
+                className={`mt-2 min-h-[52px] items-center justify-center rounded-xl border border-red-300 bg-red-50 px-4 py-3 dark:border-red-800/80 dark:bg-red-950/30`}
+              >
+                <Text
+                  className="text-center text-[17px] font-semibold text-red-800 dark:text-red-200"
+                  maxFontSizeMultiplier={2}
+                >
+                  {cancelingActiveEpisode
+                    ? 'Canceling episode…'
+                    : 'Cancel episode'}
+                </Text>
+              </Pressable>
             </View>
           ) : null}
         </View>

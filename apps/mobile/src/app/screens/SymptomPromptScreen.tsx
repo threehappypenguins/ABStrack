@@ -25,6 +25,7 @@ import {
   symptomPromptAnswerHasValue,
 } from '@abstrack/types';
 import {
+  cancelActiveEpisodeById,
   deleteEpisodeSymptomAnswer,
   listEpisodeSymptomsForEpisode,
   listPresetSymptomsForPreset,
@@ -595,6 +596,55 @@ export function SymptomPromptScreen() {
     requestExitToHome();
   };
 
+  const onCancelEpisodePress = useCallback(() => {
+    Alert.alert(
+      'Cancel this active episode?',
+      'Canceling will permanently remove this in-progress episode and any linked symptom or media entries. This cannot be undone.',
+      [
+        { text: 'Keep episode', style: 'cancel' },
+        {
+          text: 'Cancel episode',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              cancelPendingServerPersist();
+              const result = await cancelActiveEpisodeById(
+                getMobileSupabaseClient(),
+                episodeIdRef.current,
+              );
+              if (!result.ok) {
+                await announce(result.error.message, {
+                  politeness: 'assertive',
+                });
+                return;
+              }
+              clearSymptomPromptSession(episodeIdRef.current);
+              if (result.data.didCancel) {
+                await announce(
+                  'Episode canceled. Resume is no longer available.',
+                  {
+                    politeness: 'polite',
+                  },
+                );
+              } else {
+                await announce('This episode is no longer active.', {
+                  politeness: 'polite',
+                });
+              }
+              allowRemovalRef.current = true;
+              navigation.dispatch(
+                CommonActions.reset({
+                  index: 0,
+                  routes: [{ name: 'MainTabs' }],
+                }),
+              );
+            })();
+          },
+        },
+      ],
+    );
+  }, [cancelPendingServerPersist, navigation]);
+
   const advanceToNextStep = () => {
     if (lines.length === 0) {
       setPhase('complete');
@@ -823,6 +873,20 @@ export function SymptomPromptScreen() {
                 maxFontSizeMultiplier={2}
               >
                 Exit symptom flow
+              </Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Cancel episode"
+              onPress={onCancelEpisodePress}
+              style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+              className="w-full items-center justify-center rounded-lg px-3 py-3 active:opacity-80"
+            >
+              <Text
+                className="text-sm font-medium text-red-700 dark:text-red-300"
+                maxFontSizeMultiplier={2}
+              >
+                Cancel episode
               </Text>
             </Pressable>
           </>
