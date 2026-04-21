@@ -109,9 +109,11 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
                     is: vi.fn(() => ({
                       order: vi.fn(() => ({
                         order: vi.fn(() => ({
-                          order: vi.fn(async () => ({
-                            data: [{ id: existingId }],
-                            error: null,
+                          order: vi.fn(() => ({
+                            limit: vi.fn(async () => ({
+                              data: [{ id: existingId }],
+                              error: null,
+                            })),
                           })),
                         })),
                       })),

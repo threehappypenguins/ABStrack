@@ -1,0 +1,259 @@
+import * as React from 'react';
+import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { DefaultTheme } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import {
+  cancelActiveEpisodeById,
+  getEpisodeById,
+  listEpisodeHealthMarkersForEpisode,
+  listPresetHealthMarkersForPreset,
+  upsertEpisodeHealthMarkerForLine,
+} from '@abstrack/supabase';
+import type { PresetHealthMarkerRow } from '@abstrack/types';
+import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
+import { useAppTheme } from '../theme/AppThemeContext';
+import { lightAppColors } from '../theme/app-colors';
+import { HealthMarkerPromptScreen } from './HealthMarkerPromptScreen';
+
+jest.mock('@react-navigation/native', () => ({
+  ...jest.requireActual('@react-navigation/native'),
+  useRoute: jest.fn(),
+  useNavigation: jest.fn(),
+}));
+
+jest.mock('@abstrack/supabase', () => ({
+  cancelActiveEpisodeById: jest.fn(),
+  getEpisodeById: jest.fn(),
+  listEpisodeHealthMarkersForEpisode: jest.fn(),
+  listPresetHealthMarkersForPreset: jest.fn(),
+  upsertEpisodeHealthMarkerForLine: jest.fn(),
+}));
+
+jest.mock('../../lib/supabase-wiring', () => ({
+  getMobileSupabaseClient: jest.fn(() => ({
+    mockClient: true,
+    auth: {
+      getUser: jest.fn(async () => ({
+        data: { user: { id: 'test-user-1' } },
+      })),
+    },
+  })),
+}));
+
+jest.mock('../theme/AppThemeContext', () => ({
+  useAppTheme: jest.fn(),
+}));
+
+jest.mock('@abstrack/ui/native', () => {
+  const actual = jest.requireActual('@abstrack/ui/native');
+  return {
+    ...actual,
+    announce: jest.fn(async () => undefined),
+  };
+});
+
+const episodeId = 'episode-1';
+const markerPresetId = 'hm-preset-1';
+
+function makeLine(
+  id: string,
+  sortOrder: number,
+  markerKind: PresetHealthMarkerRow['marker_kind'],
+  customName: string | null = null,
+  customUnit: string | null = null,
+): PresetHealthMarkerRow {
+  return {
+    id,
+    preset_id: markerPresetId,
+    sort_order: sortOrder,
+    marker_kind: markerKind,
+    custom_name: customName,
+    custom_unit: customUnit,
+    created_at: '2020-01-01T00:00:00Z',
+    updated_at: '2020-01-01T00:00:00Z',
+  };
+}
+
+describe('HealthMarkerPromptScreen', () => {
+  const mockDispatch = jest.fn();
+  const mockReplace = jest.fn();
+
+  const lineA = makeLine('hm-a', 0, 'blood_glucose');
+  const lineB = makeLine('hm-b', 1, 'heart_rate');
+  const lineBp = makeLine('hm-bp', 0, 'blood_pressure');
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+
+    jest.mocked(useRoute).mockReturnValue({
+      key: 'HealthMarkerPrompt',
+      name: 'HealthMarkerPrompt',
+      params: { episodeId, resume: false },
+    } as never);
+
+    jest.mocked(useNavigation).mockReturnValue({
+      dispatch: mockDispatch,
+      replace: mockReplace,
+      addListener: jest.fn(() => jest.fn()),
+    } as never);
+
+    jest.mocked(useAppTheme).mockReturnValue({
+      colorScheme: 'light',
+      colors: lightAppColors,
+      themePreference: 'system',
+      setThemePreference: jest.fn(() => Promise.resolve()),
+      navigationTheme: DefaultTheme,
+      statusBarStyle: 'dark',
+    });
+
+    jest.mocked(getEpisodeById).mockResolvedValue({
+      ok: true,
+      data: {
+        id: episodeId,
+        user_id: 'test-user-1',
+        symptom_preset_id: 'sym-preset-1',
+        health_marker_preset_id: markerPresetId,
+        episode_type: 'ABS',
+        episode_label: null,
+        note: null,
+        started_at: '2020-01-01T00:00:00Z',
+        ended_at: null,
+        created_at: '2020-01-01T00:00:00Z',
+        updated_at: '2020-01-01T00:00:00Z',
+      },
+    });
+    jest.mocked(listPresetHealthMarkersForPreset).mockResolvedValue({
+      ok: true,
+      data: [lineA, lineB],
+    });
+    jest.mocked(listEpisodeHealthMarkersForEpisode).mockResolvedValue({
+      ok: true,
+      data: [],
+    });
+    jest.mocked(upsertEpisodeHealthMarkerForLine).mockResolvedValue({
+      ok: true,
+      data: {
+        id: 'hm-row-1',
+        user_id: 'test-user-1',
+        episode_id: episodeId,
+        marker_kind: 'blood_glucose',
+        custom_name: null,
+        custom_unit: null,
+        value_numeric: 120,
+        systolic_numeric: null,
+        diastolic_numeric: null,
+        recorded_at: '2020-01-01T00:00:00Z',
+        notes: null,
+        created_at: '2020-01-01T00:00:00Z',
+        updated_at: '2020-01-01T00:00:00Z',
+      },
+    });
+    jest.mocked(cancelActiveEpisodeById).mockResolvedValue({
+      ok: true,
+      data: { didCancel: true },
+    });
+  });
+
+  test('loads marker preset lines and shows first step', async () => {
+    const screen = render(<HealthMarkerPromptScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Step 1 of 2')).toBeTruthy();
+    });
+
+    expect(screen.getByText('Glucose')).toBeTruthy();
+    expect(listPresetHealthMarkersForPreset).toHaveBeenCalledWith(
+      expect.objectContaining({ mockClient: true }),
+      markerPresetId,
+    );
+    expect(getMobileSupabaseClient).toHaveBeenCalled();
+  });
+
+  test('validation blocks Next and does not upsert when numeric value missing', async () => {
+    const screen = render(<HealthMarkerPromptScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Step 1 of 2')).toBeTruthy();
+    });
+
+    fireEvent.press(screen.getByLabelText('Next health marker'));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Enter a numeric value to continue.'),
+      ).toBeTruthy();
+    });
+    expect(upsertEpisodeHealthMarkerForLine).not.toHaveBeenCalled();
+  });
+
+  test('Skip advances to next marker when current line is unanswered', async () => {
+    const screen = render(<HealthMarkerPromptScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Step 1 of 2')).toBeTruthy();
+    });
+
+    fireEvent.press(screen.getByLabelText('Skip this marker'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Step 2 of 2')).toBeTruthy();
+    });
+    expect(screen.getByText('Heart rate')).toBeTruthy();
+  });
+
+  test('Next upserts with expected payload and advances', async () => {
+    const screen = render(<HealthMarkerPromptScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Step 1 of 2')).toBeTruthy();
+    });
+
+    fireEvent.changeText(screen.getByLabelText('Marker value'), '123.4');
+    fireEvent.changeText(screen.getByLabelText('Marker notes'), 'before meal');
+    fireEvent.press(screen.getByLabelText('Next health marker'));
+
+    await waitFor(() => {
+      expect(upsertEpisodeHealthMarkerForLine).toHaveBeenCalledTimes(1);
+    });
+    expect(upsertEpisodeHealthMarkerForLine).toHaveBeenCalledWith(
+      expect.objectContaining({ mockClient: true }),
+      expect.objectContaining({
+        userId: 'test-user-1',
+        episodeId,
+        line: lineA,
+        valueNumeric: 123.4,
+        systolicNumeric: null,
+        diastolicNumeric: null,
+        notes: 'before meal',
+      }),
+    );
+    await waitFor(() => {
+      expect(screen.getByText('Step 2 of 2')).toBeTruthy();
+    });
+  });
+
+  test('blood pressure validation blocks when either value missing', async () => {
+    jest.mocked(listPresetHealthMarkersForPreset).mockResolvedValue({
+      ok: true,
+      data: [lineBp],
+    });
+
+    const screen = render(<HealthMarkerPromptScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Step 1 of 1')).toBeTruthy();
+    });
+
+    fireEvent.changeText(screen.getByLabelText('Systolic value'), '120');
+    fireEvent.press(screen.getByLabelText('Finish health marker list'));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          'Enter both systolic and diastolic blood pressure values to continue.',
+        ),
+      ).toBeTruthy();
+    });
+    expect(upsertEpisodeHealthMarkerForLine).not.toHaveBeenCalled();
+  });
+});

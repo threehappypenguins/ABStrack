@@ -25,6 +25,10 @@ type MarkerDraft = {
   notes: string;
 };
 
+type PersistFeedback =
+  | { source: 'validation'; message: string }
+  | { source: 'sync'; message: string };
+
 function normalizeNullable(value: string | null | undefined): string | null {
   const next = value?.trim() ?? '';
   return next.length > 0 ? next : null;
@@ -109,7 +113,8 @@ export function HealthMarkerPromptFlow({
     'loading',
   );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [persistError, setPersistError] = useState<string | null>(null);
+  const [persistFeedback, setPersistFeedback] =
+    useState<PersistFeedback | null>(null);
   const [phase, setPhase] = useState<'prompting' | 'complete'>('prompting');
   const [userId, setUserId] = useState<string | null>(null);
   const [lines, setLines] = useState<PresetHealthMarkerRow[]>([]);
@@ -122,7 +127,7 @@ export function HealthMarkerPromptFlow({
   const load = async () => {
     setStatus('loading');
     setErrorMessage(null);
-    setPersistError(null);
+    setPersistFeedback(null);
     setPhase('prompting');
     const {
       data: { user },
@@ -233,7 +238,7 @@ export function HealthMarkerPromptFlow({
       currentLine.custom_unit ?? '',
     );
     if (customValidation) {
-      setPersistError(customValidation);
+      setPersistFeedback({ source: 'validation', message: customValidation });
       announce(customValidation, { politeness: 'assertive' });
       return false;
     }
@@ -244,30 +249,48 @@ export function HealthMarkerPromptFlow({
 
     if (currentLine.marker_kind === 'blood_pressure') {
       if (systolic == null || diastolic == null) {
-        setPersistError(
-          'Enter both systolic and diastolic blood pressure values to continue.',
-        );
+        const message =
+          'Enter both systolic and diastolic blood pressure values to continue.';
+        setPersistFeedback({
+          source: 'validation',
+          message,
+        });
+        announce(message, { politeness: 'assertive' });
         return false;
       }
       if (Number.isNaN(systolic) || Number.isNaN(diastolic)) {
-        setPersistError(
-          'Blood pressure values must be valid numbers (for example 120 and 80).',
-        );
+        const message =
+          'Blood pressure values must be valid numbers (for example 120 and 80).';
+        setPersistFeedback({
+          source: 'validation',
+          message,
+        });
+        announce(message, { politeness: 'assertive' });
         return false;
       }
     } else {
       if (value == null) {
-        setPersistError('Enter a numeric value to continue.');
+        const message = 'Enter a numeric value to continue.';
+        setPersistFeedback({
+          source: 'validation',
+          message,
+        });
+        announce(message, { politeness: 'assertive' });
         return false;
       }
       if (Number.isNaN(value)) {
-        setPersistError('Value must be a valid number.');
+        const message = 'Value must be a valid number.';
+        setPersistFeedback({
+          source: 'validation',
+          message,
+        });
+        announce(message, { politeness: 'assertive' });
         return false;
       }
     }
 
     setSaving(true);
-    setPersistError(null);
+    setPersistFeedback(null);
     const result = await upsertEpisodeHealthMarkerForLine(supabase, {
       userId,
       episodeId,
@@ -286,7 +309,7 @@ export function HealthMarkerPromptFlow({
     });
     setSaving(false);
     if (!result.ok) {
-      setPersistError(result.error.message);
+      setPersistFeedback({ source: 'sync', message: result.error.message });
       return false;
     }
 
@@ -391,42 +414,28 @@ export function HealthMarkerPromptFlow({
 
   if (phase === 'complete') {
     return (
-      <>
-        <div className="space-y-4">
-          <h1 className="text-2xl font-bold tracking-tight text-app-ink">
-            Episode health markers
-          </h1>
-          <div
-            className="rounded-2xl border border-app-border/90 bg-app-surface p-6 shadow-soft ring-1 ring-[color:var(--app-ring-slate)] sm:p-8"
-            role="status"
-            aria-live="polite"
-          >
-            <p className="text-sm leading-relaxed text-app-ink">
-              You reached the end of your health marker list for this episode.
-              You can return to the dashboard when you are ready.
-            </p>
-          </div>
-          <button
-            type="button"
-            className="inline-flex min-h-[56px] items-center justify-center rounded-xl bg-red-700 px-5 text-base font-semibold text-white shadow-md transition hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg dark:bg-red-600 dark:hover:bg-red-500"
-            onClick={onFinishToDashboard}
-          >
-            Back to dashboard
-          </button>
+      <div className="space-y-4">
+        <h1 className="text-2xl font-bold tracking-tight text-app-ink">
+          Episode health markers
+        </h1>
+        <div
+          className="rounded-2xl border border-app-border/90 bg-app-surface p-6 shadow-soft ring-1 ring-[color:var(--app-ring-slate)] sm:p-8"
+          role="status"
+          aria-live="polite"
+        >
+          <p className="text-sm leading-relaxed text-app-ink">
+            You reached the end of your health marker list for this episode. You
+            can return to the dashboard when you are ready.
+          </p>
         </div>
-        <ConfirmDialog
-          open={cancelDialogOpen}
-          title="Cancel this active episode?"
-          description="Canceling permanently deletes this in-progress episode, its symptom answers, health markers, and media metadata. Food diary entries are kept, but this episode link is removed. This cannot be undone."
-          confirmLabel="Cancel episode"
-          confirmBusyLabel="Canceling episode…"
-          cancelLabel="Keep episode"
-          onConfirm={onCancelEpisodeConfirm}
-          onClose={() => {
-            setCancelDialogOpen(false);
-          }}
-        />
-      </>
+        <button
+          type="button"
+          className="inline-flex min-h-[56px] items-center justify-center rounded-xl bg-red-700 px-5 text-base font-semibold text-white shadow-md transition hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg dark:bg-red-600 dark:hover:bg-red-500"
+          onClick={onFinishToDashboard}
+        >
+          Back to dashboard
+        </button>
+      </div>
     );
   }
 
@@ -440,12 +449,14 @@ export function HealthMarkerPromptFlow({
           <p className="mt-2 text-base font-medium text-app-muted">
             Step {activeIndex + 1} of {Math.max(lines.length, 1)}
           </p>
-          {persistError ? (
+          {persistFeedback ? (
             <p
               className="mt-2 text-sm text-amber-800 dark:text-amber-200"
               role="status"
             >
-              Could not sync with the server: {persistError}
+              {persistFeedback.source === 'sync'
+                ? `Could not sync with the server: ${persistFeedback.message}`
+                : persistFeedback.message}
             </p>
           ) : null}
         </div>

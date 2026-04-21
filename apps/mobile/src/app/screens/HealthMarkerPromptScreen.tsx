@@ -50,6 +50,10 @@ type MarkerDraft = {
   notes: string;
 };
 
+type PersistFeedback =
+  | { source: 'validation'; message: string }
+  | { source: 'sync'; message: string };
+
 function normalizeNullable(value: string | null | undefined): string | null {
   const next = value?.trim() ?? '';
   return next.length > 0 ? next : null;
@@ -126,7 +130,8 @@ export function HealthMarkerPromptScreen() {
     'loading',
   );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [persistError, setPersistError] = useState<string | null>(null);
+  const [persistFeedback, setPersistFeedback] =
+    useState<PersistFeedback | null>(null);
   const [phase, setPhase] = useState<'prompting' | 'complete'>('prompting');
   const [userId, setUserId] = useState<string | null>(null);
   const [lines, setLines] = useState<PresetHealthMarkerRow[]>([]);
@@ -140,7 +145,7 @@ export function HealthMarkerPromptScreen() {
   const load = async () => {
     setStatus('loading');
     setErrorMessage(null);
-    setPersistError(null);
+    setPersistFeedback(null);
     setPhase('prompting');
 
     const {
@@ -251,7 +256,7 @@ export function HealthMarkerPromptScreen() {
       currentLine.custom_unit ?? '',
     );
     if (customValidation) {
-      setPersistError(customValidation);
+      setPersistFeedback({ source: 'validation', message: customValidation });
       await announce(customValidation, { politeness: 'assertive' });
       return false;
     }
@@ -262,30 +267,48 @@ export function HealthMarkerPromptScreen() {
 
     if (currentLine.marker_kind === 'blood_pressure') {
       if (systolic == null || diastolic == null) {
-        setPersistError(
-          'Enter both systolic and diastolic blood pressure values to continue.',
-        );
+        const message =
+          'Enter both systolic and diastolic blood pressure values to continue.';
+        setPersistFeedback({
+          source: 'validation',
+          message,
+        });
+        await announce(message, { politeness: 'assertive' });
         return false;
       }
       if (Number.isNaN(systolic) || Number.isNaN(diastolic)) {
-        setPersistError(
-          'Blood pressure values must be valid numbers (for example 120 and 80).',
-        );
+        const message =
+          'Blood pressure values must be valid numbers (for example 120 and 80).';
+        setPersistFeedback({
+          source: 'validation',
+          message,
+        });
+        await announce(message, { politeness: 'assertive' });
         return false;
       }
     } else {
       if (value == null) {
-        setPersistError('Enter a numeric value to continue.');
+        const message = 'Enter a numeric value to continue.';
+        setPersistFeedback({
+          source: 'validation',
+          message,
+        });
+        await announce(message, { politeness: 'assertive' });
         return false;
       }
       if (Number.isNaN(value)) {
-        setPersistError('Value must be a valid number.');
+        const message = 'Value must be a valid number.';
+        setPersistFeedback({
+          source: 'validation',
+          message,
+        });
+        await announce(message, { politeness: 'assertive' });
         return false;
       }
     }
 
     setSaving(true);
-    setPersistError(null);
+    setPersistFeedback(null);
     const result = await upsertEpisodeHealthMarkerForLine(supabase, {
       userId,
       episodeId,
@@ -304,7 +327,7 @@ export function HealthMarkerPromptScreen() {
     });
     setSaving(false);
     if (!result.ok) {
-      setPersistError(result.error.message);
+      setPersistFeedback({ source: 'sync', message: result.error.message });
       return false;
     }
     return true;
@@ -415,13 +438,15 @@ export function HealthMarkerPromptScreen() {
         >
           Episode health markers
         </Text>
-        {persistError ? (
+        {persistFeedback ? (
           <Text
             accessibilityLiveRegion="polite"
             className="text-sm text-amber-800 dark:text-amber-200"
             maxFontSizeMultiplier={2}
           >
-            Could not sync with the server: {persistError}
+            {persistFeedback.source === 'sync'
+              ? `Could not sync with the server: ${persistFeedback.message}`
+              : persistFeedback.message}
           </Text>
         ) : null}
 

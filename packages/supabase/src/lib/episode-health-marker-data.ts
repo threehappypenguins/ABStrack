@@ -45,14 +45,14 @@ async function fetchEpisodeHealthMarkersForLine(
     episodeId: Uuid;
     line: PresetHealthMarkerRow;
   },
-): Promise<{ data: HealthMarkerRow[]; error: unknown }> {
+): Promise<{ data: Array<Pick<HealthMarkerRow, 'id'>>; error: unknown }> {
   const { episodeId, line } = args;
   const customName = normalizeCustomField(line.custom_name);
   const customUnit = normalizeCustomField(line.custom_unit);
 
   let q = client
     .from('health_markers')
-    .select('*')
+    .select('id')
     .eq('episode_id', episodeId)
     .eq('marker_kind', line.marker_kind);
 
@@ -70,9 +70,10 @@ async function fetchEpisodeHealthMarkersForLine(
   const r = await q
     .order('recorded_at', { ascending: false })
     .order('created_at', { ascending: false })
-    .order('id', { ascending: false });
+    .order('id', { ascending: false })
+    .limit(1);
   return {
-    data: (r.data ?? []) as HealthMarkerRow[],
+    data: (r.data ?? []) as Array<Pick<HealthMarkerRow, 'id'>>,
     error: r.error,
   };
 }
