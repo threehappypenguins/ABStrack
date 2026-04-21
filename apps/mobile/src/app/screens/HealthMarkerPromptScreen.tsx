@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   Alert,
   Pressable,
@@ -186,8 +192,13 @@ export function HealthMarkerPromptScreen() {
   const [cancelingEpisode, setCancelingEpisode] = useState(false);
 
   const supabase = useMemo(() => getMobileSupabaseClient(), []);
+  /** Bumps when the screen unmounts or `load` deps change so stale async work does not setState. */
+  const loadGenerationRef = useRef(0);
 
   const load = useCallback(async () => {
+    const generation = ++loadGenerationRef.current;
+    const stale = () => generation !== loadGenerationRef.current;
+
     setStatus('loading');
     setErrorMessage(null);
     setPersistFeedback(null);
@@ -196,6 +207,9 @@ export function HealthMarkerPromptScreen() {
     const {
       data: { user },
     } = await supabase.auth.getUser();
+    if (stale()) {
+      return;
+    }
     if (!user) {
       setErrorMessage(
         'You must be signed in to save health marker answers. Try signing in again.',
@@ -206,6 +220,9 @@ export function HealthMarkerPromptScreen() {
     setUserId(user.id);
 
     const episode = await getEpisodeById(supabase, episodeId);
+    if (stale()) {
+      return;
+    }
     if (!episode.ok) {
       setErrorMessage(episode.error.message);
       setStatus('error');
@@ -224,6 +241,9 @@ export function HealthMarkerPromptScreen() {
       listPresetHealthMarkersForPreset(supabase, markerPresetId),
       listEpisodeHealthMarkersForEpisode(supabase, episodeId),
     ]);
+    if (stale()) {
+      return;
+    }
     if (!presetLines.ok) {
       setErrorMessage(presetLines.error.message);
       setStatus('error');
@@ -260,6 +280,9 @@ export function HealthMarkerPromptScreen() {
 
   useEffect(() => {
     void load();
+    return () => {
+      loadGenerationRef.current += 1;
+    };
   }, [load]);
 
   const currentLine = lines[activeIndex] ?? null;

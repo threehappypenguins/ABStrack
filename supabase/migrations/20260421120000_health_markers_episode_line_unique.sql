@@ -16,6 +16,14 @@ COMMENT ON COLUMN public.health_markers.custom_name_key IS
 COMMENT ON COLUMN public.health_markers.custom_unit_key IS
   'Generated from custom_unit for unique index and upsert onConflict; do not insert or update.';
 
+-- Explicit transaction: LOCK TABLE requires a transaction block. The lock blocks concurrent
+-- writers from inserting duplicate episode-bound marker rows between dedupe and index creation.
+BEGIN;
+
+-- Hold an exclusive lock so no concurrent writer can reintroduce duplicate
+-- (episode_id, marker_kind, custom_name_key, custom_unit_key) signatures while this migration runs.
+LOCK TABLE public.health_markers IN EXCLUSIVE MODE;
+
 -- Remove duplicate episode-bound rows, keeping the newest measurement per signature.
 DELETE FROM public.health_markers hm
 WHERE hm.id IN (
@@ -48,3 +56,5 @@ CREATE UNIQUE INDEX IF NOT EXISTS health_markers_episode_marker_line_uidx
 
 COMMENT ON INDEX public.health_markers_episode_marker_line_uidx IS
   'One row per episode + preset line signature (marker_kind + custom fields); wellness rows (episode_id NULL) are excluded.';
+
+COMMIT;

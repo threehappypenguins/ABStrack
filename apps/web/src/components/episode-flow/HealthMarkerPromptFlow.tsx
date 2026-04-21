@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { HealthMarkerRow, PresetHealthMarkerRow } from '@abstrack/types';
 import {
   PRESET_HEALTH_MARKER_KIND_LABELS,
@@ -168,8 +168,12 @@ export function HealthMarkerPromptFlow({
   const [saving, setSaving] = useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancelingEpisode, setCancelingEpisode] = useState(false);
+  const loadGenRef = useRef(0);
 
-  const load = async () => {
+  const load = useCallback(async () => {
+    const loadGen = ++loadGenRef.current;
+    const isStale = () => loadGen !== loadGenRef.current;
+
     setStatus('loading');
     setErrorMessage(null);
     setPersistFeedback(null);
@@ -177,6 +181,9 @@ export function HealthMarkerPromptFlow({
     const {
       data: { user },
     } = await supabase.auth.getUser();
+    if (isStale()) {
+      return;
+    }
     if (!user) {
       setErrorMessage(
         'You must be signed in to save health marker answers. Try signing in again.',
@@ -187,6 +194,9 @@ export function HealthMarkerPromptFlow({
     setUserId(user.id);
 
     const episode = await getEpisodeById(supabase, episodeId);
+    if (isStale()) {
+      return;
+    }
     if (!episode.ok) {
       setErrorMessage(episode.error.message);
       setStatus('error');
@@ -205,6 +215,9 @@ export function HealthMarkerPromptFlow({
       listPresetHealthMarkersForPreset(supabase, markerPresetId),
       listEpisodeHealthMarkersForEpisode(supabase, episodeId),
     ]);
+    if (isStale()) {
+      return;
+    }
     if (!presetLines.ok) {
       setErrorMessage(presetLines.error.message);
       setStatus('error');
@@ -238,11 +251,14 @@ export function HealthMarkerPromptFlow({
       setActiveIndex(0);
     }
     setStatus('ready');
-  };
+  }, [episodeId, resumeFromEntry, supabase]);
 
   useEffect(() => {
     void load();
-  }, [episodeId, resumeFromEntry]);
+    return () => {
+      loadGenRef.current += 1;
+    };
+  }, [load]);
 
   const currentLine = lines[activeIndex] ?? null;
   const currentDraft = currentLine
