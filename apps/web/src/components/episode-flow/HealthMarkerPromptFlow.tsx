@@ -276,6 +276,7 @@ export function HealthMarkerPromptFlow({
     ? parseMeasurementDraftForSave(currentLine, currentDraft).ok
     : false;
   const canSkip = Boolean(currentLine) && !measurementReadyForSave;
+  const skipPressable = canSkip && !saving;
 
   const onUpdateDraft = (patch: Partial<MarkerDraft>) => {
     if (!currentLine) {
@@ -595,7 +596,9 @@ export function HealthMarkerPromptFlow({
               type="button"
               disabled={!canSkip || saving}
               className={`inline-flex min-h-[56px] flex-1 items-center justify-center rounded-xl border border-app-border bg-app-surface px-4 text-base font-semibold text-app-ink shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg ${
-                canSkip ? 'hover:bg-app-surface/80' : 'opacity-50'
+                skipPressable
+                  ? 'hover:bg-app-surface/80'
+                  : 'cursor-not-allowed opacity-50'
               }`}
               onClick={skipCurrent}
             >

@@ -24,6 +24,10 @@
 -- message (see `mapSupabaseErrorToPresetDataError` for `health_markers_preset_health_marker_id_fkey`).
 -- Longer-term options if product needs “remove line from template” anyway: soft-delete/archived
 -- preset lines, or admin tools that reassign measurements—not handled in this migration.
+--
+-- Locking: this file runs DDL + backfill + constraints in one transaction (one migration file).
+-- That can block `health_markers` for the full duration on busy or very large tables; plan a window
+-- if needed. Splitting into multiple migration files would shorten per-step locks but adds churn.
 
 BEGIN;
 
@@ -104,10 +108,11 @@ WHERE hm.id IN (
 -- Full UNIQUE (not partial): PostgREST upsert uses `on_conflict=episode_id,preset_health_marker_id`
 -- and cannot target a partial index predicate. NULLs are distinct, so wellness rows
 -- (episode_id / preset_health_marker_id null) are not forced unique by this constraint.
-DROP INDEX IF EXISTS public.health_markers_episode_preset_line_uidx;
-
+-- Drop CONSTRAINT before INDEX: a UNIQUE constraint owns its index; dropping the index first fails.
 ALTER TABLE public.health_markers
   DROP CONSTRAINT IF EXISTS health_markers_episode_preset_line_uidx;
+
+DROP INDEX IF EXISTS public.health_markers_episode_preset_line_uidx;
 
 ALTER TABLE public.health_markers
   ADD CONSTRAINT health_markers_episode_preset_line_uidx UNIQUE (episode_id, preset_health_marker_id);

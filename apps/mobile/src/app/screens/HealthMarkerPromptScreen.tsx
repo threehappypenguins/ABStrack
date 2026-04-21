@@ -289,6 +289,7 @@ export function HealthMarkerPromptScreen() {
     ? parseMeasurementDraftForSave(currentLine, currentDraft).ok
     : false;
   const canSkip = Boolean(currentLine) && !measurementReadyForSave;
+  const skipPressable = canSkip && !saving;
 
   const onUpdateDraft = (patch: Partial<MarkerDraft>) => {
     if (!currentLine) {
@@ -630,7 +631,7 @@ export function HealthMarkerPromptScreen() {
                       }}
                       style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
                       className={`w-full items-center justify-center rounded-xl border-2 border-app-border bg-app-bg px-3 py-4 dark:border-app-border-dark dark:bg-app-bg-dark ${
-                        canSkip ? 'active:opacity-90' : 'opacity-50'
+                        skipPressable ? 'active:opacity-90' : 'opacity-50'
                       }`}
                     >
                       <Text
