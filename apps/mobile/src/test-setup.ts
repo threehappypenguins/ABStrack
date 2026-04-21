@@ -3,6 +3,9 @@ import { configure } from '@testing-library/react-native';
 // Async server-mocked flows often finish a tick after `waitFor`/`fireEvent`; React 19 still logs
 // this known warning. Suppress only that string so other `console.error` output stays visible.
 // Use a spy + restore (not a permanent global override) so tests can assert on `console.error`.
+//
+// Install per test: `jest.restoreAllMocks()` in a suite clears spies mid-run; a single beforeAll spy
+// would stay "dead" until the process ends. Re-apply in beforeEach and restore in afterEach.
 const shouldSuppressActWarning = (
   args: Parameters<typeof console.error>,
 ): boolean => {
@@ -12,7 +15,8 @@ const shouldSuppressActWarning = (
 
 let consoleErrorSpy: jest.SpiedFunction<typeof console.error> | undefined;
 
-beforeAll(() => {
+beforeEach(() => {
+  consoleErrorSpy?.mockRestore();
   const original = console.error.bind(console);
   consoleErrorSpy = jest
     .spyOn(console, 'error')
@@ -24,7 +28,7 @@ beforeAll(() => {
     });
 });
 
-afterAll(() => {
+afterEach(() => {
   consoleErrorSpy?.mockRestore();
   consoleErrorSpy = undefined;
 });

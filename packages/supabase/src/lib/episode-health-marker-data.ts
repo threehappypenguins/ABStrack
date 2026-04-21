@@ -45,9 +45,11 @@ export async function listEpisodeHealthMarkersForEpisode(
  *
  * Episode-bound rows are keyed by `(episode_id, preset_health_marker_id)` where
  * `preset_health_marker_id` is {@link PresetHealthMarkerRow.id}. That allows multiple template lines
- * with the same `marker_kind` (e.g. two glucose steps) without colliding. A partial unique index
- * enforces one row per preset line per episode; this function uses a single `upsert` so concurrent
- * clients cannot double-insert the same line.
+ * with the same `marker_kind` (e.g. two glucose steps) without colliding. A non-partial unique
+ * constraint on `(episode_id, preset_health_marker_id)` (see migration
+ * `20260421120000_health_markers_episode_line_unique.sql`) is required so PostgREST can infer
+ * `onConflict`; partial unique indexes do not match. Wellness rows stay allowed (NULL distinctness).
+ * This function uses one `upsert` so concurrent clients cannot double-insert the same line.
  *
  * @param client - Supabase client (RLS applies).
  * @param args.userId - Must match the episode owner (`episodes.user_id`) under RLS.

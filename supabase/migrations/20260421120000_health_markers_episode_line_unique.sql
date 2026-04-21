@@ -2,7 +2,19 @@
 -- (with `episode_id`) so multiple template lines with the same `marker_kind` stay distinct.
 -- One measurement per preset line per episode; wellness rows keep `episode_id` / `preset_health_marker_id` null.
 --
--- Generated keys normalize NULL custom fields to '' (see packages/supabase normalizeCustomField).
+-- Custom name/unit handling is two-layer (do not conflate when debugging upserts / backfill matching):
+-- - Application writes: `normalizeCustomField` in `episode-health-marker-data.ts` trims strings and
+--   stores blank/whitespace-only as SQL NULL (so inserts stay canonical from the client).
+-- - Database: `custom_name_key` / `custom_unit_key` are GENERATED with `coalesce(custom_*, '')` so NULL
+--   and empty string compare the same for template/marker matching and uniqueness in SQL.
+--
+-- DATA SAFETY (episode-bound rows after backfill):
+-- Rows with episode_id set but no matching preset_health_markers line (e.g. episode missing
+-- health_marker_preset_id, template changed, or marker_kind/custom fields no longer on the preset)
+-- cannot satisfy the new CHECK (episode_id ⇒ preset_health_marker_id). This migration does NOT
+-- silently DELETE those rows: it FAILS so you can inspect, fix templates or rows, or remove them
+-- deliberately, then re-run `db push`. Duplicate (episode_id, preset_health_marker_id) rows are
+-- still deduplicated below (keep newest); note that in PR/release notes if that matters for audits.
 
 BEGIN;
 
@@ -45,9 +57,23 @@ SET preset_health_marker_id = (
 )
 WHERE hm.episode_id IS NOT NULL;
 
-DELETE FROM public.health_markers hm
-WHERE hm.episode_id IS NOT NULL
-  AND hm.preset_health_marker_id IS NULL;
+-- Fail fast if any episode-bound row is still unmappable (no silent delete).
+DO $$
+DECLARE
+  orphan_count integer;
+BEGIN
+  SELECT count(*)::integer
+  INTO orphan_count
+  FROM public.health_markers
+  WHERE episode_id IS NOT NULL
+    AND preset_health_marker_id IS NULL;
+
+  IF orphan_count > 0 THEN
+    RAISE EXCEPTION
+      'Cannot complete health_markers migration: % episode-bound row(s) have no matching preset_health_markers line after backfill (check episodes.health_marker_preset_id, marker_kind, custom_name, custom_unit on the episode template). Repair or delete those health_markers rows, then re-run. Example: SELECT id, user_id, episode_id, marker_kind FROM public.health_markers WHERE episode_id IS NOT NULL AND preset_health_marker_id IS NULL;',
+      orphan_count;
+  END IF;
+END $$;
 
 DELETE FROM public.health_markers hm
 WHERE hm.id IN (
@@ -66,13 +92,19 @@ WHERE hm.id IN (
   WHERE ranked.rn > 1
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS health_markers_episode_preset_line_uidx
-  ON public.health_markers (episode_id, preset_health_marker_id)
-  WHERE episode_id IS NOT NULL
-    AND preset_health_marker_id IS NOT NULL;
+-- Full UNIQUE (not partial): PostgREST upsert uses `on_conflict=episode_id,preset_health_marker_id`
+-- and cannot target a partial index predicate. NULLs are distinct, so wellness rows
+-- (episode_id / preset_health_marker_id null) are not forced unique by this constraint.
+DROP INDEX IF EXISTS public.health_markers_episode_preset_line_uidx;
 
-COMMENT ON INDEX public.health_markers_episode_preset_line_uidx IS
-  'One measurement per preset line per episode; allows multiple same-kind lines when the template has separate rows.';
+ALTER TABLE public.health_markers
+  DROP CONSTRAINT IF EXISTS health_markers_episode_preset_line_uidx;
+
+ALTER TABLE public.health_markers
+  ADD CONSTRAINT health_markers_episode_preset_line_uidx UNIQUE (episode_id, preset_health_marker_id);
+
+COMMENT ON CONSTRAINT health_markers_episode_preset_line_uidx ON public.health_markers IS
+  'One row per (episode, preset line); same-kind template lines stay distinct. Wellness rows may repeat (NULL distinctness).';
 
 ALTER TABLE public.health_markers
   DROP CONSTRAINT IF EXISTS health_markers_episode_requires_preset_line;
