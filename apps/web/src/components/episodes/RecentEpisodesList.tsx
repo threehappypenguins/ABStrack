@@ -32,6 +32,7 @@ export function RecentEpisodesList({ episodes }: RecentEpisodesListProps) {
 
   const pendingEpisode =
     episodes.find((ep) => ep.id === pendingDeleteEpisodeId) ?? null;
+  const isDeletingEpisode = deletingEpisodeId !== null;
 
   const handleConfirmDelete = async (): Promise<void | false> => {
     if (!pendingEpisode || deletingEpisodeId) {
@@ -93,11 +94,16 @@ export function RecentEpisodesList({ episodes }: RecentEpisodesListProps) {
                 type="button"
                 className="mt-3 inline-flex min-h-[44px] items-center justify-center rounded-lg px-3 py-2 text-sm font-medium text-red-700 transition hover:text-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg dark:text-red-300 dark:hover:text-red-200"
                 onClick={() => {
+                  if (isDeletingEpisode) {
+                    return;
+                  }
                   setPendingDeleteEpisodeId(ep.id);
                 }}
-                disabled={deletingEpisodeId === ep.id}
+                disabled={isDeletingEpisode}
               >
-                Delete episode
+                {deletingEpisodeId === ep.id
+                  ? 'Deleting episode…'
+                  : 'Delete episode'}
               </button>
             </div>
           </li>

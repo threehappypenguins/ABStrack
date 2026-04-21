@@ -9,7 +9,7 @@ ABStrack supports deliberate episode removal while preserving clear data-impact 
 
 ## Data Impact When Deleting Any Episode
 
-Deleting an active episode applies these foreign-key rules:
+Deleting any episode applies these foreign-key rules:
 
 - `episode_symptoms`: deleted (`ON DELETE CASCADE`)
 - `health_markers`: deleted (`ON DELETE CASCADE`)
