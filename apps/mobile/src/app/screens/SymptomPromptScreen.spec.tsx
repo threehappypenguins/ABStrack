@@ -636,7 +636,7 @@ describe('SymptomPromptScreen', () => {
 
     expect(alertSpy).toHaveBeenCalledWith(
       'Cancel this active episode?',
-      'Canceling will permanently remove this in-progress episode and any linked symptom or media entries. This cannot be undone.',
+      'Canceling permanently deletes this in-progress episode, its symptom answers, health markers, and media metadata. Food diary entries are kept, but this episode link is removed. This cannot be undone.',
       expect.any(Array),
     );
 

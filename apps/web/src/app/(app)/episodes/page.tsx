@@ -6,8 +6,7 @@ import {
   listCompletedEpisodesForUser,
 } from '@abstrack/supabase';
 import { ActiveEpisodeCard } from '@/components/episodes/ActiveEpisodeCard';
-import { EpisodeLocaleInstant } from '@/components/episodes/EpisodeLocaleInstant';
-import { formatEpisodeTypeSummary } from '@/lib/episodes/format-episode-meta';
+import { RecentEpisodesList } from '@/components/episodes/RecentEpisodesList';
 import { createServerClient } from '@/lib/supabase/server-client';
 
 /**
@@ -127,38 +126,7 @@ export default async function EpisodesPage() {
           </p>
         ) : null}
         {user && !recentError && recent.length > 0 ? (
-          <ul className="mt-3 space-y-3" role="list">
-            {recent.map((ep) => (
-              <li key={ep.id}>
-                <div className="rounded-xl border border-app-border/90 bg-app-surface p-4 shadow-soft ring-1 ring-[color:var(--app-ring-slate)]">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-app-muted">
-                    Ended
-                  </p>
-                  <p className="mt-1.5 text-base font-semibold text-app-ink">
-                    {formatEpisodeTypeSummary(ep)}
-                  </p>
-                  <dl className="mt-2 space-y-1 text-sm text-app-muted">
-                    <div className="flex flex-wrap gap-x-2">
-                      <dt className="font-medium text-app-ink/80">Started</dt>
-                      <dd>
-                        <EpisodeLocaleInstant iso={ep.started_at} />
-                      </dd>
-                    </div>
-                    <div className="flex flex-wrap gap-x-2">
-                      <dt className="font-medium text-app-ink/80">Ended</dt>
-                      <dd>
-                        {ep.ended_at ? (
-                          <EpisodeLocaleInstant iso={ep.ended_at} />
-                        ) : (
-                          '—'
-                        )}
-                      </dd>
-                    </div>
-                  </dl>
-                </div>
-              </li>
-            ))}
-          </ul>
+          <RecentEpisodesList episodes={recent} />
         ) : null}
       </section>
     </div>

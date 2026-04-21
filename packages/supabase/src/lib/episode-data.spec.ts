@@ -3,6 +3,7 @@ import type { EpisodeInsert, EpisodeRow } from '@abstrack/types';
 import {
   cancelActiveEpisodeById,
   createEpisode,
+  deleteEpisodeById,
   endEpisodeIfStillActive,
   getActiveEpisodeForUser,
   getEpisodeById,
@@ -290,15 +291,16 @@ describe('cancelActiveEpisodeById', () => {
       data: { id: 'ep-1' },
       error: null,
     }));
+    const is = vi.fn(() => ({
+      select: vi.fn(() => ({
+        maybeSingle,
+      })),
+    }));
     const client = {
       from: vi.fn(() => ({
         delete: vi.fn(() => ({
           eq: vi.fn(() => ({
-            is: vi.fn(() => ({
-              select: vi.fn(() => ({
-                maybeSingle,
-              })),
-            })),
+            is,
           })),
         })),
       })),
@@ -311,19 +313,21 @@ describe('cancelActiveEpisodeById', () => {
       expect(result.data.didCancel).toBe(true);
     }
     expect(client.from).toHaveBeenCalledWith('episodes');
+    expect(is).toHaveBeenCalledWith('ended_at', null);
   });
 
   it('returns didCancel false when the row was already ended (no row returned)', async () => {
     const maybeSingle = vi.fn(async () => ({ data: null, error: null }));
+    const is = vi.fn(() => ({
+      select: vi.fn(() => ({
+        maybeSingle,
+      })),
+    }));
     const client = {
       from: vi.fn(() => ({
         delete: vi.fn(() => ({
           eq: vi.fn(() => ({
-            is: vi.fn(() => ({
-              select: vi.fn(() => ({
-                maybeSingle,
-              })),
-            })),
+            is,
           })),
         })),
       })),
@@ -334,6 +338,57 @@ describe('cancelActiveEpisodeById', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.data.didCancel).toBe(false);
+    }
+    expect(is).toHaveBeenCalledWith('ended_at', null);
+  });
+});
+
+describe('deleteEpisodeById', () => {
+  it('deletes the row regardless of ended_at state', async () => {
+    const maybeSingle = vi.fn(async () => ({
+      data: { id: 'ep-2' },
+      error: null,
+    }));
+    const client = {
+      from: vi.fn(() => ({
+        delete: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            select: vi.fn(() => ({
+              maybeSingle,
+            })),
+          })),
+        })),
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await deleteEpisodeById(client, 'ep-2');
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.didDelete).toBe(true);
+    }
+    expect(client.from).toHaveBeenCalledWith('episodes');
+  });
+
+  it('returns didDelete false when no row is visible/matched', async () => {
+    const maybeSingle = vi.fn(async () => ({ data: null, error: null }));
+    const client = {
+      from: vi.fn(() => ({
+        delete: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            select: vi.fn(() => ({
+              maybeSingle,
+            })),
+          })),
+        })),
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await deleteEpisodeById(client, 'ep-missing');
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.didDelete).toBe(false);
     }
   });
 });

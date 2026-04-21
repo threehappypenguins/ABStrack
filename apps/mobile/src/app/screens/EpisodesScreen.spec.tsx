@@ -9,6 +9,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import {
   cancelActiveEpisodeById,
+  deleteEpisodeById,
   getActiveEpisodeForUser,
   listCompletedEpisodesForUser,
 } from '@abstrack/supabase';
@@ -36,6 +37,7 @@ jest.mock('@react-navigation/native', () => {
 
 jest.mock('@abstrack/supabase', () => ({
   cancelActiveEpisodeById: jest.fn(),
+  deleteEpisodeById: jest.fn(),
   getActiveEpisodeForUser: jest.fn(),
   listCompletedEpisodesForUser: jest.fn(),
 }));
@@ -98,6 +100,10 @@ describe('EpisodesScreen', () => {
     jest.mocked(cancelActiveEpisodeById).mockResolvedValue({
       ok: true,
       data: { didCancel: true },
+    });
+    jest.mocked(deleteEpisodeById).mockResolvedValue({
+      ok: true,
+      data: { didDelete: true },
     });
   });
 
@@ -201,6 +207,55 @@ describe('EpisodesScreen', () => {
     expect(screen.getByText('Ended')).toBeTruthy();
   });
 
+  it('confirms and deletes a completed episode from history', async () => {
+    const alertSpy = jest
+      .spyOn(require('react-native').Alert, 'alert')
+      .mockImplementation(() => undefined);
+    try {
+      const ended = makeEpisodeRow({
+        id: 'ep-ended-delete',
+        ended_at: '2026-04-21T12:00:00.000Z',
+        episode_label: 'History row',
+      });
+      jest.mocked(listCompletedEpisodesForUser).mockResolvedValue({
+        ok: true,
+        data: [ended],
+      });
+
+      render(<EpisodesScreen />);
+
+      expect(await screen.findByText('ABS — History row')).toBeTruthy();
+      fireEvent.press(screen.getByText('Delete episode'));
+
+      expect(alertSpy).toHaveBeenCalledWith(
+        'Delete this episode from history?',
+        'Deleting permanently removes this episode, its symptom answers, health markers, and media metadata. Food diary entries are kept, but this episode link is removed. This cannot be undone.',
+        expect.any(Array),
+      );
+
+      const [, , buttons] = alertSpy.mock.calls[0] as [
+        string,
+        string,
+        Array<{ onPress?: () => void }>,
+      ];
+      await act(async () => {
+        buttons[1]?.onPress?.();
+      });
+
+      await waitFor(() => {
+        expect(deleteEpisodeById).toHaveBeenCalledWith(
+          expect.anything(),
+          'ep-ended-delete',
+        );
+      });
+      expect(announce).toHaveBeenCalledWith('Episode deleted from history.', {
+        politeness: 'polite',
+      });
+    } finally {
+      alertSpy.mockRestore();
+    }
+  });
+
   it('confirms and cancels active episode', async () => {
     const alertSpy = jest
       .spyOn(require('react-native').Alert, 'alert')
@@ -222,7 +277,7 @@ describe('EpisodesScreen', () => {
 
       expect(alertSpy).toHaveBeenCalledWith(
         'Cancel this active episode?',
-        'Canceling will permanently remove this in-progress episode and any linked symptom or media entries. This cannot be undone.',
+        'Canceling permanently deletes this in-progress episode, its symptom answers, health markers, and media metadata. Food diary entries are kept, but this episode link is removed. This cannot be undone.',
         expect.any(Array),
       );
 

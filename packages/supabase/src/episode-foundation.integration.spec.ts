@@ -11,7 +11,12 @@ import type { Database } from './lib/database.types.js';
 import { getSupabasePublishableKey, getSupabaseUrl } from './lib/env-public.js';
 import type { AbstrackSupabaseClient } from './lib/supabase-client-type.js';
 import { getSupabaseAdminClient } from './admin.js';
-import { createEpisode, getEpisodeById } from './lib/episode-data.js';
+import {
+  cancelActiveEpisodeById,
+  createEpisode,
+  deleteEpisodeById,
+  getEpisodeById,
+} from './lib/episode-data.js';
 import {
   listEpisodeSymptomsForEpisode,
   upsertEpisodeSymptomAnswer,
@@ -264,6 +269,131 @@ describe.skipIf(!episodeFoundationReady)(
         expect(error).toBeNull();
         expect(data?.response_text).toBe('mild cramping');
       });
+
+      it('cascades or unlinks related rows when canceling an active episode', async () => {
+        const symptomInsert = await clientA
+          .from('episode_symptoms')
+          .insert({
+            user_id: userAId,
+            episode_id: episodeId,
+            symptom_name: 'Nausea',
+            response_type: 'yes_no',
+            response_boolean: true,
+            sort_order: 1,
+          })
+          .select('id')
+          .single();
+        expect(symptomInsert.error).toBeNull();
+        const insertedSymptomId = symptomInsert.data?.id;
+        expect(insertedSymptomId).toBeTruthy();
+
+        const markerInsert = await clientA
+          .from('health_markers')
+          .insert({
+            user_id: userAId,
+            episode_id: episodeId,
+            marker_kind: 'heart_rate',
+            value_numeric: 88,
+            recorded_at: new Date().toISOString(),
+          })
+          .select('id')
+          .single();
+        expect(markerInsert.error).toBeNull();
+
+        const foodInsert = await clientA
+          .from('food_diary_entries')
+          .insert({
+            user_id: userAId,
+            episode_id: episodeId,
+            meal_tag: 'Snack',
+            food_note: 'Banana and water',
+            logged_at: new Date().toISOString(),
+          })
+          .select('id')
+          .single();
+        expect(foodInsert.error).toBeNull();
+        const foodEntryId = foodInsert.data?.id;
+        expect(foodEntryId).toBeTruthy();
+
+        const mediaInsert = await clientA
+          .from('episode_media')
+          .insert({
+            user_id: userAId,
+            episode_id: episodeId,
+            episode_symptom_id: insertedSymptomId ?? null,
+            storage_object_key: `episode-media/${episodeId}/clip.mp4`,
+            media_type: 'video',
+          })
+          .select('id')
+          .single();
+        expect(mediaInsert.error).toBeNull();
+
+        const canceled = await cancelActiveEpisodeById(clientA, episodeId);
+        expect(canceled.ok).toBe(true);
+        if (!canceled.ok) {
+          return;
+        }
+        expect(canceled.data.didCancel).toBe(true);
+
+        const symptomsAfter = await clientA
+          .from('episode_symptoms')
+          .select('id')
+          .eq('episode_id', episodeId);
+        expect(symptomsAfter.error).toBeNull();
+        expect(symptomsAfter.data ?? []).toHaveLength(0);
+
+        const markersAfter = await clientA
+          .from('health_markers')
+          .select('id')
+          .eq('episode_id', episodeId);
+        expect(markersAfter.error).toBeNull();
+        expect(markersAfter.data ?? []).toHaveLength(0);
+
+        const mediaAfter = await clientA
+          .from('episode_media')
+          .select('id')
+          .eq('episode_id', episodeId);
+        expect(mediaAfter.error).toBeNull();
+        expect(mediaAfter.data ?? []).toHaveLength(0);
+
+        const foodAfter = await clientA
+          .from('food_diary_entries')
+          .select('episode_id')
+          .eq('id', foodEntryId as string)
+          .single();
+        expect(foodAfter.error).toBeNull();
+        expect(foodAfter.data?.episode_id).toBeNull();
+      });
+
+      it('deletes completed episodes via the general delete helper', async () => {
+        const startedAt = new Date(Date.now() - 60_000).toISOString();
+        const endedAt = new Date().toISOString();
+        const ep = await createEpisode(clientA, {
+          user_id: userAId,
+          started_at: startedAt,
+          ended_at: endedAt,
+          symptom_preset_id: symptomPresetId,
+          health_marker_preset_id: healthMarkerPresetId,
+        });
+        expect(ep.ok).toBe(true);
+        if (!ep.ok) {
+          return;
+        }
+
+        const deleted = await deleteEpisodeById(clientA, ep.data.id);
+        expect(deleted.ok).toBe(true);
+        if (!deleted.ok) {
+          return;
+        }
+        expect(deleted.data.didDelete).toBe(true);
+
+        const nowMissing = await getEpisodeById(clientA, ep.data.id);
+        expect(nowMissing.ok).toBe(true);
+        if (!nowMissing.ok) {
+          return;
+        }
+        expect(nowMissing.data).toBeNull();
+      });
     });
 
     describe('cross-user denial', () => {
@@ -357,6 +487,15 @@ describe.skipIf(!episodeFoundationReady)(
           return;
         }
         expect(got.data).toBeNull();
+      });
+
+      it('does not allow deleting other user episode rows', async () => {
+        const deleted = await deleteEpisodeById(clientB, victimEpisodeId);
+        expect(deleted.ok).toBe(true);
+        if (!deleted.ok) {
+          return;
+        }
+        expect(deleted.data.didDelete).toBe(false);
       });
     });
   },

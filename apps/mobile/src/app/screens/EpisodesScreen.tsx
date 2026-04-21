@@ -6,6 +6,7 @@ import type { EpisodeRow } from '@abstrack/types';
 import { announce } from '@abstrack/ui/native';
 import {
   cancelActiveEpisodeById,
+  deleteEpisodeById,
   getActiveEpisodeForUser,
   listCompletedEpisodesForUser,
 } from '@abstrack/supabase';
@@ -52,6 +53,9 @@ export function EpisodesScreen() {
   const [active, setActive] = useState<EpisodeRow | null>(null);
   const [recent, setRecent] = useState<EpisodeRow[]>([]);
   const [cancelingActiveEpisode, setCancelingActiveEpisode] = useState(false);
+  const [deletingEpisodeId, setDeletingEpisodeId] = useState<string | null>(
+    null,
+  );
 
   const load = useCallback(async (cancel?: { cancelled: boolean }) => {
     const generation = ++loadGenRef.current;
@@ -138,7 +142,7 @@ export function EpisodesScreen() {
     }
     Alert.alert(
       'Cancel this active episode?',
-      'Canceling will permanently remove this in-progress episode and any linked symptom or media entries. This cannot be undone.',
+      'Canceling permanently deletes this in-progress episode, its symptom answers, health markers, and media metadata. Food diary entries are kept, but this episode link is removed. This cannot be undone.',
       [
         { text: 'Keep episode', style: 'cancel' },
         {
@@ -179,6 +183,53 @@ export function EpisodesScreen() {
       ],
     );
   }, [active, cancelingActiveEpisode, load]);
+
+  const onDeleteEpisode = useCallback(
+    (episode: EpisodeRow) => {
+      if (deletingEpisodeId) {
+        return;
+      }
+      Alert.alert(
+        'Delete this episode from history?',
+        'Deleting permanently removes this episode, its symptom answers, health markers, and media metadata. Food diary entries are kept, but this episode link is removed. This cannot be undone.',
+        [
+          { text: 'Keep episode', style: 'cancel' },
+          {
+            text: 'Delete episode',
+            style: 'destructive',
+            onPress: () => {
+              void (async () => {
+                setDeletingEpisodeId(episode.id);
+                try {
+                  const client = getMobileSupabaseClient();
+                  const result = await deleteEpisodeById(client, episode.id);
+                  if (!result.ok) {
+                    await announce(result.error.message, {
+                      politeness: 'assertive',
+                    });
+                    return;
+                  }
+                  if (result.data.didDelete) {
+                    await announce('Episode deleted from history.', {
+                      politeness: 'polite',
+                    });
+                  } else {
+                    await announce('This episode is no longer available.', {
+                      politeness: 'polite',
+                    });
+                  }
+                  await load();
+                } finally {
+                  setDeletingEpisodeId(null);
+                }
+              })();
+            },
+          },
+        ],
+      );
+    },
+    [deletingEpisodeId, load],
+  );
 
   const resumeSummary: ActiveEpisodeHomeSummary | null =
     active && active.symptom_preset_id
@@ -347,6 +398,23 @@ export function EpisodesScreen() {
                   <Text className={`text-sm ${nw.textMuted}`}>
                     Ended {ep.ended_at ? formatInstant(ep.ended_at) : '—'}
                   </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Delete ${episodeSummaryLine(ep)} episode`}
+                    accessibilityHint="Permanently removes this episode from history"
+                    accessibilityState={{
+                      disabled: deletingEpisodeId === ep.id,
+                    }}
+                    onPress={() => onDeleteEpisode(ep)}
+                    disabled={deletingEpisodeId === ep.id}
+                    className="mt-2 items-start justify-center rounded-lg px-1 py-2"
+                  >
+                    <Text className="text-sm font-medium text-red-700 dark:text-red-300">
+                      {deletingEpisodeId === ep.id
+                        ? 'Deleting episode…'
+                        : 'Delete episode'}
+                    </Text>
+                  </Pressable>
                 </View>
               ))}
             </View>
