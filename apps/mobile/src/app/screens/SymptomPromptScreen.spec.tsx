@@ -519,7 +519,7 @@ describe('SymptomPromptScreen', () => {
     expect(screen.getByText('Headache')).toBeTruthy();
   });
 
-  test('resume: true shows complete phase when every line is answered on the server', async () => {
+  test('resume: true on fully answered symptoms lands on last step and Next routes to markers', async () => {
     jest.mocked(useRoute).mockReturnValue({
       key: 'SymptomPrompt',
       name: 'SymptomPrompt',
@@ -563,9 +563,13 @@ describe('SymptomPromptScreen', () => {
     const screen = render(<SymptomPromptScreen />);
 
     await waitFor(() => {
-      expect(
-        screen.getByText(/You reached the end of your symptom list/),
-      ).toBeTruthy();
+      expect(screen.getByText('Step 2 of 2')).toBeTruthy();
+    });
+    expect(screen.getByText('Headache')).toBeTruthy();
+    fireEvent.press(screen.getByLabelText('Next symptom'));
+    expect(mockReplace).toHaveBeenCalledWith('HealthMarkerPrompt', {
+      episodeId,
+      resume: true,
     });
   });
 
@@ -669,7 +673,7 @@ describe('SymptomPromptScreen', () => {
     alertSpy.mockRestore();
   });
 
-  test('changing symptomPresetId after complete resume state shows prompting again for new lines', async () => {
+  test('changing symptomPresetId after fully answered resume state shows prompting for new lines', async () => {
     const lineOnly = makeLine(
       'line-only',
       0,
@@ -720,9 +724,7 @@ describe('SymptomPromptScreen', () => {
     const screen = render(<SymptomPromptScreen />);
 
     await waitFor(() => {
-      expect(
-        screen.getByText(/You reached the end of your symptom list/),
-      ).toBeTruthy();
+      expect(screen.getByText('Step 2 of 2')).toBeTruthy();
     });
 
     jest.mocked(listPresetSymptomsForPreset).mockResolvedValue({
@@ -750,7 +752,7 @@ describe('SymptomPromptScreen', () => {
     );
   });
 
-  test('Finish transitions to health marker prompt and clears symptom session', async () => {
+  test('Next on last symptom transitions to health marker prompt and clears symptom session', async () => {
     const screen = render(<SymptomPromptScreen />);
 
     await waitFor(() => {
@@ -761,11 +763,11 @@ describe('SymptomPromptScreen', () => {
     fireEvent.press(screen.getByLabelText('Next symptom'));
 
     await waitFor(() => {
-      expect(screen.getByLabelText('Finish symptom list')).toBeTruthy();
+      expect(screen.getByLabelText('Next symptom')).toBeTruthy();
     });
 
     fireEvent.press(screen.getByLabelText('Severity 1'));
-    fireEvent.press(screen.getByLabelText('Finish symptom list'));
+    fireEvent.press(screen.getByLabelText('Next symptom'));
 
     expect(clearSymptomPromptSession).toHaveBeenCalledWith(episodeId);
     expect(mockReplace).toHaveBeenCalledWith('HealthMarkerPrompt', {

@@ -440,7 +440,7 @@ export function SymptomPromptScreen() {
         );
         if (placement.phase === 'complete') {
           idx = placement.activeIndex;
-          initialPhase = 'complete';
+          initialPhase = 'prompting';
         } else {
           const sIdx = clampIndex(session.activeIndex, result.data.length);
           const pIdx = placement.activeIndex;
@@ -648,6 +648,7 @@ export function SymptomPromptScreen() {
   const advanceToNextStep = () => {
     if (lines.length === 0) {
       clearSymptomPromptSession(episodeIdRef.current);
+      allowRemovalRef.current = true;
       navigation.replace('HealthMarkerPrompt', {
         episodeId: episodeIdRef.current,
         resume: resumeFromHomeIntentRef.current || undefined,
@@ -663,6 +664,7 @@ export function SymptomPromptScreen() {
       return;
     }
     clearSymptomPromptSession(episodeIdRef.current);
+    allowRemovalRef.current = true;
     navigation.replace('HealthMarkerPrompt', {
       episodeId: episodeIdRef.current,
       resume: resumeFromHomeIntentRef.current || undefined,
@@ -697,6 +699,7 @@ export function SymptomPromptScreen() {
 
   const onFinishToHome = () => {
     clearSymptomPromptSession(episodeIdRef.current);
+    allowRemovalRef.current = true;
     navigation.replace('HealthMarkerPrompt', {
       episodeId: episodeIdRef.current,
       resume: resumeFromHomeIntentRef.current || undefined,
@@ -841,11 +844,7 @@ export function SymptomPromptScreen() {
                   ) : null}
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel={
-                      lines.length > 0 && activeIndex >= lines.length - 1
-                        ? 'Finish symptom list'
-                        : 'Next symptom'
-                    }
+                    accessibilityLabel="Next symptom"
                     accessibilityState={{ disabled: !canProceedWithNext }}
                     disabled={!canProceedWithNext}
                     onPress={goNext}
@@ -857,11 +856,7 @@ export function SymptomPromptScreen() {
                     }`}
                   >
                     <Text className="text-center text-[17px] font-semibold text-white">
-                      {lines.length === 0
-                        ? 'Done'
-                        : activeIndex >= lines.length - 1
-                          ? 'Finish'
-                          : 'Next'}
+                      {lines.length === 0 ? 'Done' : 'Next'}
                     </Text>
                   </Pressable>
                 </View>

@@ -535,7 +535,7 @@ export function SymptomPromptFlow({
       );
       if (placement.phase === 'complete') {
         idx = placement.activeIndex;
-        initialPhase = 'complete';
+        initialPhase = 'prompting';
       } else {
         const sIdx = clampIndex(session.activeIndex, result.data.length);
         const pIdx = placement.activeIndex;
@@ -928,11 +928,7 @@ export function SymptomPromptFlow({
             }`}
             onClick={goNext}
           >
-            {lines.length === 0
-              ? 'Done'
-              : activeIndex >= lines.length - 1
-                ? 'Finish'
-                : 'Next'}
+            {lines.length === 0 ? 'Done' : 'Next'}
           </button>
         </div>
         <button

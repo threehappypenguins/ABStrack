@@ -150,4 +150,91 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
     }
     expect(fromCalls).toBe(2);
   });
+
+  it('inserts a new row when no matching marker exists', async () => {
+    const inserted = {
+      id: 'hm-new',
+      user_id: 'u1',
+      episode_id: 'ep-1',
+      marker_kind: 'blood_glucose',
+      custom_name: null,
+      custom_unit: null,
+      value_numeric: 88,
+      systolic_numeric: null,
+      diastolic_numeric: null,
+      notes: 'fasting',
+      recorded_at: '2026-04-18T12:00:00.000Z',
+      created_at: '2026-04-18T12:00:00.000Z',
+      updated_at: '2026-04-18T12:00:00.000Z',
+    };
+    const insertMock = vi.fn((payload: Record<string, unknown>) => {
+      expect(payload).toEqual(
+        expect.objectContaining({
+          user_id: 'u1',
+          episode_id: 'ep-1',
+          marker_kind: 'blood_glucose',
+          custom_name: null,
+          custom_unit: null,
+          value_numeric: 88,
+          systolic_numeric: null,
+          diastolic_numeric: null,
+          notes: 'fasting',
+        }),
+      );
+      return {
+        select: vi.fn(() => ({
+          single: vi.fn(async () => ({ data: inserted, error: null })),
+        })),
+      };
+    });
+
+    let fromCalls = 0;
+    const client = {
+      from: vi.fn(() => {
+        fromCalls += 1;
+        if (fromCalls === 1) {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  is: vi.fn(() => ({
+                    is: vi.fn(() => ({
+                      order: vi.fn(() => ({
+                        order: vi.fn(() => ({
+                          order: vi.fn(() => ({
+                            limit: vi.fn(async () => ({
+                              data: [],
+                              error: null,
+                            })),
+                          })),
+                        })),
+                      })),
+                    })),
+                  })),
+                })),
+              })),
+            })),
+          };
+        }
+        return { insert: insertMock };
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await upsertEpisodeHealthMarkerForLine(client, {
+      userId: 'u1',
+      episodeId: 'ep-1',
+      line,
+      valueNumeric: 88,
+      notes: 'fasting',
+      recordedAt: '2026-04-18T12:00:00.000Z',
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.id).toBe('hm-new');
+      expect(result.data.value_numeric).toBe(88);
+    }
+    expect(insertMock).toHaveBeenCalledTimes(1);
+    expect(fromCalls).toBe(2);
+  });
 });

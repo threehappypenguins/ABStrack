@@ -74,11 +74,17 @@ function draftHasValue(
   draft: MarkerDraft,
 ): boolean {
   if (line.marker_kind === 'blood_pressure') {
+    const systolic = parseOptionalNumber(draft.systolic);
+    const diastolic = parseOptionalNumber(draft.diastolic);
     return (
-      draft.systolic.trim().length > 0 || draft.diastolic.trim().length > 0
+      systolic !== null &&
+      diastolic !== null &&
+      !Number.isNaN(systolic) &&
+      !Number.isNaN(diastolic)
     );
   }
-  return draft.value.trim().length > 0;
+  const value = parseOptionalNumber(draft.value);
+  return value !== null && !Number.isNaN(value);
 }
 
 function parseOptionalNumber(raw: string): number | null {
