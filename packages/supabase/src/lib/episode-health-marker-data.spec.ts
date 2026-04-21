@@ -85,6 +85,7 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
       id: existingId,
       user_id: 'u1',
       episode_id: 'ep-1',
+      preset_health_marker_id: 'phm-1',
       marker_kind: 'blood_glucose',
       custom_name: null,
       custom_unit: null,
@@ -126,13 +127,14 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
       expect.objectContaining({
         user_id: 'u1',
         episode_id: 'ep-1',
+        preset_health_marker_id: 'phm-1',
         marker_kind: 'blood_glucose',
         custom_name: null,
         custom_unit: null,
         value_numeric: 120,
       }),
       {
-        onConflict: 'episode_id,marker_kind,custom_name_key,custom_unit_key',
+        onConflict: 'episode_id,preset_health_marker_id',
       },
     );
   });
@@ -146,6 +148,7 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
       id: 'hm-new',
       user_id: 'u1',
       episode_id: 'ep-1',
+      preset_health_marker_id: 'phm-1',
       marker_kind: 'blood_glucose',
       custom_name: null,
       custom_unit: null,
@@ -164,6 +167,7 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
         expect.objectContaining({
           user_id: 'u1',
           episode_id: 'ep-1',
+          preset_health_marker_id: 'phm-1',
           marker_kind: 'blood_glucose',
           custom_name: null,
           custom_unit: null,
@@ -202,7 +206,7 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
     }
     expect(upsertMock).toHaveBeenCalledTimes(1);
     expect(upsertMock).toHaveBeenCalledWith(expect.any(Object), {
-      onConflict: 'episode_id,marker_kind,custom_name_key,custom_unit_key',
+      onConflict: 'episode_id,preset_health_marker_id',
     });
   });
 
@@ -218,6 +222,7 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
       id: 'hm-custom-1',
       user_id: 'u1',
       episode_id: 'ep-1',
+      preset_health_marker_id: 'phm-custom',
       marker_kind: 'custom',
       custom_name: 'Iron',
       custom_unit: 'mg',
@@ -235,6 +240,7 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
       expect(payload).toEqual({
         user_id: 'u1',
         episode_id: 'ep-1',
+        preset_health_marker_id: 'phm-custom',
         marker_kind: 'custom',
         custom_name: 'Iron',
         custom_unit: 'mg',
@@ -267,7 +273,7 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
     expect(result.ok).toBe(true);
     expect(upsertMock).toHaveBeenCalledTimes(1);
     expect(upsertMock).toHaveBeenCalledWith(expect.any(Object), {
-      onConflict: 'episode_id,marker_kind,custom_name_key,custom_unit_key',
+      onConflict: 'episode_id,preset_health_marker_id',
     });
   });
 });

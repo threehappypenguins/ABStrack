@@ -1,9 +1,12 @@
--- Episode-scoped health marker lines: at most one row per
--- (episode_id, marker_kind, custom_name, custom_unit) signature.
--- Enables atomic upserts from the client without read-then-write races.
+-- health_markers: generated key columns + episode-bound rows keyed by `preset_health_markers.id`
+-- (with `episode_id`) so multiple template lines with the same `marker_kind` stay distinct.
+-- One measurement per preset line per episode; wellness rows keep `episode_id` / `preset_health_marker_id` null.
 --
--- Generated keys normalize NULL custom fields to '' so uniqueness matches app logic
--- (see packages/supabase episode-health-marker-data normalizeCustomField).
+-- Generated keys normalize NULL custom fields to '' (see packages/supabase normalizeCustomField).
+
+BEGIN;
+
+LOCK TABLE public.health_markers IN EXCLUSIVE MODE;
 
 ALTER TABLE public.health_markers
   ADD COLUMN IF NOT EXISTS custom_name_key text
@@ -12,49 +15,68 @@ ALTER TABLE public.health_markers
     GENERATED ALWAYS AS (coalesce(custom_unit, '')) STORED;
 
 COMMENT ON COLUMN public.health_markers.custom_name_key IS
-  'Generated from custom_name for unique index and upsert onConflict; do not insert or update.';
+  'Generated from custom_name; do not insert or update.';
 COMMENT ON COLUMN public.health_markers.custom_unit_key IS
-  'Generated from custom_unit for unique index and upsert onConflict; do not insert or update.';
+  'Generated from custom_unit; do not insert or update.';
 
--- Explicit transaction: LOCK TABLE requires a transaction block. The lock blocks concurrent
--- writers from inserting duplicate episode-bound marker rows between dedupe and index creation.
-BEGIN;
+ALTER TABLE public.health_markers
+  ADD COLUMN IF NOT EXISTS preset_health_marker_id uuid REFERENCES public.preset_health_markers (id) ON DELETE SET NULL;
 
--- Hold an exclusive lock so no concurrent writer can reintroduce duplicate
--- (episode_id, marker_kind, custom_name_key, custom_unit_key) signatures while this migration runs.
-LOCK TABLE public.health_markers IN EXCLUSIVE MODE;
+COMMENT ON COLUMN public.health_markers.preset_health_marker_id IS
+  'Preset line (`preset_health_markers.id`) for episode-bound rows; paired with episode_id for upsert. NULL for wellness / non-episode rows.';
 
--- Remove duplicate episode-bound rows, keeping the newest measurement per signature.
+-- Backfill: match episode template + line signature; pick one preset line when several match (lowest sort_order).
+UPDATE public.health_markers hm
+SET preset_health_marker_id = x.phm_id
+FROM LATERAL (
+  SELECT phm.id AS phm_id
+  FROM public.episodes e
+  JOIN public.preset_health_markers phm
+    ON phm.preset_id = e.health_marker_preset_id
+   AND phm.marker_kind = hm.marker_kind
+   AND coalesce(phm.custom_name, '') = coalesce(hm.custom_name, '')
+   AND coalesce(phm.custom_unit, '') = coalesce(hm.custom_unit, '')
+  WHERE e.id = hm.episode_id
+  ORDER BY phm.sort_order ASC, phm.id ASC
+  LIMIT 1
+) x
+WHERE hm.episode_id IS NOT NULL;
+
+DELETE FROM public.health_markers hm
+WHERE hm.episode_id IS NOT NULL
+  AND hm.preset_health_marker_id IS NULL;
+
 DELETE FROM public.health_markers hm
 WHERE hm.id IN (
   SELECT id
   FROM (
     SELECT
       id,
-      ROW_NUMBER() OVER (
-        PARTITION BY
-          episode_id,
-          marker_kind,
-          coalesce(custom_name, ''),
-          coalesce(custom_unit, '')
+      row_number() OVER (
+        PARTITION BY episode_id, preset_health_marker_id
         ORDER BY recorded_at DESC, created_at DESC, id DESC
       ) AS rn
     FROM public.health_markers
     WHERE episode_id IS NOT NULL
+      AND preset_health_marker_id IS NOT NULL
   ) ranked
   WHERE ranked.rn > 1
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS health_markers_episode_marker_line_uidx
-  ON public.health_markers (
-    episode_id,
-    marker_kind,
-    custom_name_key,
-    custom_unit_key
-  )
-  WHERE episode_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS health_markers_episode_preset_line_uidx
+  ON public.health_markers (episode_id, preset_health_marker_id)
+  WHERE episode_id IS NOT NULL
+    AND preset_health_marker_id IS NOT NULL;
 
-COMMENT ON INDEX public.health_markers_episode_marker_line_uidx IS
-  'One row per episode + preset line signature (marker_kind + custom fields); wellness rows (episode_id NULL) are excluded.';
+COMMENT ON INDEX public.health_markers_episode_preset_line_uidx IS
+  'One measurement per preset line per episode; allows multiple same-kind lines when the template has separate rows.';
+
+ALTER TABLE public.health_markers
+  DROP CONSTRAINT IF EXISTS health_markers_episode_requires_preset_line;
+
+ALTER TABLE public.health_markers
+  ADD CONSTRAINT health_markers_episode_requires_preset_line CHECK (
+    episode_id IS NULL OR preset_health_marker_id IS NOT NULL
+  );
 
 COMMIT;

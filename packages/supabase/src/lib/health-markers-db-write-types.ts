@@ -5,8 +5,8 @@ type HealthMarkersTable = Database['public']['Tables']['health_markers'];
 /**
  * PostgREST insert payload for `public.health_markers`.
  *
- * Excludes `custom_name_key` / `custom_unit_key` (GENERATED ALWAYS) so payloads stay valid if
- * `database.types.ts` is regenerated with those keys on Insert again.
+ * Excludes `custom_name_key` / `custom_unit_key` (GENERATED ALWAYS — Postgres rejects explicit
+ * writes). `supabase gen types` may still list those keys on `Insert`; this type omits them.
  */
 export type HealthMarkersInsert = Omit<
   HealthMarkersTable['Insert'],

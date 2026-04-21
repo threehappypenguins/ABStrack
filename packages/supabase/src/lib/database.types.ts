@@ -361,9 +361,6 @@ export type Database = {
         }
         Relationships: []
       }
-      // `custom_name_key` / `custom_unit_key` are GENERATED ALWAYS — omit from Insert/Update so
-      // callers match Postgres (explicit writes error). Re-apply after `supabase gen types` if the
-      // generator adds them back to Insert/Update.
       health_markers: {
         Row: {
           created_at: string
@@ -375,6 +372,7 @@ export type Database = {
           episode_id: string | null
           id: string
           marker_kind: string
+          preset_health_marker_id: string | null
           notes: string | null
           recorded_at: string
           systolic_numeric: number | null
@@ -385,12 +383,15 @@ export type Database = {
         Insert: {
           created_at?: string
           custom_name?: string | null
+          custom_name_key?: string | null
           custom_unit?: string | null
+          custom_unit_key?: string | null
           diastolic_numeric?: number | null
           episode_id?: string | null
           id?: string
           marker_kind: string
           notes?: string | null
+          preset_health_marker_id?: string | null
           recorded_at: string
           systolic_numeric?: number | null
           updated_at?: string
@@ -400,12 +401,15 @@ export type Database = {
         Update: {
           created_at?: string
           custom_name?: string | null
+          custom_name_key?: string | null
           custom_unit?: string | null
+          custom_unit_key?: string | null
           diastolic_numeric?: number | null
           episode_id?: string | null
           id?: string
           marker_kind?: string
           notes?: string | null
+          preset_health_marker_id?: string | null
           recorded_at?: string
           systolic_numeric?: number | null
           updated_at?: string
@@ -419,6 +423,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "episodes"
             referencedColumns: ["user_id", "id"]
+          },
+          {
+            foreignKeyName: "health_markers_preset_health_marker_id_fkey"
+            columns: ["preset_health_marker_id"]
+            isOneToOne: false
+            referencedRelation: "preset_health_markers"
+            referencedColumns: ["id"]
           },
         ]
       }

@@ -87,17 +87,7 @@ function findExistingMarkerForLine(
   rows: HealthMarkerRow[],
   line: PresetHealthMarkerRow,
 ): HealthMarkerRow | null {
-  const lineCustomName = normalizeNullable(line.custom_name);
-  const lineCustomUnit = normalizeNullable(line.custom_unit);
-  return (
-    rows.find((row) => {
-      return (
-        row.marker_kind === line.marker_kind &&
-        normalizeNullable(row.custom_name) === lineCustomName &&
-        normalizeNullable(row.custom_unit) === lineCustomUnit
-      );
-    }) ?? null
-  );
+  return rows.find((row) => row.preset_health_marker_id === line.id) ?? null;
 }
 
 type MeasurementDraftResult =
@@ -650,9 +640,11 @@ export function HealthMarkerPromptScreen() {
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel={
-                      lines.length > 0 && activeIndex >= lines.length - 1
-                        ? 'Finish health marker list'
-                        : 'Next health marker'
+                      lines.length === 0
+                        ? 'Done'
+                        : activeIndex >= lines.length - 1
+                          ? 'Finish health marker list'
+                          : 'Next health marker'
                     }
                     accessibilityState={{ disabled: saving }}
                     disabled={saving}

@@ -2,6 +2,10 @@
 
 This project uses **Supabase Cloud** as the development database.
 
+### For AI coding agents
+
+Follow **[AGENTS.md](../AGENTS.md)** (section **Correct flow for migrations and database.types.ts**). In short: edit migration SQL during review; **do not** hand-edit **`packages/supabase/src/lib/database.types.ts`**; after review, Sarah runs **`db push`** then **`gen types typescript --linked`**, then commits the generated file with the migration. **`gen types` does not read `.sql` files**—only the live DB (`--linked` = cloud).
+
 **Recommended setup (this repo):**
 
 1. **GitHub Actions** still runs **`supabase db push`** when changes land on **`main`**—so merged code and cloud stay aligned even if you forget a manual step.
@@ -51,6 +55,8 @@ Use this when you add or change **`supabase/migrations/*.sql`** and want **`data
    The redirect overwrites the whole file. If you keep the docblock above `export type Json`, paste it back from the previous commit or merge only the generated body. CI compares from `export type Json` downward, so the header does not need to match the CLI output.
 
    **Prettier for this file:** `.prettierrc.cjs` overrides **`packages/supabase/src/lib/database.types.ts`** only, using options from **`prettier.database-types.json`** (`semi: false`, `singleQuote: false`) so formatting matches `supabase gen types`. GitHub Actions uses that same JSON with `--config` when formatting temp files for the diff.
+
+   **Do not “fix” the generated file by hand** (for example removing `Insert`/`Update` fields for `GENERATED` columns or adding comments inside the `Database` type). The types check compares your committed file to **`supabase gen types typescript --local`**; manual edits that do not match the CLI will fail CI. Use wrapper types in application code when you need stricter insert/update shapes (see `packages/supabase/src/lib/health-markers-db-write-types.ts` for `health_markers`).
 
 5. **Commit** `packages/supabase/src/lib/database.types.ts` and **open / update your PR** with both files.
 6. **Merge to `main`.** GitHub Actions runs **`db push` again**; for migrations you already applied, that is typically a **no-op**. The workflow then **verifies** that committed `database.types.ts` matches **`gen types --linked`** output—if something drifted, fix and push.

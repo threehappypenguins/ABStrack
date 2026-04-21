@@ -41,12 +41,12 @@ export async function listEpisodeHealthMarkersForEpisode(
 }
 
 /**
- * Inserts or updates one `health_markers` row for the current episode + preset line signature.
+ * Inserts or updates one `health_markers` row for the current episode + preset line.
  *
- * There is no direct FK from `health_markers` to `preset_health_markers`. Rows are keyed in the DB by
- * `(episode_id, marker_kind, custom_name_key, custom_unit_key)` (generated from `custom_name` /
- * `custom_unit`, with NULL treated like empty text). A partial unique index enforces at most one row
- * per signature for episode-bound markers; this function uses a single `upsert` so concurrent
+ * Episode-bound rows are keyed by `(episode_id, preset_health_marker_id)` where
+ * `preset_health_marker_id` is {@link PresetHealthMarkerRow.id}. That allows multiple template lines
+ * with the same `marker_kind` (e.g. two glucose steps) without colliding. A partial unique index
+ * enforces one row per preset line per episode; this function uses a single `upsert` so concurrent
  * clients cannot double-insert the same line.
  *
  * @param client - Supabase client (RLS applies).
@@ -101,6 +101,7 @@ export async function upsertEpisodeHealthMarkerForLine(
     const row: HealthMarkersInsert = {
       user_id: userId,
       episode_id: episodeId,
+      preset_health_marker_id: line.id,
       marker_kind: line.marker_kind,
       custom_name: customName,
       custom_unit: customUnit,
@@ -114,7 +115,7 @@ export async function upsertEpisodeHealthMarkerForLine(
     const r = await client
       .from('health_markers')
       .upsert(row, {
-        onConflict: 'episode_id,marker_kind,custom_name_key,custom_unit_key',
+        onConflict: 'episode_id,preset_health_marker_id',
       })
       .select('*')
       .single();

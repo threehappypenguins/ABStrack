@@ -414,6 +414,8 @@ export interface HealthMarkerRow {
   id: Uuid;
   user_id: Uuid;
   episode_id: Uuid | null;
+  /** `preset_health_markers.id` for episode-bound rows; null for wellness / non-episode capture. */
+  preset_health_marker_id: Uuid | null;
   marker_kind: HealthMarkerKind;
   custom_name: string | null;
   /** DB-generated from `custom_name` for unique upsert keys; present on reads; omit on writes (see {@link HealthMarkerInsert}). */
@@ -436,6 +438,7 @@ export type HealthMarkerInsert = Pick<
 > & {
   id?: Uuid;
   episode_id?: Uuid | null;
+  preset_health_marker_id?: Uuid | null;
   custom_name?: string | null;
   custom_unit?: string | null;
   value_numeric?: number | null;
@@ -448,6 +451,7 @@ export type HealthMarkerUpdate = Partial<
   Pick<
     HealthMarkerRow,
     | 'episode_id'
+    | 'preset_health_marker_id'
     | 'marker_kind'
     | 'custom_name'
     | 'custom_unit'

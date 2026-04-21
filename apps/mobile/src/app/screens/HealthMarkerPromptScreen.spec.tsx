@@ -136,6 +136,7 @@ describe('HealthMarkerPromptScreen', () => {
         id: 'hm-row-1',
         user_id: 'test-user-1',
         episode_id: episodeId,
+        preset_health_marker_id: 'hm-a',
         marker_kind: 'blood_glucose',
         custom_name: null,
         custom_name_key: '',
