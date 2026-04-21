@@ -24,12 +24,14 @@ interface HealthCheckResult {
 
 type HomeScreenProps = {
   onGoToSettings: () => void;
+  onGoToEpisodes: () => void;
   onStartEpisode: () => void;
   onResumeEpisode: (episode: ActiveEpisodeHomeSummary) => void;
 };
 
 export function HomeScreen({
   onGoToSettings,
+  onGoToEpisodes,
   onStartEpisode,
   onResumeEpisode,
 }: HomeScreenProps) {
@@ -224,6 +226,20 @@ export function HomeScreen({
           activeEpisode={activeEpisode}
           activeEpisodeLoading={activeEpisodeLoading}
         />
+
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Open episodes list"
+          onPress={onGoToEpisodes}
+          className={`mb-1 min-h-[48px] justify-center rounded-xl border border-app-border bg-app-surface px-4 py-3 dark:border-app-border-dark dark:bg-app-surface-dark`}
+        >
+          <Text
+            className={`text-center text-base font-semibold ${nw.textPrimary}`}
+            maxFontSizeMultiplier={2}
+          >
+            Episodes
+          </Text>
+        </Pressable>
 
         <View className={`gap-3 rounded-xl p-4 ${nw.card} ${nw.cardShadow}`}>
           <Text

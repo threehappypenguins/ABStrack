@@ -5,6 +5,7 @@ import {
   endEpisodeIfStillActive,
   getActiveEpisodeForUser,
   getEpisodeById,
+  listCompletedEpisodesForUser,
 } from './episode-data.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
 
@@ -157,6 +158,70 @@ describe('getActiveEpisodeForUser', () => {
     if (result.ok) {
       expect(result.data).toBeNull();
     }
+  });
+});
+
+describe('listCompletedEpisodesForUser', () => {
+  it('returns completed episodes ordered by ended_at desc, id desc', async () => {
+    const rows: EpisodeRow[] = [
+      {
+        id: 'ep-2',
+        user_id: 'user-1',
+        symptom_preset_id: 'sym-1',
+        health_marker_preset_id: null,
+        episode_type: 'ABS',
+        episode_label: 'Morning',
+        note: null,
+        started_at: '2026-04-19T10:00:00.000Z',
+        ended_at: '2026-04-19T11:00:00.000Z',
+        created_at: '2026-04-19T10:00:00.000Z',
+        updated_at: '2026-04-19T11:00:00.000Z',
+      },
+      {
+        id: 'ep-1',
+        user_id: 'user-1',
+        symptom_preset_id: 'sym-1',
+        health_marker_preset_id: null,
+        episode_type: 'Other',
+        episode_label: null,
+        note: null,
+        started_at: '2026-04-18T08:00:00.000Z',
+        ended_at: '2026-04-18T09:30:00.000Z',
+        created_at: '2026-04-18T08:00:00.000Z',
+        updated_at: '2026-04-18T09:30:00.000Z',
+      },
+    ];
+    const limit = vi.fn(async () => ({ data: rows, error: null }));
+    const queryBuilder = {
+      order: vi.fn(() => queryBuilder),
+      limit,
+    };
+    const notFn = vi.fn(() => queryBuilder);
+    const eq = vi.fn(() => ({ not: notFn }));
+    const select = vi.fn(() => ({ eq }));
+    const client = {
+      from: vi.fn(() => ({ select })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await listCompletedEpisodesForUser(client, 'user-1', {
+      limit: 25,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toHaveLength(2);
+      expect(result.data[0]?.id).toBe('ep-2');
+    }
+    expect(client.from).toHaveBeenCalledWith('episodes');
+    expect(eq).toHaveBeenCalledWith('user_id', 'user-1');
+    expect(notFn).toHaveBeenCalledWith('ended_at', 'is', null);
+    expect(queryBuilder.order).toHaveBeenNthCalledWith(1, 'ended_at', {
+      ascending: false,
+    });
+    expect(queryBuilder.order).toHaveBeenNthCalledWith(2, 'id', {
+      ascending: false,
+    });
+    expect(limit).toHaveBeenCalledWith(25);
   });
 });
 

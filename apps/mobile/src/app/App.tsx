@@ -12,6 +12,7 @@ import { MainTabNavigator } from './navigation/MainTabNavigator';
 import type { MainStackParamList } from './navigation/types';
 import { LoginScreen } from './screens/LoginScreen';
 import { EpisodeStartScreen } from './screens/EpisodeStartScreen';
+import { EpisodesScreen } from './screens/EpisodesScreen';
 import { SymptomPromptScreen } from './screens/SymptomPromptScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { SignupScreen } from './screens/SignupScreen';
@@ -382,6 +383,14 @@ function AppBootstrap() {
               name="MainTabs"
               component={MainTabNavigator}
               options={{ headerShown: false }}
+            />
+            <MainStack.Screen
+              name="Episodes"
+              component={EpisodesScreen}
+              options={{
+                title: 'Episodes',
+                headerBackTitle: 'Home',
+              }}
             />
             <MainStack.Screen
               name="EpisodeStart"

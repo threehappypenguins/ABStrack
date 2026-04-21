@@ -16,6 +16,11 @@ const NAV_ITEMS: {
     match: (path) => path === '/dashboard' || path.startsWith('/dashboard/'),
   },
   {
+    href: '/episodes',
+    label: 'Episodes',
+    match: (path) => path === '/episodes' || path.startsWith('/episodes/'),
+  },
+  {
     href: '/presets/symptoms',
     label: 'Symptom presets',
     match: (path) =>

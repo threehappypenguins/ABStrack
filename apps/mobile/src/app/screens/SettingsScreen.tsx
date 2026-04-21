@@ -1,10 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, Switch, Text, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
   getRequireReauthOnOpenPreference,
   setRequireReauthOnOpenPreference,
 } from '../reauth-preference';
 import { ScreenShell } from '../components/ScreenShell';
+import type { MainStackParamList } from '../navigation/types';
 import { useAppTheme } from '../theme/AppThemeContext';
 import { nw } from '../theme/app-nativewind-classes';
 import type { ThemePreference } from '../theme-preference';
@@ -32,6 +35,8 @@ const THEME_OPTIONS: {
 ];
 
 export function SettingsScreen() {
+  const navigation =
+    useNavigation<NativeStackNavigationProp<MainStackParamList>>();
   const { colors, themePreference, setThemePreference } = useAppTheme();
   const isMountedRef = useRef(true);
   const [requireReauth, setRequireReauth] = useState(false);
@@ -153,6 +158,22 @@ export function SettingsScreen() {
           {themeError}
         </Text>
       ) : null}
+
+      <View className="my-2 h-px bg-app-border dark:bg-app-border-dark" />
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Open episodes list"
+        onPress={() => navigation.navigate('Episodes')}
+        className={`min-h-[52px] justify-center rounded-xl border border-app-border bg-app-surface px-4 py-3 dark:border-app-border-dark dark:bg-app-surface-dark`}
+      >
+        <Text className={`text-base font-semibold ${nw.textInk}`}>
+          Episodes
+        </Text>
+        <Text className={`mt-0.5 text-sm ${nw.textMuted}`}>
+          Active and recent episodes, resume an in-progress episode.
+        </Text>
+      </Pressable>
 
       <View className="my-2 h-px bg-app-border dark:bg-app-border-dark" />
 
