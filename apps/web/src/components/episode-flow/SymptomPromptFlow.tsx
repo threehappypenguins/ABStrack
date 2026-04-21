@@ -146,6 +146,12 @@ export function SymptomPromptFlow({
   const persistUiAttemptRef = useRef(0);
   /** Suppresses {@link setPersistError} after unmount (epoch is not bumped on unmount). */
   const isMountedRef = useRef(true);
+  /**
+   * When true, unmount must not write `sessionStorage` (flush text debounce + snapshot). Set before
+   * {@link continueToHealthMarkers} or cancel-episode navigation so cleanup does not undo
+   * {@link clearSymptomPromptSession}.
+   */
+  const omitSymptomPromptSnapshotOnUnmountRef = useRef(false);
 
   const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
@@ -465,12 +471,20 @@ export function SymptomPromptFlow({
 
   useEffect(() => {
     return () => {
-      flushPendingTextPersist();
+      const omit = omitSymptomPromptSnapshotOnUnmountRef.current;
+      if (!omit) {
+        flushPendingTextPersist();
+      } else if (textPersistTimerRef.current !== null) {
+        clearTimeout(textPersistTimerRef.current);
+        textPersistTimerRef.current = null;
+      }
       flushPendingServerPersist();
-      setSymptomPromptSession(episodeIdRef.current, {
-        activeIndex: activeIndexRef.current,
-        answers: answersRef.current,
-      });
+      if (!omit) {
+        setSymptomPromptSession(episodeIdRef.current, {
+          activeIndex: activeIndexRef.current,
+          answers: answersRef.current,
+        });
+      }
     };
   }, [flushPendingServerPersist, flushPendingTextPersist]);
 
@@ -658,6 +672,7 @@ export function SymptomPromptFlow({
   };
 
   const continueToHealthMarkers = useCallback(() => {
+    omitSymptomPromptSnapshotOnUnmountRef.current = true;
     clearSymptomPromptSession(episodeIdRef.current);
     const q = new URLSearchParams();
     if (resumeFromHomeIntentRef.current) {
@@ -718,6 +733,7 @@ export function SymptomPromptFlow({
         return false;
       }
       clearSymptomPromptSession(episodeIdRef.current);
+      omitSymptomPromptSnapshotOnUnmountRef.current = true;
       if (result.data.didCancel) {
         announce('Episode canceled. Resume is no longer available.', {
           politeness: 'polite',
