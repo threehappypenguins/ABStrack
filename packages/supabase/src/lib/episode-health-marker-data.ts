@@ -1,5 +1,6 @@
 import type {
   HealthMarkerRow,
+  PresetHealthMarkerKind,
   PresetHealthMarkerRow,
   Uuid,
 } from '@abstrack/types';
@@ -13,6 +14,44 @@ import type { AbstrackSupabaseClient } from './supabase-client-type.js';
 function normalizeCustomField(value: string | null | undefined): string | null {
   const next = value?.trim() ?? '';
   return next.length > 0 ? next : null;
+}
+
+/**
+ * Ensures numeric columns match `marker_kind` (no DB CHECK today).
+ *
+ * @returns User-facing message, or `null` when valid.
+ */
+function validateHealthMarkerNumericPayload(
+  markerKind: PresetHealthMarkerKind,
+  valueNumeric: number | null | undefined,
+  systolicNumeric: number | null | undefined,
+  diastolicNumeric: number | null | undefined,
+): string | null {
+  const hasValue = valueNumeric !== null && valueNumeric !== undefined;
+  const hasSys = systolicNumeric !== null && systolicNumeric !== undefined;
+  const hasDia = diastolicNumeric !== null && diastolicNumeric !== undefined;
+
+  if (markerKind === 'blood_pressure') {
+    if (hasValue) {
+      return 'Blood pressure uses systolic and diastolic values, not a single number.';
+    }
+    if (!hasSys || !hasDia) {
+      return 'Enter systolic and diastolic blood pressure.';
+    }
+    if (
+      !Number.isFinite(systolicNumeric) ||
+      !Number.isFinite(diastolicNumeric)
+    ) {
+      return 'Blood pressure values must be valid numbers.';
+    }
+    return null;
+  }
+
+  if (hasSys || hasDia) {
+    return 'This marker uses a single numeric value, not blood pressure fields.';
+  }
+
+  return null;
 }
 
 /**
@@ -60,6 +99,10 @@ export async function listEpisodeHealthMarkersForEpisode(
  * @param args.diastolicNumeric - Diastolic value for blood pressure.
  * @param args.notes - Optional free-text note.
  * @param args.recordedAt - Timestamp override (defaults to now).
+ *
+ * Numeric fields must match `line.marker_kind` (e.g. `blood_pressure` uses systolic/diastolic and
+ * leaves `value_numeric` empty; other kinds use `value_numeric` only). Otherwise returns
+ * `validation_error`.
  */
 export async function upsertEpisodeHealthMarkerForLine(
   client: AbstrackSupabaseClient,
@@ -99,6 +142,19 @@ export async function upsertEpisodeHealthMarkerForLine(
     };
   }
 
+  const numericValidation = validateHealthMarkerNumericPayload(
+    line.marker_kind,
+    valueNumeric,
+    systolicNumeric,
+    diastolicNumeric,
+  );
+  if (numericValidation) {
+    return {
+      ok: false,
+      error: new PresetDataError('validation_error', numericValidation),
+    };
+  }
+
   return wrap(async () => {
     const row: HealthMarkersInsert = {
       user_id: userId,
@@ -107,9 +163,12 @@ export async function upsertEpisodeHealthMarkerForLine(
       marker_kind: line.marker_kind,
       custom_name: customName,
       custom_unit: customUnit,
-      value_numeric: valueNumeric,
-      systolic_numeric: systolicNumeric,
-      diastolic_numeric: diastolicNumeric,
+      value_numeric:
+        line.marker_kind === 'blood_pressure' ? null : valueNumeric,
+      systolic_numeric:
+        line.marker_kind === 'blood_pressure' ? systolicNumeric : null,
+      diastolic_numeric:
+        line.marker_kind === 'blood_pressure' ? diastolicNumeric : null,
       notes,
       recorded_at: recordedAt,
     };
