@@ -26,10 +26,11 @@ COMMENT ON COLUMN public.health_markers.preset_health_marker_id IS
   'Preset line (`preset_health_markers.id`) for episode-bound rows; paired with episode_id for upsert. NULL for wellness / non-episode rows.';
 
 -- Backfill: match episode template + line signature; pick one preset line when several match (lowest sort_order).
+-- Use a correlated scalar subquery (not FROM LATERAL): Postgres rejects referencing the UPDATE target `hm`
+-- inside a LATERAL join tree (SQLSTATE 42P10).
 UPDATE public.health_markers hm
-SET preset_health_marker_id = x.phm_id
-FROM LATERAL (
-  SELECT phm.id AS phm_id
+SET preset_health_marker_id = (
+  SELECT phm.id
   FROM public.episodes e
   JOIN public.preset_health_markers phm
     ON phm.preset_id = e.health_marker_preset_id
@@ -39,7 +40,7 @@ FROM LATERAL (
   WHERE e.id = hm.episode_id
   ORDER BY phm.sort_order ASC, phm.id ASC
   LIMIT 1
-) x
+)
 WHERE hm.episode_id IS NOT NULL;
 
 DELETE FROM public.health_markers hm
