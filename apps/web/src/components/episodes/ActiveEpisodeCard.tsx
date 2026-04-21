@@ -26,13 +26,13 @@ export function ActiveEpisodeCard({ episode }: { episode: EpisodeRow }) {
   const router = useRouter();
   const { announce } = useAnnounce();
   const [showCancelDialog, setShowCancelDialog] = useState(false);
-  const [cancelling, setCancelling] = useState(false);
+  const [canceling, setCanceling] = useState(false);
 
   const handleConfirmCancel = async (): Promise<void | false> => {
-    if (cancelling) {
+    if (canceling) {
       return false;
     }
-    setCancelling(true);
+    setCanceling(true);
     try {
       const supabase = createBrowserClient();
       const result = await cancelActiveEpisodeById(supabase, episode.id);
@@ -51,7 +51,7 @@ export function ActiveEpisodeCard({ episode }: { episode: EpisodeRow }) {
       router.refresh();
       return;
     } finally {
-      setCancelling(false);
+      setCanceling(false);
     }
   };
 
@@ -108,7 +108,7 @@ export function ActiveEpisodeCard({ episode }: { episode: EpisodeRow }) {
             onClick={() => {
               setShowCancelDialog(true);
             }}
-            disabled={cancelling}
+            disabled={canceling}
           >
             Cancel episode
           </button>
