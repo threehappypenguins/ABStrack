@@ -43,5 +43,11 @@ export type MainStackParamList = {
     /** When true, initial step is derived from saved answers (e.g. home “Continue this episode”). */
     resume?: boolean;
   };
+  /** Linear health marker prompts for the active episode. */
+  HealthMarkerPrompt: {
+    episodeId: string;
+    /** When true, initial step is derived from saved marker rows. */
+    resume?: boolean;
+  };
   Settings: undefined;
 };

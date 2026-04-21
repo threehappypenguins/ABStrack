@@ -647,7 +647,11 @@ export function SymptomPromptScreen() {
 
   const advanceToNextStep = () => {
     if (lines.length === 0) {
-      setPhase('complete');
+      clearSymptomPromptSession(episodeIdRef.current);
+      navigation.replace('HealthMarkerPrompt', {
+        episodeId: episodeIdRef.current,
+        resume: resumeFromHomeIntentRef.current || undefined,
+      });
       return;
     }
     const idx = activeIndexRef.current;
@@ -658,7 +662,11 @@ export function SymptomPromptScreen() {
       persist(next, answersRef.current);
       return;
     }
-    setPhase('complete');
+    clearSymptomPromptSession(episodeIdRef.current);
+    navigation.replace('HealthMarkerPrompt', {
+      episodeId: episodeIdRef.current,
+      resume: resumeFromHomeIntentRef.current || undefined,
+    });
     announce('Symptom list complete.');
   };
 
@@ -688,13 +696,11 @@ export function SymptomPromptScreen() {
   };
 
   const onFinishToHome = () => {
-    clearSymptomPromptSession(episodeId);
-    navigation.dispatch(
-      CommonActions.reset({
-        index: 0,
-        routes: [{ name: 'MainTabs' }],
-      }),
-    );
+    clearSymptomPromptSession(episodeIdRef.current);
+    navigation.replace('HealthMarkerPrompt', {
+      episodeId: episodeIdRef.current,
+      resume: resumeFromHomeIntentRef.current || undefined,
+    });
   };
 
   return (
@@ -724,17 +730,17 @@ export function SymptomPromptScreen() {
               maxFontSizeMultiplier={2}
             >
               You reached the end of your symptom list for this episode. You can
-              return home when you are ready.
+              continue to health markers when you are ready.
             </Text>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Return to home"
+              accessibilityLabel="Continue to health markers"
               onPress={onFinishToHome}
               style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
               className="items-center justify-center rounded-xl bg-red-700 px-4 py-4 active:opacity-90 dark:bg-red-600"
             >
               <Text className="text-center text-[17px] font-semibold text-white">
-                Return home
+                Continue to health markers
               </Text>
             </Pressable>
           </View>

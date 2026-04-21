@@ -89,3 +89,7 @@ export {
   listEpisodeSymptomsForEpisode,
   upsertEpisodeSymptomAnswer,
 } from './lib/episode-symptom-data.js';
+export {
+  listEpisodeHealthMarkersForEpisode,
+  upsertEpisodeHealthMarkerForLine,
+} from './lib/episode-health-marker-data.js';

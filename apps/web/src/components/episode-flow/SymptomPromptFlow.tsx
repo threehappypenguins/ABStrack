@@ -649,7 +649,7 @@ export function SymptomPromptFlow({
 
   const advanceToNextStep = () => {
     if (lines.length === 0) {
-      setPhase('complete');
+      continueToHealthMarkers();
       return;
     }
     const idx = activeIndexRef.current;
@@ -660,9 +660,23 @@ export function SymptomPromptFlow({
       persistImmediate(next, answersRef.current);
       return;
     }
-    setPhase('complete');
+    continueToHealthMarkers();
     announce('Symptom list complete.', { politeness: 'polite' });
   };
+
+  const continueToHealthMarkers = useCallback(() => {
+    clearSymptomPromptSession(episodeIdRef.current);
+    const q = new URLSearchParams();
+    if (resumeFromHomeIntentRef.current) {
+      q.set('resume', '1');
+    }
+    const query = q.toString();
+    router.replace(
+      `/episode/${episodeIdRef.current}/health-markers${
+        query ? `?${query}` : ''
+      }`,
+    );
+  }, [router]);
 
   const goBackStep = () => {
     flushPendingTextPersist();
@@ -761,11 +775,6 @@ export function SymptomPromptFlow({
     advanceToNextStep();
   };
 
-  const onFinishToDashboard = () => {
-    clearSymptomPromptSession(episodeId);
-    router.push('/dashboard');
-  };
-
   if (phase === 'complete') {
     return (
       <div className="space-y-4">
@@ -778,16 +787,16 @@ export function SymptomPromptFlow({
           aria-live="polite"
         >
           <p className="text-sm leading-relaxed text-app-ink">
-            You reached the end of your symptom list for this episode. You can
-            return to the dashboard when you are ready.
+            You reached the end of your symptom list for this episode. Continue
+            to health markers when you are ready.
           </p>
         </div>
         <button
           type="button"
           className="inline-flex min-h-[56px] items-center justify-center rounded-xl bg-red-700 px-5 text-base font-semibold text-white shadow-md transition hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg dark:bg-red-600 dark:hover:bg-red-500"
-          onClick={onFinishToDashboard}
+          onClick={continueToHealthMarkers}
         >
-          Back to dashboard
+          Continue to health markers
         </button>
       </div>
     );
