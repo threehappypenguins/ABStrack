@@ -365,9 +365,9 @@ export type Database = {
         Row: {
           created_at: string
           custom_name: string | null
-          custom_name_key: string
+          custom_name_key: string | null
           custom_unit: string | null
-          custom_unit_key: string
+          custom_unit_key: string | null
           diastolic_numeric: number | null
           episode_id: string | null
           id: string
@@ -382,7 +382,9 @@ export type Database = {
         Insert: {
           created_at?: string
           custom_name?: string | null
+          custom_name_key?: string | null
           custom_unit?: string | null
+          custom_unit_key?: string | null
           diastolic_numeric?: number | null
           episode_id?: string | null
           id?: string
@@ -397,7 +399,9 @@ export type Database = {
         Update: {
           created_at?: string
           custom_name?: string | null
+          custom_name_key?: string | null
           custom_unit?: string | null
+          custom_unit_key?: string | null
           diastolic_numeric?: number | null
           episode_id?: string | null
           id?: string
