@@ -416,11 +416,11 @@ export interface HealthMarkerRow {
   episode_id: Uuid | null;
   marker_kind: HealthMarkerKind;
   custom_name: string | null;
-  /** DB-generated from `custom_name` for unique upsert keys; omit on writes. */
-  custom_name_key?: string;
+  /** DB-generated from `custom_name` for unique upsert keys; present on reads; omit on writes (see {@link HealthMarkerInsert}). */
+  custom_name_key: string | null;
   custom_unit: string | null;
-  /** DB-generated from `custom_unit` for unique upsert keys; omit on writes. */
-  custom_unit_key?: string;
+  /** DB-generated from `custom_unit` for unique upsert keys; present on reads; omit on writes (see {@link HealthMarkerInsert}). */
+  custom_unit_key: string | null;
   value_numeric: number | null;
   systolic_numeric: number | null;
   diastolic_numeric: number | null;

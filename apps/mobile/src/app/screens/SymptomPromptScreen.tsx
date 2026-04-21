@@ -556,7 +556,7 @@ export function SymptomPromptScreen() {
     );
   }, []);
 
-  /** Matches {@link onFinishToHome}: reset stack to MainTabs so copy matches behavior (not `goBack`). */
+  /** Resets the stack to MainTabs when the user confirms exit (matches “return home” copy; not `goBack`). */
   const exitSymptomFlowToHome = useCallback(() => {
     flushPendingServerPersist();
     setSymptomPromptSession(episodeIdRef.current, {
@@ -697,7 +697,7 @@ export function SymptomPromptScreen() {
     advanceToNextStep();
   };
 
-  const onFinishToHome = () => {
+  const onContinueToMarkers = () => {
     clearSymptomPromptSession(episodeIdRef.current);
     allowRemovalRef.current = true;
     navigation.replace('HealthMarkerPrompt', {
@@ -738,7 +738,7 @@ export function SymptomPromptScreen() {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Continue to health markers"
-              onPress={onFinishToHome}
+              onPress={onContinueToMarkers}
               style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
               className="items-center justify-center rounded-xl bg-red-700 px-4 py-4 active:opacity-90 dark:bg-red-600"
             >

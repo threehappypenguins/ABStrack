@@ -7,6 +7,7 @@ import { validatePresetHealthMarkerCustomFields } from '@abstrack/types';
 import { PresetDataError } from './preset-data-error.js';
 import type { PresetDataResult } from './preset-data.js';
 import { wrap } from './preset-data.js';
+import type { HealthMarkersInsert } from './health-markers-db-write-types.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
 
 function normalizeCustomField(value: string | null | undefined): string | null {
@@ -97,7 +98,7 @@ export async function upsertEpisodeHealthMarkerForLine(
   }
 
   return wrap(async () => {
-    const row = {
+    const row: HealthMarkersInsert = {
       user_id: userId,
       episode_id: episodeId,
       marker_kind: line.marker_kind,

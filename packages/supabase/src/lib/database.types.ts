@@ -361,6 +361,9 @@ export type Database = {
         }
         Relationships: []
       }
+      // `custom_name_key` / `custom_unit_key` are GENERATED ALWAYS — omit from Insert/Update so
+      // callers match Postgres (explicit writes error). Re-apply after `supabase gen types` if the
+      // generator adds them back to Insert/Update.
       health_markers: {
         Row: {
           created_at: string
@@ -382,9 +385,7 @@ export type Database = {
         Insert: {
           created_at?: string
           custom_name?: string | null
-          custom_name_key?: string | null
           custom_unit?: string | null
-          custom_unit_key?: string | null
           diastolic_numeric?: number | null
           episode_id?: string | null
           id?: string
@@ -399,9 +400,7 @@ export type Database = {
         Update: {
           created_at?: string
           custom_name?: string | null
-          custom_name_key?: string | null
           custom_unit?: string | null
-          custom_unit_key?: string | null
           diastolic_numeric?: number | null
           episode_id?: string | null
           id?: string

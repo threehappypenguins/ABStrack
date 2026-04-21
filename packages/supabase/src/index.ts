@@ -6,6 +6,10 @@
  * `@abstrack/supabase/server`.
  */
 export type { Database, Json } from './lib/database.types.js';
+export type {
+  HealthMarkersInsert,
+  HealthMarkersUpdate,
+} from './lib/health-markers-db-write-types.js';
 export type { Session } from '@supabase/supabase-js';
 export { getSupabasePublishableKey, getSupabaseUrl } from './lib/env-public.js';
 export type { AbstrackSupabaseClient } from './lib/supabase-client-type.js';
