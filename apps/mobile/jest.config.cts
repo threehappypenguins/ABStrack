@@ -2,7 +2,7 @@
 /// <reference types="node" />
 
 // Before any transformed expo-modules-core file is evaluated (babel may read env at transform time).
-process.env.EXPO_OS = process.env.EXPO_OS ?? 'ios';
+process.env.EXPO_OS ??= 'ios';
 
 const jestExpo = require('jest-expo/jest-preset');
 

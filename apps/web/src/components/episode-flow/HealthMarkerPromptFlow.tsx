@@ -2,7 +2,11 @@
 
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { HealthMarkerRow, PresetHealthMarkerRow } from '@abstrack/types';
+import type {
+  HealthMarkerRow,
+  PresetHealthMarkerKind,
+  PresetHealthMarkerRow,
+} from '@abstrack/types';
 import {
   PRESET_HEALTH_MARKER_KIND_LABELS,
   validatePresetHealthMarkerCustomFields,
@@ -32,6 +36,16 @@ type PersistFeedback =
 function normalizeNullable(value: string | null | undefined): string | null {
   const next = value?.trim() ?? '';
   return next.length > 0 ? next : null;
+}
+
+/**
+ * HTML `min` for preset kinds with non-negative vitals; `custom` stays unconstrained (scales vary).
+ * Pair with `step="any"` so decimals still validate in browsers.
+ */
+function minForPresetMarkerValueInput(
+  kind: PresetHealthMarkerKind,
+): number | undefined {
+  return kind === 'custom' ? undefined : 0;
 }
 
 function markerLineTitle(line: PresetHealthMarkerRow): string {
@@ -499,7 +513,9 @@ export function HealthMarkerPromptFlow({
                   <span>Systolic</span>
                   <input
                     type="number"
+                    step="any"
                     inputMode="decimal"
+                    min={0}
                     value={currentDraft.systolic}
                     disabled={saving}
                     onChange={(e) => {
@@ -512,7 +528,9 @@ export function HealthMarkerPromptFlow({
                   <span>Diastolic</span>
                   <input
                     type="number"
+                    step="any"
                     inputMode="decimal"
+                    min={0}
                     value={currentDraft.diastolic}
                     disabled={saving}
                     onChange={(e) => {
@@ -534,7 +552,9 @@ export function HealthMarkerPromptFlow({
                 </span>
                 <input
                   type="number"
+                  step="any"
                   inputMode="decimal"
+                  min={minForPresetMarkerValueInput(currentLine.marker_kind)}
                   value={currentDraft.value}
                   disabled={saving}
                   onChange={(e) => {
