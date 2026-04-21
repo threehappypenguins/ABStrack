@@ -78,6 +78,7 @@ export {
 export {
   cancelActiveEpisodeById,
   createEpisode,
+  deleteEpisodeById,
   endEpisodeIfStillActive,
   getActiveEpisodeForUser,
   getEpisodeById,

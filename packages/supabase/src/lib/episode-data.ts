@@ -148,9 +148,14 @@ export async function endEpisodeIfStillActive(
 }
 
 /**
- * Permanently removes an episode only when it is still active (`ended_at IS NULL`). Uses the same
- * RLS as other `episodes` deletes. Related rows follow schema foreign-key behavior: some
- * episode-scoped tables cascade-delete, while others are unlinked via `SET NULL`.
+ * Permanently removes an episode only when it is still active (`ended_at IS NULL`). Use this for
+ * "cancel active episode" UX; completed rows can be removed with {@link deleteEpisodeById}.
+ *
+ * Uses the same RLS as other `episodes` deletes. Data impact is driven by schema foreign keys:
+ * - `episode_symptoms` rows for the episode are deleted (`ON DELETE CASCADE`).
+ * - `health_markers` rows linked to the episode are deleted (`ON DELETE CASCADE`).
+ * - `episode_media` metadata rows linked to the episode are deleted (`ON DELETE CASCADE`).
+ * - `food_diary_entries` rows are kept, but `episode_id` is cleared (`ON DELETE SET NULL`).
  *
  * @param client - Supabase client (RLS applies).
  * @param episodeId - `episodes.id` to cancel.
@@ -174,6 +179,40 @@ export async function cancelActiveEpisodeById(
       return { ok: false, error: toPresetDataError(error) };
     }
     return { ok: true, data: { didCancel: data != null } };
+  } catch (caught) {
+    return { ok: false, error: toPresetDataError(caught) };
+  }
+}
+
+/**
+ * Permanently removes an episode regardless of active/completed status when RLS allows.
+ *
+ * Data impact is driven by schema foreign keys:
+ * - `episode_symptoms` rows for the episode are deleted (`ON DELETE CASCADE`).
+ * - `health_markers` rows linked to the episode are deleted (`ON DELETE CASCADE`).
+ * - `episode_media` metadata rows linked to the episode are deleted (`ON DELETE CASCADE`).
+ * - `food_diary_entries` rows are kept, but `episode_id` is cleared (`ON DELETE SET NULL`).
+ *
+ * @param client - Supabase client (RLS applies).
+ * @param episodeId - `episodes.id` to delete.
+ * @returns On success, `didDelete` is `true` when one row was removed; `false` when no visible
+ * row matched (not found or blocked by RLS).
+ */
+export async function deleteEpisodeById(
+  client: AbstrackSupabaseClient,
+  episodeId: Uuid,
+): Promise<PresetDataResult<{ didDelete: boolean }>> {
+  try {
+    const { data, error } = await client
+      .from('episodes')
+      .delete()
+      .eq('id', episodeId)
+      .select('id')
+      .maybeSingle();
+    if (error) {
+      return { ok: false, error: toPresetDataError(error) };
+    }
+    return { ok: true, data: { didDelete: data != null } };
   } catch (caught) {
     return { ok: false, error: toPresetDataError(caught) };
   }

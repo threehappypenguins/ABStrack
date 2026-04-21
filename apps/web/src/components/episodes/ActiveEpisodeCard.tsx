@@ -117,7 +117,7 @@ export function ActiveEpisodeCard({ episode }: { episode: EpisodeRow }) {
       <ConfirmDialog
         open={showCancelDialog}
         title="Cancel this active episode?"
-        description="Canceling will permanently remove this in-progress episode and any linked symptom or media entries. This cannot be undone."
+        description="Canceling permanently deletes this in-progress episode, its symptom answers, health markers, and media metadata. Food diary entries are kept, but this episode link is removed. This cannot be undone."
         confirmLabel="Cancel episode"
         cancelLabel="Keep episode"
         confirmBusyLabel="Canceling episode…"
