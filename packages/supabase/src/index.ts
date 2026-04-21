@@ -76,6 +76,7 @@ export {
   updateEpisodeTemplate,
 } from './lib/episode-template-data.js';
 export {
+  cancelActiveEpisodeById,
   createEpisode,
   endEpisodeIfStillActive,
   getActiveEpisodeForUser,

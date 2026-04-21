@@ -5,13 +5,10 @@ import {
   getActiveEpisodeForUser,
   listCompletedEpisodesForUser,
 } from '@abstrack/supabase';
+import { ActiveEpisodeCard } from '@/components/episodes/ActiveEpisodeCard';
 import { EpisodeLocaleInstant } from '@/components/episodes/EpisodeLocaleInstant';
 import { formatEpisodeTypeSummary } from '@/lib/episodes/format-episode-meta';
-import { buildResumeEpisodeHref } from '@/lib/episode-flow/resume-episode-href';
 import { createServerClient } from '@/lib/supabase/server-client';
-
-const resumeLinkClass =
-  'inline-flex min-h-[48px] w-full items-center justify-center rounded-xl bg-emerald-700 px-4 py-3 text-center text-sm font-semibold text-white shadow-sm outline-none ring-2 ring-transparent transition hover:bg-emerald-800 focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-emerald-50 dark:bg-emerald-600 dark:hover:bg-emerald-500 dark:focus-visible:ring-offset-emerald-950';
 
 /**
  * Lists active and recently ended episodes with metadata; resume navigates into the symptom
@@ -104,53 +101,7 @@ export default async function EpisodesPage() {
           </p>
         ) : null}
         {user && !activeError && active !== null ? (
-          <div
-            className="mt-3 rounded-2xl border-2 border-emerald-600/45 bg-emerald-50 p-5 shadow-sm ring-1 ring-emerald-900/10 dark:border-emerald-500/45 dark:bg-emerald-950/40 dark:ring-emerald-950/35 sm:p-6"
-            aria-label="Active episode"
-          >
-            <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800 dark:text-emerald-200">
-              In progress
-            </p>
-            <p className="mt-2 text-base font-semibold text-app-ink">
-              {formatEpisodeTypeSummary(active)}
-            </p>
-            <dl className="mt-3 space-y-1.5 text-sm text-app-muted">
-              <div className="flex flex-wrap gap-x-2">
-                <dt className="font-medium text-app-ink/80">Started</dt>
-                <dd>
-                  <EpisodeLocaleInstant iso={active.started_at} />
-                </dd>
-              </div>
-              <div className="flex flex-wrap gap-x-2">
-                <dt className="font-medium text-app-ink/80">Ended</dt>
-                <dd>—</dd>
-              </div>
-            </dl>
-            <div className="mt-5">
-              {active.symptom_preset_id ? (
-                <Link
-                  href={buildResumeEpisodeHref(
-                    active.id,
-                    active.symptom_preset_id,
-                  )}
-                  className={resumeLinkClass}
-                >
-                  Resume this episode
-                </Link>
-              ) : (
-                <p className="text-sm text-app-muted">
-                  This episode has no symptom preset linked yet.{' '}
-                  <Link
-                    href="/episode/start"
-                    className="font-semibold text-app-primary underline underline-offset-2"
-                  >
-                    Open episode start
-                  </Link>{' '}
-                  to continue setup.
-                </p>
-              )}
-            </div>
-          </div>
+          <ActiveEpisodeCard episode={active} />
         ) : null}
       </section>
 

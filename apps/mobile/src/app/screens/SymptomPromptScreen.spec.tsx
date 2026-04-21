@@ -4,6 +4,7 @@ import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { CommonActions, DefaultTheme } from '@react-navigation/native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import {
+  cancelActiveEpisodeById,
   deleteEpisodeSymptomAnswer,
   listEpisodeSymptomsForEpisode,
   listPresetSymptomsForPreset,
@@ -29,6 +30,7 @@ jest.mock('@react-navigation/native', () => ({
 }));
 
 jest.mock('@abstrack/supabase', () => ({
+  cancelActiveEpisodeById: jest.fn(),
   deleteEpisodeSymptomAnswer: jest.fn(),
   listPresetSymptomsForPreset: jest.fn(),
   listEpisodeSymptomsForEpisode: jest.fn(),
@@ -155,6 +157,10 @@ describe('SymptomPromptScreen', () => {
     jest.mocked(deleteEpisodeSymptomAnswer).mockResolvedValue({
       ok: true,
       data: true,
+    });
+    jest.mocked(cancelActiveEpisodeById).mockResolvedValue({
+      ok: true,
+      data: { didCancel: true },
     });
   });
 
@@ -613,6 +619,51 @@ describe('SymptomPromptScreen', () => {
       expect.any(Array),
     );
     expect(mockGoBack).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
+  });
+
+  test('Cancel episode asks for confirmation and cancels episode', async () => {
+    const screen = render(<SymptomPromptScreen />);
+    const alertSpy = jest
+      .spyOn(Alert, 'alert')
+      .mockImplementation(() => undefined);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Cancel episode')).toBeTruthy();
+    });
+
+    fireEvent.press(screen.getByLabelText('Cancel episode'));
+
+    expect(alertSpy).toHaveBeenCalledWith(
+      'Cancel this active episode?',
+      'Canceling will permanently remove this in-progress episode and any linked symptom or media entries. This cannot be undone.',
+      expect.any(Array),
+    );
+
+    const [, , actions] = alertSpy.mock.calls[0] as [
+      string,
+      string,
+      Array<{ onPress?: () => void }>,
+    ];
+    await act(async () => {
+      actions[1]?.onPress?.();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(cancelActiveEpisodeById).toHaveBeenCalledWith(
+        expect.objectContaining({ mockClient: true }),
+        episodeId,
+      );
+    });
+    expect(clearSymptomPromptSession).toHaveBeenCalledWith(episodeId);
+    expect(mockDispatch).toHaveBeenCalledWith(
+      CommonActions.reset({
+        index: 0,
+        routes: [{ name: 'MainTabs' }],
+      }),
+    );
+
     alertSpy.mockRestore();
   });
 

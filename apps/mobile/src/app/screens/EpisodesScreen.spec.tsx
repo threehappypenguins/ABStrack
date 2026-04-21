@@ -8,11 +8,14 @@ import {
 } from '@testing-library/react-native';
 import { useNavigation } from '@react-navigation/native';
 import {
+  cancelActiveEpisodeById,
   getActiveEpisodeForUser,
   listCompletedEpisodesForUser,
 } from '@abstrack/supabase';
 import type { EpisodeRow } from '@abstrack/types';
+import { announce } from '@abstrack/ui/native';
 
+import { clearSymptomPromptSession } from '../../lib/episodes/symptom-prompt-session-store';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { EpisodesScreen } from './EpisodesScreen';
 
@@ -32,8 +35,17 @@ jest.mock('@react-navigation/native', () => {
 });
 
 jest.mock('@abstrack/supabase', () => ({
+  cancelActiveEpisodeById: jest.fn(),
   getActiveEpisodeForUser: jest.fn(),
   listCompletedEpisodesForUser: jest.fn(),
+}));
+
+jest.mock('@abstrack/ui/native', () => ({
+  announce: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock('../../lib/episodes/symptom-prompt-session-store', () => ({
+  clearSymptomPromptSession: jest.fn(),
 }));
 
 jest.mock('../../lib/supabase-wiring', () => ({
@@ -82,6 +94,10 @@ describe('EpisodesScreen', () => {
     jest.mocked(listCompletedEpisodesForUser).mockResolvedValue({
       ok: true,
       data: [],
+    });
+    jest.mocked(cancelActiveEpisodeById).mockResolvedValue({
+      ok: true,
+      data: { didCancel: true },
     });
   });
 
@@ -183,5 +199,49 @@ describe('EpisodesScreen', () => {
 
     expect(await screen.findByText('ABS — Test label')).toBeTruthy();
     expect(screen.getByText('Ended')).toBeTruthy();
+  });
+
+  it('confirms and cancels active episode', async () => {
+    const alertSpy = jest.spyOn(require('react-native').Alert, 'alert');
+    const active = makeEpisodeRow({
+      id: 'ep-cancel',
+      symptom_preset_id: 'preset-1',
+    });
+    jest.mocked(getActiveEpisodeForUser).mockResolvedValue({
+      ok: true,
+      data: active,
+    });
+
+    render(<EpisodesScreen />);
+
+    expect(await screen.findByLabelText('Cancel episode')).toBeTruthy();
+    fireEvent.press(screen.getByLabelText('Cancel episode'));
+
+    expect(alertSpy).toHaveBeenCalledWith(
+      'Cancel this active episode?',
+      'Canceling will permanently remove this in-progress episode and any linked symptom or media entries. This cannot be undone.',
+      expect.any(Array),
+    );
+
+    const [, , buttons] = alertSpy.mock.calls[0] as [
+      string,
+      string,
+      Array<{ onPress?: () => void }>,
+    ];
+    await act(async () => {
+      buttons[1]?.onPress?.();
+    });
+
+    await waitFor(() => {
+      expect(cancelActiveEpisodeById).toHaveBeenCalledWith(
+        expect.anything(),
+        'ep-cancel',
+      );
+    });
+    expect(clearSymptomPromptSession).toHaveBeenCalledWith('ep-cancel');
+    expect(announce).toHaveBeenCalledWith(
+      'Episode canceled. Resume is no longer available.',
+      { politeness: 'polite' },
+    );
   });
 });

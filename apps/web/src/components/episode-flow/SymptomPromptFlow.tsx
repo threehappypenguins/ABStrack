@@ -22,6 +22,7 @@ import {
   symptomPromptAnswerHasValue,
 } from '@abstrack/types';
 import {
+  cancelActiveEpisodeById,
   deleteEpisodeSymptomAnswer,
   listEpisodeSymptomsForEpisode,
   listPresetSymptomsForPreset,
@@ -148,6 +149,8 @@ export function SymptomPromptFlow({
   const isMountedRef = useRef(true);
 
   const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [cancelingEpisode, setCancelingEpisode] = useState(false);
   const pendingLeaveRef = useRef<PendingLeaveAction | null>(null);
   /**
    * When `episodeId` / `symptomPresetId` change, the layout reset syncs this to `resumeFromEntry` so a
@@ -682,6 +685,52 @@ export function SymptomPromptFlow({
     setDiscardDialogOpen(true);
   }, []);
 
+  const confirmCancelEpisode = useCallback(() => {
+    setCancelDialogOpen(true);
+  }, []);
+
+  const handleCancelEpisodeConfirm = useCallback(async (): Promise<
+    void | false
+  > => {
+    if (cancelingEpisode) {
+      return false;
+    }
+    setCancelingEpisode(true);
+    try {
+      if (textPersistTimerRef.current !== null) {
+        clearTimeout(textPersistTimerRef.current);
+        textPersistTimerRef.current = null;
+      }
+      cancelPendingServerPersist();
+      const result = await cancelActiveEpisodeById(
+        supabase,
+        episodeIdRef.current,
+      );
+      if (!result.ok) {
+        announce(result.error.message, { politeness: 'assertive' });
+        return false;
+      }
+      clearSymptomPromptSession(episodeIdRef.current);
+      if (result.data.didCancel) {
+        announce('Episode canceled. Resume is no longer available.', {
+          politeness: 'polite',
+        });
+      } else {
+        announce('This episode is no longer active.', { politeness: 'polite' });
+      }
+      router.push('/dashboard');
+      return;
+    } finally {
+      setCancelingEpisode(false);
+    }
+  }, [
+    announce,
+    cancelPendingServerPersist,
+    cancelingEpisode,
+    router,
+    supabase,
+  ]);
+
   const goNext = () => {
     flushPendingTextPersist();
     flushPendingServerPersist();
@@ -884,6 +933,13 @@ export function SymptomPromptFlow({
         >
           Exit symptom flow
         </button>
+        <button
+          type="button"
+          className="inline-flex min-h-[44px] items-center justify-center rounded-lg px-3 py-2 text-sm font-medium text-red-700 transition hover:text-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg dark:text-red-300 dark:hover:text-red-200"
+          onClick={confirmCancelEpisode}
+        >
+          Cancel episode
+        </button>
       </div>
 
       <ConfirmDialog
@@ -898,6 +954,21 @@ export function SymptomPromptFlow({
         onClose={() => {
           pendingLeaveRef.current = null;
           setDiscardDialogOpen(false);
+        }}
+      />
+      <ConfirmDialog
+        open={cancelDialogOpen}
+        title="Cancel this active episode?"
+        description="Canceling will permanently remove this in-progress episode and any linked symptom or media entries. This cannot be undone."
+        confirmLabel="Cancel episode"
+        confirmBusyLabel="Canceling episode…"
+        cancelLabel="Keep episode"
+        onConfirm={handleCancelEpisodeConfirm}
+        onClose={() => {
+          if (cancelingEpisode) {
+            return;
+          }
+          setCancelDialogOpen(false);
         }}
       />
     </>

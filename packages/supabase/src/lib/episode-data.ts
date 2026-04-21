@@ -146,3 +146,34 @@ export async function endEpisodeIfStillActive(
     return { ok: false, error: toPresetDataError(caught) };
   }
 }
+
+/**
+ * Permanently removes an episode only when it is still active (`ended_at IS NULL`). Uses the same
+ * RLS as other `episodes` deletes. Cascading foreign keys remove linked episode-scoped rows.
+ *
+ * @param client - Supabase client (RLS applies).
+ * @param episodeId - `episodes.id` to cancel.
+ * @returns On success, `didCancel` is `true` when one active row was deleted. `didCancel` is
+ * `false` when no active row matched: e.g. the episode was already ended, does not exist, or RLS
+ * prevented visibility.
+ */
+export async function cancelActiveEpisodeById(
+  client: AbstrackSupabaseClient,
+  episodeId: Uuid,
+): Promise<PresetDataResult<{ didCancel: boolean }>> {
+  try {
+    const { data, error } = await client
+      .from('episodes')
+      .delete()
+      .eq('id', episodeId)
+      .is('ended_at', null)
+      .select('id')
+      .maybeSingle();
+    if (error) {
+      return { ok: false, error: toPresetDataError(error) };
+    }
+    return { ok: true, data: { didCancel: data != null } };
+  } catch (caught) {
+    return { ok: false, error: toPresetDataError(caught) };
+  }
+}
