@@ -201,12 +201,9 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
       expect(result.data.value_numeric).toBe(88);
     }
     expect(upsertMock).toHaveBeenCalledTimes(1);
-    expect(upsertMock).toHaveBeenCalledWith(
-      expect.any(Object),
-      {
-        onConflict: 'episode_id,marker_kind,custom_name_key,custom_unit_key',
-      },
-    );
+    expect(upsertMock).toHaveBeenCalledWith(expect.any(Object), {
+      onConflict: 'episode_id,marker_kind,custom_name_key,custom_unit_key',
+    });
   });
 
   it('first save normalizes trimmed custom_name and custom_unit on the upsert payload', async () => {
@@ -269,11 +266,8 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
 
     expect(result.ok).toBe(true);
     expect(upsertMock).toHaveBeenCalledTimes(1);
-    expect(upsertMock).toHaveBeenCalledWith(
-      expect.any(Object),
-      {
-        onConflict: 'episode_id,marker_kind,custom_name_key,custom_unit_key',
-      },
-    );
+    expect(upsertMock).toHaveBeenCalledWith(expect.any(Object), {
+      onConflict: 'episode_id,marker_kind,custom_name_key,custom_unit_key',
+    });
   });
 });
