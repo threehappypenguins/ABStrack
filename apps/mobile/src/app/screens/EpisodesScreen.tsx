@@ -23,8 +23,13 @@ function episodeSummaryLine(ep: {
   return label ? `${ep.episode_type} — ${label}` : ep.episode_type;
 }
 
+/** Localized instant for display; returns the raw `iso` (or em dash when empty) if parsing fails. */
 function formatInstant(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) {
+    return iso.trim() === '' ? '—' : iso;
+  }
+  return d.toLocaleString(undefined, {
     dateStyle: 'medium',
     timeStyle: 'short',
   });

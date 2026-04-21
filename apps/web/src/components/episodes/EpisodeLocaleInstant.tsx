@@ -48,8 +48,13 @@ export function EpisodeLocaleInstant({
 
   useEffect(() => {
     const id = requestAnimationFrame(() => {
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) {
+        setLocaleLabel(null);
+        return;
+      }
       setLocaleLabel(
-        new Date(iso).toLocaleString(undefined, {
+        d.toLocaleString(undefined, {
           dateStyle: 'medium',
           timeStyle: 'short',
         }),

@@ -81,8 +81,8 @@ export async function getActiveEpisodeForUser(
 }
 
 /**
- * Lists the caller’s completed episodes (`ended_at IS NOT NULL`), newest first. Uses the same RLS
- * as other `episodes` reads.
+ * Lists the caller’s completed episodes (`ended_at IS NOT NULL`), newest first, then by `id`
+ * descending for a stable order when `ended_at` ties. Uses the same RLS as other `episodes` reads.
  *
  * @param client - Supabase client (RLS applies).
  * @param userId - `auth.users.id` / `episodes.user_id`.
@@ -102,6 +102,7 @@ export async function listCompletedEpisodesForUser(
       .eq('user_id', userId)
       .not('ended_at', 'is', null)
       .order('ended_at', { ascending: false })
+      .order('id', { ascending: false })
       .limit(limit);
     if (error) {
       return { ok: false, error: toPresetDataError(error) };

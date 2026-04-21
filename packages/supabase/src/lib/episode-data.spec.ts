@@ -162,7 +162,7 @@ describe('getActiveEpisodeForUser', () => {
 });
 
 describe('listCompletedEpisodesForUser', () => {
-  it('returns completed episodes ordered by ended_at desc', async () => {
+  it('returns completed episodes ordered by ended_at desc, id desc', async () => {
     const rows: EpisodeRow[] = [
       {
         id: 'ep-2',
@@ -192,8 +192,11 @@ describe('listCompletedEpisodesForUser', () => {
       },
     ];
     const limit = vi.fn(async () => ({ data: rows, error: null }));
-    const order = vi.fn(() => ({ limit }));
-    const notFn = vi.fn(() => ({ order }));
+    const queryBuilder = {
+      order: vi.fn(() => queryBuilder),
+      limit,
+    };
+    const notFn = vi.fn(() => queryBuilder);
     const eq = vi.fn(() => ({ not: notFn }));
     const select = vi.fn(() => ({ eq }));
     const client = {
@@ -212,7 +215,12 @@ describe('listCompletedEpisodesForUser', () => {
     expect(client.from).toHaveBeenCalledWith('episodes');
     expect(eq).toHaveBeenCalledWith('user_id', 'user-1');
     expect(notFn).toHaveBeenCalledWith('ended_at', 'is', null);
-    expect(order).toHaveBeenCalledWith('ended_at', { ascending: false });
+    expect(queryBuilder.order).toHaveBeenNthCalledWith(1, 'ended_at', {
+      ascending: false,
+    });
+    expect(queryBuilder.order).toHaveBeenNthCalledWith(2, 'id', {
+      ascending: false,
+    });
     expect(limit).toHaveBeenCalledWith(25);
   });
 });
