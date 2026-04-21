@@ -19,11 +19,13 @@ COMMENT ON COLUMN public.health_markers.custom_name_key IS
 COMMENT ON COLUMN public.health_markers.custom_unit_key IS
   'Generated from custom_unit; do not insert or update.';
 
+-- RESTRICT (not SET NULL): episode-bound rows must keep a non-null preset line id per CHECK below;
+-- nulling the FK on preset line delete would violate that constraint.
 ALTER TABLE public.health_markers
-  ADD COLUMN IF NOT EXISTS preset_health_marker_id uuid REFERENCES public.preset_health_markers (id) ON DELETE SET NULL;
+  ADD COLUMN IF NOT EXISTS preset_health_marker_id uuid REFERENCES public.preset_health_markers (id) ON DELETE RESTRICT;
 
 COMMENT ON COLUMN public.health_markers.preset_health_marker_id IS
-  'Preset line (`preset_health_markers.id`) for episode-bound rows; paired with episode_id for upsert. NULL for wellness / non-episode rows.';
+  'Preset line (`preset_health_markers.id`) for episode-bound rows; paired with episode_id for upsert. NULL for wellness / non-episode rows. Deleting a referenced preset line is blocked while episode markers still reference it.';
 
 -- Backfill: match episode template + line signature; pick one preset line when several match (lowest sort_order).
 -- Use a correlated scalar subquery (not FROM LATERAL): Postgres rejects referencing the UPDATE target `hm`

@@ -2,14 +2,32 @@ import { configure } from '@testing-library/react-native';
 
 // Async server-mocked flows often finish a tick after `waitFor`/`fireEvent`; React 19 still logs
 // this known warning. Suppress only that string so other `console.error` output stays visible.
-const originalConsoleError = console.error;
-console.error = (...args: unknown[]) => {
+// Use a spy + restore (not a permanent global override) so tests can assert on `console.error`.
+const shouldSuppressActWarning = (
+  args: Parameters<typeof console.error>,
+): boolean => {
   const first = args[0];
-  if (typeof first === 'string' && first.includes('not wrapped in act')) {
-    return;
-  }
-  originalConsoleError.apply(console, args as Parameters<typeof console.error>);
+  return typeof first === 'string' && first.includes('not wrapped in act');
 };
+
+let consoleErrorSpy: jest.SpiedFunction<typeof console.error> | undefined;
+
+beforeAll(() => {
+  const original = console.error.bind(console);
+  consoleErrorSpy = jest
+    .spyOn(console, 'error')
+    .mockImplementation((...args: Parameters<typeof console.error>) => {
+      if (shouldSuppressActWarning(args)) {
+        return;
+      }
+      original(...args);
+    });
+});
+
+afterAll(() => {
+  consoleErrorSpy?.mockRestore();
+  consoleErrorSpy = undefined;
+});
 
 jest.mock('expo/src/winter/ImportMetaRegistry', () => ({
   ImportMetaRegistry: {

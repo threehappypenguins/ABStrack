@@ -372,8 +372,8 @@ export type Database = {
           episode_id: string | null
           id: string
           marker_kind: string
-          preset_health_marker_id: string | null
           notes: string | null
+          preset_health_marker_id: string | null
           recorded_at: string
           systolic_numeric: number | null
           updated_at: string

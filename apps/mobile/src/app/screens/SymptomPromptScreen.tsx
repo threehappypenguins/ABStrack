@@ -93,7 +93,6 @@ export function SymptomPromptScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [persistError, setPersistError] = useState<string | null>(null);
   const [lines, setLines] = useState<PresetSymptomRow[]>([]);
-  const [phase, setPhase] = useState<'prompting' | 'complete'>('prompting');
 
   const [activeIndex, setActiveIndex] = useState(
     () => getSymptomPromptSession(episodeId).activeIndex,
@@ -390,7 +389,6 @@ export function SymptomPromptScreen() {
     setStatus('loading');
     setErrorMessage(null);
     setPersistError(null);
-    setPhase('prompting');
     try {
       const supabase = getMobileSupabaseClient();
       const uid = await resolveSessionUserId(supabase);
@@ -431,7 +429,6 @@ export function SymptomPromptScreen() {
       // Session overlays server so local drafts survive hydrate (debounced/offline/failed sync).
       const mergedAnswers = { ...serverAnswers, ...session.answers };
       let idx: number;
-      let initialPhase: 'prompting' | 'complete' = 'prompting';
       const treatAsResumeFromHome = resumeFromHomeIntentRef.current;
       if (treatAsResumeFromHome) {
         const placement = computeSymptomResumePlacement(
@@ -440,12 +437,10 @@ export function SymptomPromptScreen() {
         );
         if (placement.phase === 'complete') {
           idx = placement.activeIndex;
-          initialPhase = 'prompting';
         } else {
           const sIdx = clampIndex(session.activeIndex, result.data.length);
           const pIdx = placement.activeIndex;
           idx = clampIndex(Math.max(sIdx, pIdx), result.data.length);
-          initialPhase = 'prompting';
         }
       } else {
         idx = clampIndex(session.activeIndex, result.data.length);
@@ -454,7 +449,6 @@ export function SymptomPromptScreen() {
       setActiveIndex(idx);
       setAnswers(mergedAnswers);
       answersRef.current = mergedAnswers;
-      setPhase(initialPhase);
       setSymptomPromptSession(episodeId, {
         activeIndex: idx,
         answers: mergedAnswers,
@@ -490,7 +484,6 @@ export function SymptomPromptScreen() {
     setActiveIndex(s.activeIndex);
     setAnswers(s.answers);
     answersRef.current = s.answers;
-    setPhase('prompting');
     setStatus('loading');
     setErrorMessage(null);
     setPersistError(null);
@@ -508,11 +501,11 @@ export function SymptomPromptScreen() {
       : `Step ${activeIndex + 1} of ${lines.length}`;
 
   useEffect(() => {
-    if (phase !== 'prompting' || !currentLine) {
+    if (status !== 'ready' || !currentLine) {
       return;
     }
     announce(`${stepLabel}. ${currentLine.symptom_name}.`);
-  }, [activeIndex, currentLine, lines.length, phase, stepLabel]);
+  }, [activeIndex, currentLine, lines.length, status, stepLabel]);
 
   const onChangeAnswer = (next: SymptomPromptAnswer) => {
     if (!currentLine) {
@@ -580,7 +573,7 @@ export function SymptomPromptScreen() {
 
   useEffect(() => {
     const unsub = navigation.addListener('beforeRemove', (e) => {
-      if (allowRemovalRef.current || phase === 'complete') {
+      if (allowRemovalRef.current) {
         allowRemovalRef.current = false;
         return;
       }
@@ -590,7 +583,7 @@ export function SymptomPromptScreen() {
       });
     });
     return unsub;
-  }, [confirmExitFlow, exitSymptomFlowToHome, navigation, phase]);
+  }, [confirmExitFlow, exitSymptomFlowToHome, navigation]);
 
   const onExitFlowPress = () => {
     requestExitToHome();
@@ -697,15 +690,6 @@ export function SymptomPromptScreen() {
     advanceToNextStep();
   };
 
-  const onContinueToMarkers = () => {
-    clearSymptomPromptSession(episodeIdRef.current);
-    allowRemovalRef.current = true;
-    navigation.replace('HealthMarkerPrompt', {
-      episodeId: episodeIdRef.current,
-      resume: resumeFromHomeIntentRef.current || undefined,
-    });
-  };
-
   return (
     <ScreenShell contentAlign="stretch">
       <View className="min-h-0 flex-1 gap-4">
@@ -726,172 +710,149 @@ export function SymptomPromptScreen() {
           </Text>
         ) : null}
 
-        {phase === 'complete' ? (
-          <View className="gap-4" accessibilityLiveRegion="polite">
+        <AsyncScreenContainer
+          status={status}
+          loadingAccessibilityLabel="Loading symptom list"
+          errorTitle="Could not load symptoms"
+          errorMessage={errorMessage ?? undefined}
+          onRetry={() => {
+            void load();
+          }}
+        >
+          <ScrollView
+            className="flex-1"
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={{ paddingBottom: 24 }}
+          >
             <Text
-              className={`text-base leading-relaxed ${nw.textInk}`}
+              accessibilityRole="text"
+              className={`mb-2 text-base font-medium ${nw.textMuted}`}
               maxFontSizeMultiplier={2}
             >
-              You reached the end of your symptom list for this episode. You can
-              continue to health markers when you are ready.
+              {stepLabel}
             </Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Continue to health markers"
-              onPress={onContinueToMarkers}
-              style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
-              className="items-center justify-center rounded-xl bg-red-700 px-4 py-4 active:opacity-90 dark:bg-red-600"
-            >
-              <Text className="text-center text-[17px] font-semibold text-white">
-                Continue to health markers
-              </Text>
-            </Pressable>
-          </View>
-        ) : (
-          <>
-            <AsyncScreenContainer
-              status={status}
-              loadingAccessibilityLabel="Loading symptom list"
-              errorTitle="Could not load symptoms"
-              errorMessage={errorMessage ?? undefined}
-              onRetry={() => {
-                void load();
-              }}
-            >
-              <ScrollView
-                className="flex-1"
-                keyboardShouldPersistTaps="handled"
-                contentContainerStyle={{ paddingBottom: 24 }}
+
+            {lines.length === 0 ? (
+              <Text
+                className={`text-base leading-relaxed ${nw.textInk}`}
+                maxFontSizeMultiplier={2}
               >
+                This preset has no symptoms yet. You can add symptoms under
+                Templates when you are not in an episode.
+              </Text>
+            ) : currentLine ? (
+              <View className="gap-4">
                 <Text
-                  accessibilityRole="text"
-                  className={`mb-2 text-base font-medium ${nw.textMuted}`}
+                  accessibilityRole="header"
+                  className={`text-xl font-semibold ${nw.textInk}`}
                   maxFontSizeMultiplier={2}
                 >
-                  {stepLabel}
+                  {currentLine.symptom_name}
                 </Text>
-
-                {lines.length === 0 ? (
+                {currentLine.prompt_instruction ? (
                   <Text
-                    className={`text-base leading-relaxed ${nw.textInk}`}
+                    className={`text-base leading-relaxed ${nw.textMuted}`}
                     maxFontSizeMultiplier={2}
                   >
-                    This preset has no symptoms yet. You can add symptoms under
-                    Templates when you are not in an episode.
+                    {currentLine.prompt_instruction}
                   </Text>
-                ) : currentLine ? (
-                  <View className="gap-4">
-                    <Text
-                      accessibilityRole="header"
-                      className={`text-xl font-semibold ${nw.textInk}`}
-                      maxFontSizeMultiplier={2}
-                    >
-                      {currentLine.symptom_name}
-                    </Text>
-                    {currentLine.prompt_instruction ? (
-                      <Text
-                        className={`text-base leading-relaxed ${nw.textMuted}`}
-                        maxFontSizeMultiplier={2}
-                      >
-                        {currentLine.prompt_instruction}
-                      </Text>
-                    ) : null}
-                    <SymptomPromptResponseField
-                      line={currentLine}
-                      answer={answers[currentLine.id]}
-                      onChange={onChangeAnswer}
-                      disabled={status !== 'ready'}
-                    />
-                  </View>
                 ) : null}
+                <SymptomPromptResponseField
+                  line={currentLine}
+                  answer={answers[currentLine.id]}
+                  onChange={onChangeAnswer}
+                  disabled={status !== 'ready'}
+                />
+              </View>
+            ) : null}
 
-                <View className="mt-6 gap-3">
-                  {activeIndex > 0 ? (
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel="Previous symptom"
-                      onPress={goBackStep}
-                      style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
-                      className="w-full items-center justify-center rounded-xl border-2 border-app-border bg-app-bg px-3 py-4 active:opacity-90 dark:border-app-border-dark dark:bg-app-bg-dark"
-                    >
-                      <Text
-                        className={`text-center text-[17px] font-semibold ${nw.textInk}`}
-                        maxFontSizeMultiplier={2}
-                      >
-                        Back
-                      </Text>
-                    </Pressable>
-                  ) : null}
-                  {currentLine ? (
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel="Skip this symptom"
-                      accessibilityState={{ disabled: !canSkipCurrentLine }}
-                      disabled={!canSkipCurrentLine}
-                      onPress={skipCurrentSymptom}
-                      style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
-                      className={`w-full items-center justify-center rounded-xl border-2 border-app-border bg-app-bg px-3 py-4 dark:border-app-border-dark dark:bg-app-bg-dark ${
-                        canSkipCurrentLine ? 'active:opacity-90' : 'opacity-50'
-                      }`}
-                    >
-                      <Text
-                        className={`text-center text-[17px] font-semibold ${nw.textInk}`}
-                        maxFontSizeMultiplier={2}
-                      >
-                        Skip
-                      </Text>
-                    </Pressable>
-                  ) : null}
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Next symptom"
-                    accessibilityState={{ disabled: !canProceedWithNext }}
-                    disabled={!canProceedWithNext}
-                    onPress={goNext}
-                    style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
-                    className={`w-full items-center justify-center rounded-xl px-3 py-4 dark:bg-red-600 ${
-                      canProceedWithNext
-                        ? 'bg-red-700 active:opacity-90'
-                        : 'bg-red-400 opacity-60 dark:bg-red-800'
-                    }`}
+            <View className="mt-6 gap-3">
+              {activeIndex > 0 ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Previous symptom"
+                  onPress={goBackStep}
+                  style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                  className="w-full items-center justify-center rounded-xl border-2 border-app-border bg-app-bg px-3 py-4 active:opacity-90 dark:border-app-border-dark dark:bg-app-bg-dark"
+                >
+                  <Text
+                    className={`text-center text-[17px] font-semibold ${nw.textInk}`}
+                    maxFontSizeMultiplier={2}
                   >
-                    <Text className="text-center text-[17px] font-semibold text-white">
-                      {lines.length === 0 ? 'Done' : 'Next'}
-                    </Text>
-                  </Pressable>
-                </View>
-              </ScrollView>
-            </AsyncScreenContainer>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Exit symptom flow"
-              onPress={onExitFlowPress}
-              style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
-              className="mt-auto w-full items-center justify-center rounded-lg px-3 py-3 active:opacity-80"
-            >
-              <Text
-                className={`text-base font-medium ${nw.textMuted}`}
-                maxFontSizeMultiplier={2}
+                    Back
+                  </Text>
+                </Pressable>
+              ) : null}
+              {currentLine ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Skip this symptom"
+                  accessibilityState={{ disabled: !canSkipCurrentLine }}
+                  disabled={!canSkipCurrentLine}
+                  onPress={skipCurrentSymptom}
+                  style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                  className={`w-full items-center justify-center rounded-xl border-2 border-app-border bg-app-bg px-3 py-4 dark:border-app-border-dark dark:bg-app-bg-dark ${
+                    canSkipCurrentLine ? 'active:opacity-90' : 'opacity-50'
+                  }`}
+                >
+                  <Text
+                    className={`text-center text-[17px] font-semibold ${nw.textInk}`}
+                    maxFontSizeMultiplier={2}
+                  >
+                    Skip
+                  </Text>
+                </Pressable>
+              ) : null}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={
+                  lines.length === 0 ? 'Done' : 'Next symptom'
+                }
+                accessibilityState={{ disabled: !canProceedWithNext }}
+                disabled={!canProceedWithNext}
+                onPress={goNext}
+                style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                className={`w-full items-center justify-center rounded-xl px-3 py-4 dark:bg-red-600 ${
+                  canProceedWithNext
+                    ? 'bg-red-700 active:opacity-90'
+                    : 'bg-red-400 opacity-60 dark:bg-red-800'
+                }`}
               >
-                Exit symptom flow
-              </Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Cancel episode"
-              onPress={onCancelEpisodePress}
-              style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
-              className="w-full items-center justify-center rounded-lg px-3 py-3 active:opacity-80"
-            >
-              <Text
-                className="text-sm font-medium text-red-700 dark:text-red-300"
-                maxFontSizeMultiplier={2}
-              >
-                Cancel episode
-              </Text>
-            </Pressable>
-          </>
-        )}
+                <Text className="text-center text-[17px] font-semibold text-white">
+                  {lines.length === 0 ? 'Done' : 'Next'}
+                </Text>
+              </Pressable>
+            </View>
+          </ScrollView>
+        </AsyncScreenContainer>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Exit symptom flow"
+          onPress={onExitFlowPress}
+          style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+          className="mt-auto w-full items-center justify-center rounded-lg px-3 py-3 active:opacity-80"
+        >
+          <Text
+            className={`text-base font-medium ${nw.textMuted}`}
+            maxFontSizeMultiplier={2}
+          >
+            Exit symptom flow
+          </Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Cancel episode"
+          onPress={onCancelEpisodePress}
+          style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+          className="w-full items-center justify-center rounded-lg px-3 py-3 active:opacity-80"
+        >
+          <Text
+            className="text-sm font-medium text-red-700 dark:text-red-300"
+            maxFontSizeMultiplier={2}
+          >
+            Cancel episode
+          </Text>
+        </Pressable>
       </View>
     </ScreenShell>
   );
