@@ -149,7 +149,8 @@ export async function endEpisodeIfStillActive(
 
 /**
  * Permanently removes an episode only when it is still active (`ended_at IS NULL`). Uses the same
- * RLS as other `episodes` deletes. Cascading foreign keys remove linked episode-scoped rows.
+ * RLS as other `episodes` deletes. Related rows follow schema foreign-key behavior: some
+ * episode-scoped tables cascade-delete, while others are unlinked via `SET NULL`.
  *
  * @param client - Supabase client (RLS applies).
  * @param episodeId - `episodes.id` to cancel.
