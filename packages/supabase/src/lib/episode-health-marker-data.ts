@@ -39,51 +39,14 @@ export async function listEpisodeHealthMarkersForEpisode(
   });
 }
 
-async function fetchEpisodeHealthMarkersForLine(
-  client: AbstrackSupabaseClient,
-  args: {
-    episodeId: Uuid;
-    line: PresetHealthMarkerRow;
-  },
-): Promise<{ data: Array<Pick<HealthMarkerRow, 'id'>>; error: unknown }> {
-  const { episodeId, line } = args;
-  const customName = normalizeCustomField(line.custom_name);
-  const customUnit = normalizeCustomField(line.custom_unit);
-
-  let q = client
-    .from('health_markers')
-    .select('id')
-    .eq('episode_id', episodeId)
-    .eq('marker_kind', line.marker_kind);
-
-  if (customName === null) {
-    q = q.is('custom_name', null);
-  } else {
-    q = q.eq('custom_name', customName);
-  }
-  if (customUnit === null) {
-    q = q.is('custom_unit', null);
-  } else {
-    q = q.eq('custom_unit', customUnit);
-  }
-
-  const r = await q
-    .order('recorded_at', { ascending: false })
-    .order('created_at', { ascending: false })
-    .order('id', { ascending: false })
-    .limit(1);
-  return {
-    data: (r.data ?? []) as Array<Pick<HealthMarkerRow, 'id'>>,
-    error: r.error,
-  };
-}
-
 /**
  * Inserts or updates one `health_markers` row for the current episode + preset line signature.
  *
- * There is no direct FK from `health_markers` to `preset_health_markers`, so this helper matches a
- * row by `(episode_id, marker_kind, custom_name, custom_unit)` and updates the newest row when
- * present; otherwise it inserts a new row.
+ * There is no direct FK from `health_markers` to `preset_health_markers`. Rows are keyed in the DB by
+ * `(episode_id, marker_kind, custom_name_key, custom_unit_key)` (generated from `custom_name` /
+ * `custom_unit`, with NULL treated like empty text). A partial unique index enforces at most one row
+ * per signature for episode-bound markers; this function uses a single `upsert` so concurrent
+ * clients cannot double-insert the same line.
  *
  * @param client - Supabase client (RLS applies).
  * @param args.userId - Must match the episode owner (`episodes.user_id`) under RLS.
@@ -134,15 +97,9 @@ export async function upsertEpisodeHealthMarkerForLine(
   }
 
   return wrap(async () => {
-    const existing = await fetchEpisodeHealthMarkersForLine(client, {
-      episodeId,
-      line,
-    });
-    if (existing.error) {
-      return { data: null, error: existing.error };
-    }
-
-    const payload = {
+    const row = {
+      user_id: userId,
+      episode_id: episodeId,
       marker_kind: line.marker_kind,
       custom_name: customName,
       custom_unit: customUnit,
@@ -153,31 +110,16 @@ export async function upsertEpisodeHealthMarkerForLine(
       recorded_at: recordedAt,
     };
 
-    if (existing.data.length > 0) {
-      const upd = await client
-        .from('health_markers')
-        .update(payload)
-        .eq('id', existing.data[0].id)
-        .select('*')
-        .single();
-      return {
-        data: upd.data as HealthMarkerRow | null,
-        error: upd.error,
-      };
-    }
-
-    const ins = await client
+    const r = await client
       .from('health_markers')
-      .insert({
-        user_id: userId,
-        episode_id: episodeId,
-        ...payload,
+      .upsert(row, {
+        onConflict: 'episode_id,marker_kind,custom_name_key,custom_unit_key',
       })
       .select('*')
       .single();
     return {
-      data: ins.data as HealthMarkerRow | null,
-      error: ins.error,
+      data: r.data as HealthMarkerRow | null,
+      error: r.error,
     };
   });
 }

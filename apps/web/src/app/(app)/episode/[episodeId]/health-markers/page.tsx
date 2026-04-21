@@ -1,8 +1,8 @@
 import { HealthMarkerPromptFlow } from '@/components/episode-flow/HealthMarkerPromptFlow';
 
 type PageProps = {
-  params: Promise<{ episodeId: string }>;
-  searchParams: Promise<{ resume?: string }>;
+  params: { episodeId: string };
+  searchParams: { resume?: string };
 };
 
 /**
@@ -11,12 +11,12 @@ type PageProps = {
  * @param props - Route and query params.
  * @returns Marker prompt flow.
  */
-export default async function EpisodeHealthMarkersPage({
+export default function EpisodeHealthMarkersPage({
   params,
   searchParams,
 }: PageProps) {
-  const { episodeId } = await params;
-  const { resume } = await searchParams;
+  const { episodeId } = params;
+  const { resume } = searchParams;
   const resumeFromEntry =
     resume === '1' || resume === 'true' || resume === 'yes';
 

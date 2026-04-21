@@ -245,6 +245,10 @@ describe('HealthMarkerPromptScreen', () => {
     });
 
     fireEvent.changeText(screen.getByLabelText('Systolic value'), '120');
+
+    const skip = screen.getByLabelText('Skip this marker');
+    expect(skip.props.accessibilityState?.disabled).toBe(false);
+
     fireEvent.press(screen.getByLabelText('Finish health marker list'));
 
     await waitFor(() => {

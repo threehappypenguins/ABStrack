@@ -365,7 +365,9 @@ export type Database = {
         Row: {
           created_at: string
           custom_name: string | null
+          custom_name_key: string
           custom_unit: string | null
+          custom_unit_key: string
           diastolic_numeric: number | null
           episode_id: string | null
           id: string

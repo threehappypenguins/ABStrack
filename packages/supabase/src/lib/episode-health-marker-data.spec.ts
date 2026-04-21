@@ -79,7 +79,7 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
     expect(client.from).not.toHaveBeenCalled();
   });
 
-  it('updates newest matching row when one exists', async () => {
+  it('upserts (updates on conflict) when a row already exists for the line signature', async () => {
     const existingId = 'hm-existing';
     const updated = {
       id: existingId,
@@ -88,6 +88,8 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
       marker_kind: 'blood_glucose',
       custom_name: null,
       custom_unit: null,
+      custom_name_key: '',
+      custom_unit_key: '',
       value_numeric: 120,
       systolic_numeric: null,
       diastolic_numeric: null,
@@ -96,44 +98,15 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
       created_at: '2026-04-18T12:05:00.000Z',
       updated_at: '2026-04-18T12:05:00.000Z',
     };
-    let fromCalls = 0;
+    const upsertMock = vi.fn((_payload: unknown, _opts: unknown) => ({
+      select: vi.fn(() => ({
+        single: vi.fn(async () => ({ data: updated, error: null })),
+      })),
+    }));
     const client = {
-      from: vi.fn(() => {
-        fromCalls += 1;
-        if (fromCalls === 1) {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                eq: vi.fn(() => ({
-                  is: vi.fn(() => ({
-                    is: vi.fn(() => ({
-                      order: vi.fn(() => ({
-                        order: vi.fn(() => ({
-                          order: vi.fn(() => ({
-                            limit: vi.fn(async () => ({
-                              data: [{ id: existingId }],
-                              error: null,
-                            })),
-                          })),
-                        })),
-                      })),
-                    })),
-                  })),
-                })),
-              })),
-            })),
-          };
-        }
-        return {
-          update: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              select: vi.fn(() => ({
-                single: vi.fn(async () => ({ data: updated, error: null })),
-              })),
-            })),
-          })),
-        };
-      }),
+      from: vi.fn(() => ({
+        upsert: upsertMock,
+      })),
     } as unknown as AbstrackSupabaseClient;
 
     const result = await upsertEpisodeHealthMarkerForLine(client, {
@@ -148,10 +121,27 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
       expect(result.data.id).toBe(existingId);
       expect(result.data.value_numeric).toBe(120);
     }
-    expect(fromCalls).toBe(2);
+    expect(upsertMock).toHaveBeenCalledTimes(1);
+    expect(upsertMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: 'u1',
+        episode_id: 'ep-1',
+        marker_kind: 'blood_glucose',
+        custom_name: null,
+        custom_unit: null,
+        value_numeric: 120,
+      }),
+      {
+        onConflict: 'episode_id,marker_kind,custom_name_key,custom_unit_key',
+      },
+    );
   });
 
-  it('inserts a new row when no matching marker exists', async () => {
+  /**
+   * First time saving a line, Postgres performs an INSERT as part of ON CONFLICT upsert.
+   * The client always sends one `.upsert` payload (no separate `.insert()` branch).
+   */
+  it('performs first save via upsert with full episode payload (insert branch inside Postgres)', async () => {
     const inserted = {
       id: 'hm-new',
       user_id: 'u1',
@@ -159,6 +149,8 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
       marker_kind: 'blood_glucose',
       custom_name: null,
       custom_unit: null,
+      custom_name_key: '',
+      custom_unit_key: '',
       value_numeric: 88,
       systolic_numeric: null,
       diastolic_numeric: null,
@@ -167,7 +159,7 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
       created_at: '2026-04-18T12:00:00.000Z',
       updated_at: '2026-04-18T12:00:00.000Z',
     };
-    const insertMock = vi.fn((payload: Record<string, unknown>) => {
+    const upsertMock = vi.fn((payload: Record<string, unknown>) => {
       expect(payload).toEqual(
         expect.objectContaining({
           user_id: 'u1',
@@ -188,36 +180,10 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
       };
     });
 
-    let fromCalls = 0;
     const client = {
-      from: vi.fn(() => {
-        fromCalls += 1;
-        if (fromCalls === 1) {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                eq: vi.fn(() => ({
-                  is: vi.fn(() => ({
-                    is: vi.fn(() => ({
-                      order: vi.fn(() => ({
-                        order: vi.fn(() => ({
-                          order: vi.fn(() => ({
-                            limit: vi.fn(async () => ({
-                              data: [],
-                              error: null,
-                            })),
-                          })),
-                        })),
-                      })),
-                    })),
-                  })),
-                })),
-              })),
-            })),
-          };
-        }
-        return { insert: insertMock };
-      }),
+      from: vi.fn(() => ({
+        upsert: upsertMock,
+      })),
     } as unknown as AbstrackSupabaseClient;
 
     const result = await upsertEpisodeHealthMarkerForLine(client, {
@@ -234,7 +200,80 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
       expect(result.data.id).toBe('hm-new');
       expect(result.data.value_numeric).toBe(88);
     }
-    expect(insertMock).toHaveBeenCalledTimes(1);
-    expect(fromCalls).toBe(2);
+    expect(upsertMock).toHaveBeenCalledTimes(1);
+    expect(upsertMock).toHaveBeenCalledWith(
+      expect.any(Object),
+      {
+        onConflict: 'episode_id,marker_kind,custom_name_key,custom_unit_key',
+      },
+    );
+  });
+
+  it('first save normalizes trimmed custom_name and custom_unit on the upsert payload', async () => {
+    const customLine: PresetHealthMarkerRow = {
+      ...line,
+      id: 'phm-custom',
+      marker_kind: 'custom',
+      custom_name: '  Iron  ',
+      custom_unit: '  mg  ',
+    };
+    const inserted = {
+      id: 'hm-custom-1',
+      user_id: 'u1',
+      episode_id: 'ep-1',
+      marker_kind: 'custom',
+      custom_name: 'Iron',
+      custom_unit: 'mg',
+      custom_name_key: 'Iron',
+      custom_unit_key: 'mg',
+      value_numeric: 12,
+      systolic_numeric: null,
+      diastolic_numeric: null,
+      notes: null,
+      recorded_at: '2026-04-18T12:00:00.000Z',
+      created_at: '2026-04-18T12:00:00.000Z',
+      updated_at: '2026-04-18T12:00:00.000Z',
+    };
+    const upsertMock = vi.fn((payload: Record<string, unknown>) => {
+      expect(payload).toEqual({
+        user_id: 'u1',
+        episode_id: 'ep-1',
+        marker_kind: 'custom',
+        custom_name: 'Iron',
+        custom_unit: 'mg',
+        value_numeric: 12,
+        systolic_numeric: null,
+        diastolic_numeric: null,
+        notes: null,
+        recorded_at: '2026-04-18T12:00:00.000Z',
+      });
+      return {
+        select: vi.fn(() => ({
+          single: vi.fn(async () => ({ data: inserted, error: null })),
+        })),
+      };
+    });
+    const client = {
+      from: vi.fn(() => ({
+        upsert: upsertMock,
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await upsertEpisodeHealthMarkerForLine(client, {
+      userId: 'u1',
+      episodeId: 'ep-1',
+      line: customLine,
+      valueNumeric: 12,
+      recordedAt: '2026-04-18T12:00:00.000Z',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(upsertMock).toHaveBeenCalledTimes(1);
+    expect(upsertMock).toHaveBeenCalledWith(
+      expect.any(Object),
+      {
+        onConflict: 'episode_id,marker_kind,custom_name_key,custom_unit_key',
+      },
+    );
   });
 });

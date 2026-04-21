@@ -94,26 +94,65 @@ function findExistingMarkerForLine(
   );
 }
 
-function draftHasValue(
+type MeasurementDraftResult =
+  | {
+      ok: true;
+      valueNumeric: number | null;
+      systolicNumeric: number | null;
+      diastolicNumeric: number | null;
+    }
+  | { ok: false; message: string };
+
+/**
+ * Parses numeric fields the same way as {@link saveCurrentLine}. Skip is allowed when this fails
+ * (incomplete or invalid measurement) so users are never stuck between a disabled Skip and Next.
+ */
+function parseMeasurementDraftForSave(
   line: PresetHealthMarkerRow,
   draft: MarkerDraft,
-): boolean {
-  if (line.marker_kind === 'blood_pressure') {
-    const systolic = parseOptionalNumber(draft.systolic);
-    const diastolic = parseOptionalNumber(draft.diastolic);
-    return (
-      systolic !== null &&
-      diastolic !== null &&
-      !Number.isNaN(systolic) &&
-      !Number.isNaN(diastolic)
-    );
-  }
+): MeasurementDraftResult {
   const value = parseOptionalNumber(draft.value);
-  return value !== null && !Number.isNaN(value);
+  const systolic = parseOptionalNumber(draft.systolic);
+  const diastolic = parseOptionalNumber(draft.diastolic);
+
+  if (line.marker_kind === 'blood_pressure') {
+    if (systolic == null || diastolic == null) {
+      return {
+        ok: false,
+        message:
+          'Enter both systolic and diastolic blood pressure values to continue.',
+      };
+    }
+    if (Number.isNaN(systolic) || Number.isNaN(diastolic)) {
+      return {
+        ok: false,
+        message:
+          'Blood pressure values must be valid numbers (for example 120 and 80).',
+      };
+    }
+    return {
+      ok: true,
+      valueNumeric: null,
+      systolicNumeric: systolic,
+      diastolicNumeric: diastolic,
+    };
+  }
+  if (value == null) {
+    return { ok: false, message: 'Enter a numeric value to continue.' };
+  }
+  if (Number.isNaN(value)) {
+    return { ok: false, message: 'Value must be a valid number.' };
+  }
+  return {
+    ok: true,
+    valueNumeric: value,
+    systolicNumeric: null,
+    diastolicNumeric: null,
+  };
 }
 
-function parseOptionalNumber(raw: string): number | null {
-  const trimmed = raw.trim();
+function parseOptionalNumber(raw: string | undefined): number | null {
+  const trimmed = (raw ?? '').trim();
   if (!trimmed) {
     return null;
   }
@@ -227,10 +266,12 @@ export function HealthMarkerPromptScreen() {
   const currentDraft = currentLine
     ? (drafts[currentLine.id] ?? createDraftFromMarker(null))
     : createDraftFromMarker(null);
-  const currentAnswered = currentLine
-    ? draftHasValue(currentLine, currentDraft)
-    : true;
-  const canSkip = Boolean(currentLine) && !currentAnswered;
+  // Skip stays available until the draft passes the same checks as Next/save (both BP fields
+  // valid, or a valid scalar). Partial BP entry must not disable Skip.
+  const measurementReadyForSave = currentLine
+    ? parseMeasurementDraftForSave(currentLine, currentDraft).ok
+    : false;
+  const canSkip = Boolean(currentLine) && !measurementReadyForSave;
 
   const onUpdateDraft = (patch: Partial<MarkerDraft>) => {
     if (!currentLine) {
@@ -267,50 +308,14 @@ export function HealthMarkerPromptScreen() {
       return false;
     }
 
-    const value = parseOptionalNumber(currentDraft.value);
-    const systolic = parseOptionalNumber(currentDraft.systolic);
-    const diastolic = parseOptionalNumber(currentDraft.diastolic);
-
-    if (currentLine.marker_kind === 'blood_pressure') {
-      if (systolic == null || diastolic == null) {
-        const message =
-          'Enter both systolic and diastolic blood pressure values to continue.';
-        setPersistFeedback({
-          source: 'validation',
-          message,
-        });
-        await announce(message, { politeness: 'assertive' });
-        return false;
-      }
-      if (Number.isNaN(systolic) || Number.isNaN(diastolic)) {
-        const message =
-          'Blood pressure values must be valid numbers (for example 120 and 80).';
-        setPersistFeedback({
-          source: 'validation',
-          message,
-        });
-        await announce(message, { politeness: 'assertive' });
-        return false;
-      }
-    } else {
-      if (value == null) {
-        const message = 'Enter a numeric value to continue.';
-        setPersistFeedback({
-          source: 'validation',
-          message,
-        });
-        await announce(message, { politeness: 'assertive' });
-        return false;
-      }
-      if (Number.isNaN(value)) {
-        const message = 'Value must be a valid number.';
-        setPersistFeedback({
-          source: 'validation',
-          message,
-        });
-        await announce(message, { politeness: 'assertive' });
-        return false;
-      }
+    const parsed = parseMeasurementDraftForSave(currentLine, currentDraft);
+    if (!parsed.ok) {
+      setPersistFeedback({
+        source: 'validation',
+        message: parsed.message,
+      });
+      await announce(parsed.message, { politeness: 'assertive' });
+      return false;
     }
 
     setSaving(true);
@@ -319,16 +324,9 @@ export function HealthMarkerPromptScreen() {
       userId,
       episodeId,
       line: currentLine,
-      valueNumeric:
-        currentLine.marker_kind === 'blood_pressure' ? null : (value ?? null),
-      systolicNumeric:
-        currentLine.marker_kind === 'blood_pressure'
-          ? (systolic ?? null)
-          : null,
-      diastolicNumeric:
-        currentLine.marker_kind === 'blood_pressure'
-          ? (diastolic ?? null)
-          : null,
+      valueNumeric: parsed.valueNumeric,
+      systolicNumeric: parsed.systolicNumeric,
+      diastolicNumeric: parsed.diastolicNumeric,
       notes: currentDraft.notes.trim() ? currentDraft.notes.trim() : null,
     });
     setSaving(false);
