@@ -15,6 +15,15 @@
 -- silently DELETE those rows: it FAILS so you can inspect, fix templates or rows, or remove them
 -- deliberately, then re-run `db push`. Duplicate (episode_id, preset_health_marker_id) rows are
 -- still deduplicated below (keep newest); note that in PR/release notes if that matters for audits.
+--
+-- PRESET LINE DELETES (`preset_health_markers`):
+-- `health_markers.preset_health_marker_id` uses ON DELETE RESTRICT so episode measurements keep a
+-- valid template line id (CASCADE would drop patient data; SET NULL conflicts with the CHECK that
+-- episode-bound rows require a preset line). Editors that call DELETE on a line therefore get a
+-- foreign-key error once any episode row references that line—expected; UX should show a clear
+-- message (see `mapSupabaseErrorToPresetDataError` for `health_markers_preset_health_marker_id_fkey`).
+-- Longer-term options if product needs “remove line from template” anyway: soft-delete/archived
+-- preset lines, or admin tools that reassign measurements—not handled in this migration.
 
 BEGIN;
 
