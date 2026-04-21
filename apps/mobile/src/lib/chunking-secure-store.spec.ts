@@ -14,6 +14,8 @@ describe('ChunkingSecureStore (via supabase-wiring)', () => {
 
   beforeEach(() => {
     mockStore = {};
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     jest
       .spyOn(SecureStore, 'getItemAsync')
       .mockImplementation((key: string) => {

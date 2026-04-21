@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Pressable,
@@ -148,7 +148,7 @@ export function HealthMarkerPromptScreen() {
 
   const supabase = useMemo(() => getMobileSupabaseClient(), []);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setStatus('loading');
     setErrorMessage(null);
     setPersistFeedback(null);
@@ -217,11 +217,11 @@ export function HealthMarkerPromptScreen() {
       setActiveIndex(0);
     }
     setStatus('ready');
-  };
+  }, [episodeId, resume, supabase]);
 
   useEffect(() => {
     void load();
-  }, [episodeId, resume]);
+  }, [load]);
 
   const currentLine = lines[activeIndex] ?? null;
   const currentDraft = currentLine
