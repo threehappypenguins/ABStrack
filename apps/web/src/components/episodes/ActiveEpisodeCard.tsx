@@ -123,9 +123,6 @@ export function ActiveEpisodeCard({ episode }: { episode: EpisodeRow }) {
         confirmBusyLabel="Canceling episode…"
         onConfirm={handleConfirmCancel}
         onClose={() => {
-          if (cancelling) {
-            return;
-          }
           setShowCancelDialog(false);
         }}
       />

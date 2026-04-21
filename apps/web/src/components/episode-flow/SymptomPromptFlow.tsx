@@ -965,9 +965,6 @@ export function SymptomPromptFlow({
         cancelLabel="Keep episode"
         onConfirm={handleCancelEpisodeConfirm}
         onClose={() => {
-          if (cancelingEpisode) {
-            return;
-          }
           setCancelDialogOpen(false);
         }}
       />
