@@ -350,6 +350,12 @@ export function HealthMarkerPromptScreen() {
     setSaving(false);
     if (!result.ok) {
       setPersistFeedback({ source: 'sync', message: result.error.message });
+      await announce(
+        `Could not sync with the server: ${result.error.message}`,
+        {
+          politeness: 'assertive',
+        },
+      );
       return false;
     }
     return true;

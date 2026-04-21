@@ -337,6 +337,9 @@ export function HealthMarkerPromptFlow({
     setSaving(false);
     if (!result.ok) {
       setPersistFeedback({ source: 'sync', message: result.error.message });
+      announce(`Could not sync with the server: ${result.error.message}`, {
+        politeness: 'assertive',
+      });
       return false;
     }
 
