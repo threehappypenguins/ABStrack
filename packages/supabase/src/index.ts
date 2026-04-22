@@ -99,3 +99,10 @@ export {
   listEpisodeHealthMarkersForEpisode,
   upsertEpisodeHealthMarkerForLine,
 } from './lib/episode-health-marker-data.js';
+export {
+  createFoodDiaryEntry,
+  deleteFoodDiaryEntry,
+  listFoodDiaryEntriesForEpisode,
+  listFoodDiaryEntriesForUser,
+  updateFoodDiaryEntry,
+} from './lib/food-diary-data.js';

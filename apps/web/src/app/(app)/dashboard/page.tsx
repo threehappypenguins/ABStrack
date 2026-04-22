@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import Link from 'next/link';
 import { EpisodeStartHomeCta } from '@/components/episode-flow/EpisodeStartHomeCta';
 import { createServerClient } from '@/lib/supabase/server-client';
 import { healthCheckProfilesLimit1 } from '@abstrack/supabase';
@@ -127,6 +128,15 @@ export default async function DashboardPage() {
         )}
 
         <div className="space-y-4">
+          <div>
+            <p className="text-sm text-app-muted">Food diary</p>
+            <Link
+              href="/food-diary/new"
+              className="inline-flex min-h-[44px] items-center justify-center rounded-lg border border-app-border bg-app-surface px-3 text-sm font-semibold text-app-ink shadow-sm transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+            >
+              Add a food diary entry
+            </Link>
+          </div>
           {user ? (
             <>
               <div>

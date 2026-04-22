@@ -5,8 +5,12 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import type { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import {
   Alert,
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -23,22 +27,29 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type {
   EpisodeRow,
   EpisodeType,
+  FoodDiaryEntryRow,
   HealthMarkerRow,
+  MealTag,
   PresetHealthMarkerRow,
 } from '@abstrack/types';
 import {
   bacReadingSuggestsAbsEpisode,
   formatEpisodeDurationSimple,
+  MEAL_TAGS,
   PRESET_HEALTH_MARKER_KIND_LABELS,
   validatePresetHealthMarkerCustomFields,
 } from '@abstrack/types';
 import {
   cancelActiveEpisodeById,
   completeEpisodePostMarkerStep,
+  createFoodDiaryEntry,
+  deleteFoodDiaryEntry,
   endEpisodeIfStillActive,
   getEpisodeById,
+  listFoodDiaryEntriesForEpisode,
   listEpisodeHealthMarkersForEpisode,
   listPresetHealthMarkersForPreset,
+  updateFoodDiaryEntry,
   upsertEpisodeHealthMarkerForLine,
 } from '@abstrack/supabase';
 import { announce, COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
@@ -171,6 +182,52 @@ function parseOptionalNumber(raw: string | undefined): number | null {
   return Number.isFinite(n) ? n : Number.NaN;
 }
 
+function pad2(value: number): string {
+  return String(value).padStart(2, '0');
+}
+
+function currentLocalDate(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+}
+
+function currentLocalTime(): string {
+  const now = new Date();
+  return `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
+}
+
+function localDateFromDate(value: Date): string {
+  return `${value.getFullYear()}-${pad2(value.getMonth() + 1)}-${pad2(value.getDate())}`;
+}
+
+function localTimeFromDate(value: Date): string {
+  return `${pad2(value.getHours())}:${pad2(value.getMinutes())}`;
+}
+
+function localDateTimeToIso(datePart: string, timePart: string): string | null {
+  const date = datePart.trim();
+  const time = timePart.trim();
+  if (!date || !time) {
+    return null;
+  }
+  const parsed = new Date(`${date}T${time}`);
+  const value = parsed.getTime();
+  if (!Number.isFinite(value)) {
+    return null;
+  }
+  return parsed.toISOString();
+}
+
+function isoToLocalDate(value: string): string {
+  const date = new Date(value);
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+}
+
+function isoToLocalTime(value: string): string {
+  const date = new Date(value);
+  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+}
+
 /**
  * Linear in-episode health marker stepper that follows the symptom phase.
  *
@@ -188,9 +245,9 @@ export function HealthMarkerPromptScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [persistFeedback, setPersistFeedback] =
     useState<PersistFeedback | null>(null);
-  const [phase, setPhase] = useState<'prompting' | 'postMarkers' | 'complete'>(
-    'prompting',
-  );
+  const [phase, setPhase] = useState<
+    'prompting' | 'postMarkers' | 'foodDiary' | 'complete'
+  >('prompting');
   const [userId, setUserId] = useState<string | null>(null);
   const [lines, setLines] = useState<PresetHealthMarkerRow[]>([]);
   const [drafts, setDrafts] = useState<Record<string, MarkerDraft>>({});
@@ -204,6 +261,34 @@ export function HealthMarkerPromptScreen() {
   const [postNote, setPostNote] = useState('');
   const [savingPost, setSavingPost] = useState(false);
   const [postFeedback, setPostFeedback] = useState<string | null>(null);
+  const [mealTag, setMealTag] = useState<MealTag | null>(null);
+  const [foodNote, setFoodNote] = useState('');
+  const [foodLoggedDate, setFoodLoggedDate] = useState(currentLocalDate);
+  const [foodLoggedTime, setFoodLoggedTime] = useState(currentLocalTime);
+  const [addFoodInitialDate, setAddFoodInitialDate] =
+    useState(currentLocalDate);
+  const [addFoodInitialTime, setAddFoodInitialTime] =
+    useState(currentLocalTime);
+  const [foodEntries, setFoodEntries] = useState<FoodDiaryEntryRow[]>([]);
+  const [foodEntriesLoading, setFoodEntriesLoading] = useState(false);
+  const [foodEntriesError, setFoodEntriesError] = useState<string | null>(null);
+  const [savingFoodDiary, setSavingFoodDiary] = useState(false);
+  const [foodDiaryFeedback, setFoodDiaryFeedback] = useState<string | null>(
+    null,
+  );
+  const [editingFoodEntryId, setEditingFoodEntryId] = useState<string | null>(
+    null,
+  );
+  const [deletingFoodEntryId, setDeletingFoodEntryId] = useState<string | null>(
+    null,
+  );
+  const [isAddFoodEntryOpen, setIsAddFoodEntryOpen] = useState(true);
+  const [isAddFoodEntryDirty, setIsAddFoodEntryDirty] = useState(false);
+  const [foodDatePickerOpen, setFoodDatePickerOpen] = useState(false);
+  const [foodTimePickerOpen, setFoodTimePickerOpen] = useState(false);
+  const [foodDiaryDecision, setFoodDiaryDecision] = useState<
+    'pending' | 'saved' | 'skipped'
+  >('pending');
   const [endingEpisode, setEndingEpisode] = useState(false);
   const [endFeedback, setEndFeedback] = useState<string | null>(null);
   const [endedSummary, setEndedSummary] = useState<{
@@ -245,6 +330,25 @@ export function HealthMarkerPromptScreen() {
     setPhase('prompting');
     postFormInitRef.current = false;
     setPostFeedback(null);
+    const initialFoodDate = currentLocalDate();
+    const initialFoodTime = currentLocalTime();
+    setMealTag(null);
+    setFoodNote('');
+    setFoodLoggedDate(initialFoodDate);
+    setFoodLoggedTime(initialFoodTime);
+    setAddFoodInitialDate(initialFoodDate);
+    setAddFoodInitialTime(initialFoodTime);
+    setFoodEntries([]);
+    setFoodEntriesLoading(false);
+    setFoodEntriesError(null);
+    setSavingFoodDiary(false);
+    setFoodDiaryFeedback(null);
+    setEditingFoodEntryId(null);
+    setIsAddFoodEntryOpen(true);
+    setIsAddFoodEntryDirty(false);
+    setFoodDatePickerOpen(false);
+    setFoodTimePickerOpen(false);
+    setFoodDiaryDecision('pending');
     setEndFeedback(null);
     setEndedSummary(null);
 
@@ -330,7 +434,7 @@ export function HealthMarkerPromptScreen() {
       if (episode.data?.post_marker_step_completed_at) {
         setPhase('complete');
       } else {
-        setPhase('postMarkers');
+        setPhase('foodDiary');
       }
     } else if (resume && firstUnanswered >= 0) {
       setActiveIndex(firstUnanswered);
@@ -431,7 +535,7 @@ export function HealthMarkerPromptScreen() {
 
   /**
    * Re-reads saved episode markers so BAC suggestion reflects values logged during this session,
-   * then moves to the post–marker episode details step.
+   * then moves to the food diary step.
    */
   const enterPostMarkerPhaseAfterMarkers = useCallback(async () => {
     const markerRows = await listEpisodeHealthMarkersForEpisode(
@@ -441,7 +545,7 @@ export function HealthMarkerPromptScreen() {
     if (markerRows.ok) {
       setBacSuggestAbs(bacReadingSuggestsAbsEpisode(markerRows.data));
     }
-    setPhase('postMarkers');
+    setPhase('foodDiary');
   }, [episodeId, supabase]);
 
   const goNext = async () => {
@@ -452,7 +556,7 @@ export function HealthMarkerPromptScreen() {
       await enterPostMarkerPhaseAfterMarkers();
       await announce(
         lines.length === 0
-          ? 'No preset health markers to log. Continue to episode details.'
+          ? 'No preset health markers to log. Continue to food diary.'
           : 'Health marker list complete.',
         { politeness: 'polite' },
       );
@@ -507,6 +611,404 @@ export function HealthMarkerPromptScreen() {
     setEndedSummary(null);
     setPhase('complete');
     await announce('Episode details saved.', { politeness: 'polite' });
+  };
+
+  const onSaveFoodDiary = async () => {
+    if (savingFoodDiary || !userId) {
+      return;
+    }
+    setSavingFoodDiary(true);
+    setFoodDiaryFeedback(null);
+    if (!mealTag) {
+      const message = 'Choose a meal tag.';
+      setFoodDiaryFeedback(message);
+      await announce(message, { politeness: 'assertive' });
+      setSavingFoodDiary(false);
+      return;
+    }
+    const loggedAtIso = localDateTimeToIso(foodLoggedDate, foodLoggedTime);
+    if (!loggedAtIso) {
+      const message = 'Enter a valid date and time.';
+      setFoodDiaryFeedback(message);
+      await announce(message, { politeness: 'assertive' });
+      setSavingFoodDiary(false);
+      return;
+    }
+    const result =
+      editingFoodEntryId == null
+        ? await createFoodDiaryEntry(supabase, {
+            user_id: userId,
+            episode_id: episodeId,
+            meal_tag: mealTag,
+            food_note: foodNote,
+            logged_at: loggedAtIso,
+          })
+        : await updateFoodDiaryEntry(supabase, editingFoodEntryId, {
+            meal_tag: mealTag,
+            food_note: foodNote,
+            logged_at: loggedAtIso,
+          });
+    setSavingFoodDiary(false);
+    if (!result.ok) {
+      setFoodDiaryFeedback(result.error.message);
+      await announce(result.error.message, { politeness: 'assertive' });
+      return;
+    }
+    const foodEntriesResult = await listFoodDiaryEntriesForEpisode(
+      supabase,
+      episodeId,
+    );
+    if (foodEntriesResult.ok) {
+      setFoodEntries(foodEntriesResult.data);
+      setFoodEntriesError(null);
+    } else {
+      setFoodEntriesError(foodEntriesResult.error.message);
+    }
+    const initialFoodDate = currentLocalDate();
+    const initialFoodTime = currentLocalTime();
+    setMealTag(null);
+    setFoodNote('');
+    setFoodLoggedDate(initialFoodDate);
+    setFoodLoggedTime(initialFoodTime);
+    setAddFoodInitialDate(initialFoodDate);
+    setAddFoodInitialTime(initialFoodTime);
+    setEditingFoodEntryId(null);
+    setIsAddFoodEntryDirty(false);
+    setFoodDatePickerOpen(false);
+    setFoodTimePickerOpen(false);
+    if (editingFoodEntryId == null) {
+      setIsAddFoodEntryOpen(false);
+    }
+    setFoodDiaryFeedback(null);
+    await announce(
+      editingFoodEntryId == null ? 'Food entry saved.' : 'Food entry updated.',
+      { politeness: 'polite' },
+    );
+  };
+
+  const onContinueFromFoodDiary = async () => {
+    setFoodDiaryDecision(foodEntries.length > 0 ? 'saved' : 'skipped');
+    setFoodDiaryFeedback(null);
+    setPhase('postMarkers');
+    await announce('Continue to episode details.', {
+      politeness: 'polite',
+    });
+  };
+
+  const onBackToHealthMarkersFromFoodDiary = async () => {
+    setFoodDiaryFeedback(null);
+    setPhase('prompting');
+    await announce('Returned to health markers.', { politeness: 'polite' });
+  };
+
+  const onBackToSymptomsFromHealthMarkers = useCallback(async () => {
+    const symptomPresetId = episodeRow?.symptom_preset_id;
+    if (!symptomPresetId) {
+      await announce(
+        'This episode has no symptom preset linked, so symptoms cannot be reopened.',
+        { politeness: 'assertive' },
+      );
+      return;
+    }
+    navigation.replace('SymptomPrompt', {
+      episodeId,
+      symptomPresetId,
+      resume: true,
+    });
+  }, [episodeId, episodeRow, navigation]);
+
+  const onBackToFoodDiaryFromPostMarkers = async () => {
+    setPostFeedback(null);
+    setPhase('foodDiary');
+    await announce('Returned to food diary.', { politeness: 'polite' });
+  };
+
+  const onEditFoodEntry = (entry: FoodDiaryEntryRow) => {
+    setEditingFoodEntryId(entry.id);
+    setIsAddFoodEntryOpen(false);
+    setIsAddFoodEntryDirty(false);
+    setFoodDatePickerOpen(false);
+    setFoodTimePickerOpen(false);
+    setMealTag(entry.meal_tag);
+    setFoodNote(entry.food_note);
+    setFoodLoggedDate(isoToLocalDate(entry.logged_at));
+    setFoodLoggedTime(isoToLocalTime(entry.logged_at));
+    setFoodDiaryFeedback(null);
+  };
+
+  const onNewFoodEntry = () => {
+    setEditingFoodEntryId(null);
+    const initialFoodDate = currentLocalDate();
+    const initialFoodTime = currentLocalTime();
+    setMealTag(null);
+    setFoodNote('');
+    setFoodLoggedDate(initialFoodDate);
+    setFoodLoggedTime(initialFoodTime);
+    setAddFoodInitialDate(initialFoodDate);
+    setAddFoodInitialTime(initialFoodTime);
+    setFoodDiaryFeedback(null);
+    setIsAddFoodEntryDirty(false);
+    setFoodDatePickerOpen(false);
+    setFoodTimePickerOpen(false);
+    setIsAddFoodEntryOpen(true);
+  };
+
+  const onDiscardFoodEditChanges = () => {
+    setEditingFoodEntryId(null);
+    setMealTag(null);
+    setFoodNote('');
+    setFoodLoggedDate(currentLocalDate());
+    setFoodLoggedTime(currentLocalTime());
+    setFoodDiaryFeedback(null);
+    setIsAddFoodEntryDirty(false);
+    setFoodDatePickerOpen(false);
+    setFoodTimePickerOpen(false);
+    setIsAddFoodEntryOpen(false);
+  };
+
+  const computeIsAddFoodEntryDirty = useCallback(
+    (next: {
+      mealTag: MealTag | null;
+      foodNote: string;
+      foodLoggedDate: string;
+      foodLoggedTime: string;
+    }) => {
+      return (
+        next.mealTag != null ||
+        next.foodNote.trim().length > 0 ||
+        next.foodLoggedDate !== addFoodInitialDate ||
+        next.foodLoggedTime !== addFoodInitialTime
+      );
+    },
+    [addFoodInitialDate, addFoodInitialTime],
+  );
+
+  const onDiscardAddFoodDraft = useCallback(() => {
+    if (!isAddFoodEntryDirty) {
+      setIsAddFoodEntryOpen(false);
+      return;
+    }
+    Alert.alert(
+      'Discard this food entry draft?',
+      'Your unsaved entry will be removed.',
+      [
+        { text: 'Keep editing', style: 'cancel' },
+        {
+          text: 'Discard entry',
+          style: 'destructive',
+          onPress: () => {
+            const initialFoodDate = currentLocalDate();
+            const initialFoodTime = currentLocalTime();
+            setMealTag(null);
+            setFoodNote('');
+            setFoodLoggedDate(initialFoodDate);
+            setFoodLoggedTime(initialFoodTime);
+            setAddFoodInitialDate(initialFoodDate);
+            setAddFoodInitialTime(initialFoodTime);
+            setIsAddFoodEntryDirty(false);
+            setFoodDiaryFeedback(null);
+            setFoodDatePickerOpen(false);
+            setFoodTimePickerOpen(false);
+            setIsAddFoodEntryOpen(false);
+          },
+        },
+      ],
+    );
+  }, [isAddFoodEntryDirty]);
+
+  const foodLoggedDateTimeValue = useMemo(() => {
+    const iso = localDateTimeToIso(foodLoggedDate, foodLoggedTime);
+    return iso ? new Date(iso) : new Date();
+  }, [foodLoggedDate, foodLoggedTime]);
+
+  const foodLoggedDateLabel = useMemo(() => {
+    return foodLoggedDateTimeValue.toLocaleDateString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  }, [foodLoggedDateTimeValue]);
+
+  const foodLoggedTimeLabel = useMemo(() => {
+    return foodLoggedDateTimeValue.toLocaleTimeString(undefined, {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
+  }, [foodLoggedDateTimeValue]);
+
+  const onFoodDatePickerChange = useCallback(
+    (_event: DateTimePickerEvent, selectedDate?: Date) => {
+      setFoodDatePickerOpen(false);
+      if (!selectedDate) {
+        return;
+      }
+      const nextDate = localDateFromDate(selectedDate);
+      setFoodLoggedDate(nextDate);
+      if (editingFoodEntryId == null) {
+        setIsAddFoodEntryDirty(
+          computeIsAddFoodEntryDirty({
+            mealTag,
+            foodNote,
+            foodLoggedDate: nextDate,
+            foodLoggedTime,
+          }),
+        );
+      }
+    },
+    [
+      computeIsAddFoodEntryDirty,
+      editingFoodEntryId,
+      foodLoggedTime,
+      foodNote,
+      mealTag,
+    ],
+  );
+
+  const onFoodTimePickerChange = useCallback(
+    (_event: DateTimePickerEvent, selectedDate?: Date) => {
+      setFoodTimePickerOpen(false);
+      if (!selectedDate) {
+        return;
+      }
+      const nextTime = localTimeFromDate(selectedDate);
+      setFoodLoggedTime(nextTime);
+      if (editingFoodEntryId == null) {
+        setIsAddFoodEntryDirty(
+          computeIsAddFoodEntryDirty({
+            mealTag,
+            foodNote,
+            foodLoggedDate,
+            foodLoggedTime: nextTime,
+          }),
+        );
+      }
+    },
+    [
+      computeIsAddFoodEntryDirty,
+      editingFoodEntryId,
+      foodLoggedDate,
+      foodNote,
+      mealTag,
+    ],
+  );
+
+  const loadFoodEntries = useCallback(async () => {
+    setFoodEntriesLoading(true);
+    setFoodEntriesError(null);
+    const result = await listFoodDiaryEntriesForEpisode(supabase, episodeId);
+    setFoodEntriesLoading(false);
+    if (!result.ok) {
+      setFoodEntriesError(result.error.message);
+      return;
+    }
+    setFoodEntries(result.data);
+  }, [episodeId, supabase]);
+
+  const onDeleteFoodEntry = useCallback(
+    (entryId: string) => {
+      if (savingFoodDiary || deletingFoodEntryId) {
+        return;
+      }
+      Alert.alert('Discard this saved food entry?', 'This cannot be undone.', [
+        { text: 'Keep entry', style: 'cancel' },
+        {
+          text: 'Discard entry',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              setDeletingFoodEntryId(entryId);
+              setFoodDiaryFeedback(null);
+              const result = await deleteFoodDiaryEntry(supabase, entryId);
+              setDeletingFoodEntryId(null);
+              if (!result.ok) {
+                setFoodDiaryFeedback(result.error.message);
+                await announce(result.error.message, {
+                  politeness: 'assertive',
+                });
+                return;
+              }
+              if (editingFoodEntryId === entryId) {
+                onNewFoodEntry();
+                setIsAddFoodEntryOpen(false);
+              }
+              await loadFoodEntries();
+              await announce('Food entry discarded.', { politeness: 'polite' });
+            })();
+          },
+        },
+      ]);
+    },
+    [
+      deletingFoodEntryId,
+      editingFoodEntryId,
+      loadFoodEntries,
+      onNewFoodEntry,
+      savingFoodDiary,
+      supabase,
+    ],
+  );
+
+  useEffect(() => {
+    if (phase !== 'foodDiary') {
+      return;
+    }
+    void loadFoodEntries();
+  }, [phase, loadFoodEntries]);
+
+  const onCancelEpisodePress = () => {
+    if (cancelingEpisode) {
+      return;
+    }
+    Alert.alert(
+      'Cancel this active episode?',
+      'Canceling permanently deletes this in-progress episode, its symptom answers, health markers, and media metadata. Food diary entries are kept, but this episode link is removed. This cannot be undone.',
+      [
+        { text: 'Keep episode', style: 'cancel' },
+        {
+          text: 'Cancel episode',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              setCancelingEpisode(true);
+              try {
+                const result = await cancelActiveEpisodeById(
+                  supabase,
+                  episodeId,
+                );
+                if (!result.ok) {
+                  await announce(result.error.message, {
+                    politeness: 'assertive',
+                  });
+                  return;
+                }
+                clearSymptomPromptSession(episodeId);
+                if (result.data.didCancel) {
+                  await announce(
+                    'Episode canceled. Resume is no longer available.',
+                    {
+                      politeness: 'polite',
+                    },
+                  );
+                } else {
+                  await announce('This episode is no longer active.', {
+                    politeness: 'polite',
+                  });
+                }
+                navigation.dispatch(
+                  CommonActions.reset({
+                    index: 0,
+                    routes: [{ name: 'MainTabs' }],
+                  }),
+                );
+              } finally {
+                setCancelingEpisode(false);
+              }
+            })();
+          },
+        },
+      ],
+    );
   };
 
   const onFinishToHome = () => {
@@ -609,61 +1111,6 @@ export function HealthMarkerPromptScreen() {
     );
   }, [endedSummary, endingEpisode, onEndEpisode]);
 
-  const onCancelEpisodePress = () => {
-    if (cancelingEpisode) {
-      return;
-    }
-    Alert.alert(
-      'Cancel this active episode?',
-      'Canceling permanently deletes this in-progress episode, its symptom answers, health markers, and media metadata. Food diary entries are kept, but this episode link is removed. This cannot be undone.',
-      [
-        { text: 'Keep episode', style: 'cancel' },
-        {
-          text: 'Cancel episode',
-          style: 'destructive',
-          onPress: () => {
-            void (async () => {
-              setCancelingEpisode(true);
-              try {
-                const result = await cancelActiveEpisodeById(
-                  supabase,
-                  episodeId,
-                );
-                if (!result.ok) {
-                  await announce(result.error.message, {
-                    politeness: 'assertive',
-                  });
-                  return;
-                }
-                clearSymptomPromptSession(episodeId);
-                if (result.data.didCancel) {
-                  await announce(
-                    'Episode canceled. Resume is no longer available.',
-                    {
-                      politeness: 'polite',
-                    },
-                  );
-                } else {
-                  await announce('This episode is no longer active.', {
-                    politeness: 'polite',
-                  });
-                }
-                navigation.dispatch(
-                  CommonActions.reset({
-                    index: 0,
-                    routes: [{ name: 'MainTabs' }],
-                  }),
-                );
-              } finally {
-                setCancelingEpisode(false);
-              }
-            })();
-          },
-        },
-      ],
-    );
-  };
-
   return (
     <ScreenShell contentAlign="stretch">
       <View className="min-h-0 flex-1 gap-4">
@@ -674,7 +1121,9 @@ export function HealthMarkerPromptScreen() {
         >
           {phase === 'postMarkers'
             ? 'Episode details'
-            : 'Episode health markers'}
+            : phase === 'foodDiary'
+              ? 'Food diary'
+              : 'Episode health markers'}
         </Text>
         {phase === 'prompting' && persistFeedback ? (
           <Text
@@ -716,8 +1165,9 @@ export function HealthMarkerPromptScreen() {
                 className={`text-base leading-relaxed ${nw.textInk}`}
                 maxFontSizeMultiplier={2}
               >
-                Preset prompts and episode details are saved. End this episode
-                to prevent stale resume state.
+                {foodDiaryDecision === 'saved'
+                  ? 'Preset prompts, episode details, and food diary are saved. End this episode to prevent stale resume state.'
+                  : 'Preset prompts and episode details are saved. End this episode to prevent stale resume state.'}
               </Text>
             )}
             {endFeedback ? (
@@ -759,6 +1209,592 @@ export function HealthMarkerPromptScreen() {
               </Pressable>
             )}
           </View>
+        ) : phase === 'foodDiary' ? (
+          <>
+            <ScrollView
+              className="flex-1"
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ paddingBottom: 24 }}
+            >
+              <Text
+                className={`mb-4 text-base leading-relaxed ${nw.textMuted}`}
+                maxFontSizeMultiplier={2}
+              >
+                Add one or more meals/snacks for this episode, or skip this
+                step.
+              </Text>
+              <Text
+                accessibilityRole="header"
+                className={`mb-2 text-lg font-semibold ${nw.textInk}`}
+                maxFontSizeMultiplier={2}
+              >
+                Saved entries
+              </Text>
+              {foodEntriesLoading ? (
+                <Text
+                  className={`mb-2 text-sm ${nw.textMuted}`}
+                  accessibilityLiveRegion="polite"
+                  maxFontSizeMultiplier={2}
+                >
+                  Loading entries…
+                </Text>
+              ) : null}
+              {foodEntriesError ? (
+                <Text
+                  className={`mb-2 text-sm ${nw.textError}`}
+                  accessibilityLiveRegion="assertive"
+                  maxFontSizeMultiplier={2}
+                >
+                  {foodEntriesError}
+                </Text>
+              ) : null}
+              {!foodEntriesLoading &&
+              !foodEntriesError &&
+              foodEntries.length === 0 ? (
+                <Text
+                  className={`mb-3 text-sm ${nw.textMuted}`}
+                  maxFontSizeMultiplier={2}
+                >
+                  No food entries yet for this episode.
+                </Text>
+              ) : null}
+              {foodEntries.map((entry) => (
+                <View
+                  key={entry.id}
+                  className="mb-3 rounded-xl border border-app-border bg-app-bg p-3 dark:border-app-border-dark dark:bg-app-bg-dark"
+                >
+                  <Text
+                    className={`text-base font-semibold ${nw.textInk}`}
+                    maxFontSizeMultiplier={2}
+                  >
+                    {entry.meal_tag}
+                  </Text>
+                  <Text
+                    className={`mt-1 text-sm ${nw.textMuted}`}
+                    maxFontSizeMultiplier={2}
+                  >
+                    {new Date(entry.logged_at).toLocaleString()}
+                  </Text>
+                  <Text
+                    className={`mt-2 text-sm ${nw.textInk}`}
+                    maxFontSizeMultiplier={2}
+                  >
+                    {entry.food_note}
+                  </Text>
+                  {editingFoodEntryId !== entry.id ? (
+                    <View className="mt-2 flex-row items-center justify-end gap-2">
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Edit ${entry.meal_tag} food entry`}
+                        onPress={() => {
+                          onEditFoodEntry(entry);
+                        }}
+                        style={{
+                          minWidth: COMFORTABLE_TOUCH_TARGET_DP,
+                          minHeight: COMFORTABLE_TOUCH_TARGET_DP,
+                        }}
+                        className="items-center justify-center rounded-lg border border-app-border px-2 active:opacity-80 dark:border-app-border-dark"
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Ionicons
+                          name="pencil-outline"
+                          size={20}
+                          color={colors.muted}
+                          accessibilityElementsHidden
+                          importantForAccessibility="no"
+                        />
+                      </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Discard ${entry.meal_tag} food entry`}
+                        accessibilityState={{
+                          disabled: deletingFoodEntryId != null,
+                        }}
+                        disabled={deletingFoodEntryId != null}
+                        onPress={() => {
+                          onDeleteFoodEntry(entry.id);
+                        }}
+                        style={{
+                          minWidth: COMFORTABLE_TOUCH_TARGET_DP,
+                          minHeight: COMFORTABLE_TOUCH_TARGET_DP,
+                        }}
+                        className="items-center justify-center rounded-lg border border-red-400 px-2 active:opacity-80 disabled:opacity-60 dark:border-red-500/60"
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        {deletingFoodEntryId === entry.id ? (
+                          <Text
+                            className="text-xs font-semibold text-red-700 dark:text-red-300"
+                            maxFontSizeMultiplier={2}
+                          >
+                            ...
+                          </Text>
+                        ) : (
+                          <Ionicons
+                            name="trash-outline"
+                            size={20}
+                            color={colors.error}
+                            accessibilityElementsHidden
+                            importantForAccessibility="no"
+                          />
+                        )}
+                      </Pressable>
+                    </View>
+                  ) : null}
+                  {editingFoodEntryId === entry.id ? (
+                    <View className="mt-3 rounded-lg border border-app-border p-3 dark:border-app-border-dark">
+                      <Text
+                        className={`mb-2 text-base font-semibold ${nw.textInk}`}
+                        maxFontSizeMultiplier={2}
+                      >
+                        Edit food entry
+                      </Text>
+                      <View
+                        accessibilityRole="radiogroup"
+                        accessibilityLabel="Meal tag"
+                        className="mb-3 gap-2"
+                      >
+                        {MEAL_TAGS.map((tag) => (
+                          <Pressable
+                            key={`${entry.id}-${tag}`}
+                            accessibilityRole="radio"
+                            accessibilityLabel={tag}
+                            accessibilityState={{
+                              checked: mealTag === tag,
+                              disabled: savingFoodDiary,
+                            }}
+                            disabled={savingFoodDiary}
+                            onPress={() => {
+                              setMealTag((prev) => (prev === tag ? null : tag));
+                            }}
+                            style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                            className={`w-full items-center justify-center rounded-xl border-2 px-3 py-3 dark:border-app-border-dark ${
+                              mealTag === tag
+                                ? 'border-red-700 bg-red-50 dark:border-red-500 dark:bg-red-950/40'
+                                : 'border-app-border bg-app-bg dark:bg-app-bg-dark'
+                            }`}
+                          >
+                            <Text
+                              className={`text-center text-[17px] font-semibold ${nw.textInk}`}
+                              maxFontSizeMultiplier={2}
+                            >
+                              {tag}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                      <Text
+                        className={`mb-1 text-base font-medium ${nw.textInk}`}
+                        maxFontSizeMultiplier={2}
+                      >
+                        Logged date
+                      </Text>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="Logged date"
+                        accessibilityState={{ disabled: savingFoodDiary }}
+                        disabled={savingFoodDiary}
+                        onPress={() => {
+                          setFoodDatePickerOpen(true);
+                        }}
+                        style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                        className="mb-3 items-center justify-center rounded-xl border border-app-border bg-white px-4 py-3 dark:border-app-border-dark dark:bg-app-bg-dark"
+                      >
+                        <Text
+                          className={`text-[17px] ${nw.textInk}`}
+                          maxFontSizeMultiplier={2}
+                        >
+                          {foodLoggedDateLabel}
+                        </Text>
+                      </Pressable>
+                      <Text
+                        className={`mb-1 text-base font-medium ${nw.textInk}`}
+                        maxFontSizeMultiplier={2}
+                      >
+                        Logged time
+                      </Text>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="Logged time"
+                        accessibilityState={{ disabled: savingFoodDiary }}
+                        disabled={savingFoodDiary}
+                        onPress={() => {
+                          setFoodTimePickerOpen(true);
+                        }}
+                        style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                        className="mb-4 items-center justify-center rounded-xl border border-app-border bg-white px-4 py-3 dark:border-app-border-dark dark:bg-app-bg-dark"
+                      >
+                        <Text
+                          className={`text-[17px] ${nw.textInk}`}
+                          maxFontSizeMultiplier={2}
+                        >
+                          {foodLoggedTimeLabel}
+                        </Text>
+                      </Pressable>
+                      <Text
+                        className={`mb-1 text-base font-medium ${nw.textInk}`}
+                        maxFontSizeMultiplier={2}
+                      >
+                        Food note
+                      </Text>
+                      <TextInput
+                        editable={!savingFoodDiary}
+                        accessibilityLabel="Food note"
+                        multiline
+                        value={foodNote}
+                        onChangeText={setFoodNote}
+                        placeholder="What did you eat or drink?"
+                        placeholderTextColor={colors.inputPlaceholder}
+                        className={`mb-4 min-h-[120px] rounded-xl border border-app-border bg-white p-4 text-[17px] text-app-ink dark:border-app-border-dark dark:bg-app-bg-dark ${nw.textInk}`}
+                        maxFontSizeMultiplier={2}
+                      />
+                      {foodDiaryFeedback ? (
+                        <Text
+                          className={`mb-2 text-sm ${nw.textError}`}
+                          accessibilityLiveRegion="assertive"
+                          maxFontSizeMultiplier={2}
+                        >
+                          {foodDiaryFeedback}
+                        </Text>
+                      ) : null}
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          savingFoodDiary
+                            ? 'Saving food diary entry'
+                            : 'Update food entry'
+                        }
+                        accessibilityState={{ disabled: savingFoodDiary }}
+                        disabled={savingFoodDiary}
+                        onPress={() => {
+                          void onSaveFoodDiary();
+                        }}
+                        style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                        className="w-full items-center justify-center rounded-xl bg-red-700 px-3 py-4 active:opacity-90 disabled:opacity-60 dark:bg-red-600"
+                      >
+                        <Text className="text-center text-[17px] font-semibold text-white">
+                          {savingFoodDiary ? 'Saving…' : 'Update entry'}
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="Cancel food entry edit"
+                        onPress={onDiscardFoodEditChanges}
+                        style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                        className="mt-3 w-full items-center justify-center rounded-lg border border-app-border px-3 py-3 active:opacity-80 dark:border-app-border-dark"
+                      >
+                        <Text
+                          className={`text-base font-medium ${nw.textInk}`}
+                          maxFontSizeMultiplier={2}
+                        >
+                          Discard changes
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="Discard saved food entry"
+                        accessibilityState={{
+                          disabled: deletingFoodEntryId != null,
+                        }}
+                        disabled={deletingFoodEntryId != null}
+                        onPress={() => {
+                          onDeleteFoodEntry(entry.id);
+                        }}
+                        style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                        className="mt-3 w-full items-center justify-center rounded-lg border border-red-400 px-3 py-3 active:opacity-80 disabled:opacity-60 dark:border-red-500/60"
+                      >
+                        <Text
+                          className="text-base font-medium text-red-700 dark:text-red-300"
+                          maxFontSizeMultiplier={2}
+                        >
+                          {deletingFoodEntryId === entry.id
+                            ? 'Discarding…'
+                            : 'Discard entry'}
+                        </Text>
+                      </Pressable>
+                    </View>
+                  ) : null}
+                </View>
+              ))}
+              {editingFoodEntryId == null && !isAddFoodEntryOpen ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Add food entry"
+                  onPress={onNewFoodEntry}
+                  style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                  className="w-full items-center justify-center rounded-lg border border-app-border px-3 py-3 active:opacity-80 dark:border-app-border-dark"
+                >
+                  <Text
+                    className={`text-base font-medium ${nw.textInk}`}
+                    maxFontSizeMultiplier={2}
+                  >
+                    Add food entry
+                  </Text>
+                </Pressable>
+              ) : null}
+              {editingFoodEntryId == null && isAddFoodEntryOpen ? (
+                <>
+                  <Text
+                    accessibilityRole="header"
+                    className={`mb-2 text-lg font-semibold ${nw.textInk}`}
+                    maxFontSizeMultiplier={2}
+                  >
+                    Add food entry
+                  </Text>
+                  <View
+                    accessibilityRole="radiogroup"
+                    accessibilityLabel="Meal tag"
+                    className="mb-4 gap-2"
+                  >
+                    {MEAL_TAGS.map((tag) => (
+                      <Pressable
+                        key={`add-${tag}`}
+                        accessibilityRole="radio"
+                        accessibilityLabel={tag}
+                        accessibilityState={{
+                          checked: mealTag === tag,
+                          disabled: savingFoodDiary,
+                        }}
+                        disabled={savingFoodDiary}
+                        onPress={() => {
+                          const nextMealTag = mealTag === tag ? null : tag;
+                          setMealTag(nextMealTag);
+                          setIsAddFoodEntryDirty(
+                            computeIsAddFoodEntryDirty({
+                              mealTag: nextMealTag,
+                              foodNote,
+                              foodLoggedDate,
+                              foodLoggedTime,
+                            }),
+                          );
+                        }}
+                        style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                        className={`w-full items-center justify-center rounded-xl border-2 px-3 py-3 dark:border-app-border-dark ${
+                          mealTag === tag
+                            ? 'border-red-700 bg-red-50 dark:border-red-500 dark:bg-red-950/40'
+                            : 'border-app-border bg-app-bg dark:bg-app-bg-dark'
+                        }`}
+                      >
+                        <Text
+                          className={`text-center text-[17px] font-semibold ${nw.textInk}`}
+                          maxFontSizeMultiplier={2}
+                        >
+                          {tag}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                  <Text
+                    className={`mb-1 text-base font-medium ${nw.textInk}`}
+                    maxFontSizeMultiplier={2}
+                  >
+                    Logged date
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Logged date"
+                    accessibilityState={{ disabled: savingFoodDiary }}
+                    disabled={savingFoodDiary}
+                    onPress={() => {
+                      setFoodDatePickerOpen(true);
+                    }}
+                    style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                    className="mb-3 items-center justify-center rounded-xl border border-app-border bg-white px-4 py-3 dark:border-app-border-dark dark:bg-app-bg-dark"
+                  >
+                    <Text
+                      className={`text-[17px] ${nw.textInk}`}
+                      maxFontSizeMultiplier={2}
+                    >
+                      {foodLoggedDateLabel}
+                    </Text>
+                  </Pressable>
+                  <Text
+                    className={`mb-1 text-base font-medium ${nw.textInk}`}
+                    maxFontSizeMultiplier={2}
+                  >
+                    Logged time
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Logged time"
+                    accessibilityState={{ disabled: savingFoodDiary }}
+                    disabled={savingFoodDiary}
+                    onPress={() => {
+                      setFoodTimePickerOpen(true);
+                    }}
+                    style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                    className="mb-4 items-center justify-center rounded-xl border border-app-border bg-white px-4 py-3 dark:border-app-border-dark dark:bg-app-bg-dark"
+                  >
+                    <Text
+                      className={`text-[17px] ${nw.textInk}`}
+                      maxFontSizeMultiplier={2}
+                    >
+                      {foodLoggedTimeLabel}
+                    </Text>
+                  </Pressable>
+                  <Text
+                    className={`mb-1 text-base font-medium ${nw.textInk}`}
+                    maxFontSizeMultiplier={2}
+                  >
+                    Food note
+                  </Text>
+                  <TextInput
+                    editable={!savingFoodDiary}
+                    accessibilityLabel="Food note"
+                    multiline
+                    value={foodNote}
+                    onChangeText={(value) => {
+                      setFoodNote(value);
+                      setIsAddFoodEntryDirty(
+                        computeIsAddFoodEntryDirty({
+                          mealTag,
+                          foodNote: value,
+                          foodLoggedDate,
+                          foodLoggedTime,
+                        }),
+                      );
+                    }}
+                    placeholder="What did you eat or drink?"
+                    placeholderTextColor={colors.inputPlaceholder}
+                    className={`mb-4 min-h-[120px] rounded-xl border border-app-border bg-white p-4 text-[17px] text-app-ink dark:border-app-border-dark dark:bg-app-bg-dark ${nw.textInk}`}
+                    maxFontSizeMultiplier={2}
+                  />
+                  {foodDiaryFeedback ? (
+                    <Text
+                      className={`mb-2 text-sm ${nw.textError}`}
+                      accessibilityLiveRegion="assertive"
+                      maxFontSizeMultiplier={2}
+                    >
+                      {foodDiaryFeedback}
+                    </Text>
+                  ) : null}
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      savingFoodDiary
+                        ? 'Saving food diary entry'
+                        : 'Save food entry'
+                    }
+                    accessibilityState={{ disabled: savingFoodDiary }}
+                    disabled={savingFoodDiary}
+                    onPress={() => {
+                      void onSaveFoodDiary();
+                    }}
+                    style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                    className="w-full items-center justify-center rounded-xl bg-red-700 px-3 py-4 active:opacity-90 disabled:opacity-60 dark:bg-red-600"
+                  >
+                    <Text className="text-center text-[17px] font-semibold text-white">
+                      {savingFoodDiary ? 'Saving…' : 'Save entry'}
+                    </Text>
+                  </Pressable>
+                  {isAddFoodEntryDirty ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Discard food entry"
+                      onPress={onDiscardAddFoodDraft}
+                      style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                      className="mt-3 w-full items-center justify-center rounded-lg border border-red-400 px-3 py-3 active:opacity-80 dark:border-red-500/60"
+                    >
+                      <Text
+                        className="text-base font-medium text-red-700 dark:text-red-300"
+                        maxFontSizeMultiplier={2}
+                      >
+                        Discard entry
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                  {!isAddFoodEntryDirty ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Collapse add food entry"
+                      onPress={() => {
+                        setIsAddFoodEntryOpen(false);
+                      }}
+                      style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                      className="mt-3 w-full items-center justify-center rounded-lg border border-app-border px-3 py-3 active:opacity-80 dark:border-app-border-dark"
+                    >
+                      <Text
+                        className={`text-base font-medium ${nw.textInk}`}
+                        maxFontSizeMultiplier={2}
+                      >
+                        Collapse
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </>
+              ) : null}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Back to health markers"
+                onPress={() => {
+                  void onBackToHealthMarkersFromFoodDiary();
+                }}
+                style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                className="w-full items-center justify-center rounded-lg border border-app-border px-3 py-3 active:opacity-80 dark:border-app-border-dark"
+              >
+                <Text
+                  className={`text-base font-medium ${nw.textInk}`}
+                  maxFontSizeMultiplier={2}
+                >
+                  Back
+                </Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={
+                  foodEntries.length === 0
+                    ? 'Skip food diary entry'
+                    : 'Continue after food diary'
+                }
+                onPress={() => {
+                  void onContinueFromFoodDiary();
+                }}
+                style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                className={`w-full items-center justify-center rounded-lg bg-red-700 px-3 py-3 active:opacity-90 dark:bg-red-600 ${
+                  editingFoodEntryId == null && !isAddFoodEntryOpen
+                    ? 'mt-5'
+                    : 'mt-3'
+                }`}
+              >
+                <Text
+                  className="text-center text-base font-semibold text-white"
+                  maxFontSizeMultiplier={2}
+                >
+                  {foodEntries.length === 0 ? 'Skip for now' : 'Continue'}
+                </Text>
+              </Pressable>
+            </ScrollView>
+            {foodDatePickerOpen ? (
+              <DateTimePicker
+                value={foodLoggedDateTimeValue}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                onChange={onFoodDatePickerChange}
+              />
+            ) : null}
+            {foodTimePickerOpen ? (
+              <DateTimePicker
+                value={foodLoggedDateTimeValue}
+                mode="time"
+                is24Hour={false}
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                onChange={onFoodTimePickerChange}
+              />
+            ) : null}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Cancel episode"
+              onPress={onCancelEpisodePress}
+              style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+              className="w-full items-center justify-center rounded-lg px-3 py-3 active:opacity-80"
+            >
+              <Text
+                className="text-sm font-medium text-red-700 dark:text-red-300"
+                maxFontSizeMultiplier={2}
+              >
+                Cancel episode
+              </Text>
+            </Pressable>
+          </>
         ) : phase === 'postMarkers' ? (
           <>
             <ScrollView
@@ -770,7 +1806,8 @@ export function HealthMarkerPromptScreen() {
                 className={`mb-4 text-base leading-relaxed ${nw.textMuted}`}
                 maxFontSizeMultiplier={2}
               >
-                Choose ABS or Other; other fields are optional.
+                After health markers and food diary, choose ABS or Other; other
+                fields are optional.
               </Text>
               <Text
                 accessibilityRole="header"
@@ -907,6 +1944,23 @@ export function HealthMarkerPromptScreen() {
                   {postFeedback}
                 </Text>
               ) : null}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Back"
+                accessibilityState={{ disabled: savingPost }}
+                disabled={savingPost}
+                onPress={() => {
+                  void onBackToFoodDiaryFromPostMarkers();
+                }}
+                style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                className="w-full items-center justify-center rounded-xl border-2 border-app-border bg-app-bg px-3 py-4 active:opacity-90 dark:border-app-border-dark dark:bg-app-bg-dark"
+              >
+                <Text
+                  className={`text-center text-[17px] font-semibold ${nw.textInk}`}
+                >
+                  Back
+                </Text>
+              </Pressable>
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Save episode details"
@@ -1051,23 +2105,27 @@ export function HealthMarkerPromptScreen() {
                 ) : null}
 
                 <View className="mt-6 gap-3">
-                  {activeIndex > 0 ? (
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel="Previous marker"
-                      onPress={goBackStep}
-                      disabled={saving}
-                      style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
-                      className="w-full items-center justify-center rounded-xl border-2 border-app-border bg-app-bg px-3 py-4 active:opacity-90 dark:border-app-border-dark dark:bg-app-bg-dark"
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Back"
+                    onPress={() => {
+                      if (activeIndex > 0) {
+                        goBackStep();
+                        return;
+                      }
+                      void onBackToSymptomsFromHealthMarkers();
+                    }}
+                    disabled={saving}
+                    style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                    className="w-full items-center justify-center rounded-xl border-2 border-app-border bg-app-bg px-3 py-4 active:opacity-90 dark:border-app-border-dark dark:bg-app-bg-dark"
+                  >
+                    <Text
+                      className={`text-center text-[17px] font-semibold ${nw.textInk}`}
+                      maxFontSizeMultiplier={2}
                     >
-                      <Text
-                        className={`text-center text-[17px] font-semibold ${nw.textInk}`}
-                        maxFontSizeMultiplier={2}
-                      >
-                        Back
-                      </Text>
-                    </Pressable>
-                  ) : null}
+                      Back
+                    </Text>
+                  </Pressable>
                   {currentLine ? (
                     <Pressable
                       accessibilityRole="button"
@@ -1096,7 +2154,7 @@ export function HealthMarkerPromptScreen() {
                       lines.length === 0
                         ? 'Continue to episode details'
                         : activeIndex >= lines.length - 1
-                          ? 'Finish health marker list'
+                          ? 'Next health marker'
                           : 'Next health marker'
                     }
                     accessibilityState={{ disabled: saving }}
@@ -1113,7 +2171,7 @@ export function HealthMarkerPromptScreen() {
                         : lines.length === 0
                           ? 'Continue to episode details'
                           : activeIndex >= lines.length - 1
-                            ? 'Finish'
+                            ? 'Next'
                             : 'Next'}
                     </Text>
                   </Pressable>

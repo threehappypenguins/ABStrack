@@ -49,5 +49,9 @@ export type MainStackParamList = {
     /** When true, initial step is derived from saved marker rows. */
     resume?: boolean;
   };
+  FoodDiaryEntry: {
+    /** Optional episode link for entries logged from inside an episode flow. */
+    episodeId?: string;
+  };
   Settings: undefined;
 };

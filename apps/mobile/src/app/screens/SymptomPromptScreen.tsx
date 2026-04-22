@@ -640,7 +640,10 @@ export function SymptomPromptScreen() {
 
   const advanceToNextStep = () => {
     if (lines.length === 0) {
-      clearSymptomPromptSession(episodeIdRef.current);
+      setSymptomPromptSession(episodeIdRef.current, {
+        activeIndex: activeIndexRef.current,
+        answers: answersRef.current,
+      });
       allowRemovalRef.current = true;
       navigation.replace('HealthMarkerPrompt', {
         episodeId: episodeIdRef.current,
@@ -656,7 +659,10 @@ export function SymptomPromptScreen() {
       persist(next, answersRef.current);
       return;
     }
-    clearSymptomPromptSession(episodeIdRef.current);
+    setSymptomPromptSession(episodeIdRef.current, {
+      activeIndex: activeIndexRef.current,
+      answers: answersRef.current,
+    });
     allowRemovalRef.current = true;
     navigation.replace('HealthMarkerPrompt', {
       episodeId: episodeIdRef.current,

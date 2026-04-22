@@ -13,6 +13,7 @@ import type { MainStackParamList } from './navigation/types';
 import { LoginScreen } from './screens/LoginScreen';
 import { EpisodeStartScreen } from './screens/EpisodeStartScreen';
 import { EpisodesScreen } from './screens/EpisodesScreen';
+import { FoodDiaryEntryScreen } from './screens/FoodDiaryEntryScreen';
 import { HealthMarkerPromptScreen } from './screens/HealthMarkerPromptScreen';
 import { SymptomPromptScreen } from './screens/SymptomPromptScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
@@ -414,6 +415,14 @@ function AppBootstrap() {
               component={HealthMarkerPromptScreen}
               options={{
                 title: 'Health markers',
+                headerBackTitle: 'Home',
+              }}
+            />
+            <MainStack.Screen
+              name="FoodDiaryEntry"
+              component={FoodDiaryEntryScreen}
+              options={{
+                title: 'Food diary',
                 headerBackTitle: 'Home',
               }}
             />

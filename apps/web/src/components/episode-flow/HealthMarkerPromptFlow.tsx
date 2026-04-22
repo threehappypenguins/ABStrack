@@ -5,23 +5,30 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   EpisodeRow,
   EpisodeType,
+  FoodDiaryEntryRow,
   HealthMarkerRow,
+  MealTag,
   PresetHealthMarkerKind,
   PresetHealthMarkerRow,
 } from '@abstrack/types';
 import {
   bacReadingSuggestsAbsEpisode,
   formatEpisodeDurationSimple,
+  MEAL_TAGS,
   PRESET_HEALTH_MARKER_KIND_LABELS,
   validatePresetHealthMarkerCustomFields,
 } from '@abstrack/types';
 import {
   cancelActiveEpisodeById,
   completeEpisodePostMarkerStep,
+  createFoodDiaryEntry,
+  deleteFoodDiaryEntry,
   endEpisodeIfStillActive,
   getEpisodeById,
+  listFoodDiaryEntriesForEpisode,
   listEpisodeHealthMarkersForEpisode,
   listPresetHealthMarkersForPreset,
+  updateFoodDiaryEntry,
   upsertEpisodeHealthMarkerForLine,
 } from '@abstrack/supabase';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
@@ -152,6 +159,25 @@ function parseOptionalNumber(raw: string | undefined): number | null {
   return Number.isFinite(n) ? n : Number.NaN;
 }
 
+function toLocalDateTimeInputValue(iso: string): string {
+  const date = new Date(iso);
+  const offsetMs = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+}
+
+function localInputValueToIso(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const date = new Date(trimmed);
+  const time = date.getTime();
+  if (!Number.isFinite(time)) {
+    return null;
+  }
+  return date.toISOString();
+}
+
 export type HealthMarkerPromptFlowProps = {
   episodeId: string;
   resumeFromEntry?: boolean;
@@ -177,9 +203,9 @@ export function HealthMarkerPromptFlow({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [persistFeedback, setPersistFeedback] =
     useState<PersistFeedback | null>(null);
-  const [phase, setPhase] = useState<'prompting' | 'postMarkers' | 'complete'>(
-    'prompting',
-  );
+  const [phase, setPhase] = useState<
+    'prompting' | 'postMarkers' | 'foodDiary' | 'complete'
+  >('prompting');
   const [userId, setUserId] = useState<string | null>(null);
   const [lines, setLines] = useState<PresetHealthMarkerRow[]>([]);
   const [drafts, setDrafts] = useState<Record<string, MarkerDraft>>({});
@@ -192,6 +218,29 @@ export function HealthMarkerPromptFlow({
   const [postNote, setPostNote] = useState('');
   const [savingPost, setSavingPost] = useState(false);
   const [postFeedback, setPostFeedback] = useState<string | null>(null);
+  const [foodDiaryDecision, setFoodDiaryDecision] = useState<
+    'pending' | 'saved' | 'skipped'
+  >('pending');
+  const [foodEntries, setFoodEntries] = useState<FoodDiaryEntryRow[]>([]);
+  const [foodEntriesLoading, setFoodEntriesLoading] = useState(false);
+  const [foodEntriesError, setFoodEntriesError] = useState<string | null>(null);
+  const [foodMealTag, setFoodMealTag] = useState<MealTag | null>(null);
+  const [foodNote, setFoodNote] = useState('');
+  const [foodLoggedAtLocal, setFoodLoggedAtLocal] = useState(() =>
+    toLocalDateTimeInputValue(new Date().toISOString()),
+  );
+  const [addFoodInitialLoggedAtLocal, setAddFoodInitialLoggedAtLocal] =
+    useState(() => toLocalDateTimeInputValue(new Date().toISOString()));
+  const [foodSaving, setFoodSaving] = useState(false);
+  const [foodSaveError, setFoodSaveError] = useState<string | null>(null);
+  const [editingFoodEntryId, setEditingFoodEntryId] = useState<string | null>(
+    null,
+  );
+  const [deletingFoodEntryId, setDeletingFoodEntryId] = useState<string | null>(
+    null,
+  );
+  const [isAddFoodEntryOpen, setIsAddFoodEntryOpen] = useState(true);
+  const [isAddFoodEntryDirty, setIsAddFoodEntryDirty] = useState(false);
   const [endingEpisode, setEndingEpisode] = useState(false);
   const [endDialogOpen, setEndDialogOpen] = useState(false);
   const [endFeedback, setEndFeedback] = useState<string | null>(null);
@@ -233,6 +282,21 @@ export function HealthMarkerPromptFlow({
     setPhase('prompting');
     postFormInitRef.current = false;
     setPostFeedback(null);
+    setFoodDiaryDecision('pending');
+    setFoodEntries([]);
+    setFoodEntriesError(null);
+    setFoodEntriesLoading(false);
+    setFoodMealTag(null);
+    setFoodNote('');
+    const initialFoodLoggedAtLocal = toLocalDateTimeInputValue(
+      new Date().toISOString(),
+    );
+    setFoodLoggedAtLocal(initialFoodLoggedAtLocal);
+    setAddFoodInitialLoggedAtLocal(initialFoodLoggedAtLocal);
+    setFoodSaving(false);
+    setFoodSaveError(null);
+    setEditingFoodEntryId(null);
+    setIsAddFoodEntryOpen(true);
     setEndFeedback(null);
     setEndedSummary(null);
     const {
@@ -317,7 +381,7 @@ export function HealthMarkerPromptFlow({
         if (episode.data?.post_marker_step_completed_at) {
           setPhase('complete');
         } else {
-          setPhase('postMarkers');
+          setPhase('foodDiary');
         }
       } else {
         setActiveIndex(firstUnanswered);
@@ -415,7 +479,7 @@ export function HealthMarkerPromptFlow({
 
   /**
    * Re-reads saved episode markers so BAC suggestion reflects values logged during this session,
-   * then moves to the post–marker episode details step.
+   * then moves to the food diary step.
    */
   const enterPostMarkerPhaseAfterMarkers = useCallback(async () => {
     const markerRows = await listEpisodeHealthMarkersForEpisode(
@@ -425,7 +489,7 @@ export function HealthMarkerPromptFlow({
     if (markerRows.ok) {
       setBacSuggestAbs(bacReadingSuggestsAbsEpisode(markerRows.data));
     }
-    setPhase('postMarkers');
+    setPhase('foodDiary');
   }, [episodeId, supabase]);
 
   const goNext = async () => {
@@ -436,7 +500,7 @@ export function HealthMarkerPromptFlow({
       await enterPostMarkerPhaseAfterMarkers();
       announce(
         lines.length === 0
-          ? 'No preset health markers to log. Continue to episode details.'
+          ? 'No preset health markers to log. Continue to food diary.'
           : 'Health marker list complete.',
         { politeness: 'polite' },
       );
@@ -491,6 +555,185 @@ export function HealthMarkerPromptFlow({
     setEndedSummary(null);
     setPhase('complete');
     announce('Episode details saved.', { politeness: 'polite' });
+  };
+
+  const resetFoodForm = useCallback(() => {
+    const initialFoodLoggedAtLocal = toLocalDateTimeInputValue(
+      new Date().toISOString(),
+    );
+    setEditingFoodEntryId(null);
+    setFoodMealTag(null);
+    setFoodNote('');
+    setFoodLoggedAtLocal(initialFoodLoggedAtLocal);
+    setAddFoodInitialLoggedAtLocal(initialFoodLoggedAtLocal);
+    setFoodSaveError(null);
+    setIsAddFoodEntryDirty(false);
+  }, []);
+
+  const computeIsAddFoodEntryDirty = useCallback(
+    (next: {
+      mealTag: MealTag | null;
+      note: string;
+      loggedAtLocal: string;
+    }) => {
+      return (
+        next.mealTag != null ||
+        next.note.trim().length > 0 ||
+        next.loggedAtLocal !== addFoodInitialLoggedAtLocal
+      );
+    },
+    [addFoodInitialLoggedAtLocal],
+  );
+
+  const onDiscardAddFoodDraft = () => {
+    if (!isAddFoodEntryDirty) {
+      setIsAddFoodEntryOpen(false);
+      return;
+    }
+    const shouldDiscard = window.confirm(
+      'Discard this food entry draft? Your unsaved entry will be removed.',
+    );
+    if (!shouldDiscard) {
+      return;
+    }
+    resetFoodForm();
+    setIsAddFoodEntryOpen(false);
+  };
+
+  const loadFoodEntries = useCallback(async () => {
+    setFoodEntriesLoading(true);
+    setFoodEntriesError(null);
+    const result = await listFoodDiaryEntriesForEpisode(supabase, episodeId);
+    setFoodEntriesLoading(false);
+    if (!result.ok) {
+      setFoodEntriesError(result.error.message);
+      return;
+    }
+    setFoodEntries(result.data);
+  }, [episodeId, supabase]);
+
+  useEffect(() => {
+    if (phase !== 'foodDiary') {
+      return;
+    }
+    void loadFoodEntries();
+  }, [phase, loadFoodEntries]);
+
+  const onEditFoodEntry = (entry: FoodDiaryEntryRow) => {
+    setEditingFoodEntryId(entry.id);
+    setIsAddFoodEntryOpen(false);
+    setFoodMealTag(entry.meal_tag);
+    setFoodNote(entry.food_note);
+    setFoodLoggedAtLocal(toLocalDateTimeInputValue(entry.logged_at));
+    setFoodSaveError(null);
+  };
+
+  const onSaveFoodEntry = async () => {
+    if (foodSaving || !userId) {
+      return;
+    }
+    setFoodSaving(true);
+    setFoodSaveError(null);
+    if (!foodMealTag) {
+      const message = 'Choose a meal tag.';
+      setFoodSaveError(message);
+      announce(message, { politeness: 'assertive' });
+      setFoodSaving(false);
+      return;
+    }
+    const loggedAtIso = localInputValueToIso(foodLoggedAtLocal);
+    if (!loggedAtIso) {
+      const message = 'Enter a valid date and time.';
+      setFoodSaveError(message);
+      announce(message, { politeness: 'assertive' });
+      setFoodSaving(false);
+      return;
+    }
+
+    const result =
+      editingFoodEntryId == null
+        ? await createFoodDiaryEntry(supabase, {
+            user_id: userId,
+            episode_id: episodeId,
+            meal_tag: foodMealTag,
+            food_note: foodNote,
+            logged_at: loggedAtIso,
+          })
+        : await updateFoodDiaryEntry(supabase, editingFoodEntryId, {
+            meal_tag: foodMealTag,
+            food_note: foodNote,
+            logged_at: loggedAtIso,
+          });
+    setFoodSaving(false);
+    if (!result.ok) {
+      setFoodSaveError(result.error.message);
+      announce(result.error.message, { politeness: 'assertive' });
+      return;
+    }
+    await loadFoodEntries();
+    resetFoodForm();
+    if (editingFoodEntryId == null) {
+      setIsAddFoodEntryOpen(false);
+    }
+    announce(
+      editingFoodEntryId == null ? 'Food entry saved.' : 'Food entry updated.',
+      { politeness: 'polite' },
+    );
+  };
+
+  const onDeleteFoodEntry = async (entryId: string) => {
+    if (foodSaving || deletingFoodEntryId) {
+      return;
+    }
+    const shouldDelete = window.confirm(
+      'Discard this saved food entry? This cannot be undone.',
+    );
+    if (!shouldDelete) {
+      return;
+    }
+    setDeletingFoodEntryId(entryId);
+    setFoodSaveError(null);
+    const result = await deleteFoodDiaryEntry(supabase, entryId);
+    setDeletingFoodEntryId(null);
+    if (!result.ok) {
+      setFoodSaveError(result.error.message);
+      announce(result.error.message, { politeness: 'assertive' });
+      return;
+    }
+    if (editingFoodEntryId === entryId) {
+      resetFoodForm();
+    }
+    await loadFoodEntries();
+    announce('Food entry discarded.', { politeness: 'polite' });
+  };
+
+  const onContinueFromFoodDiary = () => {
+    setFoodDiaryDecision(foodEntries.length > 0 ? 'saved' : 'skipped');
+    setPhase('postMarkers');
+  };
+
+  const onBackToHealthMarkersFromFoodDiary = () => {
+    setPhase('prompting');
+    announce('Returned to health markers.', { politeness: 'polite' });
+  };
+
+  const onBackToSymptomsFromHealthMarkers = useCallback(() => {
+    const symptomPresetId = episodeRow?.symptom_preset_id;
+    if (!symptomPresetId) {
+      const message =
+        'This episode has no symptom preset linked, so symptoms cannot be reopened.';
+      announce(message, { politeness: 'assertive' });
+      return;
+    }
+    const query = new URLSearchParams();
+    query.set('symptomPresetId', symptomPresetId);
+    query.set('resume', '1');
+    router.push(`/episode/${episodeId}/symptoms?${query.toString()}`);
+  }, [announce, episodeId, episodeRow, router]);
+
+  const onBackToFoodDiaryFromPostMarkers = () => {
+    setPhase('foodDiary');
+    announce('Returned to food diary.', { politeness: 'polite' });
   };
 
   const onFinishToDashboard = () => {
@@ -640,7 +883,7 @@ export function HealthMarkerPromptFlow({
               Episode details
             </h1>
             <p className="mt-2 text-base text-app-muted">
-              After your preset health markers, add any extra context. Choose
+              After health markers and food diary, add any extra context. Choose
               ABS or Other; other fields are optional.
             </p>
           </div>
@@ -751,16 +994,26 @@ export function HealthMarkerPromptFlow({
             </p>
           ) : null}
 
-          <button
-            type="button"
-            className="inline-flex min-h-[56px] w-full items-center justify-center rounded-xl bg-red-700 px-5 text-base font-semibold text-white shadow-md transition hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:opacity-60 dark:bg-red-600 dark:hover:bg-red-500 sm:w-auto"
-            disabled={savingPost}
-            onClick={() => {
-              void onSubmitPostMarkers();
-            }}
-          >
-            {savingPost ? 'Saving…' : 'Save and continue'}
-          </button>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <button
+              type="button"
+              className="inline-flex min-h-[56px] w-full items-center justify-center rounded-xl border border-app-border bg-app-surface px-4 text-base font-semibold text-app-ink shadow-sm transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg sm:w-auto"
+              disabled={savingPost}
+              onClick={onBackToFoodDiaryFromPostMarkers}
+            >
+              Back
+            </button>
+            <button
+              type="button"
+              className="inline-flex min-h-[56px] w-full items-center justify-center rounded-xl bg-red-700 px-5 text-base font-semibold text-white shadow-md transition hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:opacity-60 dark:bg-red-600 dark:hover:bg-red-500 sm:w-auto"
+              disabled={savingPost}
+              onClick={() => {
+                void onSubmitPostMarkers();
+              }}
+            >
+              {savingPost ? 'Saving…' : 'Save and continue'}
+            </button>
+          </div>
 
           <button
             type="button"
@@ -815,8 +1068,9 @@ export function HealthMarkerPromptFlow({
               </div>
             ) : (
               <p className="text-sm leading-relaxed text-app-ink">
-                Preset prompts and episode details are saved. End this episode
-                to prevent stale resume state.
+                {foodDiaryDecision === 'saved'
+                  ? 'Preset prompts, episode details, and food diary are saved. End this episode to prevent stale resume state.'
+                  : 'Preset prompts and episode details are saved. End this episode to prevent stale resume state.'}
               </p>
             )}
           </div>
@@ -856,6 +1110,375 @@ export function HealthMarkerPromptFlow({
           onConfirm={onEndEpisode}
           onClose={() => {
             setEndDialogOpen(false);
+          }}
+        />
+      </>
+    );
+  }
+
+  if (phase === 'foodDiary') {
+    return (
+      <>
+        <div className="space-y-6">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-app-ink">
+              Food diary
+            </h1>
+            <p className="mt-2 text-base text-app-muted">
+              Add one or more meals/snacks for this episode, or skip this step.
+            </p>
+          </div>
+
+          <section className="space-y-3 rounded-2xl border border-app-border/90 bg-app-surface p-5 shadow-soft ring-1 ring-[color:var(--app-ring-slate)]">
+            <h2 className="text-base font-semibold text-app-ink">
+              Saved entries
+            </h2>
+            {foodEntriesLoading ? (
+              <p className="text-sm text-app-muted" role="status">
+                Loading entries…
+              </p>
+            ) : null}
+            {foodEntriesError ? (
+              <p
+                className="text-sm text-red-700 dark:text-red-300"
+                role="alert"
+              >
+                {foodEntriesError}
+              </p>
+            ) : null}
+            {!foodEntriesLoading &&
+            !foodEntriesError &&
+            foodEntries.length === 0 ? (
+              <p className="text-sm text-app-muted">
+                No food entries yet for this episode.
+              </p>
+            ) : null}
+            {!foodEntriesLoading && foodEntries.length > 0 ? (
+              <div className="space-y-2">
+                {foodEntries.map((entry) => (
+                  <div
+                    key={entry.id}
+                    className="rounded-xl border border-app-border bg-app-surface px-3 py-3"
+                  >
+                    <p className="text-sm font-semibold text-app-ink">
+                      {entry.meal_tag} -{' '}
+                      <EpisodeLocaleInstant iso={entry.logged_at} />
+                    </p>
+                    <p className="mt-1 whitespace-pre-wrap text-sm text-app-muted">
+                      {entry.food_note}
+                    </p>
+                    {editingFoodEntryId === entry.id ? (
+                      <div className="mt-3 space-y-3 rounded-lg border border-app-border/80 p-3">
+                        <fieldset className="space-y-2" disabled={foodSaving}>
+                          <legend className="text-xs font-medium text-app-ink">
+                            Meal tag
+                          </legend>
+                          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                            {MEAL_TAGS.map((tag) => (
+                              <button
+                                type="button"
+                                key={`edit-${entry.id}-${tag}`}
+                                className={`flex min-h-[40px] items-center justify-center rounded-lg border px-3 py-2 text-xs font-medium shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg ${
+                                  foodMealTag === tag
+                                    ? 'border-red-700 bg-red-50 text-red-900 dark:border-red-500 dark:bg-red-950/40 dark:text-red-100'
+                                    : 'border-app-border bg-app-surface text-app-ink hover:bg-app-surface/80'
+                                } ${
+                                  foodSaving
+                                    ? 'cursor-not-allowed opacity-60'
+                                    : 'cursor-pointer'
+                                }`}
+                                disabled={foodSaving}
+                                onClick={() => {
+                                  if (!foodSaving) {
+                                    setFoodMealTag((prev) =>
+                                      prev === tag ? null : tag,
+                                    );
+                                  }
+                                }}
+                              >
+                                {tag}
+                              </button>
+                            ))}
+                          </div>
+                        </fieldset>
+                        <label className="block space-y-1 text-xs font-medium text-app-ink">
+                          <span>Logged at</span>
+                          <input
+                            type="datetime-local"
+                            value={foodLoggedAtLocal}
+                            disabled={foodSaving}
+                            onChange={(e) => {
+                              setFoodLoggedAtLocal(e.target.value);
+                            }}
+                            className="min-h-[40px] w-full rounded-lg border border-app-border bg-app-surface px-3 text-app-ink outline-none focus-visible:ring-2 focus-visible:ring-app-ring"
+                          />
+                        </label>
+                        <label className="block space-y-1 text-xs font-medium text-app-ink">
+                          <span>Food note</span>
+                          <textarea
+                            rows={3}
+                            value={foodNote}
+                            disabled={foodSaving}
+                            onChange={(e) => {
+                              setFoodNote(e.target.value);
+                            }}
+                            className="w-full rounded-lg border border-app-border bg-app-surface px-3 py-2 text-app-ink outline-none focus-visible:ring-2 focus-visible:ring-app-ring"
+                          />
+                        </label>
+                        {foodSaveError ? (
+                          <p
+                            className="text-xs text-red-700 dark:text-red-300"
+                            role="alert"
+                          >
+                            {foodSaveError}
+                          </p>
+                        ) : null}
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            className="inline-flex min-h-[40px] items-center justify-center rounded-lg bg-red-700 px-3 text-xs font-semibold text-white shadow-md transition hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:opacity-60 dark:bg-red-600 dark:hover:bg-red-500"
+                            disabled={foodSaving}
+                            onClick={() => {
+                              void onSaveFoodEntry();
+                            }}
+                          >
+                            {foodSaving ? 'Saving…' : 'Update'}
+                          </button>
+                          <button
+                            type="button"
+                            className="inline-flex min-h-[40px] items-center justify-center rounded-lg border border-app-border px-3 text-xs font-semibold text-app-ink transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+                            onClick={resetFoodForm}
+                          >
+                            Discard changes
+                          </button>
+                          <button
+                            type="button"
+                            className="inline-flex min-h-[40px] items-center justify-center rounded-lg border border-red-400 px-3 text-xs font-semibold text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg dark:border-red-500/60 dark:text-red-300 dark:hover:bg-red-950/30"
+                            disabled={deletingFoodEntryId != null}
+                            onClick={() => {
+                              void onDeleteFoodEntry(entry.id);
+                            }}
+                          >
+                            {deletingFoodEntryId === entry.id
+                              ? 'Discarding…'
+                              : 'Discard entry'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+                    {editingFoodEntryId !== entry.id ? (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          className="inline-flex min-h-[36px] items-center justify-center rounded-lg border border-app-border px-3 text-sm font-medium text-app-ink transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+                          onClick={() => {
+                            onEditFoodEntry(entry);
+                          }}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="inline-flex min-h-[36px] items-center justify-center rounded-lg border border-red-400 px-3 text-sm font-medium text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg dark:border-red-500/60 dark:text-red-300 dark:hover:bg-red-950/30"
+                          disabled={deletingFoodEntryId != null}
+                          onClick={() => {
+                            void onDeleteFoodEntry(entry.id);
+                          }}
+                        >
+                          {deletingFoodEntryId === entry.id
+                            ? 'Discarding…'
+                            : 'Discard entry'}
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </section>
+
+          {editingFoodEntryId == null && isAddFoodEntryOpen ? (
+            <section className="space-y-4 rounded-2xl border border-app-border/90 bg-app-surface p-5 shadow-soft ring-1 ring-[color:var(--app-ring-slate)]">
+              <h2 className="text-base font-semibold text-app-ink">
+                Add food entry
+              </h2>
+              <fieldset className="space-y-2" disabled={foodSaving}>
+                <legend className="text-sm font-medium text-app-ink">
+                  Meal tag
+                </legend>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {MEAL_TAGS.map((tag) => (
+                    <button
+                      type="button"
+                      key={`add-${tag}`}
+                      className={`flex min-h-[44px] items-center justify-center rounded-lg border px-3 py-2 text-sm font-medium shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg ${
+                        foodMealTag === tag
+                          ? 'border-red-700 bg-red-50 text-red-900 dark:border-red-500 dark:bg-red-950/40 dark:text-red-100'
+                          : 'border-app-border bg-app-surface text-app-ink hover:bg-app-surface/80'
+                      } ${
+                        foodSaving
+                          ? 'cursor-not-allowed opacity-60'
+                          : 'cursor-pointer'
+                      }`}
+                      disabled={foodSaving}
+                      onClick={() => {
+                        if (!foodSaving) {
+                          const nextMealTag = foodMealTag === tag ? null : tag;
+                          setFoodMealTag(nextMealTag);
+                          setIsAddFoodEntryDirty(
+                            computeIsAddFoodEntryDirty({
+                              mealTag: nextMealTag,
+                              note: foodNote,
+                              loggedAtLocal: foodLoggedAtLocal,
+                            }),
+                          );
+                        }
+                      }}
+                    >
+                      {tag}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+              <label className="block space-y-1 text-sm font-medium text-app-ink">
+                <span>Logged at</span>
+                <input
+                  type="datetime-local"
+                  value={foodLoggedAtLocal}
+                  disabled={foodSaving}
+                  onChange={(e) => {
+                    const nextLoggedAtLocal = e.target.value;
+                    setFoodLoggedAtLocal(nextLoggedAtLocal);
+                    setIsAddFoodEntryDirty(
+                      computeIsAddFoodEntryDirty({
+                        mealTag: foodMealTag,
+                        note: foodNote,
+                        loggedAtLocal: nextLoggedAtLocal,
+                      }),
+                    );
+                  }}
+                  className="min-h-[44px] w-full rounded-lg border border-app-border bg-app-surface px-3 text-app-ink outline-none focus-visible:ring-2 focus-visible:ring-app-ring"
+                />
+              </label>
+              <label className="block space-y-1 text-sm font-medium text-app-ink">
+                <span>Food note</span>
+                <textarea
+                  rows={3}
+                  value={foodNote}
+                  disabled={foodSaving}
+                  onChange={(e) => {
+                    const nextFoodNote = e.target.value;
+                    setFoodNote(nextFoodNote);
+                    setIsAddFoodEntryDirty(
+                      computeIsAddFoodEntryDirty({
+                        mealTag: foodMealTag,
+                        note: nextFoodNote,
+                        loggedAtLocal: foodLoggedAtLocal,
+                      }),
+                    );
+                  }}
+                  placeholder="What did you eat or drink?"
+                  className="w-full rounded-lg border border-app-border bg-app-surface px-3 py-2 text-app-ink outline-none focus-visible:ring-2 focus-visible:ring-app-ring"
+                />
+              </label>
+              {foodSaveError ? (
+                <p
+                  className="text-sm text-red-700 dark:text-red-300"
+                  role="alert"
+                >
+                  {foodSaveError}
+                </p>
+              ) : null}
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <button
+                  type="button"
+                  className="inline-flex min-h-[48px] items-center justify-center rounded-xl bg-red-700 px-4 text-sm font-semibold text-white shadow-md transition hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:opacity-60 dark:bg-red-600 dark:hover:bg-red-500"
+                  disabled={foodSaving}
+                  onClick={() => {
+                    void onSaveFoodEntry();
+                  }}
+                >
+                  {foodSaving ? 'Saving…' : 'Save entry'}
+                </button>
+                {isAddFoodEntryDirty ? (
+                  <button
+                    type="button"
+                    className="inline-flex min-h-[48px] items-center justify-center rounded-xl border border-red-400 px-4 text-sm font-semibold text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg dark:border-red-500/60 dark:text-red-300 dark:hover:bg-red-950/30"
+                    onClick={onDiscardAddFoodDraft}
+                  >
+                    Discard entry
+                  </button>
+                ) : null}
+                {!isAddFoodEntryDirty ? (
+                  <button
+                    type="button"
+                    className="inline-flex min-h-[48px] items-center justify-center rounded-xl border border-app-border px-4 text-sm font-semibold text-app-ink transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+                    onClick={() => {
+                      setIsAddFoodEntryOpen(false);
+                    }}
+                  >
+                    Collapse
+                  </button>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
+
+          <div
+            className={`flex flex-wrap items-center gap-3 ${
+              editingFoodEntryId == null && !isAddFoodEntryOpen
+                ? 'mt-6'
+                : 'mt-3'
+            }`}
+          >
+            <button
+              type="button"
+              className="inline-flex min-h-[44px] items-center justify-center rounded-lg border border-app-border px-3 py-2 text-sm font-medium text-app-ink transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+              onClick={onBackToHealthMarkersFromFoodDiary}
+            >
+              Back
+            </button>
+            {editingFoodEntryId == null && !isAddFoodEntryOpen ? (
+              <button
+                type="button"
+                className="inline-flex min-h-[44px] items-center justify-center rounded-lg border border-app-border px-3 py-2 text-sm font-medium text-app-ink transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+                onClick={() => {
+                  resetFoodForm();
+                  setIsAddFoodEntryOpen(true);
+                }}
+              >
+                Add food entry
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-red-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg dark:bg-red-600 dark:hover:bg-red-500"
+              onClick={onContinueFromFoodDiary}
+            >
+              {foodEntries.length > 0 ? 'Continue' : 'Skip for now'}
+            </button>
+          </div>
+          <button
+            type="button"
+            className="inline-flex min-h-[44px] items-center justify-center rounded-lg px-3 py-2 text-sm font-medium text-red-700 transition hover:text-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg dark:text-red-300 dark:hover:text-red-200"
+            onClick={() => {
+              setCancelDialogOpen(true);
+            }}
+            disabled={cancelingEpisode}
+          >
+            Cancel episode
+          </button>
+        </div>
+        <ConfirmDialog
+          open={cancelDialogOpen}
+          title="Cancel this active episode?"
+          description="Canceling permanently deletes this in-progress episode, its symptom answers, health markers, and media metadata. Food diary entries are kept, but this episode link is removed. This cannot be undone."
+          confirmLabel="Cancel episode"
+          confirmBusyLabel="Canceling episode…"
+          cancelLabel="Keep episode"
+          onConfirm={onCancelEpisodeConfirm}
+          onClose={() => {
+            setCancelDialogOpen(false);
           }}
         />
       </>
@@ -980,16 +1603,20 @@ export function HealthMarkerPromptFlow({
         ) : null}
 
         <div className="flex flex-col gap-3 sm:flex-row">
-          {activeIndex > 0 ? (
-            <button
-              type="button"
-              className="inline-flex min-h-[56px] flex-1 items-center justify-center rounded-xl border border-app-border bg-app-surface px-4 text-base font-semibold text-app-ink shadow-sm transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
-              onClick={goBackStep}
-              disabled={saving}
-            >
-              Back
-            </button>
-          ) : null}
+          <button
+            type="button"
+            className="inline-flex min-h-[56px] flex-1 items-center justify-center rounded-xl border border-app-border bg-app-surface px-4 text-base font-semibold text-app-ink shadow-sm transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+            onClick={() => {
+              if (activeIndex > 0) {
+                goBackStep();
+                return;
+              }
+              onBackToSymptomsFromHealthMarkers();
+            }}
+            disabled={saving}
+          >
+            Back
+          </button>
           {currentLine ? (
             <button
               type="button"
@@ -1017,7 +1644,7 @@ export function HealthMarkerPromptFlow({
               lines.length === 0
                 ? 'Continue to episode details'
                 : activeIndex >= lines.length - 1
-                  ? 'Finish health marker list'
+                  ? 'Next health marker'
                   : 'Next health marker'
             }
           >
@@ -1026,7 +1653,7 @@ export function HealthMarkerPromptFlow({
               : lines.length === 0
                 ? 'Continue to episode details'
                 : activeIndex >= lines.length - 1
-                  ? 'Finish'
+                  ? 'Next'
                   : 'Next'}
           </button>
         </div>
