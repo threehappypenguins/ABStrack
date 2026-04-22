@@ -100,16 +100,26 @@ export function FoodDiaryEntryScreen() {
     });
   }, [loggedAtValue]);
 
-  const onDateChange = (_event: DateTimePickerEvent, selectedDate?: Date) => {
-    setDatePickerOpen(false);
+  const onDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
+    if (Platform.OS === 'android') {
+      setDatePickerOpen(false);
+    }
+    if (event.type === 'dismissed') {
+      return;
+    }
     if (!selectedDate) {
       return;
     }
     setLoggedDate(localDateFromDate(selectedDate));
   };
 
-  const onTimeChange = (_event: DateTimePickerEvent, selectedDate?: Date) => {
-    setTimePickerOpen(false);
+  const onTimeChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
+    if (Platform.OS === 'android') {
+      setTimePickerOpen(false);
+    }
+    if (event.type === 'dismissed') {
+      return;
+    }
     if (!selectedDate) {
       return;
     }
@@ -207,18 +217,14 @@ export function FoodDiaryEntryScreen() {
           >
             Meal tag
           </Text>
-          <View
-            accessibilityRole="radiogroup"
-            accessibilityLabel="Meal tag"
-            className="mb-4 gap-2"
-          >
+          <View accessibilityLabel="Meal tag" className="mb-4 gap-2">
             {MEAL_TAGS.map((tag) => (
               <Pressable
                 key={tag}
-                accessibilityRole="radio"
+                accessibilityRole="button"
                 accessibilityLabel={tag}
                 accessibilityState={{
-                  checked: mealTag === tag,
+                  selected: mealTag === tag,
                   disabled: saving,
                 }}
                 disabled={saving}

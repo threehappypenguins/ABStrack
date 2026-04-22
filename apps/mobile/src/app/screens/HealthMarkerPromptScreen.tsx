@@ -855,8 +855,13 @@ export function HealthMarkerPromptScreen() {
   }, [foodLoggedDateTimeValue]);
 
   const onFoodDatePickerChange = useCallback(
-    (_event: DateTimePickerEvent, selectedDate?: Date) => {
-      setFoodDatePickerOpen(false);
+    (event: DateTimePickerEvent, selectedDate?: Date) => {
+      if (Platform.OS === 'android') {
+        setFoodDatePickerOpen(false);
+      }
+      if (event.type === 'dismissed') {
+        return;
+      }
       if (!selectedDate) {
         return;
       }
@@ -883,8 +888,13 @@ export function HealthMarkerPromptScreen() {
   );
 
   const onFoodTimePickerChange = useCallback(
-    (_event: DateTimePickerEvent, selectedDate?: Date) => {
-      setFoodTimePickerOpen(false);
+    (event: DateTimePickerEvent, selectedDate?: Date) => {
+      if (Platform.OS === 'android') {
+        setFoodTimePickerOpen(false);
+      }
+      if (event.type === 'dismissed') {
+        return;
+      }
       if (!selectedDate) {
         return;
       }
@@ -1366,17 +1376,16 @@ export function HealthMarkerPromptScreen() {
                         Edit food entry
                       </Text>
                       <View
-                        accessibilityRole="radiogroup"
                         accessibilityLabel="Meal tag"
                         className="mb-3 gap-2"
                       >
                         {MEAL_TAGS.map((tag) => (
                           <Pressable
                             key={`${entry.id}-${tag}`}
-                            accessibilityRole="radio"
+                            accessibilityRole="button"
                             accessibilityLabel={tag}
                             accessibilityState={{
-                              checked: mealTag === tag,
+                              selected: mealTag === tag,
                               disabled: savingFoodDiary,
                             }}
                             disabled={savingFoodDiary}
@@ -1557,18 +1566,14 @@ export function HealthMarkerPromptScreen() {
                   >
                     Add food entry
                   </Text>
-                  <View
-                    accessibilityRole="radiogroup"
-                    accessibilityLabel="Meal tag"
-                    className="mb-4 gap-2"
-                  >
+                  <View accessibilityLabel="Meal tag" className="mb-4 gap-2">
                     {MEAL_TAGS.map((tag) => (
                       <Pressable
                         key={`add-${tag}`}
-                        accessibilityRole="radio"
+                        accessibilityRole="button"
                         accessibilityLabel={tag}
                         accessibilityState={{
-                          checked: mealTag === tag,
+                          selected: mealTag === tag,
                           disabled: savingFoodDiary,
                         }}
                         disabled={savingFoodDiary}
