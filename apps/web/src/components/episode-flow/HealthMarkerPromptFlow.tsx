@@ -34,6 +34,10 @@ import {
 import { useAnnounce } from '@abstrack/ui/a11y-web';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
 import { clearSymptomPromptSession } from '@/lib/episode-flow/symptom-prompt-session-store';
+import {
+  localInputValueToIso,
+  toLocalDateTimeInputValue,
+} from '@/lib/food-diary/date-time';
 import { EpisodeLocaleInstant } from '@/components/episodes/EpisodeLocaleInstant';
 import { ConfirmDialog } from '../symptom-presets/ConfirmDialog';
 
@@ -157,25 +161,6 @@ function parseOptionalNumber(raw: string | undefined): number | null {
   }
   const n = Number(trimmed);
   return Number.isFinite(n) ? n : Number.NaN;
-}
-
-function toLocalDateTimeInputValue(iso: string): string {
-  const date = new Date(iso);
-  const offsetMs = date.getTimezoneOffset() * 60_000;
-  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
-}
-
-function localInputValueToIso(value: string): string | null {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-  const date = new Date(trimmed);
-  const time = date.getTime();
-  if (!Number.isFinite(time)) {
-    return null;
-  }
-  return date.toISOString();
 }
 
 export type HealthMarkerPromptFlowProps = {
@@ -1182,35 +1167,39 @@ export function HealthMarkerPromptFlow({
                             Meal tag
                           </legend>
                           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                            {MEAL_TAGS.map((tag) => (
-                              <label
-                                key={`edit-${entry.id}-${tag}`}
-                                className={`flex min-h-[40px] items-center justify-center rounded-lg border px-3 py-2 text-xs font-medium shadow-sm transition focus-within:outline-none focus-within:ring-2 focus-within:ring-app-ring focus-within:ring-offset-2 focus-within:ring-offset-app-bg ${
-                                  foodMealTag === tag
-                                    ? 'border-red-700 bg-red-50 text-red-900 dark:border-red-500 dark:bg-red-950/40 dark:text-red-100'
-                                    : 'border-app-border bg-app-surface text-app-ink hover:bg-app-surface/80'
-                                } ${
-                                  foodSaving
-                                    ? 'cursor-not-allowed opacity-60'
-                                    : 'cursor-pointer'
-                                }`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  className="sr-only"
-                                  checked={foodMealTag === tag}
+                            {MEAL_TAGS.map((tag) =>
+                              foodMealTag === tag ? (
+                                <button
+                                  type="button"
+                                  key={`edit-${entry.id}-${tag}`}
+                                  aria-pressed="true"
+                                  className="flex min-h-[40px] items-center justify-center rounded-lg border border-red-700 bg-red-50 px-3 py-2 text-xs font-medium text-red-900 shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-500 dark:bg-red-950/40 dark:text-red-100"
                                   disabled={foodSaving}
-                                  onChange={() => {
+                                  onClick={() => {
                                     if (!foodSaving) {
-                                      setFoodMealTag((prev) =>
-                                        prev === tag ? null : tag,
-                                      );
+                                      setFoodMealTag(null);
                                     }
                                   }}
-                                />
-                                <span>{tag}</span>
-                              </label>
-                            ))}
+                                >
+                                  {tag}
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  key={`edit-${entry.id}-${tag}`}
+                                  aria-pressed="false"
+                                  className="flex min-h-[40px] cursor-pointer items-center justify-center rounded-lg border border-app-border bg-app-surface px-3 py-2 text-xs font-medium text-app-ink shadow-sm transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-60"
+                                  disabled={foodSaving}
+                                  onClick={() => {
+                                    if (!foodSaving) {
+                                      setFoodMealTag(tag);
+                                    }
+                                  }}
+                                >
+                                  {tag}
+                                </button>
+                              ),
+                            )}
                           </div>
                         </fieldset>
                         <label className="block space-y-1 text-xs font-medium text-app-ink">
@@ -1319,42 +1308,53 @@ export function HealthMarkerPromptFlow({
                   Meal tag
                 </legend>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {MEAL_TAGS.map((tag) => (
-                    <label
-                      key={`add-${tag}`}
-                      className={`flex min-h-[44px] items-center justify-center rounded-lg border px-3 py-2 text-sm font-medium shadow-sm transition focus-within:outline-none focus-within:ring-2 focus-within:ring-app-ring focus-within:ring-offset-2 focus-within:ring-offset-app-bg ${
-                        foodMealTag === tag
-                          ? 'border-red-700 bg-red-50 text-red-900 dark:border-red-500 dark:bg-red-950/40 dark:text-red-100'
-                          : 'border-app-border bg-app-surface text-app-ink hover:bg-app-surface/80'
-                      } ${
-                        foodSaving
-                          ? 'cursor-not-allowed opacity-60'
-                          : 'cursor-pointer'
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        className="sr-only"
-                        checked={foodMealTag === tag}
+                  {MEAL_TAGS.map((tag) =>
+                    foodMealTag === tag ? (
+                      <button
+                        type="button"
+                        key={`add-${tag}`}
+                        aria-pressed="true"
+                        className="flex min-h-[44px] items-center justify-center rounded-lg border border-red-700 bg-red-50 px-3 py-2 text-sm font-medium text-red-900 shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-500 dark:bg-red-950/40 dark:text-red-100"
                         disabled={foodSaving}
-                        onChange={() => {
+                        onClick={() => {
                           if (!foodSaving) {
-                            const nextMealTag =
-                              foodMealTag === tag ? null : tag;
-                            setFoodMealTag(nextMealTag);
+                            setFoodMealTag(null);
                             setIsAddFoodEntryDirty(
                               computeIsAddFoodEntryDirty({
-                                mealTag: nextMealTag,
+                                mealTag: null,
                                 note: foodNote,
                                 loggedAtLocal: foodLoggedAtLocal,
                               }),
                             );
                           }
                         }}
-                      />
-                      <span>{tag}</span>
-                    </label>
-                  ))}
+                      >
+                        {tag}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        key={`add-${tag}`}
+                        aria-pressed="false"
+                        className="flex min-h-[44px] cursor-pointer items-center justify-center rounded-lg border border-app-border bg-app-surface px-3 py-2 text-sm font-medium text-app-ink shadow-sm transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-60"
+                        disabled={foodSaving}
+                        onClick={() => {
+                          if (!foodSaving) {
+                            setFoodMealTag(tag);
+                            setIsAddFoodEntryDirty(
+                              computeIsAddFoodEntryDirty({
+                                mealTag: tag,
+                                note: foodNote,
+                                loggedAtLocal: foodLoggedAtLocal,
+                              }),
+                            );
+                          }
+                        }}
+                      >
+                        {tag}
+                      </button>
+                    ),
+                  )}
                 </div>
               </fieldset>
               <label className="block space-y-1 text-sm font-medium text-app-ink">

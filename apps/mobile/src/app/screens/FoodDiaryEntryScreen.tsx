@@ -260,7 +260,8 @@ export function FoodDiaryEntryScreen() {
             accessibilityState={{ disabled: saving }}
             disabled={saving}
             onPress={() => {
-              setDatePickerOpen(true);
+              setDatePickerOpen((prev) => !prev);
+              setTimePickerOpen(false);
             }}
             style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
             className="mb-3 items-center justify-center rounded-xl border border-app-border bg-white px-4 py-3 dark:border-app-border-dark dark:bg-app-bg-dark"
@@ -285,7 +286,8 @@ export function FoodDiaryEntryScreen() {
             accessibilityState={{ disabled: saving }}
             disabled={saving}
             onPress={() => {
-              setTimePickerOpen(true);
+              setTimePickerOpen((prev) => !prev);
+              setDatePickerOpen(false);
             }}
             style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
             className="mb-4 items-center justify-center rounded-xl border border-app-border bg-white px-4 py-3 dark:border-app-border-dark dark:bg-app-bg-dark"

@@ -6,6 +6,10 @@ import { MEAL_TAGS } from '@abstrack/types';
 import { createFoodDiaryEntry } from '@abstrack/supabase';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
+import {
+  localInputValueToIso,
+  toLocalDateTimeInputValue,
+} from '@/lib/food-diary/date-time';
 
 type FoodDiaryEntryFormProps = {
   episodeId?: string | null;
@@ -14,25 +18,6 @@ type FoodDiaryEntryFormProps = {
   submitLabel?: string;
   onSaved?: () => void;
 };
-
-function toLocalDateTimeInputValue(iso: string): string {
-  const date = new Date(iso);
-  const offsetMs = date.getTimezoneOffset() * 60_000;
-  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
-}
-
-function localInputValueToIso(value: string): string | null {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-  const date = new Date(trimmed);
-  const time = date.getTime();
-  if (!Number.isFinite(time)) {
-    return null;
-  }
-  return date.toISOString();
-}
 
 /**
  * Food diary entry form used from home and episode-end flow.
@@ -130,29 +115,39 @@ export function FoodDiaryEntryForm({
       <fieldset className="space-y-2" disabled={saving}>
         <legend className="text-sm font-medium text-app-ink">Meal tag</legend>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {MEAL_TAGS.map((tag) => (
-            <label
-              key={tag}
-              className={`flex min-h-[44px] cursor-pointer items-center justify-center rounded-lg border px-3 py-2 text-sm font-medium shadow-sm transition focus-within:outline-none focus-within:ring-2 focus-within:ring-app-ring focus-within:ring-offset-2 focus-within:ring-offset-app-bg ${
-                mealTag === tag
-                  ? 'border-red-700 bg-red-50 text-red-900 dark:border-red-500 dark:bg-red-950/40 dark:text-red-100'
-                  : 'border-app-border bg-app-surface text-app-ink hover:bg-app-surface/80'
-              } ${saving ? 'cursor-not-allowed opacity-60' : ''}`}
-            >
-              <input
-                type="checkbox"
-                className="sr-only"
-                checked={mealTag === tag}
+          {MEAL_TAGS.map((tag) =>
+            mealTag === tag ? (
+              <button
+                type="button"
+                key={tag}
+                aria-pressed="true"
+                className="flex min-h-[44px] items-center justify-center rounded-lg border border-red-700 bg-red-50 px-3 py-2 text-sm font-medium text-red-900 shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-500 dark:bg-red-950/40 dark:text-red-100"
                 disabled={saving}
-                onChange={() => {
+                onClick={() => {
                   if (!saving) {
-                    setMealTag((prev) => (prev === tag ? null : tag));
+                    setMealTag(null);
                   }
                 }}
-              />
-              <span>{tag}</span>
-            </label>
-          ))}
+              >
+                {tag}
+              </button>
+            ) : (
+              <button
+                type="button"
+                key={tag}
+                aria-pressed="false"
+                className="flex min-h-[44px] cursor-pointer items-center justify-center rounded-lg border border-app-border bg-app-surface px-3 py-2 text-sm font-medium text-app-ink shadow-sm transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={saving}
+                onClick={() => {
+                  if (!saving) {
+                    setMealTag(tag);
+                  }
+                }}
+              >
+                {tag}
+              </button>
+            ),
+          )}
         </div>
       </fieldset>
 

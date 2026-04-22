@@ -1420,7 +1420,8 @@ export function HealthMarkerPromptScreen() {
                         accessibilityState={{ disabled: savingFoodDiary }}
                         disabled={savingFoodDiary}
                         onPress={() => {
-                          setFoodDatePickerOpen(true);
+                          setFoodDatePickerOpen((prev) => !prev);
+                          setFoodTimePickerOpen(false);
                         }}
                         style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
                         className="mb-3 items-center justify-center rounded-xl border border-app-border bg-white px-4 py-3 dark:border-app-border-dark dark:bg-app-bg-dark"
@@ -1444,7 +1445,8 @@ export function HealthMarkerPromptScreen() {
                         accessibilityState={{ disabled: savingFoodDiary }}
                         disabled={savingFoodDiary}
                         onPress={() => {
-                          setFoodTimePickerOpen(true);
+                          setFoodTimePickerOpen((prev) => !prev);
+                          setFoodDatePickerOpen(false);
                         }}
                         style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
                         className="mb-4 items-center justify-center rounded-xl border border-app-border bg-white px-4 py-3 dark:border-app-border-dark dark:bg-app-bg-dark"
@@ -1617,7 +1619,8 @@ export function HealthMarkerPromptScreen() {
                     accessibilityState={{ disabled: savingFoodDiary }}
                     disabled={savingFoodDiary}
                     onPress={() => {
-                      setFoodDatePickerOpen(true);
+                      setFoodDatePickerOpen((prev) => !prev);
+                      setFoodTimePickerOpen(false);
                     }}
                     style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
                     className="mb-3 items-center justify-center rounded-xl border border-app-border bg-white px-4 py-3 dark:border-app-border-dark dark:bg-app-bg-dark"
@@ -1641,7 +1644,8 @@ export function HealthMarkerPromptScreen() {
                     accessibilityState={{ disabled: savingFoodDiary }}
                     disabled={savingFoodDiary}
                     onPress={() => {
-                      setFoodTimePickerOpen(true);
+                      setFoodTimePickerOpen((prev) => !prev);
+                      setFoodDatePickerOpen(false);
                     }}
                     style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
                     className="mb-4 items-center justify-center rounded-xl border border-app-border bg-white px-4 py-3 dark:border-app-border-dark dark:bg-app-bg-dark"
