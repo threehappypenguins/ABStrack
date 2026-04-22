@@ -497,15 +497,16 @@ export function HealthMarkerPromptFlow({
     router.push('/dashboard');
   };
 
-  const onEndEpisode = useCallback(async (): Promise<void | false> => {
+  const onEndEpisode = useCallback(async (): Promise<void> => {
     if (endingEpisode) {
-      return false;
+      return;
     }
     if (!episodeRow) {
       const message = 'Could not find this episode. Please try again.';
+      setEndDialogOpen(false);
       setEndFeedback(message);
       announce(message, { politeness: 'assertive' });
-      return false;
+      return;
     }
     setEndingEpisode(true);
     setEndFeedback(null);
@@ -526,9 +527,10 @@ export function HealthMarkerPromptFlow({
         episodeRow.started_at,
       );
       if (!result.ok) {
+        setEndDialogOpen(false);
         setEndFeedback(result.error.message);
         announce(result.error.message, { politeness: 'assertive' });
-        return false;
+        return;
       }
       clearSymptomPromptSession(episodeId);
       if (result.data.didEnd) {
@@ -559,9 +561,10 @@ export function HealthMarkerPromptFlow({
       }
       const message =
         'This episode is no longer active. Return to dashboard and refresh episodes.';
+      setEndDialogOpen(false);
       setEndFeedback(message);
       announce(message, { politeness: 'assertive' });
-      return false;
+      return;
     } finally {
       setEndingEpisode(false);
     }

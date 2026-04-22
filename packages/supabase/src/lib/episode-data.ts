@@ -162,11 +162,14 @@ export async function endEpisodeIfStillActive(
   startedAt?: string,
 ): Promise<PresetDataResult<{ didEnd: boolean }>> {
   try {
+    const startedAtMs =
+      typeof startedAt === 'string' ? Date.parse(startedAt) : Number.NaN;
+    const endedAtMs = Date.parse(endedAt);
     const safeEndedAt =
       typeof startedAt === 'string' &&
-      Number.isFinite(Date.parse(startedAt)) &&
-      Number.isFinite(Date.parse(endedAt)) &&
-      Date.parse(endedAt) < Date.parse(startedAt)
+      Number.isFinite(startedAtMs) &&
+      Number.isFinite(endedAtMs) &&
+      endedAtMs < startedAtMs
         ? startedAt
         : endedAt;
     const { data, error } = await client
