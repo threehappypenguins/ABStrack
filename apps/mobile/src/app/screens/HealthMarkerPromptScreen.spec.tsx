@@ -8,6 +8,7 @@ import {
   getEpisodeById,
   listEpisodeHealthMarkersForEpisode,
   listPresetHealthMarkersForPreset,
+  PresetDataError,
   upsertEpisodeHealthMarkerForLine,
 } from '@abstrack/supabase';
 import type { PresetHealthMarkerRow } from '@abstrack/types';
@@ -22,14 +23,21 @@ jest.mock('@react-navigation/native', () => ({
   useNavigation: jest.fn(),
 }));
 
-jest.mock('@abstrack/supabase', () => ({
-  cancelActiveEpisodeById: jest.fn(),
-  completeEpisodePostMarkerStep: jest.fn(),
-  getEpisodeById: jest.fn(),
-  listEpisodeHealthMarkersForEpisode: jest.fn(),
-  listPresetHealthMarkersForPreset: jest.fn(),
-  upsertEpisodeHealthMarkerForLine: jest.fn(),
-}));
+jest.mock('@abstrack/supabase', () => {
+  const actual =
+    jest.requireActual<typeof import('@abstrack/supabase')>(
+      '@abstrack/supabase',
+    );
+  return {
+    ...actual,
+    cancelActiveEpisodeById: jest.fn(),
+    completeEpisodePostMarkerStep: jest.fn(),
+    getEpisodeById: jest.fn(),
+    listEpisodeHealthMarkersForEpisode: jest.fn(),
+    listPresetHealthMarkersForPreset: jest.fn(),
+    upsertEpisodeHealthMarkerForLine: jest.fn(),
+  };
+});
 
 jest.mock('../../lib/supabase-wiring', () => ({
   getMobileSupabaseClient: jest.fn(() => ({
@@ -284,5 +292,104 @@ describe('HealthMarkerPromptScreen', () => {
       ).toBeTruthy();
     });
     expect(upsertEpisodeHealthMarkerForLine).not.toHaveBeenCalled();
+  });
+
+  test('post-marker episode details: save calls Supabase and shows completion UI', async () => {
+    jest.mocked(listPresetHealthMarkersForPreset).mockResolvedValue({
+      ok: true,
+      data: [lineA],
+    });
+
+    const screen = render(<HealthMarkerPromptScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Step 1 of 1')).toBeTruthy();
+    });
+
+    fireEvent.changeText(screen.getByLabelText('Marker value'), '100');
+    fireEvent.press(screen.getByLabelText('Finish health marker list'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Episode details')).toBeTruthy();
+    });
+    expect(
+      screen.getByText('Choose ABS or Other; other fields are optional.'),
+    ).toBeTruthy();
+
+    fireEvent.press(screen.getByLabelText('Other episode type'));
+    fireEvent.changeText(
+      screen.getByLabelText('Custom episode label'),
+      'Evening flare',
+    );
+    fireEvent.changeText(
+      screen.getByLabelText('Additional symptoms or markers'),
+      'Extra symptom text',
+    );
+    fireEvent.changeText(screen.getByLabelText('Episode note'), 'Felt off');
+
+    fireEvent.press(screen.getByLabelText('Save episode details'));
+
+    await waitFor(() => {
+      expect(completeEpisodePostMarkerStep).toHaveBeenCalledTimes(1);
+    });
+    expect(completeEpisodePostMarkerStep).toHaveBeenCalledWith(
+      expect.objectContaining({ mockClient: true }),
+      episodeId,
+      expect.objectContaining({
+        episode_type: 'Other',
+        episode_label: 'Evening flare',
+        additional_notes: 'Extra symptom text',
+        note: 'Felt off',
+        post_marker_step_completed_at:
+          expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      }),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          /Preset prompts and episode details for this episode are saved/,
+        ),
+      ).toBeTruthy();
+    });
+    expect(screen.getByLabelText('Return to home')).toBeTruthy();
+  });
+
+  test('post-marker save failure shows postFeedback', async () => {
+    jest.mocked(listPresetHealthMarkersForPreset).mockResolvedValue({
+      ok: true,
+      data: [lineA],
+    });
+    jest.mocked(completeEpisodePostMarkerStep).mockResolvedValue({
+      ok: false,
+      error: new PresetDataError(
+        'not_found',
+        'Could not save episode details. This episode may be missing, already ended, or no longer available.',
+      ),
+    });
+
+    const screen = render(<HealthMarkerPromptScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Step 1 of 1')).toBeTruthy();
+    });
+
+    fireEvent.changeText(screen.getByLabelText('Marker value'), '5');
+    fireEvent.press(screen.getByLabelText('Finish health marker list'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Episode details')).toBeTruthy();
+    });
+
+    fireEvent.press(screen.getByLabelText('Save episode details'));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          'Could not save episode details. This episode may be missing, already ended, or no longer available.',
+        ),
+      ).toBeTruthy();
+    });
+    expect(screen.getByText('Episode details')).toBeTruthy();
   });
 });

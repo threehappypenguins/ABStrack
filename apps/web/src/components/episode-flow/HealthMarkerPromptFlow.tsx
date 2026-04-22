@@ -432,15 +432,13 @@ export function HealthMarkerPromptFlow({
     setActiveIndex((prev) => prev + 1);
   };
 
-  const skipCurrent = () => {
+  const skipCurrent = async () => {
     if (!currentLine || saving) {
       return;
     }
     if (activeIndex >= lines.length - 1) {
-      void (async () => {
-        await enterPostMarkerPhaseAfterMarkers();
-        announce('Health marker list complete.', { politeness: 'polite' });
-      })();
+      await enterPostMarkerPhaseAfterMarkers();
+      announce('Health marker list complete.', { politeness: 'polite' });
       return;
     }
     setActiveIndex((prev) => prev + 1);
@@ -549,30 +547,50 @@ export function HealthMarkerPromptFlow({
             </p>
           </div>
 
-          <fieldset className="space-y-3">
+          <fieldset className="space-y-3" disabled={savingPost}>
             <legend className="text-base font-semibold text-app-ink">
               Episode type
             </legend>
             <div className="flex flex-col gap-3 sm:flex-row">
-              <label className="flex min-h-[56px] cursor-pointer items-center gap-3 rounded-xl border border-app-border bg-app-surface px-4 py-3 shadow-sm has-[:checked]:ring-2 has-[:checked]:ring-app-ring">
+              <label
+                className={`flex min-h-[56px] items-center gap-3 rounded-xl border border-app-border bg-app-surface px-4 py-3 shadow-sm has-[:checked]:ring-2 has-[:checked]:ring-app-ring ${
+                  savingPost
+                    ? 'cursor-not-allowed opacity-60'
+                    : 'cursor-pointer'
+                }`}
+              >
                 <input
                   type="radio"
                   className="h-5 w-5"
                   name="episodeType"
                   checked={postEpisodeKind === 'ABS'}
+                  disabled={savingPost}
                   onChange={() => {
+                    if (savingPost) {
+                      return;
+                    }
                     setPostEpisodeKind('ABS');
                   }}
                 />
                 <span className="text-base font-medium text-app-ink">ABS</span>
               </label>
-              <label className="flex min-h-[56px] cursor-pointer items-center gap-3 rounded-xl border border-app-border bg-app-surface px-4 py-3 shadow-sm has-[:checked]:ring-2 has-[:checked]:ring-app-ring">
+              <label
+                className={`flex min-h-[56px] items-center gap-3 rounded-xl border border-app-border bg-app-surface px-4 py-3 shadow-sm has-[:checked]:ring-2 has-[:checked]:ring-app-ring ${
+                  savingPost
+                    ? 'cursor-not-allowed opacity-60'
+                    : 'cursor-pointer'
+                }`}
+              >
                 <input
                   type="radio"
                   className="h-5 w-5"
                   name="episodeType"
                   checked={postEpisodeKind === 'Other'}
+                  disabled={savingPost}
                   onChange={() => {
+                    if (savingPost) {
+                      return;
+                    }
                     setPostEpisodeKind('Other');
                   }}
                 />
@@ -837,7 +855,9 @@ export function HealthMarkerPromptFlow({
                   ? 'hover:bg-app-surface/80'
                   : 'cursor-not-allowed opacity-50'
               }`}
-              onClick={skipCurrent}
+              onClick={() => {
+                void skipCurrent();
+              }}
             >
               Skip marker
             </button>
