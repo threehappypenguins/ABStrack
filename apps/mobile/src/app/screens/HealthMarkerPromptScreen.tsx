@@ -438,10 +438,7 @@ export function HealthMarkerPromptScreen() {
   const continueToFoodDiary =
     lines.length === 0 || activeIndex >= lines.length - 1;
   const foodDiaryContinueDisabled =
-    savingFoodDiary ||
-    deletingFoodEntryId != null ||
-    foodEntriesLoading ||
-    foodEntriesError != null;
+    savingFoodDiary || deletingFoodEntryId != null || foodEntriesLoading;
 
   const onUpdateDraft = (patch: Partial<MarkerDraft>) => {
     if (!currentLine) {
@@ -672,7 +669,13 @@ export function HealthMarkerPromptScreen() {
     }
     setFoodDatePickerOpen(false);
     setFoodTimePickerOpen(false);
-    setFoodDiaryDecision(foodEntries.length > 0 ? 'saved' : 'skipped');
+    setFoodDiaryDecision(
+      foodEntriesError != null
+        ? 'skipped'
+        : foodEntries.length > 0
+          ? 'saved'
+          : 'skipped',
+    );
     setFoodDiaryFeedback(null);
     setPhase('postMarkers');
     await announce('Continue to episode details.', {
@@ -1759,11 +1762,9 @@ export function HealthMarkerPromptScreen() {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={
-                  foodEntriesError != null
-                    ? 'Continue disabled until food entries load successfully'
-                    : foodEntries.length === 0
-                      ? 'Skip food diary entry'
-                      : 'Continue after food diary'
+                  foodEntries.length === 0
+                    ? 'Skip food diary entry'
+                    : 'Continue after food diary'
                 }
                 accessibilityState={{ disabled: foodDiaryContinueDisabled }}
                 disabled={foodDiaryContinueDisabled}
