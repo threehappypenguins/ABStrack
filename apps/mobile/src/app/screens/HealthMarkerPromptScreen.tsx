@@ -192,6 +192,28 @@ function parseOptionalNumber(raw: string | undefined): number | null {
 }
 
 /**
+ * Formats a stored `logged_at` instant for list display: short date + 12-hour time
+ * (aligned with food diary picker labels in this screen).
+ */
+function formatFoodDiaryLoggedAtForDisplay(iso: string): string {
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) {
+    return iso;
+  }
+  const dateStr = d.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+  const timeStr = d.toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+  return `${dateStr}, ${timeStr}`;
+}
+
+/**
  * Linear in-episode health marker stepper that follows the symptom phase.
  *
  * @returns One marker at a time with manual numeric entry and persistence.
@@ -1295,7 +1317,7 @@ export function HealthMarkerPromptScreen() {
                     className={`mt-1 text-sm ${nw.textMuted}`}
                     maxFontSizeMultiplier={2}
                   >
-                    {new Date(entry.logged_at).toLocaleString()}
+                    {formatFoodDiaryLoggedAtForDisplay(entry.logged_at)}
                   </Text>
                   <Text
                     className={`mt-2 text-sm ${nw.textInk}`}

@@ -23,27 +23,76 @@ export function currentLocalTime(): string {
   return `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
 }
 
+const LOCAL_DATE_PART_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+const LOCAL_TIME_PART_RE = /^(\d{2}):(\d{2})(?::(\d{2}))?$/;
+
 /**
  * Combines local date and time strings into an ISO timestamp, or `null` if invalid.
+ * Parses components and uses the local `Date` constructor (not `new Date(string)`) so
+ * wall time is consistent across Hermes/JSC.
  *
  * @param datePart - `YYYY-MM-DD`
- * @param timePart - `HH:mm`
+ * @param timePart - `HH:mm` (optional `:ss`)
  */
 export function localDateTimeToIso(
   datePart: string,
   timePart: string,
 ): string | null {
-  const date = datePart.trim();
-  const time = timePart.trim();
-  if (!date || !time) {
+  const dTrim = datePart.trim();
+  const tTrim = timePart.trim();
+  if (!dTrim || !tTrim) {
     return null;
   }
-  const parsed = new Date(`${date}T${time}`);
-  const value = parsed.getTime();
+  const dateMatch = LOCAL_DATE_PART_RE.exec(dTrim);
+  const timeMatch = LOCAL_TIME_PART_RE.exec(tTrim);
+  if (!dateMatch || !timeMatch) {
+    return null;
+  }
+  const year = Number(dateMatch[1]);
+  const month = Number(dateMatch[2]);
+  const day = Number(dateMatch[3]);
+  const hour = Number(timeMatch[1]);
+  const minute = Number(timeMatch[2]);
+  const second = timeMatch[3] != null ? Number(timeMatch[3]) : 0;
+
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day) ||
+    !Number.isFinite(hour) ||
+    !Number.isFinite(minute) ||
+    !Number.isFinite(second) ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31 ||
+    hour < 0 ||
+    hour > 23 ||
+    minute < 0 ||
+    minute > 59 ||
+    second < 0 ||
+    second > 59
+  ) {
+    return null;
+  }
+
+  const local = new Date(year, month - 1, day, hour, minute, second, 0);
+  if (
+    local.getFullYear() !== year ||
+    local.getMonth() !== month - 1 ||
+    local.getDate() !== day ||
+    local.getHours() !== hour ||
+    local.getMinutes() !== minute ||
+    local.getSeconds() !== second
+  ) {
+    return null;
+  }
+
+  const value = local.getTime();
   if (!Number.isFinite(value)) {
     return null;
   }
-  return parsed.toISOString();
+  return local.toISOString();
 }
 
 /**
