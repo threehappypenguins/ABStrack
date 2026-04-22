@@ -69,7 +69,7 @@ export function FoodDiaryEntryScreen() {
   const { colors } = useAppTheme();
   const episodeId = route.params?.episodeId ?? null;
   const supabase = useMemo(() => getMobileSupabaseClient(), []);
-  const [mealTag, setMealTag] = useState<MealTag>('Other');
+  const [mealTag, setMealTag] = useState<MealTag | null>(null);
   const [foodNote, setFoodNote] = useState('');
   const [loggedDate, setLoggedDate] = useState(currentLocalDate);
   const [loggedTime, setLoggedTime] = useState(currentLocalTime);
@@ -143,6 +143,13 @@ export function FoodDiaryEntryScreen() {
       setSaving(false);
       return;
     }
+    if (!mealTag) {
+      const message = 'Choose a meal tag.';
+      setErrorMessage(message);
+      await announce(message, { politeness: 'assertive' });
+      setSaving(false);
+      return;
+    }
 
     const result = await createFoodDiaryEntry(supabase, {
       user_id: user.id,
@@ -158,6 +165,7 @@ export function FoodDiaryEntryScreen() {
       return;
     }
 
+    setMealTag(null);
     setFoodNote('');
     setLoggedDate(currentLocalDate());
     setLoggedTime(currentLocalTime());
@@ -215,7 +223,7 @@ export function FoodDiaryEntryScreen() {
                 }}
                 disabled={saving}
                 onPress={() => {
-                  setMealTag(tag);
+                  setMealTag((prev) => (prev === tag ? null : tag));
                 }}
                 style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
                 className={`w-full items-center justify-center rounded-xl border-2 px-3 py-3 dark:border-app-border-dark ${

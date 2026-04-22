@@ -372,7 +372,7 @@ export function HealthMarkerPromptFlow({
     setDrafts(nextDrafts);
 
     // Initial hydrate / resume; values logged later in this session are picked up in
-    // enterPostMarkerPhaseAfterMarkers before the post-marker step.
+    // enterFoodDiaryPhaseAfterMarkers before the food diary step.
     setBacSuggestAbs(bacReadingSuggestsAbsEpisode(markerRows.data));
 
     const firstUnanswered = presetLines.data.findIndex((line) => {
@@ -411,6 +411,8 @@ export function HealthMarkerPromptFlow({
     : false;
   const canSkip = Boolean(currentLine) && !measurementReadyForSave;
   const skipPressable = canSkip && !saving;
+  const continueToFoodDiary =
+    lines.length === 0 || activeIndex >= lines.length - 1;
 
   const onUpdateDraft = (patch: Partial<MarkerDraft>) => {
     if (!currentLine) {
@@ -484,7 +486,7 @@ export function HealthMarkerPromptFlow({
    * Re-reads saved episode markers so BAC suggestion reflects values logged during this session,
    * then moves to the food diary step.
    */
-  const enterPostMarkerPhaseAfterMarkers = useCallback(async () => {
+  const enterFoodDiaryPhaseAfterMarkers = useCallback(async () => {
     const markerRows = await listEpisodeHealthMarkersForEpisode(
       supabase,
       episodeId,
@@ -500,7 +502,7 @@ export function HealthMarkerPromptFlow({
       return;
     }
     if (!currentLine) {
-      await enterPostMarkerPhaseAfterMarkers();
+      await enterFoodDiaryPhaseAfterMarkers();
       announce(
         lines.length === 0
           ? 'No preset health markers to log. Continue to food diary.'
@@ -514,7 +516,7 @@ export function HealthMarkerPromptFlow({
       return;
     }
     if (activeIndex >= lines.length - 1) {
-      await enterPostMarkerPhaseAfterMarkers();
+      await enterFoodDiaryPhaseAfterMarkers();
       announce('Health marker list complete.', { politeness: 'polite' });
       return;
     }
@@ -526,7 +528,7 @@ export function HealthMarkerPromptFlow({
       return;
     }
     if (activeIndex >= lines.length - 1) {
-      await enterPostMarkerPhaseAfterMarkers();
+      await enterFoodDiaryPhaseAfterMarkers();
       announce('Health marker list complete.', { politeness: 'polite' });
       return;
     }
@@ -711,6 +713,9 @@ export function HealthMarkerPromptFlow({
   };
 
   const onContinueFromFoodDiary = () => {
+    if (foodSaving || deletingFoodEntryId != null || foodEntriesLoading) {
+      return;
+    }
     setFoodDiaryDecision(foodEntries.length > 0 ? 'saved' : 'skipped');
     setPhase('postMarkers');
   };
@@ -1178,10 +1183,9 @@ export function HealthMarkerPromptFlow({
                           </legend>
                           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                             {MEAL_TAGS.map((tag) => (
-                              <button
-                                type="button"
+                              <label
                                 key={`edit-${entry.id}-${tag}`}
-                                className={`flex min-h-[40px] items-center justify-center rounded-lg border px-3 py-2 text-xs font-medium shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg ${
+                                className={`flex min-h-[40px] items-center justify-center rounded-lg border px-3 py-2 text-xs font-medium shadow-sm transition focus-within:outline-none focus-within:ring-2 focus-within:ring-app-ring focus-within:ring-offset-2 focus-within:ring-offset-app-bg ${
                                   foodMealTag === tag
                                     ? 'border-red-700 bg-red-50 text-red-900 dark:border-red-500 dark:bg-red-950/40 dark:text-red-100'
                                     : 'border-app-border bg-app-surface text-app-ink hover:bg-app-surface/80'
@@ -1190,17 +1194,22 @@ export function HealthMarkerPromptFlow({
                                     ? 'cursor-not-allowed opacity-60'
                                     : 'cursor-pointer'
                                 }`}
-                                disabled={foodSaving}
-                                onClick={() => {
-                                  if (!foodSaving) {
-                                    setFoodMealTag((prev) =>
-                                      prev === tag ? null : tag,
-                                    );
-                                  }
-                                }}
                               >
-                                {tag}
-                              </button>
+                                <input
+                                  type="checkbox"
+                                  className="sr-only"
+                                  checked={foodMealTag === tag}
+                                  disabled={foodSaving}
+                                  onChange={() => {
+                                    if (!foodSaving) {
+                                      setFoodMealTag((prev) =>
+                                        prev === tag ? null : tag,
+                                      );
+                                    }
+                                  }}
+                                />
+                                <span>{tag}</span>
+                              </label>
                             ))}
                           </div>
                         </fieldset>
@@ -1311,10 +1320,9 @@ export function HealthMarkerPromptFlow({
                 </legend>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                   {MEAL_TAGS.map((tag) => (
-                    <button
-                      type="button"
+                    <label
                       key={`add-${tag}`}
-                      className={`flex min-h-[44px] items-center justify-center rounded-lg border px-3 py-2 text-sm font-medium shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg ${
+                      className={`flex min-h-[44px] items-center justify-center rounded-lg border px-3 py-2 text-sm font-medium shadow-sm transition focus-within:outline-none focus-within:ring-2 focus-within:ring-app-ring focus-within:ring-offset-2 focus-within:ring-offset-app-bg ${
                         foodMealTag === tag
                           ? 'border-red-700 bg-red-50 text-red-900 dark:border-red-500 dark:bg-red-950/40 dark:text-red-100'
                           : 'border-app-border bg-app-surface text-app-ink hover:bg-app-surface/80'
@@ -1323,23 +1331,29 @@ export function HealthMarkerPromptFlow({
                           ? 'cursor-not-allowed opacity-60'
                           : 'cursor-pointer'
                       }`}
-                      disabled={foodSaving}
-                      onClick={() => {
-                        if (!foodSaving) {
-                          const nextMealTag = foodMealTag === tag ? null : tag;
-                          setFoodMealTag(nextMealTag);
-                          setIsAddFoodEntryDirty(
-                            computeIsAddFoodEntryDirty({
-                              mealTag: nextMealTag,
-                              note: foodNote,
-                              loggedAtLocal: foodLoggedAtLocal,
-                            }),
-                          );
-                        }
-                      }}
                     >
-                      {tag}
-                    </button>
+                      <input
+                        type="checkbox"
+                        className="sr-only"
+                        checked={foodMealTag === tag}
+                        disabled={foodSaving}
+                        onChange={() => {
+                          if (!foodSaving) {
+                            const nextMealTag =
+                              foodMealTag === tag ? null : tag;
+                            setFoodMealTag(nextMealTag);
+                            setIsAddFoodEntryDirty(
+                              computeIsAddFoodEntryDirty({
+                                mealTag: nextMealTag,
+                                note: foodNote,
+                                loggedAtLocal: foodLoggedAtLocal,
+                              }),
+                            );
+                          }
+                        }}
+                      />
+                      <span>{tag}</span>
+                    </label>
                   ))}
                 </div>
               </fieldset>
@@ -1455,8 +1469,11 @@ export function HealthMarkerPromptFlow({
             ) : null}
             <button
               type="button"
-              className="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-red-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg dark:bg-red-600 dark:hover:bg-red-500"
+              className="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-red-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-60 dark:bg-red-600 dark:hover:bg-red-500"
               onClick={onContinueFromFoodDiary}
+              disabled={
+                foodSaving || deletingFoodEntryId != null || foodEntriesLoading
+              }
             >
               {foodEntries.length > 0 ? 'Continue' : 'Skip for now'}
             </button>
@@ -1644,20 +1661,16 @@ export function HealthMarkerPromptFlow({
             }}
             disabled={saving}
             aria-label={
-              lines.length === 0
-                ? 'Continue to episode details'
-                : activeIndex >= lines.length - 1
-                  ? 'Next health marker'
-                  : 'Next health marker'
+              continueToFoodDiary
+                ? 'Continue to food diary'
+                : 'Next health marker'
             }
           >
             {saving
               ? 'Saving…'
-              : lines.length === 0
-                ? 'Continue to episode details'
-                : activeIndex >= lines.length - 1
-                  ? 'Next'
-                  : 'Next'}
+              : continueToFoodDiary
+                ? 'Continue to food diary'
+                : 'Next'}
           </button>
         </div>
         <button

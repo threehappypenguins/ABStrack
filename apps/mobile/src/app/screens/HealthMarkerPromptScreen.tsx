@@ -433,7 +433,7 @@ export function HealthMarkerPromptScreen() {
     setDrafts(nextDrafts);
 
     // Initial hydrate / resume; values logged later in this session are picked up in
-    // enterPostMarkerPhaseAfterMarkers before the post-marker step.
+    // enterFoodDiaryPhaseAfterMarkers before the post-marker step.
     setBacSuggestAbs(bacReadingSuggestsAbsEpisode(markerRows.data));
 
     const firstUnanswered = presetLines.data.findIndex((line) => {
@@ -472,6 +472,10 @@ export function HealthMarkerPromptScreen() {
     : false;
   const canSkip = Boolean(currentLine) && !measurementReadyForSave;
   const skipPressable = canSkip && !saving;
+  const continueToFoodDiary =
+    lines.length === 0 || activeIndex >= lines.length - 1;
+  const foodDiaryContinueDisabled =
+    savingFoodDiary || deletingFoodEntryId != null || foodEntriesLoading;
 
   const onUpdateDraft = (patch: Partial<MarkerDraft>) => {
     if (!currentLine) {
@@ -547,7 +551,7 @@ export function HealthMarkerPromptScreen() {
    * Re-reads saved episode markers so BAC suggestion reflects values logged during this session,
    * then moves to the food diary step.
    */
-  const enterPostMarkerPhaseAfterMarkers = useCallback(async () => {
+  const enterFoodDiaryPhaseAfterMarkers = useCallback(async () => {
     const markerRows = await listEpisodeHealthMarkersForEpisode(
       supabase,
       episodeId,
@@ -563,7 +567,7 @@ export function HealthMarkerPromptScreen() {
       return;
     }
     if (!currentLine) {
-      await enterPostMarkerPhaseAfterMarkers();
+      await enterFoodDiaryPhaseAfterMarkers();
       await announce(
         lines.length === 0
           ? 'No preset health markers to log. Continue to food diary.'
@@ -577,7 +581,7 @@ export function HealthMarkerPromptScreen() {
       return;
     }
     if (activeIndex >= lines.length - 1) {
-      await enterPostMarkerPhaseAfterMarkers();
+      await enterFoodDiaryPhaseAfterMarkers();
       await announce('Health marker list complete.', { politeness: 'polite' });
       return;
     }
@@ -589,7 +593,7 @@ export function HealthMarkerPromptScreen() {
       return;
     }
     if (activeIndex >= lines.length - 1) {
-      await enterPostMarkerPhaseAfterMarkers();
+      await enterFoodDiaryPhaseAfterMarkers();
       await announce('Health marker list complete.', { politeness: 'polite' });
       return;
     }
@@ -697,6 +701,9 @@ export function HealthMarkerPromptScreen() {
   };
 
   const onContinueFromFoodDiary = async () => {
+    if (foodDiaryContinueDisabled) {
+      return;
+    }
     setFoodDiaryDecision(foodEntries.length > 0 ? 'saved' : 'skipped');
     setFoodDiaryFeedback(null);
     setPhase('postMarkers');
@@ -1755,11 +1762,15 @@ export function HealthMarkerPromptScreen() {
                     ? 'Skip food diary entry'
                     : 'Continue after food diary'
                 }
+                accessibilityState={{ disabled: foodDiaryContinueDisabled }}
+                disabled={foodDiaryContinueDisabled}
                 onPress={() => {
                   void onContinueFromFoodDiary();
                 }}
                 style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
                 className={`w-full items-center justify-center rounded-lg bg-red-700 px-3 py-3 active:opacity-90 dark:bg-red-600 ${
+                  foodDiaryContinueDisabled ? 'opacity-50' : ''
+                } ${
                   editingFoodEntryId == null && !isAddFoodEntryOpen
                     ? 'mt-5'
                     : 'mt-3'
@@ -2161,11 +2172,9 @@ export function HealthMarkerPromptScreen() {
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel={
-                      lines.length === 0
-                        ? 'Continue to episode details'
-                        : activeIndex >= lines.length - 1
-                          ? 'Next health marker'
-                          : 'Next health marker'
+                      continueToFoodDiary
+                        ? 'Continue to food diary'
+                        : 'Next health marker'
                     }
                     accessibilityState={{ disabled: saving }}
                     disabled={saving}
@@ -2178,11 +2187,9 @@ export function HealthMarkerPromptScreen() {
                     <Text className="text-center text-[17px] font-semibold text-white">
                       {saving
                         ? 'Saving…'
-                        : lines.length === 0
-                          ? 'Continue to episode details'
-                          : activeIndex >= lines.length - 1
-                            ? 'Next'
-                            : 'Next'}
+                        : continueToFoodDiary
+                          ? 'Continue to food diary'
+                          : 'Next'}
                     </Text>
                   </Pressable>
                 </View>

@@ -131,23 +131,27 @@ export function FoodDiaryEntryForm({
         <legend className="text-sm font-medium text-app-ink">Meal tag</legend>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           {MEAL_TAGS.map((tag) => (
-            <button
-              type="button"
+            <label
               key={tag}
-              className={`flex min-h-[44px] items-center justify-center rounded-lg border px-3 py-2 text-sm font-medium shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg ${
+              className={`flex min-h-[44px] cursor-pointer items-center justify-center rounded-lg border px-3 py-2 text-sm font-medium shadow-sm transition focus-within:outline-none focus-within:ring-2 focus-within:ring-app-ring focus-within:ring-offset-2 focus-within:ring-offset-app-bg ${
                 mealTag === tag
                   ? 'border-red-700 bg-red-50 text-red-900 dark:border-red-500 dark:bg-red-950/40 dark:text-red-100'
                   : 'border-app-border bg-app-surface text-app-ink hover:bg-app-surface/80'
-              } ${saving ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
-              disabled={saving}
-              onClick={() => {
-                if (!saving) {
-                  setMealTag((prev) => (prev === tag ? null : tag));
-                }
-              }}
+              } ${saving ? 'cursor-not-allowed opacity-60' : ''}`}
             >
-              {tag}
-            </button>
+              <input
+                type="checkbox"
+                className="sr-only"
+                checked={mealTag === tag}
+                disabled={saving}
+                onChange={() => {
+                  if (!saving) {
+                    setMealTag((prev) => (prev === tag ? null : tag));
+                  }
+                }}
+              />
+              <span>{tag}</span>
+            </label>
           ))}
         </div>
       </fieldset>

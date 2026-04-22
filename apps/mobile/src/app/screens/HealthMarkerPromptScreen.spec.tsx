@@ -324,7 +324,7 @@ describe('HealthMarkerPromptScreen', () => {
     const skip = screen.getByLabelText('Skip this marker');
     expect(skip.props.accessibilityState?.disabled).toBe(false);
 
-    fireEvent.press(screen.getByLabelText('Next health marker'));
+    fireEvent.press(screen.getByLabelText('Continue to food diary'));
 
     await waitFor(() => {
       expect(
@@ -349,7 +349,7 @@ describe('HealthMarkerPromptScreen', () => {
     });
 
     fireEvent.changeText(screen.getByLabelText('Marker value'), '100');
-    fireEvent.press(screen.getByLabelText('Next health marker'));
+    fireEvent.press(screen.getByLabelText('Continue to food diary'));
 
     await waitFor(() => {
       expect(screen.getByText('Food diary')).toBeTruthy();
@@ -430,7 +430,7 @@ describe('HealthMarkerPromptScreen', () => {
     });
 
     fireEvent.changeText(screen.getByLabelText('Marker value'), '5');
-    fireEvent.press(screen.getByLabelText('Next health marker'));
+    fireEvent.press(screen.getByLabelText('Continue to food diary'));
 
     await waitFor(() => {
       expect(screen.getByText('Food diary')).toBeTruthy();
