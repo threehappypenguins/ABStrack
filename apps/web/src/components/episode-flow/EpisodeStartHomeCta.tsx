@@ -64,7 +64,7 @@ export function EpisodeStartHomeCta({
       }
       const row = result.data;
       const presetId = row?.symptom_preset_id ?? null;
-      if (row && presetId) {
+      if (row && (row.post_marker_step_completed_at != null || presetId)) {
         setResumeHref(
           buildResumeEpisodeHref(row.id, presetId, {
             toHealthMarkers: row.post_marker_step_completed_at != null,

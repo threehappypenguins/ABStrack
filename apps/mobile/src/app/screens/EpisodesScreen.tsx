@@ -312,7 +312,8 @@ export function EpisodesScreen() {
               >
                 Ended —
               </Text>
-              {active.symptom_preset_id ? (
+              {active.post_marker_step_completed_at ||
+              active.symptom_preset_id ? (
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="Resume this episode"

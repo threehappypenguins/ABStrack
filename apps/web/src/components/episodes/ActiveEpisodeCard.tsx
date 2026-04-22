@@ -80,7 +80,8 @@ export function ActiveEpisodeCard({ episode }: { episode: EpisodeRow }) {
           </div>
         </dl>
         <div className="mt-5 space-y-3">
-          {episode.symptom_preset_id ? (
+          {episode.post_marker_step_completed_at ||
+          episode.symptom_preset_id ? (
             <Link
               href={buildResumeEpisodeHref(
                 episode.id,

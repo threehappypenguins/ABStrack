@@ -19,13 +19,18 @@ export type BuildResumeEpisodeHrefOptions = {
  */
 export function buildResumeEpisodeHref(
   episodeId: string,
-  symptomPresetId: string,
+  symptomPresetId: string | null,
   options: BuildResumeEpisodeHrefOptions = {},
 ): string {
   const q = new URLSearchParams();
   q.set('resume', '1');
   if (options.toHealthMarkers) {
     return `/episode/${episodeId}/health-markers?${q.toString()}`;
+  }
+  if (!symptomPresetId) {
+    throw new Error(
+      'buildResumeEpisodeHref requires symptomPresetId when resuming to symptoms.',
+    );
   }
   q.set('symptomPresetId', symptomPresetId);
   return `/episode/${episodeId}/symptoms?${q.toString()}`;

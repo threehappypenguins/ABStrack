@@ -250,7 +250,10 @@ export function EpisodeStartFlow() {
 
   if (blockingActiveEpisode) {
     const presetId = blockingActiveEpisode.symptom_preset_id;
-    const canResume = typeof presetId === 'string' && presetId.length > 0;
+    const isAtEndStep =
+      blockingActiveEpisode.post_marker_step_completed_at != null;
+    const canResume =
+      isAtEndStep || (typeof presetId === 'string' && presetId.length > 0);
     const gateStatusId = `episode-start-active-gate-status${groupLegendId}`;
     const primaryLinkClass =
       'inline-flex min-h-[56px] w-full items-center justify-center rounded-xl bg-red-700 px-5 py-4 text-center text-base font-semibold leading-snug text-white shadow-md outline-none ring-2 ring-transparent transition hover:bg-red-800 focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-red-50 dark:bg-red-600 dark:hover:bg-red-500 dark:focus-visible:ring-offset-red-950';
@@ -293,8 +296,7 @@ export function EpisodeStartFlow() {
           {canResume ? (
             <Link
               href={buildResumeEpisodeHref(blockingActiveEpisode.id, presetId, {
-                toHealthMarkers:
-                  blockingActiveEpisode.post_marker_step_completed_at != null,
+                toHealthMarkers: isAtEndStep,
               })}
               className={primaryLinkClass}
               aria-describedby={gateStatusId}
