@@ -28,18 +28,21 @@ import type {
 } from '@abstrack/types';
 import {
   bacReadingSuggestsAbsEpisode,
+  formatEpisodeDurationSimple,
   PRESET_HEALTH_MARKER_KIND_LABELS,
   validatePresetHealthMarkerCustomFields,
 } from '@abstrack/types';
 import {
   cancelActiveEpisodeById,
   completeEpisodePostMarkerStep,
+  endEpisodeIfStillActive,
   getEpisodeById,
   listEpisodeHealthMarkersForEpisode,
   listPresetHealthMarkersForPreset,
   upsertEpisodeHealthMarkerForLine,
 } from '@abstrack/supabase';
 import { announce, COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
+import { clearSymptomPromptSession } from '../../lib/episodes/symptom-prompt-session-store';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { AsyncScreenContainer } from '../components/AsyncScreenContainer';
 import { ScreenShell } from '../components/ScreenShell';
@@ -201,6 +204,12 @@ export function HealthMarkerPromptScreen() {
   const [postNote, setPostNote] = useState('');
   const [savingPost, setSavingPost] = useState(false);
   const [postFeedback, setPostFeedback] = useState<string | null>(null);
+  const [endingEpisode, setEndingEpisode] = useState(false);
+  const [endFeedback, setEndFeedback] = useState<string | null>(null);
+  const [endedSummary, setEndedSummary] = useState<{
+    endedAt: string;
+    durationText: string | null;
+  } | null>(null);
   const postFormInitRef = useRef(false);
   const [cancelingEpisode, setCancelingEpisode] = useState(false);
 
@@ -236,6 +245,8 @@ export function HealthMarkerPromptScreen() {
     setPhase('prompting');
     postFormInitRef.current = false;
     setPostFeedback(null);
+    setEndFeedback(null);
+    setEndedSummary(null);
 
     const {
       data: { user },
@@ -270,6 +281,15 @@ export function HealthMarkerPromptScreen() {
       return;
     }
     setEpisodeRow(episode.data);
+    if (episode.data?.ended_at) {
+      setEndedSummary({
+        endedAt: episode.data.ended_at,
+        durationText: formatEpisodeDurationSimple(
+          episode.data.started_at,
+          episode.data.ended_at,
+        ),
+      });
+    }
 
     const [presetLines, markerRows] = await Promise.all([
       listPresetHealthMarkersForPreset(supabase, markerPresetId),
@@ -483,6 +503,8 @@ export function HealthMarkerPromptScreen() {
       return;
     }
     setEpisodeRow(result.data);
+    setEndFeedback(null);
+    setEndedSummary(null);
     setPhase('complete');
     await announce('Episode details saved.', { politeness: 'polite' });
   };
@@ -495,6 +517,97 @@ export function HealthMarkerPromptScreen() {
       }),
     );
   };
+
+  const onEndEpisode = useCallback(async () => {
+    if (endingEpisode) {
+      return;
+    }
+    if (!episodeRow) {
+      const message = 'Could not find this episode. Please try again.';
+      setEndFeedback(message);
+      await announce(message, { politeness: 'assertive' });
+      return;
+    }
+    setEndingEpisode(true);
+    setEndFeedback(null);
+    try {
+      const nowIso = new Date().toISOString();
+      const startedAtMs = Date.parse(episodeRow.started_at);
+      const nowMs = Date.parse(nowIso);
+      const endedAt =
+        Number.isFinite(startedAtMs) &&
+        Number.isFinite(nowMs) &&
+        nowMs < startedAtMs
+          ? episodeRow.started_at
+          : nowIso;
+      const result = await endEpisodeIfStillActive(
+        supabase,
+        episodeId,
+        endedAt,
+        episodeRow.started_at,
+      );
+      if (!result.ok) {
+        setEndFeedback(result.error.message);
+        await announce(result.error.message, { politeness: 'assertive' });
+        return;
+      }
+      clearSymptomPromptSession(episodeId);
+      if (result.data.didEnd) {
+        const durationText = formatEpisodeDurationSimple(
+          episodeRow.started_at,
+          endedAt,
+        );
+        setEpisodeRow((prev) => (prev ? { ...prev, ended_at: endedAt } : prev));
+        setEndedSummary({ endedAt, durationText });
+        await announce(
+          durationText
+            ? `Episode ended. Duration ${durationText}.`
+            : 'Episode ended.',
+          { politeness: 'polite' },
+        );
+        return;
+      }
+      const latest = await getEpisodeById(supabase, episodeId);
+      if (latest.ok && latest.data?.ended_at) {
+        const durationText = formatEpisodeDurationSimple(
+          latest.data.started_at,
+          latest.data.ended_at,
+        );
+        setEpisodeRow(latest.data);
+        setEndedSummary({ endedAt: latest.data.ended_at, durationText });
+        await announce('This episode was already ended.', {
+          politeness: 'polite',
+        });
+        return;
+      }
+      const message =
+        'This episode is no longer active. Return home and refresh episodes.';
+      setEndFeedback(message);
+      await announce(message, { politeness: 'assertive' });
+    } finally {
+      setEndingEpisode(false);
+    }
+  }, [endingEpisode, episodeId, episodeRow, supabase]);
+
+  const onRequestEndEpisode = useCallback(() => {
+    if (endingEpisode || endedSummary) {
+      return;
+    }
+    Alert.alert(
+      'End this episode now?',
+      'Ending sets this episode as complete and removes resume progress from this device. You can still view it in history.',
+      [
+        { text: 'Not yet', style: 'cancel' },
+        {
+          text: 'End episode',
+          style: 'destructive',
+          onPress: () => {
+            void onEndEpisode();
+          },
+        },
+      ],
+    );
+  }, [endedSummary, endingEpisode, onEndEpisode]);
 
   const onCancelEpisodePress = () => {
     if (cancelingEpisode) {
@@ -576,24 +689,74 @@ export function HealthMarkerPromptScreen() {
 
         {phase === 'complete' ? (
           <View className="gap-4" accessibilityLiveRegion="polite">
-            <Text
-              className={`text-base leading-relaxed ${nw.textInk}`}
-              maxFontSizeMultiplier={2}
-            >
-              Preset prompts and episode details for this episode are saved. You
-              can return home when you are ready.
-            </Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Return to home"
-              onPress={onFinishToHome}
-              style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
-              className="items-center justify-center rounded-xl bg-red-700 px-4 py-4 active:opacity-90 dark:bg-red-600"
-            >
-              <Text className="text-center text-[17px] font-semibold text-white">
-                Return home
+            {endedSummary ? (
+              <>
+                <Text
+                  className={`text-base leading-relaxed ${nw.textInk}`}
+                  maxFontSizeMultiplier={2}
+                >
+                  This episode is ended and saved.
+                </Text>
+                <Text
+                  className={`text-sm ${nw.textMuted}`}
+                  maxFontSizeMultiplier={2}
+                >
+                  Ended {new Date(endedSummary.endedAt).toLocaleString()}
+                </Text>
+                <Text
+                  className={`text-sm ${nw.textMuted}`}
+                  maxFontSizeMultiplier={2}
+                >
+                  Duration {endedSummary.durationText ?? '—'}
+                </Text>
+              </>
+            ) : (
+              <Text
+                className={`text-base leading-relaxed ${nw.textInk}`}
+                maxFontSizeMultiplier={2}
+              >
+                Preset prompts and episode details are saved. End this episode
+                to prevent stale resume state.
               </Text>
-            </Pressable>
+            )}
+            {endFeedback ? (
+              <Text
+                className={`text-sm ${nw.textError}`}
+                accessibilityLiveRegion="assertive"
+                maxFontSizeMultiplier={2}
+              >
+                {endFeedback}
+              </Text>
+            ) : null}
+            {endedSummary ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Return to home"
+                onPress={onFinishToHome}
+                style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                className="items-center justify-center rounded-xl bg-red-700 px-4 py-4 active:opacity-90 dark:bg-red-600"
+              >
+                <Text className="text-center text-[17px] font-semibold text-white">
+                  Return home
+                </Text>
+              </Pressable>
+            ) : (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={
+                  endingEpisode ? 'Ending episode' : 'End episode'
+                }
+                accessibilityState={{ disabled: endingEpisode }}
+                disabled={endingEpisode}
+                onPress={onRequestEndEpisode}
+                style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                className="items-center justify-center rounded-xl bg-red-700 px-4 py-4 active:opacity-90 disabled:opacity-60 dark:bg-red-600"
+              >
+                <Text className="text-center text-[17px] font-semibold text-white">
+                  {endingEpisode ? 'Ending episode…' : 'End episode'}
+                </Text>
+              </Pressable>
+            )}
           </View>
         ) : phase === 'postMarkers' ? (
           <>

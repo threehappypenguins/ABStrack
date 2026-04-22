@@ -15,6 +15,7 @@ import {
 } from '@abstrack/supabase';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
 import { buildResumeEpisodeHref } from '@/lib/episode-flow/resume-episode-href';
+import { clearSymptomPromptSession } from '@/lib/episode-flow/symptom-prompt-session-store';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
 import { useAuth } from '@/lib/auth-provider';
 import { PageLoading } from '@/components/page-states/PageLoading';
@@ -150,12 +151,15 @@ export function EpisodeStartFlow() {
       const end = await endEpisodeIfStillActive(
         supabase,
         blockingActiveEpisode.id,
+        new Date().toISOString(),
+        blockingActiveEpisode.started_at,
       );
       if (!end.ok) {
         setSubmitError(end.error.message);
         announce(end.error.message, { politeness: 'assertive' });
         return;
       }
+      clearSymptomPromptSession(blockingActiveEpisode.id);
       await refresh();
       if (!end.data.didEnd) {
         return;
@@ -288,7 +292,10 @@ export function EpisodeStartFlow() {
         <div className="flex flex-col gap-3 sm:max-w-md">
           {canResume ? (
             <Link
-              href={buildResumeEpisodeHref(blockingActiveEpisode.id, presetId)}
+              href={buildResumeEpisodeHref(blockingActiveEpisode.id, presetId, {
+                toHealthMarkers:
+                  blockingActiveEpisode.post_marker_step_completed_at != null,
+              })}
               className={primaryLinkClass}
               aria-describedby={gateStatusId}
             >

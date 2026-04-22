@@ -81,6 +81,8 @@ export function HomeScreen({
         setActiveEpisode({
           episodeId: result.data.id,
           symptomPresetId: result.data.symptom_preset_id,
+          resumeAtHealthMarkers:
+            result.data.post_marker_step_completed_at != null,
         });
       } catch {
         if (!stale()) {

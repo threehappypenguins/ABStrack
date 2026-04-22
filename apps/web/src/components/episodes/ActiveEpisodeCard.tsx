@@ -85,6 +85,10 @@ export function ActiveEpisodeCard({ episode }: { episode: EpisodeRow }) {
               href={buildResumeEpisodeHref(
                 episode.id,
                 episode.symptom_preset_id,
+                {
+                  toHealthMarkers:
+                    episode.post_marker_step_completed_at != null,
+                },
               )}
               className={resumeLinkClass}
             >

@@ -11,12 +11,14 @@ import type {
 } from '@abstrack/types';
 import {
   bacReadingSuggestsAbsEpisode,
+  formatEpisodeDurationSimple,
   PRESET_HEALTH_MARKER_KIND_LABELS,
   validatePresetHealthMarkerCustomFields,
 } from '@abstrack/types';
 import {
   cancelActiveEpisodeById,
   completeEpisodePostMarkerStep,
+  endEpisodeIfStillActive,
   getEpisodeById,
   listEpisodeHealthMarkersForEpisode,
   listPresetHealthMarkersForPreset,
@@ -24,6 +26,8 @@ import {
 } from '@abstrack/supabase';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
+import { clearSymptomPromptSession } from '@/lib/episode-flow/symptom-prompt-session-store';
+import { EpisodeLocaleInstant } from '@/components/episodes/EpisodeLocaleInstant';
 import { ConfirmDialog } from '../symptom-presets/ConfirmDialog';
 
 type MarkerDraft = {
@@ -188,6 +192,13 @@ export function HealthMarkerPromptFlow({
   const [postNote, setPostNote] = useState('');
   const [savingPost, setSavingPost] = useState(false);
   const [postFeedback, setPostFeedback] = useState<string | null>(null);
+  const [endingEpisode, setEndingEpisode] = useState(false);
+  const [endDialogOpen, setEndDialogOpen] = useState(false);
+  const [endFeedback, setEndFeedback] = useState<string | null>(null);
+  const [endedSummary, setEndedSummary] = useState<{
+    endedAt: string;
+    durationText: string | null;
+  } | null>(null);
   const postFormInitRef = useRef(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancelingEpisode, setCancelingEpisode] = useState(false);
@@ -222,6 +233,8 @@ export function HealthMarkerPromptFlow({
     setPhase('prompting');
     postFormInitRef.current = false;
     setPostFeedback(null);
+    setEndFeedback(null);
+    setEndedSummary(null);
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -255,6 +268,15 @@ export function HealthMarkerPromptFlow({
       return;
     }
     setEpisodeRow(episode.data);
+    if (episode.data?.ended_at) {
+      setEndedSummary({
+        endedAt: episode.data.ended_at,
+        durationText: formatEpisodeDurationSimple(
+          episode.data.started_at,
+          episode.data.ended_at,
+        ),
+      });
+    }
 
     const [presetLines, markerRows] = await Promise.all([
       listPresetHealthMarkersForPreset(supabase, markerPresetId),
@@ -465,6 +487,8 @@ export function HealthMarkerPromptFlow({
       return;
     }
     setEpisodeRow(result.data);
+    setEndFeedback(null);
+    setEndedSummary(null);
     setPhase('complete');
     announce('Episode details saved.', { politeness: 'polite' });
   };
@@ -472,6 +496,76 @@ export function HealthMarkerPromptFlow({
   const onFinishToDashboard = () => {
     router.push('/dashboard');
   };
+
+  const onEndEpisode = useCallback(async (): Promise<void | false> => {
+    if (endingEpisode) {
+      return false;
+    }
+    if (!episodeRow) {
+      const message = 'Could not find this episode. Please try again.';
+      setEndFeedback(message);
+      announce(message, { politeness: 'assertive' });
+      return false;
+    }
+    setEndingEpisode(true);
+    setEndFeedback(null);
+    try {
+      const nowIso = new Date().toISOString();
+      const startedAtMs = Date.parse(episodeRow.started_at);
+      const nowMs = Date.parse(nowIso);
+      const endedAt =
+        Number.isFinite(startedAtMs) &&
+        Number.isFinite(nowMs) &&
+        nowMs < startedAtMs
+          ? episodeRow.started_at
+          : nowIso;
+      const result = await endEpisodeIfStillActive(
+        supabase,
+        episodeId,
+        endedAt,
+        episodeRow.started_at,
+      );
+      if (!result.ok) {
+        setEndFeedback(result.error.message);
+        announce(result.error.message, { politeness: 'assertive' });
+        return false;
+      }
+      clearSymptomPromptSession(episodeId);
+      if (result.data.didEnd) {
+        const durationText = formatEpisodeDurationSimple(
+          episodeRow.started_at,
+          endedAt,
+        );
+        setEpisodeRow((prev) => (prev ? { ...prev, ended_at: endedAt } : prev));
+        setEndedSummary({ endedAt, durationText });
+        announce(
+          durationText
+            ? `Episode ended. Duration ${durationText}.`
+            : 'Episode ended.',
+          { politeness: 'polite' },
+        );
+        return;
+      }
+      const latest = await getEpisodeById(supabase, episodeId);
+      if (latest.ok && latest.data?.ended_at) {
+        const durationText = formatEpisodeDurationSimple(
+          latest.data.started_at,
+          latest.data.ended_at,
+        );
+        setEpisodeRow(latest.data);
+        setEndedSummary({ endedAt: latest.data.ended_at, durationText });
+        announce('This episode was already ended.', { politeness: 'polite' });
+        return;
+      }
+      const message =
+        'This episode is no longer active. Return to dashboard and refresh episodes.';
+      setEndFeedback(message);
+      announce(message, { politeness: 'assertive' });
+      return false;
+    } finally {
+      setEndingEpisode(false);
+    }
+  }, [announce, endingEpisode, episodeId, episodeRow, supabase]);
 
   const onCancelEpisodeConfirm = async (): Promise<void | false> => {
     if (cancelingEpisode) {
@@ -693,28 +787,74 @@ export function HealthMarkerPromptFlow({
 
   if (phase === 'complete') {
     return (
-      <div className="space-y-4">
-        <h1 className="text-2xl font-bold tracking-tight text-app-ink">
-          Episode health markers
-        </h1>
-        <div
-          className="rounded-2xl border border-app-border/90 bg-app-surface p-6 shadow-soft ring-1 ring-[color:var(--app-ring-slate)] sm:p-8"
-          role="status"
-          aria-live="polite"
-        >
-          <p className="text-sm leading-relaxed text-app-ink">
-            Preset prompts and episode details for this episode are saved. You
-            can return to the dashboard when you are ready.
-          </p>
+      <>
+        <div className="space-y-4">
+          <h1 className="text-2xl font-bold tracking-tight text-app-ink">
+            Episode health markers
+          </h1>
+          <div
+            className="rounded-2xl border border-app-border/90 bg-app-surface p-6 shadow-soft ring-1 ring-[color:var(--app-ring-slate)] sm:p-8"
+            role="status"
+            aria-live="polite"
+          >
+            {endedSummary ? (
+              <div className="space-y-2">
+                <p className="text-sm leading-relaxed text-app-ink">
+                  This episode is ended and saved.
+                </p>
+                <p className="text-sm text-app-muted">
+                  Ended <EpisodeLocaleInstant iso={endedSummary.endedAt} />
+                </p>
+                <p className="text-sm text-app-muted">
+                  Duration {endedSummary.durationText ?? '—'}
+                </p>
+              </div>
+            ) : (
+              <p className="text-sm leading-relaxed text-app-ink">
+                Preset prompts and episode details are saved. End this episode
+                to prevent stale resume state.
+              </p>
+            )}
+          </div>
+          {endFeedback ? (
+            <p className="text-sm text-red-700 dark:text-red-300" role="alert">
+              {endFeedback}
+            </p>
+          ) : null}
+          {endedSummary ? (
+            <button
+              type="button"
+              className="inline-flex min-h-[56px] items-center justify-center rounded-xl bg-red-700 px-5 text-base font-semibold text-white shadow-md transition hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg dark:bg-red-600 dark:hover:bg-red-500"
+              onClick={onFinishToDashboard}
+            >
+              Back to dashboard
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="inline-flex min-h-[56px] items-center justify-center rounded-xl bg-red-700 px-5 text-base font-semibold text-white shadow-md transition hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:opacity-60 dark:bg-red-600 dark:hover:bg-red-500"
+              onClick={() => {
+                setEndDialogOpen(true);
+              }}
+              disabled={endingEpisode}
+            >
+              {endingEpisode ? 'Ending episode…' : 'End episode'}
+            </button>
+          )}
         </div>
-        <button
-          type="button"
-          className="inline-flex min-h-[56px] items-center justify-center rounded-xl bg-red-700 px-5 text-base font-semibold text-white shadow-md transition hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg dark:bg-red-600 dark:hover:bg-red-500"
-          onClick={onFinishToDashboard}
-        >
-          Back to dashboard
-        </button>
-      </div>
+        <ConfirmDialog
+          open={endDialogOpen}
+          title="End this episode now?"
+          description="Ending sets this episode as complete and removes resume progress from this device. You can still view it in history."
+          confirmLabel="End episode"
+          confirmBusyLabel="Ending episode…"
+          cancelLabel="Not yet"
+          onConfirm={onEndEpisode}
+          onClose={() => {
+            setEndDialogOpen(false);
+          }}
+        />
+      </>
     );
   }
 

@@ -294,6 +294,38 @@ describe('endEpisodeIfStillActive', () => {
       expect(result.data.didEnd).toBe(false);
     }
   });
+
+  it('clamps ended_at to started_at when ended_at would be earlier', async () => {
+    const update = vi.fn(() => ({
+      eq: vi.fn(() => ({
+        is: vi.fn(() => ({
+          select: vi.fn(() => ({
+            maybeSingle: vi.fn(async () => ({
+              data: { id: 'ep-1' },
+              error: null,
+            })),
+          })),
+        })),
+      })),
+    }));
+    const client = {
+      from: vi.fn(() => ({
+        update,
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const startedAt = '2026-04-20T12:00:00.000Z';
+    const endedAt = '2026-04-20T11:00:00.000Z';
+    const result = await endEpisodeIfStillActive(
+      client,
+      'ep-1',
+      endedAt,
+      startedAt,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(update).toHaveBeenCalledWith({ ended_at: startedAt });
+  });
 });
 
 describe('cancelActiveEpisodeById', () => {

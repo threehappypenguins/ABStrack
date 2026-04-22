@@ -60,6 +60,13 @@ function navigateFromHomeTabToSymptomPromptResume(
       'MainTabNavigator: expected native stack parent (MainStack) to open SymptomPrompt.',
     );
   }
+  if (episode.resumeAtHealthMarkers) {
+    stackNavigation.navigate('HealthMarkerPrompt', {
+      episodeId: episode.episodeId,
+      resume: true,
+    });
+    return;
+  }
   stackNavigation.navigate('SymptomPrompt', {
     episodeId: episode.episodeId,
     symptomPresetId: episode.symptomPresetId,

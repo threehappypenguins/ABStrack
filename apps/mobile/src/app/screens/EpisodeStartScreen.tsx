@@ -15,6 +15,7 @@ import {
   fetchEpisodeTemplates,
   getCurrentUserId,
 } from '../../lib/episode-templates/episode-template-service';
+import { clearSymptomPromptSession } from '../../lib/episodes/symptom-prompt-session-store';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { saveEpisodeWithTemplatePresets } from '../../lib/episodes/episode-start-service';
 import { AsyncScreenContainer } from '../components/AsyncScreenContainer';
@@ -267,12 +268,18 @@ export function EpisodeStartScreen() {
     setEpisodeStartError(null);
     try {
       const supabase = getMobileSupabaseClient();
-      const end = await endEpisodeIfStillActive(supabase, row.id);
+      const end = await endEpisodeIfStillActive(
+        supabase,
+        row.id,
+        new Date().toISOString(),
+        row.started_at,
+      );
       if (!end.ok) {
         setEpisodeStartError(end.error.message);
         announce(end.error.message);
         return;
       }
+      clearSymptomPromptSession(row.id);
       // Reload start flow before any success announcement so UI matches server state; always await
       // `load` (fallback cancel token if focus ref is unset).
       await load(

@@ -5,6 +5,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import {
   cancelActiveEpisodeById,
   completeEpisodePostMarkerStep,
+  endEpisodeIfStillActive,
   getEpisodeById,
   listEpisodeHealthMarkersForEpisode,
   listPresetHealthMarkersForPreset,
@@ -32,6 +33,7 @@ jest.mock('@abstrack/supabase', () => {
     ...actual,
     cancelActiveEpisodeById: jest.fn(),
     completeEpisodePostMarkerStep: jest.fn(),
+    endEpisodeIfStillActive: jest.fn(),
     getEpisodeById: jest.fn(),
     listEpisodeHealthMarkersForEpisode: jest.fn(),
     listPresetHealthMarkersForPreset: jest.fn(),
@@ -184,6 +186,10 @@ describe('HealthMarkerPromptScreen', () => {
         created_at: '2020-01-01T00:00:00Z',
         updated_at: '2020-01-01T01:00:00Z',
       },
+    });
+    jest.mocked(endEpisodeIfStillActive).mockResolvedValue({
+      ok: true,
+      data: { didEnd: true },
     });
   });
 
@@ -348,11 +354,11 @@ describe('HealthMarkerPromptScreen', () => {
     await waitFor(() => {
       expect(
         screen.getByText(
-          /Preset prompts and episode details for this episode are saved/,
+          /Preset prompts and episode details are saved\. End this episode to prevent stale resume state\./,
         ),
       ).toBeTruthy();
     });
-    expect(screen.getByLabelText('Return to home')).toBeTruthy();
+    expect(screen.getByLabelText('End episode')).toBeTruthy();
   });
 
   test('post-marker save failure shows postFeedback', async () => {

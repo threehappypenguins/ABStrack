@@ -7,6 +7,10 @@ import { nw } from '../../theme/app-nativewind-classes';
 export type ActiveEpisodeHomeSummary = {
   episodeId: string;
   symptomPresetId: string;
+  /**
+   * When true, resume should open health markers directly (episode is at explicit end step).
+   */
+  resumeAtHealthMarkers?: boolean;
 };
 
 export type EpisodeStartHomeCtaProps = {
