@@ -49,7 +49,7 @@ function navigateFromHomeTabToEpisodeStart(
   stackNavigation.navigate('EpisodeStart');
 }
 
-function navigateFromHomeTabToSymptomPromptResume(
+function navigateFromHomeTabToEpisodeResume(
   navigation: BottomTabNavigationProp<MainTabParamList, 'Home'>,
   episode: ActiveEpisodeHomeSummary,
 ) {
@@ -57,7 +57,7 @@ function navigateFromHomeTabToSymptomPromptResume(
     navigation.getParent<NativeStackNavigationProp<MainStackParamList>>();
   if (stackNavigation == null) {
     throw new Error(
-      'MainTabNavigator: expected native stack parent (MainStack) to open SymptomPrompt.',
+      'MainTabNavigator: expected native stack parent (MainStack) to open episode resume flow.',
     );
   }
   if (episode.resumeAtHealthMarkers) {
@@ -161,7 +161,7 @@ export function MainTabNavigator() {
                 navigateFromHomeTabToEpisodeStart(navigation);
               }}
               onResumeEpisode={(episode) => {
-                navigateFromHomeTabToSymptomPromptResume(navigation, episode);
+                navigateFromHomeTabToEpisodeResume(navigation, episode);
               }}
             />
           )}
