@@ -7,20 +7,21 @@ import type { AbstrackSupabaseClient } from './supabase-client-type.js';
 
 type EpisodesTableUpdate = Database['public']['Tables']['episodes']['Update'];
 
+type EpisodePostMarkerStepKeys =
+  | 'additional_notes'
+  | 'episode_label'
+  | 'episode_type'
+  | 'note'
+  | 'post_marker_step_completed_at';
+
 /**
- * Payload for {@link completeEpisodePostMarkerStep}: required subset of `episodes` columns for the
- * post–health-marker details step, aligned with `Database['public']['Tables']['episodes']['Update']`.
+ * Payload for {@link completeEpisodePostMarkerStep}: every listed column must be present, with
+ * `undefined` disallowed on values (nullable columns use `null`). Derived from generated
+ * `episodes.Update` so schema changes stay reflected.
  */
-export type EpisodePostMarkerStepWrite = Required<
-  Pick<
-    EpisodesTableUpdate,
-    | 'additional_notes'
-    | 'episode_label'
-    | 'episode_type'
-    | 'note'
-    | 'post_marker_step_completed_at'
-  >
->;
+export type EpisodePostMarkerStepWrite = {
+  [K in EpisodePostMarkerStepKeys]: Exclude<EpisodesTableUpdate[K], undefined>;
+};
 
 /**
  * Inserts a new episode row (patient or caretaker per RLS).
