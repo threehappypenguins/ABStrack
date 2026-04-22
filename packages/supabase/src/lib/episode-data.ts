@@ -1,4 +1,9 @@
-import type { EpisodeInsert, EpisodeRow, Uuid } from '@abstrack/types';
+import type {
+  EpisodeInsert,
+  EpisodeRow,
+  EpisodeType,
+  Uuid,
+} from '@abstrack/types';
 import type { Database } from './database.types.js';
 import { PresetDataError, toPresetDataError } from './preset-data-error.js';
 import type { PresetDataResult } from './preset-data.js';
@@ -14,13 +19,18 @@ type EpisodePostMarkerStepKeys =
   | 'note'
   | 'post_marker_step_completed_at';
 
+type EpisodePostMarkerStepWriteBase = {
+  [K in EpisodePostMarkerStepKeys]: Exclude<EpisodesTableUpdate[K], undefined>;
+};
+
 /**
  * Payload for {@link completeEpisodePostMarkerStep}: every listed column must be present, with
- * `undefined` disallowed on values (nullable columns use `null`). Derived from generated
- * `episodes.Update` so schema changes stay reflected.
+ * `undefined` disallowed on values (nullable columns use `null`). Keys and nullability follow
+ * generated `episodes.Update` (schema drift safety); `episode_type` is narrowed to the domain union
+ * from {@link EpisodeRow} / `@abstrack/types`.
  */
-export type EpisodePostMarkerStepWrite = {
-  [K in EpisodePostMarkerStepKeys]: Exclude<EpisodesTableUpdate[K], undefined>;
+export type EpisodePostMarkerStepWrite = EpisodePostMarkerStepWriteBase & {
+  episode_type: EpisodeType;
 };
 
 /**

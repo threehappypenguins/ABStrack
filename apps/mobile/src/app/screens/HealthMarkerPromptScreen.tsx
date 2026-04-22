@@ -615,11 +615,18 @@ export function HealthMarkerPromptScreen() {
               >
                 Episode type
               </Text>
-              <View className="mb-4 gap-3">
+              <View
+                accessibilityRole="radiogroup"
+                accessibilityLabel="Episode type"
+                className="mb-4 gap-3"
+              >
                 <Pressable
-                  accessibilityRole="button"
+                  accessibilityRole="radio"
                   accessibilityLabel="ABS episode type"
-                  accessibilityState={{ selected: postEpisodeKind === 'ABS' }}
+                  accessibilityState={{
+                    checked: postEpisodeKind === 'ABS',
+                    disabled: savingPost,
+                  }}
                   onPress={() => {
                     setPostEpisodeKind('ABS');
                   }}
@@ -639,9 +646,12 @@ export function HealthMarkerPromptScreen() {
                   </Text>
                 </Pressable>
                 <Pressable
-                  accessibilityRole="button"
+                  accessibilityRole="radio"
                   accessibilityLabel="Other episode type"
-                  accessibilityState={{ selected: postEpisodeKind === 'Other' }}
+                  accessibilityState={{
+                    checked: postEpisodeKind === 'Other',
+                    disabled: savingPost,
+                  }}
                   onPress={() => {
                     setPostEpisodeKind('Other');
                   }}
