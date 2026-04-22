@@ -1,8 +1,37 @@
-import type { EpisodeInsert, EpisodeRow, Uuid } from '@abstrack/types';
-import { toPresetDataError } from './preset-data-error.js';
+import type {
+  EpisodeInsert,
+  EpisodeRow,
+  EpisodeType,
+  Uuid,
+} from '@abstrack/types';
+import type { Database } from './database.types.js';
+import { PresetDataError, toPresetDataError } from './preset-data-error.js';
 import type { PresetDataResult } from './preset-data.js';
 import { wrap } from './preset-data.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
+
+type EpisodesTableUpdate = Database['public']['Tables']['episodes']['Update'];
+
+type EpisodePostMarkerStepKeys =
+  | 'additional_notes'
+  | 'episode_label'
+  | 'episode_type'
+  | 'note'
+  | 'post_marker_step_completed_at';
+
+type EpisodePostMarkerStepWriteBase = {
+  [K in EpisodePostMarkerStepKeys]: Exclude<EpisodesTableUpdate[K], undefined>;
+};
+
+/**
+ * Payload for {@link completeEpisodePostMarkerStep}: every listed column must be present, with
+ * `undefined` disallowed on values (nullable columns use `null`). Keys and nullability follow
+ * generated `episodes.Update` (schema drift safety); `episode_type` is narrowed to the domain union
+ * from {@link EpisodeRow} / `@abstrack/types`.
+ */
+export type EpisodePostMarkerStepWrite = EpisodePostMarkerStepWriteBase & {
+  episode_type: EpisodeType;
+};
 
 /**
  * Inserts a new episode row (patient or caretaker per RLS).
@@ -142,6 +171,47 @@ export async function endEpisodeIfStillActive(
       return { ok: false, error: toPresetDataError(error) };
     }
     return { ok: true, data: { didEnd: data != null } };
+  } catch (caught) {
+    return { ok: false, error: toPresetDataError(caught) };
+  }
+}
+
+/**
+ * Persists episode type, labels, notes, and completion of the post–health-marker step.
+ * Updates only rows that are still active (`ended_at IS NULL`).
+ *
+ * @param client - Supabase client (RLS applies).
+ * @param episodeId - Target episode id.
+ * @param fields - Episode fields to write; `post_marker_step_completed_at` should be set when the user finishes this step.
+ * @returns Updated row, or an error when the update matches no visible row.
+ */
+export async function completeEpisodePostMarkerStep(
+  client: AbstrackSupabaseClient,
+  episodeId: Uuid,
+  fields: EpisodePostMarkerStepWrite,
+): Promise<PresetDataResult<EpisodeRow>> {
+  try {
+    const payload: EpisodesTableUpdate = fields;
+    const { data, error } = await client
+      .from('episodes')
+      .update(payload)
+      .eq('id', episodeId)
+      .is('ended_at', null)
+      .select('*')
+      .maybeSingle();
+    if (error) {
+      return { ok: false, error: toPresetDataError(error) };
+    }
+    if (!data) {
+      return {
+        ok: false,
+        error: new PresetDataError(
+          'not_found',
+          'Could not save episode details. This episode may be missing, already ended, or no longer available.',
+        ),
+      };
+    }
+    return { ok: true, data: data as EpisodeRow };
   } catch (caught) {
     return { ok: false, error: toPresetDataError(caught) };
   }

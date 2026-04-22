@@ -20,13 +20,20 @@ import {
   useRoute,
 } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { HealthMarkerRow, PresetHealthMarkerRow } from '@abstrack/types';
+import type {
+  EpisodeRow,
+  EpisodeType,
+  HealthMarkerRow,
+  PresetHealthMarkerRow,
+} from '@abstrack/types';
 import {
+  bacReadingSuggestsAbsEpisode,
   PRESET_HEALTH_MARKER_KIND_LABELS,
   validatePresetHealthMarkerCustomFields,
 } from '@abstrack/types';
 import {
   cancelActiveEpisodeById,
+  completeEpisodePostMarkerStep,
   getEpisodeById,
   listEpisodeHealthMarkersForEpisode,
   listPresetHealthMarkersForPreset,
@@ -63,6 +70,11 @@ type PersistFeedback =
 function normalizeNullable(value: string | null | undefined): string | null {
   const next = value?.trim() ?? '';
   return next.length > 0 ? next : null;
+}
+
+function trimToNull(value: string): string | null {
+  const t = value.trim();
+  return t.length > 0 ? t : null;
 }
 
 function markerLineTitle(line: PresetHealthMarkerRow): string {
@@ -173,17 +185,42 @@ export function HealthMarkerPromptScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [persistFeedback, setPersistFeedback] =
     useState<PersistFeedback | null>(null);
-  const [phase, setPhase] = useState<'prompting' | 'complete'>('prompting');
+  const [phase, setPhase] = useState<'prompting' | 'postMarkers' | 'complete'>(
+    'prompting',
+  );
   const [userId, setUserId] = useState<string | null>(null);
   const [lines, setLines] = useState<PresetHealthMarkerRow[]>([]);
   const [drafts, setDrafts] = useState<Record<string, MarkerDraft>>({});
   const [activeIndex, setActiveIndex] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [bacSuggestAbs, setBacSuggestAbs] = useState(false);
+  const [episodeRow, setEpisodeRow] = useState<EpisodeRow | null>(null);
+  const [postEpisodeKind, setPostEpisodeKind] = useState<EpisodeType>('Other');
+  const [postLabel, setPostLabel] = useState('');
+  const [postAdditional, setPostAdditional] = useState('');
+  const [postNote, setPostNote] = useState('');
+  const [savingPost, setSavingPost] = useState(false);
+  const [postFeedback, setPostFeedback] = useState<string | null>(null);
+  const postFormInitRef = useRef(false);
   const [cancelingEpisode, setCancelingEpisode] = useState(false);
 
   useEffect(() => {
     setPersistFeedback(null);
   }, [activeIndex]);
+
+  useEffect(() => {
+    if (phase !== 'postMarkers' || !episodeRow || postFormInitRef.current) {
+      return;
+    }
+    postFormInitRef.current = true;
+    const suggestInitialAbs =
+      episodeRow.episode_type === 'ABS' ||
+      (episodeRow.episode_type === 'Other' && bacSuggestAbs);
+    setPostEpisodeKind(suggestInitialAbs ? 'ABS' : 'Other');
+    setPostLabel(episodeRow.episode_label ?? '');
+    setPostAdditional(episodeRow.additional_notes ?? '');
+    setPostNote(episodeRow.note ?? '');
+  }, [phase, episodeRow, bacSuggestAbs]);
 
   const supabase = useMemo(() => getMobileSupabaseClient(), []);
   /** Bumps when the screen unmounts or `load` deps change so stale async work does not setState. */
@@ -197,6 +234,8 @@ export function HealthMarkerPromptScreen() {
     setErrorMessage(null);
     setPersistFeedback(null);
     setPhase('prompting');
+    postFormInitRef.current = false;
+    setPostFeedback(null);
 
     const {
       data: { user },
@@ -230,6 +269,7 @@ export function HealthMarkerPromptScreen() {
       setStatus('error');
       return;
     }
+    setEpisodeRow(episode.data);
 
     const [presetLines, markerRows] = await Promise.all([
       listPresetHealthMarkersForPreset(supabase, markerPresetId),
@@ -258,12 +298,20 @@ export function HealthMarkerPromptScreen() {
     }
     setDrafts(nextDrafts);
 
+    // Initial hydrate / resume; values logged later in this session are picked up in
+    // enterPostMarkerPhaseAfterMarkers before the post-marker step.
+    setBacSuggestAbs(bacReadingSuggestsAbsEpisode(markerRows.data));
+
     const firstUnanswered = presetLines.data.findIndex((line) => {
       const row = findExistingMarkerForLine(markerRows.data, line);
       return row === null;
     });
     if (resume && firstUnanswered === -1) {
-      setPhase('complete');
+      if (episode.data?.post_marker_step_completed_at) {
+        setPhase('complete');
+      } else {
+        setPhase('postMarkers');
+      }
     } else if (resume && firstUnanswered >= 0) {
       setActiveIndex(firstUnanswered);
     } else {
@@ -361,12 +409,33 @@ export function HealthMarkerPromptScreen() {
     return true;
   };
 
+  /**
+   * Re-reads saved episode markers so BAC suggestion reflects values logged during this session,
+   * then moves to the post–marker episode details step.
+   */
+  const enterPostMarkerPhaseAfterMarkers = useCallback(async () => {
+    const markerRows = await listEpisodeHealthMarkersForEpisode(
+      supabase,
+      episodeId,
+    );
+    if (markerRows.ok) {
+      setBacSuggestAbs(bacReadingSuggestsAbsEpisode(markerRows.data));
+    }
+    setPhase('postMarkers');
+  }, [episodeId, supabase]);
+
   const goNext = async () => {
     if (saving) {
       return;
     }
     if (!currentLine) {
-      setPhase('complete');
+      await enterPostMarkerPhaseAfterMarkers();
+      await announce(
+        lines.length === 0
+          ? 'No preset health markers to log. Continue to episode details.'
+          : 'Health marker list complete.',
+        { politeness: 'polite' },
+      );
       return;
     }
     const saved = await saveCurrentLine();
@@ -374,7 +443,7 @@ export function HealthMarkerPromptScreen() {
       return;
     }
     if (activeIndex >= lines.length - 1) {
-      setPhase('complete');
+      await enterPostMarkerPhaseAfterMarkers();
       await announce('Health marker list complete.', { politeness: 'polite' });
       return;
     }
@@ -386,11 +455,36 @@ export function HealthMarkerPromptScreen() {
       return;
     }
     if (activeIndex >= lines.length - 1) {
-      setPhase('complete');
+      await enterPostMarkerPhaseAfterMarkers();
       await announce('Health marker list complete.', { politeness: 'polite' });
       return;
     }
     setActiveIndex((prev) => prev + 1);
+  };
+
+  const onSubmitPostMarkers = async () => {
+    if (savingPost) {
+      return;
+    }
+    setSavingPost(true);
+    setPostFeedback(null);
+    const completedAt = new Date().toISOString();
+    const result = await completeEpisodePostMarkerStep(supabase, episodeId, {
+      episode_type: postEpisodeKind,
+      episode_label: trimToNull(postLabel),
+      additional_notes: trimToNull(postAdditional),
+      note: trimToNull(postNote),
+      post_marker_step_completed_at: completedAt,
+    });
+    setSavingPost(false);
+    if (!result.ok) {
+      setPostFeedback(result.error.message);
+      await announce(result.error.message, { politeness: 'assertive' });
+      return;
+    }
+    setEpisodeRow(result.data);
+    setPhase('complete');
+    await announce('Episode details saved.', { politeness: 'polite' });
   };
 
   const onFinishToHome = () => {
@@ -464,9 +558,11 @@ export function HealthMarkerPromptScreen() {
           className={`text-[22px] font-semibold ${nw.textInk}`}
           maxFontSizeMultiplier={2}
         >
-          Episode health markers
+          {phase === 'postMarkers'
+            ? 'Episode details'
+            : 'Episode health markers'}
         </Text>
-        {persistFeedback ? (
+        {phase === 'prompting' && persistFeedback ? (
           <Text
             accessibilityLiveRegion="polite"
             className="text-sm text-amber-800 dark:text-amber-200"
@@ -484,8 +580,8 @@ export function HealthMarkerPromptScreen() {
               className={`text-base leading-relaxed ${nw.textInk}`}
               maxFontSizeMultiplier={2}
             >
-              You reached the end of your health marker list for this episode.
-              You can return home when you are ready.
+              Preset prompts and episode details for this episode are saved. You
+              can return home when you are ready.
             </Text>
             <Pressable
               accessibilityRole="button"
@@ -499,6 +595,185 @@ export function HealthMarkerPromptScreen() {
               </Text>
             </Pressable>
           </View>
+        ) : phase === 'postMarkers' ? (
+          <>
+            <ScrollView
+              className="flex-1"
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ paddingBottom: 24 }}
+            >
+              <Text
+                className={`mb-4 text-base leading-relaxed ${nw.textMuted}`}
+                maxFontSizeMultiplier={2}
+              >
+                Choose ABS or Other; other fields are optional.
+              </Text>
+              <Text
+                accessibilityRole="header"
+                className={`mb-2 text-lg font-semibold ${nw.textInk}`}
+                maxFontSizeMultiplier={2}
+              >
+                Episode type
+              </Text>
+              <View
+                accessibilityRole="radiogroup"
+                accessibilityLabel="Episode type"
+                className="mb-4 gap-3"
+              >
+                <Pressable
+                  accessibilityRole="radio"
+                  accessibilityLabel="ABS episode type"
+                  accessibilityState={{
+                    checked: postEpisodeKind === 'ABS',
+                    disabled: savingPost,
+                  }}
+                  onPress={() => {
+                    setPostEpisodeKind('ABS');
+                  }}
+                  disabled={savingPost}
+                  style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                  className={`w-full items-center justify-center rounded-xl border-2 px-3 py-4 dark:border-app-border-dark ${
+                    postEpisodeKind === 'ABS'
+                      ? 'border-red-700 bg-red-50 dark:border-red-500 dark:bg-red-950/40'
+                      : 'border-app-border bg-app-bg dark:bg-app-bg-dark'
+                  }`}
+                >
+                  <Text
+                    className={`text-center text-[17px] font-semibold ${nw.textInk}`}
+                    maxFontSizeMultiplier={2}
+                  >
+                    ABS
+                  </Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="radio"
+                  accessibilityLabel="Other episode type"
+                  accessibilityState={{
+                    checked: postEpisodeKind === 'Other',
+                    disabled: savingPost,
+                  }}
+                  onPress={() => {
+                    setPostEpisodeKind('Other');
+                  }}
+                  disabled={savingPost}
+                  style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                  className={`w-full items-center justify-center rounded-xl border-2 px-3 py-4 dark:border-app-border-dark ${
+                    postEpisodeKind === 'Other'
+                      ? 'border-red-700 bg-red-50 dark:border-red-500 dark:bg-red-950/40'
+                      : 'border-app-border bg-app-bg dark:bg-app-bg-dark'
+                  }`}
+                >
+                  <Text
+                    className={`text-center text-[17px] font-semibold ${nw.textInk}`}
+                    maxFontSizeMultiplier={2}
+                  >
+                    Other
+                  </Text>
+                </Pressable>
+              </View>
+              {bacSuggestAbs && postEpisodeKind === 'ABS' ? (
+                <Text
+                  className={`mb-4 text-sm ${nw.textMuted}`}
+                  accessibilityLiveRegion="polite"
+                  maxFontSizeMultiplier={2}
+                >
+                  Suggested as ABS because a BAC value above zero was logged.
+                  You can change this.
+                </Text>
+              ) : null}
+              <Text
+                accessibilityRole="text"
+                className={`mb-1 text-base font-medium ${nw.textInk}`}
+                maxFontSizeMultiplier={2}
+              >
+                Custom label (optional)
+              </Text>
+              <TextInput
+                editable={!savingPost}
+                accessibilityLabel="Custom episode label"
+                value={postLabel}
+                onChangeText={setPostLabel}
+                placeholder="Label"
+                placeholderTextColor={colors.inputPlaceholder}
+                className={`mb-4 min-h-[52px] rounded-xl border border-app-border bg-white px-4 py-3 text-[17px] text-app-ink dark:border-app-border-dark dark:bg-app-bg-dark ${nw.textInk}`}
+                maxFontSizeMultiplier={2}
+              />
+              <Text
+                accessibilityRole="text"
+                className={`mb-1 text-base font-medium ${nw.textInk}`}
+                maxFontSizeMultiplier={2}
+              >
+                Additional symptoms or markers (optional)
+              </Text>
+              <TextInput
+                editable={!savingPost}
+                accessibilityLabel="Additional symptoms or markers"
+                multiline
+                value={postAdditional}
+                onChangeText={setPostAdditional}
+                placeholder="Not in your presets"
+                placeholderTextColor={colors.inputPlaceholder}
+                className={`mb-4 min-h-[120px] rounded-xl border border-app-border bg-white p-4 text-[17px] text-app-ink dark:border-app-border-dark dark:bg-app-bg-dark ${nw.textInk}`}
+                maxFontSizeMultiplier={2}
+              />
+              <Text
+                accessibilityRole="text"
+                className={`mb-1 text-base font-medium ${nw.textInk}`}
+                maxFontSizeMultiplier={2}
+              >
+                Episode note (optional)
+              </Text>
+              <TextInput
+                editable={!savingPost}
+                accessibilityLabel="Episode note"
+                multiline
+                value={postNote}
+                onChangeText={setPostNote}
+                placeholder="General note"
+                placeholderTextColor={colors.inputPlaceholder}
+                className={`mb-4 min-h-[120px] rounded-xl border border-app-border bg-white p-4 text-[17px] text-app-ink dark:border-app-border-dark dark:bg-app-bg-dark ${nw.textInk}`}
+                maxFontSizeMultiplier={2}
+              />
+              {postFeedback ? (
+                <Text
+                  className="mb-2 text-sm text-red-700 dark:text-red-300"
+                  accessibilityLiveRegion="assertive"
+                  maxFontSizeMultiplier={2}
+                >
+                  {postFeedback}
+                </Text>
+              ) : null}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Save episode details"
+                accessibilityState={{ disabled: savingPost }}
+                disabled={savingPost}
+                onPress={() => {
+                  void onSubmitPostMarkers();
+                }}
+                style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                className="w-full items-center justify-center rounded-xl bg-red-700 px-3 py-4 active:opacity-90 dark:bg-red-600"
+              >
+                <Text className="text-center text-[17px] font-semibold text-white">
+                  {savingPost ? 'Saving…' : 'Save and continue'}
+                </Text>
+              </Pressable>
+            </ScrollView>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Cancel episode"
+              onPress={onCancelEpisodePress}
+              style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+              className="w-full items-center justify-center rounded-lg px-3 py-3 active:opacity-80"
+            >
+              <Text
+                className="text-sm font-medium text-red-700 dark:text-red-300"
+                maxFontSizeMultiplier={2}
+              >
+                Cancel episode
+              </Text>
+            </Pressable>
+          </>
         ) : (
           <>
             <AsyncScreenContainer
@@ -520,7 +795,9 @@ export function HealthMarkerPromptScreen() {
                   className={`mb-2 text-base font-medium ${nw.textMuted}`}
                   maxFontSizeMultiplier={2}
                 >
-                  Step {activeIndex + 1} of {Math.max(lines.length, 1)}
+                  {lines.length === 0
+                    ? 'Next: episode details (after this screen)'
+                    : `Step ${activeIndex + 1} of ${lines.length}`}
                 </Text>
 
                 {lines.length === 0 ? (
@@ -528,8 +805,9 @@ export function HealthMarkerPromptScreen() {
                     className={`text-base leading-relaxed ${nw.textInk}`}
                     maxFontSizeMultiplier={2}
                   >
-                    This episode&apos;s marker preset has no lines. You can
-                    return home.
+                    This preset has no health marker lines to log—that is normal
+                    for some templates. Use the button below to continue and add
+                    episode type, optional label, and notes.
                   </Text>
                 ) : currentLine ? (
                   <View className="gap-4">
@@ -652,7 +930,7 @@ export function HealthMarkerPromptScreen() {
                     accessibilityRole="button"
                     accessibilityLabel={
                       lines.length === 0
-                        ? 'Done'
+                        ? 'Continue to episode details'
                         : activeIndex >= lines.length - 1
                           ? 'Finish health marker list'
                           : 'Next health marker'
@@ -669,7 +947,7 @@ export function HealthMarkerPromptScreen() {
                       {saving
                         ? 'Saving…'
                         : lines.length === 0
-                          ? 'Done'
+                          ? 'Continue to episode details'
                           : activeIndex >= lines.length - 1
                             ? 'Finish'
                             : 'Next'}

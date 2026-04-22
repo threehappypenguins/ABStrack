@@ -1,8 +1,9 @@
 import { HealthMarkerPromptFlow } from '@/components/episode-flow/HealthMarkerPromptFlow';
 
 type PageProps = {
-  params: { episodeId: string };
-  searchParams: { resume?: string };
+  /** Next.js 16 passes dynamic route params as a Promise (await before use). */
+  params: Promise<{ episodeId: string }>;
+  searchParams: Promise<{ resume?: string }>;
 };
 
 /**
@@ -11,12 +12,12 @@ type PageProps = {
  * @param props - Route and query params.
  * @returns Marker prompt flow.
  */
-export default function EpisodeHealthMarkersPage({
+export default async function EpisodeHealthMarkersPage({
   params,
   searchParams,
 }: PageProps) {
-  const { episodeId } = params;
-  const { resume } = searchParams;
+  const { episodeId } = await params;
+  const { resume } = await searchParams;
   const resumeFromEntry =
     resume === '1' || resume === 'true' || resume === 'yes';
 

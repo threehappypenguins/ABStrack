@@ -79,8 +79,10 @@ export {
   listEpisodeTemplates,
   updateEpisodeTemplate,
 } from './lib/episode-template-data.js';
+export type { EpisodePostMarkerStepWrite } from './lib/episode-data.js';
 export {
   cancelActiveEpisodeById,
+  completeEpisodePostMarkerStep,
   createEpisode,
   deleteEpisodeById,
   endEpisodeIfStillActive,

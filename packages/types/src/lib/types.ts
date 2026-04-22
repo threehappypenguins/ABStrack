@@ -338,9 +338,16 @@ export interface EpisodeRow {
   health_marker_preset_id: Uuid | null;
   episode_type: EpisodeType;
   episode_label: string | null;
+  /**
+   * Optional free text for symptoms or markers not captured from presets (PRD §4 step 4).
+   * Distinct from the general `note` field.
+   */
+  additional_notes: string | null;
   note: string | null;
   started_at: IsoTimestamptz;
   ended_at: IsoTimestamptz | null;
+  /** Set when the user finishes the post–preset marker episode details step (resume UX). */
+  post_marker_step_completed_at: IsoTimestamptz | null;
   created_at: IsoTimestamptz;
   updated_at: IsoTimestamptz;
 }
@@ -351,8 +358,10 @@ export type EpisodeInsert = Pick<EpisodeRow, 'user_id' | 'started_at'> & {
   health_marker_preset_id?: Uuid | null;
   episode_type?: EpisodeType;
   episode_label?: string | null;
+  additional_notes?: string | null;
   note?: string | null;
   ended_at?: IsoTimestamptz | null;
+  post_marker_step_completed_at?: IsoTimestamptz | null;
 };
 
 export type EpisodeUpdate = Partial<
@@ -362,9 +371,11 @@ export type EpisodeUpdate = Partial<
     | 'health_marker_preset_id'
     | 'episode_type'
     | 'episode_label'
+    | 'additional_notes'
     | 'note'
     | 'started_at'
     | 'ended_at'
+    | 'post_marker_step_completed_at'
   >
 >;
 
