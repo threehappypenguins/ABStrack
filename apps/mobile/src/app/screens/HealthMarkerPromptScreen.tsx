@@ -438,7 +438,10 @@ export function HealthMarkerPromptScreen() {
   const continueToFoodDiary =
     lines.length === 0 || activeIndex >= lines.length - 1;
   const foodDiaryContinueDisabled =
-    savingFoodDiary || deletingFoodEntryId != null || foodEntriesLoading;
+    savingFoodDiary ||
+    deletingFoodEntryId != null ||
+    foodEntriesLoading ||
+    foodEntriesError != null;
 
   const onUpdateDraft = (patch: Partial<MarkerDraft>) => {
     if (!currentLine) {
@@ -1230,13 +1233,33 @@ export function HealthMarkerPromptScreen() {
                 </Text>
               ) : null}
               {foodEntriesError ? (
-                <Text
-                  className={`mb-2 text-sm ${nw.textError}`}
-                  accessibilityLiveRegion="assertive"
-                  maxFontSizeMultiplier={2}
-                >
-                  {foodEntriesError}
-                </Text>
+                <View className="mb-3">
+                  <Text
+                    className={`mb-2 text-sm ${nw.textError}`}
+                    accessibilityLiveRegion="assertive"
+                    maxFontSizeMultiplier={2}
+                  >
+                    {foodEntriesError}
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Try again to load food diary entries"
+                    accessibilityState={{ disabled: foodEntriesLoading }}
+                    disabled={foodEntriesLoading}
+                    onPress={() => {
+                      void loadFoodEntries();
+                    }}
+                    style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                    className="w-full items-center justify-center rounded-lg border border-app-border px-3 py-3 active:opacity-80 disabled:opacity-50 dark:border-app-border-dark"
+                  >
+                    <Text
+                      className={`text-base font-medium ${nw.textInk}`}
+                      maxFontSizeMultiplier={2}
+                    >
+                      {foodEntriesLoading ? 'Retrying…' : 'Try again'}
+                    </Text>
+                  </Pressable>
+                </View>
               ) : null}
               {!foodEntriesLoading &&
               !foodEntriesError &&
@@ -1730,9 +1753,11 @@ export function HealthMarkerPromptScreen() {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={
-                  foodEntries.length === 0
-                    ? 'Skip food diary entry'
-                    : 'Continue after food diary'
+                  foodEntriesError != null
+                    ? 'Continue disabled until food entries load successfully'
+                    : foodEntries.length === 0
+                      ? 'Skip food diary entry'
+                      : 'Continue after food diary'
                 }
                 accessibilityState={{ disabled: foodDiaryContinueDisabled }}
                 disabled={foodDiaryContinueDisabled}

@@ -698,7 +698,12 @@ export function HealthMarkerPromptFlow({
   };
 
   const onContinueFromFoodDiary = () => {
-    if (foodSaving || deletingFoodEntryId != null || foodEntriesLoading) {
+    if (
+      foodSaving ||
+      deletingFoodEntryId != null ||
+      foodEntriesLoading ||
+      foodEntriesError != null
+    ) {
       return;
     }
     setFoodDiaryDecision(foodEntries.length > 0 ? 'saved' : 'skipped');
@@ -1132,12 +1137,24 @@ export function HealthMarkerPromptFlow({
               </p>
             ) : null}
             {foodEntriesError ? (
-              <p
-                className="text-sm text-red-700 dark:text-red-300"
-                role="alert"
-              >
-                {foodEntriesError}
-              </p>
+              <div className="space-y-2">
+                <p
+                  className="text-sm text-red-700 dark:text-red-300"
+                  role="alert"
+                >
+                  {foodEntriesError}
+                </p>
+                <button
+                  type="button"
+                  className="inline-flex min-h-[40px] items-center justify-center rounded-lg border border-app-border px-3 py-2 text-sm font-medium text-app-ink transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={foodEntriesLoading}
+                  onClick={() => {
+                    void loadFoodEntries();
+                  }}
+                >
+                  {foodEntriesLoading ? 'Retrying…' : 'Try again'}
+                </button>
+              </div>
             ) : null}
             {!foodEntriesLoading &&
             !foodEntriesError &&
@@ -1472,7 +1489,10 @@ export function HealthMarkerPromptFlow({
               className="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-red-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-60 dark:bg-red-600 dark:hover:bg-red-500"
               onClick={onContinueFromFoodDiary}
               disabled={
-                foodSaving || deletingFoodEntryId != null || foodEntriesLoading
+                foodSaving ||
+                deletingFoodEntryId != null ||
+                foodEntriesLoading ||
+                foodEntriesError != null
               }
             >
               {foodEntries.length > 0 ? 'Continue' : 'Skip for now'}
