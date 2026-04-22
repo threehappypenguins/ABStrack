@@ -226,11 +226,14 @@ export function HealthMarkerPromptFlow({
   const [foodEntriesError, setFoodEntriesError] = useState<string | null>(null);
   const [foodMealTag, setFoodMealTag] = useState<MealTag | null>(null);
   const [foodNote, setFoodNote] = useState('');
-  const [foodLoggedAtLocal, setFoodLoggedAtLocal] = useState(() =>
+  const initialFoodLoggedAtLocalRef = useRef(
     toLocalDateTimeInputValue(new Date().toISOString()),
   );
+  const [foodLoggedAtLocal, setFoodLoggedAtLocal] = useState(
+    initialFoodLoggedAtLocalRef.current,
+  );
   const [addFoodInitialLoggedAtLocal, setAddFoodInitialLoggedAtLocal] =
-    useState(() => toLocalDateTimeInputValue(new Date().toISOString()));
+    useState(initialFoodLoggedAtLocalRef.current);
   const [foodSaving, setFoodSaving] = useState(false);
   const [foodSaveError, setFoodSaveError] = useState<string | null>(null);
   const [editingFoodEntryId, setEditingFoodEntryId] = useState<string | null>(

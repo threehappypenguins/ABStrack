@@ -263,12 +263,22 @@ export function HealthMarkerPromptScreen() {
   const [postFeedback, setPostFeedback] = useState<string | null>(null);
   const [mealTag, setMealTag] = useState<MealTag | null>(null);
   const [foodNote, setFoodNote] = useState('');
-  const [foodLoggedDate, setFoodLoggedDate] = useState(currentLocalDate);
-  const [foodLoggedTime, setFoodLoggedTime] = useState(currentLocalTime);
-  const [addFoodInitialDate, setAddFoodInitialDate] =
-    useState(currentLocalDate);
-  const [addFoodInitialTime, setAddFoodInitialTime] =
-    useState(currentLocalTime);
+  const initialFoodDateTimeRef = useRef({
+    date: currentLocalDate(),
+    time: currentLocalTime(),
+  });
+  const [foodLoggedDate, setFoodLoggedDate] = useState(
+    initialFoodDateTimeRef.current.date,
+  );
+  const [foodLoggedTime, setFoodLoggedTime] = useState(
+    initialFoodDateTimeRef.current.time,
+  );
+  const [addFoodInitialDate, setAddFoodInitialDate] = useState(
+    initialFoodDateTimeRef.current.date,
+  );
+  const [addFoodInitialTime, setAddFoodInitialTime] = useState(
+    initialFoodDateTimeRef.current.time,
+  );
   const [foodEntries, setFoodEntries] = useState<FoodDiaryEntryRow[]>([]);
   const [foodEntriesLoading, setFoodEntriesLoading] = useState(false);
   const [foodEntriesError, setFoodEntriesError] = useState<string | null>(null);

@@ -1,5 +1,14 @@
 import React, { useMemo, useState } from 'react';
-import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import type { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import {
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import type { RouteProp } from '@react-navigation/native';
 import { useRoute } from '@react-navigation/native';
 import type { MealTag } from '@abstrack/types';
@@ -42,6 +51,14 @@ function localDateTimeToIso(datePart: string, timePart: string): string | null {
   return parsed.toISOString();
 }
 
+function localDateFromDate(value: Date): string {
+  return `${value.getFullYear()}-${pad2(value.getMonth() + 1)}-${pad2(value.getDate())}`;
+}
+
+function localTimeFromDate(value: Date): string {
+  return `${pad2(value.getHours())}:${pad2(value.getMinutes())}`;
+}
+
 /**
  * Standalone food diary creation screen (home entry point). Optional episode link can be supplied.
  *
@@ -56,9 +73,48 @@ export function FoodDiaryEntryScreen() {
   const [foodNote, setFoodNote] = useState('');
   const [loggedDate, setLoggedDate] = useState(currentLocalDate);
   const [loggedTime, setLoggedTime] = useState(currentLocalTime);
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
+  const [timePickerOpen, setTimePickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  const loggedAtValue = useMemo(() => {
+    const iso = localDateTimeToIso(loggedDate, loggedTime);
+    return iso ? new Date(iso) : new Date();
+  }, [loggedDate, loggedTime]);
+
+  const loggedDateLabel = useMemo(() => {
+    return loggedAtValue.toLocaleDateString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  }, [loggedAtValue]);
+
+  const loggedTimeLabel = useMemo(() => {
+    return loggedAtValue.toLocaleTimeString(undefined, {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
+  }, [loggedAtValue]);
+
+  const onDateChange = (_event: DateTimePickerEvent, selectedDate?: Date) => {
+    setDatePickerOpen(false);
+    if (!selectedDate) {
+      return;
+    }
+    setLoggedDate(localDateFromDate(selectedDate));
+  };
+
+  const onTimeChange = (_event: DateTimePickerEvent, selectedDate?: Date) => {
+    setTimePickerOpen(false);
+    if (!selectedDate) {
+      return;
+    }
+    setLoggedTime(localTimeFromDate(selectedDate));
+  };
 
   const onSave = async () => {
     if (saving) {
@@ -105,6 +161,8 @@ export function FoodDiaryEntryScreen() {
     setFoodNote('');
     setLoggedDate(currentLocalDate());
     setLoggedTime(currentLocalTime());
+    setDatePickerOpen(false);
+    setTimePickerOpen(false);
     setSuccessMessage(
       episodeId
         ? 'Food entry saved and linked to this episode.'
@@ -180,35 +238,51 @@ export function FoodDiaryEntryScreen() {
             className={`mb-1 text-base font-medium ${nw.textInk}`}
             maxFontSizeMultiplier={2}
           >
-            Logged date (YYYY-MM-DD)
+            Logged date
           </Text>
-          <TextInput
-            editable={!saving}
+          <Pressable
+            accessibilityRole="button"
             accessibilityLabel="Logged date"
-            value={loggedDate}
-            onChangeText={setLoggedDate}
-            placeholder="YYYY-MM-DD"
-            placeholderTextColor={colors.inputPlaceholder}
-            className={`mb-3 min-h-[52px] rounded-xl border border-app-border bg-white px-4 py-3 text-[17px] text-app-ink dark:border-app-border-dark dark:bg-app-bg-dark ${nw.textInk}`}
-            maxFontSizeMultiplier={2}
-          />
+            accessibilityState={{ disabled: saving }}
+            disabled={saving}
+            onPress={() => {
+              setDatePickerOpen(true);
+            }}
+            style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+            className="mb-3 items-center justify-center rounded-xl border border-app-border bg-white px-4 py-3 dark:border-app-border-dark dark:bg-app-bg-dark"
+          >
+            <Text
+              className={`text-[17px] ${nw.textInk}`}
+              maxFontSizeMultiplier={2}
+            >
+              {loggedDateLabel}
+            </Text>
+          </Pressable>
 
           <Text
             className={`mb-1 text-base font-medium ${nw.textInk}`}
             maxFontSizeMultiplier={2}
           >
-            Logged time (HH:MM)
+            Logged time
           </Text>
-          <TextInput
-            editable={!saving}
+          <Pressable
+            accessibilityRole="button"
             accessibilityLabel="Logged time"
-            value={loggedTime}
-            onChangeText={setLoggedTime}
-            placeholder="HH:MM"
-            placeholderTextColor={colors.inputPlaceholder}
-            className={`mb-4 min-h-[52px] rounded-xl border border-app-border bg-white px-4 py-3 text-[17px] text-app-ink dark:border-app-border-dark dark:bg-app-bg-dark ${nw.textInk}`}
-            maxFontSizeMultiplier={2}
-          />
+            accessibilityState={{ disabled: saving }}
+            disabled={saving}
+            onPress={() => {
+              setTimePickerOpen(true);
+            }}
+            style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+            className="mb-4 items-center justify-center rounded-xl border border-app-border bg-white px-4 py-3 dark:border-app-border-dark dark:bg-app-bg-dark"
+          >
+            <Text
+              className={`text-[17px] ${nw.textInk}`}
+              maxFontSizeMultiplier={2}
+            >
+              {loggedTimeLabel}
+            </Text>
+          </Pressable>
 
           <Text
             className={`mb-1 text-base font-medium ${nw.textInk}`}
@@ -265,6 +339,23 @@ export function FoodDiaryEntryScreen() {
             </Text>
           </Pressable>
         </ScrollView>
+        {datePickerOpen ? (
+          <DateTimePicker
+            value={loggedAtValue}
+            mode="date"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            onChange={onDateChange}
+          />
+        ) : null}
+        {timePickerOpen ? (
+          <DateTimePicker
+            value={loggedAtValue}
+            mode="time"
+            is24Hour={false}
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            onChange={onTimeChange}
+          />
+        ) : null}
       </View>
     </ScreenShell>
   );
