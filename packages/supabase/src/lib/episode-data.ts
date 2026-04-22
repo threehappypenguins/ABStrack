@@ -1,9 +1,4 @@
-import type {
-  EpisodeInsert,
-  EpisodeRow,
-  EpisodeType,
-  Uuid,
-} from '@abstrack/types';
+import type { EpisodeInsert, EpisodeRow, Uuid } from '@abstrack/types';
 import type { Database } from './database.types.js';
 import { toPresetDataError } from './preset-data-error.js';
 import type { PresetDataResult } from './preset-data.js';
@@ -13,17 +8,19 @@ import type { AbstrackSupabaseClient } from './supabase-client-type.js';
 type EpisodesTableUpdate = Database['public']['Tables']['episodes']['Update'];
 
 /**
- * Payload for {@link completeEpisodePostMarkerStep}. Matches PRD §4 fields on `public.episodes`.
- * The update is cast to generated `episodes.Update` at the client boundary so new columns type-check
- * after `supabase gen types` without hand-editing `database.types.ts`.
+ * Payload for {@link completeEpisodePostMarkerStep}: required subset of `episodes` columns for the
+ * post–health-marker details step, aligned with `Database['public']['Tables']['episodes']['Update']`.
  */
-export type EpisodePostMarkerStepWrite = {
-  episode_type: EpisodeType;
-  episode_label: string | null;
-  additional_notes: string | null;
-  note: string | null;
-  post_marker_step_completed_at: string;
-};
+export type EpisodePostMarkerStepWrite = Required<
+  Pick<
+    EpisodesTableUpdate,
+    | 'additional_notes'
+    | 'episode_label'
+    | 'episode_type'
+    | 'note'
+    | 'post_marker_step_completed_at'
+  >
+>;
 
 /**
  * Inserts a new episode row (patient or caretaker per RLS).
@@ -169,22 +166,6 @@ export async function endEpisodeIfStillActive(
 }
 
 /**
- * Permanently removes an episode only when it is still active (`ended_at IS NULL`). Use this for
- * "cancel active episode" UX; completed rows can be removed with {@link deleteEpisodeById}.
- *
- * Uses the same RLS as other `episodes` deletes. Data impact is driven by schema foreign keys:
- * - `episode_symptoms` rows for the episode are deleted (`ON DELETE CASCADE`).
- * - `health_markers` rows linked to the episode are deleted (`ON DELETE CASCADE`).
- * - `episode_media` metadata rows linked to the episode are deleted (`ON DELETE CASCADE`).
- * - `food_diary_entries` rows are kept, but `episode_id` is cleared (`ON DELETE SET NULL`).
- *
- * @param client - Supabase client (RLS applies).
- * @param episodeId - `episodes.id` to cancel.
- * @returns On success, `didCancel` is `true` when one active row was deleted. `didCancel` is
- * `false` when no active row matched: e.g. the episode was already ended, does not exist, or RLS
- * prevented visibility.
- */
-/**
  * Persists episode type, labels, notes, and completion of the post–health-marker step.
  * Updates only rows that are still active (`ended_at IS NULL`).
  *
@@ -199,7 +180,7 @@ export async function completeEpisodePostMarkerStep(
   fields: EpisodePostMarkerStepWrite,
 ): Promise<PresetDataResult<EpisodeRow>> {
   try {
-    const payload = fields as unknown as EpisodesTableUpdate;
+    const payload: EpisodesTableUpdate = fields;
     const { data, error } = await client
       .from('episodes')
       .update(payload)
@@ -226,6 +207,22 @@ export async function completeEpisodePostMarkerStep(
   }
 }
 
+/**
+ * Permanently removes an episode only when it is still active (`ended_at IS NULL`). Use this for
+ * "cancel active episode" UX; completed rows can be removed with {@link deleteEpisodeById}.
+ *
+ * Uses the same RLS as other `episodes` deletes. Data impact is driven by schema foreign keys:
+ * - `episode_symptoms` rows for the episode are deleted (`ON DELETE CASCADE`).
+ * - `health_markers` rows linked to the episode are deleted (`ON DELETE CASCADE`).
+ * - `episode_media` metadata rows linked to the episode are deleted (`ON DELETE CASCADE`).
+ * - `food_diary_entries` rows are kept, but `episode_id` is cleared (`ON DELETE SET NULL`).
+ *
+ * @param client - Supabase client (RLS applies).
+ * @param episodeId - `episodes.id` to cancel.
+ * @returns On success, `didCancel` is `true` when one active row was deleted. `didCancel` is
+ * `false` when no active row matched: e.g. the episode was already ended, does not exist, or RLS
+ * prevented visibility.
+ */
 export async function cancelActiveEpisodeById(
   client: AbstrackSupabaseClient,
   episodeId: Uuid,

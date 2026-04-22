@@ -298,6 +298,8 @@ export function HealthMarkerPromptScreen() {
     }
     setDrafts(nextDrafts);
 
+    // Initial hydrate / resume; values logged later in this session are picked up in
+    // enterPostMarkerPhaseAfterMarkers before the post-marker step.
     setBacSuggestAbs(bacReadingSuggestsAbsEpisode(markerRows.data));
 
     const firstUnanswered = presetLines.data.findIndex((line) => {
@@ -407,12 +409,27 @@ export function HealthMarkerPromptScreen() {
     return true;
   };
 
+  /**
+   * Re-reads saved episode markers so BAC suggestion reflects values logged during this session,
+   * then moves to the post–marker episode details step.
+   */
+  const enterPostMarkerPhaseAfterMarkers = useCallback(async () => {
+    const markerRows = await listEpisodeHealthMarkersForEpisode(
+      supabase,
+      episodeId,
+    );
+    if (markerRows.ok) {
+      setBacSuggestAbs(bacReadingSuggestsAbsEpisode(markerRows.data));
+    }
+    setPhase('postMarkers');
+  }, [episodeId, supabase]);
+
   const goNext = async () => {
     if (saving) {
       return;
     }
     if (!currentLine) {
-      setPhase('postMarkers');
+      await enterPostMarkerPhaseAfterMarkers();
       await announce('Health marker list complete.', { politeness: 'polite' });
       return;
     }
@@ -421,7 +438,7 @@ export function HealthMarkerPromptScreen() {
       return;
     }
     if (activeIndex >= lines.length - 1) {
-      setPhase('postMarkers');
+      await enterPostMarkerPhaseAfterMarkers();
       await announce('Health marker list complete.', { politeness: 'polite' });
       return;
     }
@@ -433,7 +450,7 @@ export function HealthMarkerPromptScreen() {
       return;
     }
     if (activeIndex >= lines.length - 1) {
-      setPhase('postMarkers');
+      await enterPostMarkerPhaseAfterMarkers();
       await announce('Health marker list complete.', { politeness: 'polite' });
       return;
     }

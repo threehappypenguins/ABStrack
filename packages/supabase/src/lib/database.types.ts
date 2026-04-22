@@ -241,6 +241,7 @@ export type Database = {
       }
       episodes: {
         Row: {
+          additional_notes: string | null
           created_at: string
           ended_at: string | null
           episode_label: string | null
@@ -248,12 +249,14 @@ export type Database = {
           health_marker_preset_id: string | null
           id: string
           note: string | null
+          post_marker_step_completed_at: string | null
           started_at: string
           symptom_preset_id: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
+          additional_notes?: string | null
           created_at?: string
           ended_at?: string | null
           episode_label?: string | null
@@ -261,12 +264,14 @@ export type Database = {
           health_marker_preset_id?: string | null
           id?: string
           note?: string | null
+          post_marker_step_completed_at?: string | null
           started_at: string
           symptom_preset_id?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
+          additional_notes?: string | null
           created_at?: string
           ended_at?: string | null
           episode_label?: string | null
@@ -274,6 +279,7 @@ export type Database = {
           health_marker_preset_id?: string | null
           id?: string
           note?: string | null
+          post_marker_step_completed_at?: string | null
           started_at?: string
           symptom_preset_id?: string | null
           updated_at?: string
