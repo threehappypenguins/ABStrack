@@ -670,6 +670,8 @@ export function HealthMarkerPromptScreen() {
     if (foodDiaryContinueDisabled) {
       return;
     }
+    setFoodDatePickerOpen(false);
+    setFoodTimePickerOpen(false);
     setFoodDiaryDecision(foodEntries.length > 0 ? 'saved' : 'skipped');
     setFoodDiaryFeedback(null);
     setPhase('postMarkers');
@@ -679,6 +681,8 @@ export function HealthMarkerPromptScreen() {
   };
 
   const onBackToHealthMarkersFromFoodDiary = async () => {
+    setFoodDatePickerOpen(false);
+    setFoodTimePickerOpen(false);
     setFoodDiaryFeedback(null);
     setPhase('prompting');
     await announce('Returned to health markers.', { politeness: 'polite' });
@@ -701,6 +705,8 @@ export function HealthMarkerPromptScreen() {
   }, [episodeId, episodeRow, navigation]);
 
   const onBackToFoodDiaryFromPostMarkers = async () => {
+    setFoodDatePickerOpen(false);
+    setFoodTimePickerOpen(false);
     setPostFeedback(null);
     setPhase('foodDiary');
     await announce('Returned to food diary.', { politeness: 'polite' });

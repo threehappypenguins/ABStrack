@@ -30,28 +30,52 @@ function normalizeOptionalIso(value: string | null | undefined): string | null {
   return new Date(time).toISOString();
 }
 
-function validateFoodDiaryPayload(
-  payload: Pick<FoodDiaryEntryInsert, 'meal_tag' | 'food_note' | 'logged_at'>,
-): PresetDataError | null {
+type FoodDiaryCreateCore = Pick<
+  FoodDiaryEntryInsert,
+  'meal_tag' | 'food_note' | 'logged_at'
+>;
+
+type ValidateCreateCoreResult =
+  | { ok: true; food_note: string; logged_at: string }
+  | { ok: false; error: PresetDataError };
+
+/**
+ * Validates meal tag / note / logged_at and returns normalized strings for insert
+ * (single pass — avoids re-parsing after validation).
+ */
+function validateAndNormalizeFoodDiaryCreateCore(
+  payload: FoodDiaryCreateCore,
+): ValidateCreateCoreResult {
   if (!isMealTag(payload.meal_tag)) {
-    return new PresetDataError(
-      'validation_error',
-      'Choose a valid meal tag (Breakfast, Lunch, Dinner, Snack, or Other).',
-    );
+    return {
+      ok: false,
+      error: new PresetDataError(
+        'validation_error',
+        'Choose a valid meal tag (Breakfast, Lunch, Dinner, Snack, or Other).',
+      ),
+    };
   }
-  if (!normalizeFoodNote(payload.food_note)) {
-    return new PresetDataError(
-      'validation_error',
-      'Enter what you ate or drank before saving.',
-    );
+  const foodNote = normalizeFoodNote(payload.food_note);
+  if (!foodNote) {
+    return {
+      ok: false,
+      error: new PresetDataError(
+        'validation_error',
+        'Enter what you ate or drank before saving.',
+      ),
+    };
   }
-  if (!normalizeOptionalIso(payload.logged_at)) {
-    return new PresetDataError(
-      'validation_error',
-      'Enter a valid date and time.',
-    );
+  const loggedAt = normalizeOptionalIso(payload.logged_at);
+  if (!loggedAt) {
+    return {
+      ok: false,
+      error: new PresetDataError(
+        'validation_error',
+        'Enter a valid date and time.',
+      ),
+    };
   }
-  return null;
+  return { ok: true, food_note: foodNote, logged_at: loggedAt };
 }
 
 /**
@@ -122,28 +146,17 @@ export async function createFoodDiaryEntry(
   client: AbstrackSupabaseClient,
   row: FoodDiaryEntryInsert,
 ): Promise<PresetDataResult<FoodDiaryEntryRow>> {
-  const validation = validateFoodDiaryPayload(row);
-  if (validation) {
-    return { ok: false, error: validation };
-  }
-  const loggedAt = normalizeOptionalIso(row.logged_at);
-  const foodNote = normalizeFoodNote(row.food_note);
-  if (!loggedAt || !foodNote) {
-    return {
-      ok: false,
-      error: new PresetDataError(
-        'validation_error',
-        'Invalid food diary entry.',
-      ),
-    };
+  const core = validateAndNormalizeFoodDiaryCreateCore(row);
+  if (!core.ok) {
+    return { ok: false, error: core.error };
   }
   return wrap(async () => {
     const r = await client
       .from('food_diary_entries')
       .insert({
         ...row,
-        food_note: foodNote,
-        logged_at: loggedAt,
+        food_note: core.food_note,
+        logged_at: core.logged_at,
       })
       .select('*')
       .single();
