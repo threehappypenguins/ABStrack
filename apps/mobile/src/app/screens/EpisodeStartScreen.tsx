@@ -15,6 +15,7 @@ import {
   fetchEpisodeTemplates,
   getCurrentUserId,
 } from '../../lib/episode-templates/episode-template-service';
+import { clearSymptomPromptSession } from '../../lib/episodes/symptom-prompt-session-store';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { saveEpisodeWithTemplatePresets } from '../../lib/episodes/episode-start-service';
 import { AsyncScreenContainer } from '../components/AsyncScreenContainer';
@@ -247,8 +248,18 @@ export function EpisodeStartScreen() {
 
   const onResumeActiveEpisode = useCallback(() => {
     const row = blockingActiveEpisode;
-    const presetId = row?.symptom_preset_id;
-    if (!row || typeof presetId !== 'string' || !presetId) {
+    if (!row) {
+      return;
+    }
+    if (row.post_marker_step_completed_at) {
+      navigation.replace('HealthMarkerPrompt', {
+        episodeId: row.id,
+        resume: true,
+      });
+      return;
+    }
+    const presetId = row.symptom_preset_id;
+    if (typeof presetId !== 'string' || !presetId) {
       return;
     }
     navigation.replace('SymptomPrompt', {
@@ -267,12 +278,18 @@ export function EpisodeStartScreen() {
     setEpisodeStartError(null);
     try {
       const supabase = getMobileSupabaseClient();
-      const end = await endEpisodeIfStillActive(supabase, row.id);
+      const end = await endEpisodeIfStillActive(
+        supabase,
+        row.id,
+        new Date().toISOString(),
+        row.started_at,
+      );
       if (!end.ok) {
         setEpisodeStartError(end.error.message);
         announce(end.error.message);
         return;
       }
+      clearSymptomPromptSession(row.id);
       // Reload start flow before any success announcement so UI matches server state; always await
       // `load` (fallback cancel token if focus ref is unset).
       await load(
@@ -300,8 +317,11 @@ export function EpisodeStartScreen() {
   }, [blockingActiveEpisode, load, resolvingActiveGate]);
 
   const gatePresetId = blockingActiveEpisode?.symptom_preset_id;
+  const gateAtEndStep =
+    blockingActiveEpisode?.post_marker_step_completed_at != null;
   const canResumeFromGate =
-    typeof gatePresetId === 'string' && gatePresetId.length > 0;
+    gateAtEndStep ||
+    (typeof gatePresetId === 'string' && gatePresetId.length > 0);
 
   return (
     <ScreenShell contentAlign="stretch">
@@ -349,7 +369,7 @@ export function EpisodeStartScreen() {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Continue this episode"
-                accessibilityHint="Opens your in-progress episode at the next symptom step"
+                accessibilityHint="Opens your in-progress episode at the next step"
                 accessibilityState={{ disabled: resolvingActiveGate }}
                 disabled={resolvingActiveGate}
                 onPress={onResumeActiveEpisode}

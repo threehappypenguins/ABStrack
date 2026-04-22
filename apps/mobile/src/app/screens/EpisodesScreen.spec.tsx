@@ -192,6 +192,28 @@ describe('EpisodesScreen', () => {
     });
   });
 
+  it('navigates to HealthMarkerPrompt when episode is at end step', async () => {
+    const active = makeEpisodeRow({
+      id: 'ep-end-step',
+      symptom_preset_id: null,
+      post_marker_step_completed_at: '2026-04-20T12:00:00.000Z',
+    });
+    jest.mocked(getActiveEpisodeForUser).mockResolvedValue({
+      ok: true,
+      data: active,
+    });
+
+    render(<EpisodesScreen />);
+
+    expect(await screen.findByLabelText('Resume this episode')).toBeTruthy();
+    fireEvent.press(screen.getByLabelText('Resume this episode'));
+
+    expect(mockNavigate).toHaveBeenCalledWith('HealthMarkerPrompt', {
+      episodeId: 'ep-end-step',
+      resume: true,
+    });
+  });
+
   it('renders recent ended episodes when list returns rows', async () => {
     const ended = makeEpisodeRow({
       id: 'ep-ended',

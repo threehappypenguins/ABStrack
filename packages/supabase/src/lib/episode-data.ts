@@ -149,6 +149,7 @@ export async function listCompletedEpisodesForUser(
  * @param client - Supabase client (RLS applies).
  * @param episodeId - `episodes.id` to close.
  * @param endedAt - Timestamp for `ended_at` (defaults to now, ISO string).
+ * @param startedAt - Optional `started_at` floor; when provided and parseable, `ended_at` is clamped so it is not earlier.
  * @returns On success, `didEnd` is `true` if exactly one active row was updated. `didEnd` is
  * `false` when the update matched no rows: e.g. the episode was already ended, `episodeId` does
  * not exist, or RLS hid the row from the update. Callers must not treat `didEnd: false` as proof
@@ -158,11 +159,22 @@ export async function endEpisodeIfStillActive(
   client: AbstrackSupabaseClient,
   episodeId: Uuid,
   endedAt: string = new Date().toISOString(),
+  startedAt?: string,
 ): Promise<PresetDataResult<{ didEnd: boolean }>> {
   try {
+    const startedAtMs =
+      typeof startedAt === 'string' ? Date.parse(startedAt) : Number.NaN;
+    const endedAtMs = Date.parse(endedAt);
+    const safeEndedAt =
+      typeof startedAt === 'string' &&
+      Number.isFinite(startedAtMs) &&
+      Number.isFinite(endedAtMs) &&
+      endedAtMs < startedAtMs
+        ? startedAt
+        : endedAt;
     const { data, error } = await client
       .from('episodes')
-      .update({ ended_at: endedAt })
+      .update({ ended_at: safeEndedAt })
       .eq('id', episodeId)
       .is('ended_at', null)
       .select('id')

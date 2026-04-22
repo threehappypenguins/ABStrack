@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { deleteEpisodeById } from '@abstrack/supabase';
-import type { EpisodeRow } from '@abstrack/types';
+import { formatEpisodeDurationSimple, type EpisodeRow } from '@abstrack/types';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
 import { formatEpisodeTypeSummary } from '@/lib/episodes/format-episode-meta';
@@ -87,6 +87,13 @@ export function RecentEpisodesList({ episodes }: RecentEpisodesListProps) {
                     ) : (
                       '—'
                     )}
+                  </dd>
+                </div>
+                <div className="flex flex-wrap gap-x-2">
+                  <dt className="font-medium text-app-ink/80">Duration</dt>
+                  <dd>
+                    {formatEpisodeDurationSimple(ep.started_at, ep.ended_at) ??
+                      '—'}
                   </dd>
                 </div>
               </dl>

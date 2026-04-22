@@ -15,6 +15,7 @@ import {
 } from '@abstrack/supabase';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
 import { buildResumeEpisodeHref } from '@/lib/episode-flow/resume-episode-href';
+import { clearSymptomPromptSession } from '@/lib/episode-flow/symptom-prompt-session-store';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
 import { useAuth } from '@/lib/auth-provider';
 import { PageLoading } from '@/components/page-states/PageLoading';
@@ -150,12 +151,15 @@ export function EpisodeStartFlow() {
       const end = await endEpisodeIfStillActive(
         supabase,
         blockingActiveEpisode.id,
+        new Date().toISOString(),
+        blockingActiveEpisode.started_at,
       );
       if (!end.ok) {
         setSubmitError(end.error.message);
         announce(end.error.message, { politeness: 'assertive' });
         return;
       }
+      clearSymptomPromptSession(blockingActiveEpisode.id);
       await refresh();
       if (!end.data.didEnd) {
         return;
@@ -246,7 +250,10 @@ export function EpisodeStartFlow() {
 
   if (blockingActiveEpisode) {
     const presetId = blockingActiveEpisode.symptom_preset_id;
-    const canResume = typeof presetId === 'string' && presetId.length > 0;
+    const isAtEndStep =
+      blockingActiveEpisode.post_marker_step_completed_at != null;
+    const canResume =
+      isAtEndStep || (typeof presetId === 'string' && presetId.length > 0);
     const gateStatusId = `episode-start-active-gate-status${groupLegendId}`;
     const primaryLinkClass =
       'inline-flex min-h-[56px] w-full items-center justify-center rounded-xl bg-red-700 px-5 py-4 text-center text-base font-semibold leading-snug text-white shadow-md outline-none ring-2 ring-transparent transition hover:bg-red-800 focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-red-50 dark:bg-red-600 dark:hover:bg-red-500 dark:focus-visible:ring-offset-red-950';
@@ -288,7 +295,9 @@ export function EpisodeStartFlow() {
         <div className="flex flex-col gap-3 sm:max-w-md">
           {canResume ? (
             <Link
-              href={buildResumeEpisodeHref(blockingActiveEpisode.id, presetId)}
+              href={buildResumeEpisodeHref(blockingActiveEpisode.id, presetId, {
+                toHealthMarkers: isAtEndStep,
+              })}
               className={primaryLinkClass}
               aria-describedby={gateStatusId}
             >

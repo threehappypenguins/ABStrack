@@ -2,7 +2,7 @@ import React, { useCallback, useRef, useState } from 'react';
 import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { EpisodeRow } from '@abstrack/types';
+import { formatEpisodeDurationSimple, type EpisodeRow } from '@abstrack/types';
 import { announce } from '@abstrack/ui/native';
 import {
   cancelActiveEpisodeById,
@@ -14,7 +14,6 @@ import { clearSymptomPromptSession } from '../../lib/episodes/symptom-prompt-ses
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { ScreenShell } from '../components/ScreenShell';
 import type { MainStackParamList } from '../navigation/types';
-import type { ActiveEpisodeHomeSummary } from '../components/episode-flow/EpisodeStartHomeCta';
 import { nw } from '../theme/app-nativewind-classes';
 
 type EpisodesNav = NativeStackNavigationProp<MainStackParamList, 'Episodes'>;
@@ -128,10 +127,20 @@ export function EpisodesScreen() {
     }, [load]),
   );
 
-  const onResume = (episode: ActiveEpisodeHomeSummary) => {
+  const onResume = (episode: EpisodeRow) => {
+    if (episode.post_marker_step_completed_at) {
+      navigation.navigate('HealthMarkerPrompt', {
+        episodeId: episode.id,
+        resume: true,
+      });
+      return;
+    }
+    if (!episode.symptom_preset_id) {
+      return;
+    }
     navigation.navigate('SymptomPrompt', {
-      episodeId: episode.episodeId,
-      symptomPresetId: episode.symptomPresetId,
+      episodeId: episode.id,
+      symptomPresetId: episode.symptom_preset_id,
       resume: true,
     });
   };
@@ -231,14 +240,6 @@ export function EpisodesScreen() {
     [deletingEpisodeId, load],
   );
 
-  const resumeSummary: ActiveEpisodeHomeSummary | null =
-    active && active.symptom_preset_id
-      ? {
-          episodeId: active.id,
-          symptomPresetId: active.symptom_preset_id,
-        }
-      : null;
-
   return (
     <ScreenShell contentAlign="stretch">
       <ScrollView
@@ -311,11 +312,12 @@ export function EpisodesScreen() {
               >
                 Ended —
               </Text>
-              {resumeSummary ? (
+              {active.post_marker_step_completed_at ||
+              active.symptom_preset_id ? (
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="Resume this episode"
-                  onPress={() => onResume(resumeSummary)}
+                  onPress={() => onResume(active)}
                   className={`mt-2 min-h-[52px] items-center justify-center rounded-xl bg-emerald-700 px-4 py-3 dark:bg-emerald-600`}
                 >
                   <Text className="text-center text-[17px] font-semibold text-white">
@@ -397,6 +399,11 @@ export function EpisodesScreen() {
                   </Text>
                   <Text className={`text-sm ${nw.textMuted}`}>
                     Ended {ep.ended_at ? formatInstant(ep.ended_at) : '—'}
+                  </Text>
+                  <Text className={`text-sm ${nw.textMuted}`}>
+                    Duration{' '}
+                    {formatEpisodeDurationSimple(ep.started_at, ep.ended_at) ??
+                      '—'}
                   </Text>
                   <Pressable
                     accessibilityRole="button"
