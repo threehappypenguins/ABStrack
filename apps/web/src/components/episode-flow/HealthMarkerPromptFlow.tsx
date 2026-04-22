@@ -412,7 +412,12 @@ export function HealthMarkerPromptFlow({
     }
     if (!currentLine) {
       await enterPostMarkerPhaseAfterMarkers();
-      announce('Health marker list complete.', { politeness: 'polite' });
+      announce(
+        lines.length === 0
+          ? 'No preset health markers to log. Continue to episode details.'
+          : 'Health marker list complete.',
+        { politeness: 'polite' },
+      );
       return;
     }
     const saved = await saveCurrentLine();
@@ -703,7 +708,9 @@ export function HealthMarkerPromptFlow({
             Episode health markers
           </h1>
           <p className="mt-2 text-base font-medium text-app-muted">
-            Step {activeIndex + 1} of {Math.max(lines.length, 1)}
+            {lines.length === 0
+              ? 'Next: episode details (after this screen)'
+              : `Step ${activeIndex + 1} of ${lines.length}`}
           </p>
           {persistFeedback ? (
             <p
@@ -723,8 +730,9 @@ export function HealthMarkerPromptFlow({
             role="status"
           >
             <p className="text-sm leading-relaxed text-app-ink">
-              This episode&apos;s marker preset has no lines. You can return to
-              the dashboard.
+              This preset has no health marker lines to log—that is normal for
+              some templates. Use Continue to episode details to add episode
+              type, optional label, and notes.
             </p>
           </div>
         ) : currentLine ? (
@@ -841,11 +849,18 @@ export function HealthMarkerPromptFlow({
               void goNext();
             }}
             disabled={saving}
+            aria-label={
+              lines.length === 0
+                ? 'Continue to episode details'
+                : activeIndex >= lines.length - 1
+                  ? 'Finish health marker list'
+                  : 'Next health marker'
+            }
           >
             {saving
               ? 'Saving…'
               : lines.length === 0
-                ? 'Done'
+                ? 'Continue to episode details'
                 : activeIndex >= lines.length - 1
                   ? 'Finish'
                   : 'Next'}

@@ -1,6 +1,6 @@
 import type { EpisodeInsert, EpisodeRow, Uuid } from '@abstrack/types';
 import type { Database } from './database.types.js';
-import { toPresetDataError } from './preset-data-error.js';
+import { PresetDataError, toPresetDataError } from './preset-data-error.js';
 import type { PresetDataResult } from './preset-data.js';
 import { wrap } from './preset-data.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
@@ -194,10 +194,9 @@ export async function completeEpisodePostMarkerStep(
     if (!data) {
       return {
         ok: false,
-        error: toPresetDataError(
-          new Error(
-            'Could not save episode details (episode may be missing or already ended).',
-          ),
+        error: new PresetDataError(
+          'not_found',
+          'Could not save episode details. This episode may be missing, already ended, or no longer available.',
         ),
       };
     }

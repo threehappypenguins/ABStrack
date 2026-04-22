@@ -430,7 +430,12 @@ export function HealthMarkerPromptScreen() {
     }
     if (!currentLine) {
       await enterPostMarkerPhaseAfterMarkers();
-      await announce('Health marker list complete.', { politeness: 'polite' });
+      await announce(
+        lines.length === 0
+          ? 'No preset health markers to log. Continue to episode details.'
+          : 'Health marker list complete.',
+        { politeness: 'polite' },
+      );
       return;
     }
     const saved = await saveCurrentLine();
@@ -780,7 +785,9 @@ export function HealthMarkerPromptScreen() {
                   className={`mb-2 text-base font-medium ${nw.textMuted}`}
                   maxFontSizeMultiplier={2}
                 >
-                  Step {activeIndex + 1} of {Math.max(lines.length, 1)}
+                  {lines.length === 0
+                    ? 'Next: episode details (after this screen)'
+                    : `Step ${activeIndex + 1} of ${lines.length}`}
                 </Text>
 
                 {lines.length === 0 ? (
@@ -788,8 +795,9 @@ export function HealthMarkerPromptScreen() {
                     className={`text-base leading-relaxed ${nw.textInk}`}
                     maxFontSizeMultiplier={2}
                   >
-                    This episode&apos;s marker preset has no lines. You can
-                    return home.
+                    This preset has no health marker lines to log—that is normal
+                    for some templates. Use the button below to continue and add
+                    episode type, optional label, and notes.
                   </Text>
                 ) : currentLine ? (
                   <View className="gap-4">
@@ -912,7 +920,7 @@ export function HealthMarkerPromptScreen() {
                     accessibilityRole="button"
                     accessibilityLabel={
                       lines.length === 0
-                        ? 'Done'
+                        ? 'Continue to episode details'
                         : activeIndex >= lines.length - 1
                           ? 'Finish health marker list'
                           : 'Next health marker'
@@ -929,7 +937,7 @@ export function HealthMarkerPromptScreen() {
                       {saving
                         ? 'Saving…'
                         : lines.length === 0
-                          ? 'Done'
+                          ? 'Continue to episode details'
                           : activeIndex >= lines.length - 1
                             ? 'Finish'
                             : 'Next'}

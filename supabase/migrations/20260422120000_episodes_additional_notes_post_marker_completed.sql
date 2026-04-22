@@ -2,8 +2,8 @@
 -- episode note (PRD §4), and record completion of the post–health-marker step for resume UX.
 
 ALTER TABLE public.episodes
-  ADD COLUMN additional_notes text,
-  ADD COLUMN post_marker_step_completed_at timestamptz;
+  ADD COLUMN IF NOT EXISTS additional_notes text,
+  ADD COLUMN IF NOT EXISTS post_marker_step_completed_at timestamptz;
 
 COMMENT ON COLUMN public.episodes.additional_notes IS 'Optional free text for symptoms or health markers not in the user''s presets, after preset prompts (PRD §4 step 4).';
 
