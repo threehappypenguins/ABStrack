@@ -581,6 +581,7 @@ export function HealthMarkerPromptFlow({
         announce(result.error.message, { politeness: 'assertive' });
         return false;
       }
+      clearSymptomPromptSession(episodeId);
       if (result.data.didCancel) {
         announce('Episode canceled. Resume is no longer available.', {
           politeness: 'polite',

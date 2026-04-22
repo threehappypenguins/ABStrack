@@ -67,6 +67,11 @@ function navigateFromHomeTabToSymptomPromptResume(
     });
     return;
   }
+  if (!episode.symptomPresetId) {
+    throw new Error(
+      'MainTabNavigator: expected symptom preset id for symptom resume.',
+    );
+  }
   stackNavigation.navigate('SymptomPrompt', {
     episodeId: episode.episodeId,
     symptomPresetId: episode.symptomPresetId,

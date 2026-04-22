@@ -3,15 +3,24 @@ import { Platform, Pressable, Text, View } from 'react-native';
 import { announce } from '@abstrack/ui/native';
 import { nw } from '../../theme/app-nativewind-classes';
 
-/** Active episode with the symptom preset needed to resume the prompt flow. */
-export type ActiveEpisodeHomeSummary = {
-  episodeId: string;
-  symptomPresetId: string;
-  /**
-   * When true, resume should open health markers directly (episode is at explicit end step).
-   */
-  resumeAtHealthMarkers?: boolean;
-};
+/**
+ * Active episode resume summary for the home CTA.
+ *
+ * - `resumeAtHealthMarkers: true` means the episode is at the explicit end step; symptom preset is
+ *   optional/irrelevant for this resume path.
+ * - Otherwise, resume enters symptom prompts and requires `symptomPresetId`.
+ */
+export type ActiveEpisodeHomeSummary =
+  | {
+      episodeId: string;
+      resumeAtHealthMarkers: true;
+      symptomPresetId?: string | null;
+    }
+  | {
+      episodeId: string;
+      resumeAtHealthMarkers?: false;
+      symptomPresetId: string;
+    };
 
 export type EpisodeStartHomeCtaProps = {
   /** Invoked when the user starts the episode flow (no active episode). */
@@ -116,7 +125,7 @@ export function EpisodeStartHomeCta({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Continue this episode"
-          accessibilityHint="Opens your in-progress episode at the next symptom step"
+          accessibilityHint="Opens your in-progress episode at the next step"
           accessibilityState={{ disabled: false }}
           onPress={() => onResumeEpisode(activeEpisode)}
           className="min-h-[56px] items-center justify-center rounded-xl bg-red-700 px-4 py-4 active:opacity-90 dark:bg-red-600"

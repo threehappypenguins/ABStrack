@@ -74,15 +74,29 @@ export function HomeScreen({
         if (stale()) {
           return;
         }
-        if (!result.ok || !result.data?.symptom_preset_id) {
+        if (!result.ok || !result.data) {
           setActiveEpisode(null);
+          return;
+        }
+        const hasSymptomResumePath = !!result.data.symptom_preset_id;
+        const hasEndStepResumePath =
+          result.data.post_marker_step_completed_at != null;
+        if (!hasSymptomResumePath && !hasEndStepResumePath) {
+          setActiveEpisode(null);
+          return;
+        }
+        if (hasEndStepResumePath) {
+          setActiveEpisode({
+            episodeId: result.data.id,
+            resumeAtHealthMarkers: true,
+            symptomPresetId: result.data.symptom_preset_id,
+          });
           return;
         }
         setActiveEpisode({
           episodeId: result.data.id,
-          symptomPresetId: result.data.symptom_preset_id,
-          resumeAtHealthMarkers:
-            result.data.post_marker_step_completed_at != null,
+          symptomPresetId: result.data.symptom_preset_id as string,
+          resumeAtHealthMarkers: false,
         });
       } catch {
         if (!stale()) {

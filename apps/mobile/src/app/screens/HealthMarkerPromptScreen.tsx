@@ -635,6 +635,7 @@ export function HealthMarkerPromptScreen() {
                   });
                   return;
                 }
+                clearSymptomPromptSession(episodeId);
                 if (result.data.didCancel) {
                   await announce(
                     'Episode canceled. Resume is no longer available.',

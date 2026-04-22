@@ -248,8 +248,18 @@ export function EpisodeStartScreen() {
 
   const onResumeActiveEpisode = useCallback(() => {
     const row = blockingActiveEpisode;
-    const presetId = row?.symptom_preset_id;
-    if (!row || typeof presetId !== 'string' || !presetId) {
+    if (!row) {
+      return;
+    }
+    if (row.post_marker_step_completed_at) {
+      navigation.replace('HealthMarkerPrompt', {
+        episodeId: row.id,
+        resume: true,
+      });
+      return;
+    }
+    const presetId = row.symptom_preset_id;
+    if (typeof presetId !== 'string' || !presetId) {
       return;
     }
     navigation.replace('SymptomPrompt', {
@@ -307,8 +317,11 @@ export function EpisodeStartScreen() {
   }, [blockingActiveEpisode, load, resolvingActiveGate]);
 
   const gatePresetId = blockingActiveEpisode?.symptom_preset_id;
+  const gateAtEndStep =
+    blockingActiveEpisode?.post_marker_step_completed_at != null;
   const canResumeFromGate =
-    typeof gatePresetId === 'string' && gatePresetId.length > 0;
+    gateAtEndStep ||
+    (typeof gatePresetId === 'string' && gatePresetId.length > 0);
 
   return (
     <ScreenShell contentAlign="stretch">
@@ -356,7 +369,7 @@ export function EpisodeStartScreen() {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Continue this episode"
-                accessibilityHint="Opens your in-progress episode at the next symptom step"
+                accessibilityHint="Opens your in-progress episode at the next step"
                 accessibilityState={{ disabled: resolvingActiveGate }}
                 disabled={resolvingActiveGate}
                 onPress={onResumeActiveEpisode}
