@@ -1,8 +1,29 @@
-import type { EpisodeInsert, EpisodeRow, Uuid } from '@abstrack/types';
+import type {
+  EpisodeInsert,
+  EpisodeRow,
+  EpisodeType,
+  Uuid,
+} from '@abstrack/types';
+import type { Database } from './database.types.js';
 import { toPresetDataError } from './preset-data-error.js';
 import type { PresetDataResult } from './preset-data.js';
 import { wrap } from './preset-data.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
+
+type EpisodesTableUpdate = Database['public']['Tables']['episodes']['Update'];
+
+/**
+ * Payload for {@link completeEpisodePostMarkerStep}. Matches PRD §4 fields on `public.episodes`.
+ * The update is cast to generated `episodes.Update` at the client boundary so new columns type-check
+ * after `supabase gen types` without hand-editing `database.types.ts`.
+ */
+export type EpisodePostMarkerStepWrite = {
+  episode_type: EpisodeType;
+  episode_label: string | null;
+  additional_notes: string | null;
+  note: string | null;
+  post_marker_step_completed_at: string;
+};
 
 /**
  * Inserts a new episode row (patient or caretaker per RLS).
@@ -163,6 +184,48 @@ export async function endEpisodeIfStillActive(
  * `false` when no active row matched: e.g. the episode was already ended, does not exist, or RLS
  * prevented visibility.
  */
+/**
+ * Persists episode type, labels, notes, and completion of the post–health-marker step.
+ * Updates only rows that are still active (`ended_at IS NULL`).
+ *
+ * @param client - Supabase client (RLS applies).
+ * @param episodeId - Target episode id.
+ * @param fields - Episode fields to write; `post_marker_step_completed_at` should be set when the user finishes this step.
+ * @returns Updated row, or an error when the update matches no visible row.
+ */
+export async function completeEpisodePostMarkerStep(
+  client: AbstrackSupabaseClient,
+  episodeId: Uuid,
+  fields: EpisodePostMarkerStepWrite,
+): Promise<PresetDataResult<EpisodeRow>> {
+  try {
+    const payload = fields as unknown as EpisodesTableUpdate;
+    const { data, error } = await client
+      .from('episodes')
+      .update(payload)
+      .eq('id', episodeId)
+      .is('ended_at', null)
+      .select('*')
+      .maybeSingle();
+    if (error) {
+      return { ok: false, error: toPresetDataError(error) };
+    }
+    if (!data) {
+      return {
+        ok: false,
+        error: toPresetDataError(
+          new Error(
+            'Could not save episode details (episode may be missing or already ended).',
+          ),
+        ),
+      };
+    }
+    return { ok: true, data: data as EpisodeRow };
+  } catch (caught) {
+    return { ok: false, error: toPresetDataError(caught) };
+  }
+}
+
 export async function cancelActiveEpisodeById(
   client: AbstrackSupabaseClient,
   episodeId: Uuid,

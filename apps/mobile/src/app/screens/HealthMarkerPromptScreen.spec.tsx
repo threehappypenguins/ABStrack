@@ -4,6 +4,7 @@ import { DefaultTheme } from '@react-navigation/native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import {
   cancelActiveEpisodeById,
+  completeEpisodePostMarkerStep,
   getEpisodeById,
   listEpisodeHealthMarkersForEpisode,
   listPresetHealthMarkersForPreset,
@@ -23,6 +24,7 @@ jest.mock('@react-navigation/native', () => ({
 
 jest.mock('@abstrack/supabase', () => ({
   cancelActiveEpisodeById: jest.fn(),
+  completeEpisodePostMarkerStep: jest.fn(),
   getEpisodeById: jest.fn(),
   listEpisodeHealthMarkersForEpisode: jest.fn(),
   listPresetHealthMarkersForPreset: jest.fn(),
@@ -115,9 +117,11 @@ describe('HealthMarkerPromptScreen', () => {
         health_marker_preset_id: markerPresetId,
         episode_type: 'ABS',
         episode_label: null,
+        additional_notes: null,
         note: null,
         started_at: '2020-01-01T00:00:00Z',
         ended_at: null,
+        post_marker_step_completed_at: null,
         created_at: '2020-01-01T00:00:00Z',
         updated_at: '2020-01-01T00:00:00Z',
       },
@@ -154,6 +158,24 @@ describe('HealthMarkerPromptScreen', () => {
     jest.mocked(cancelActiveEpisodeById).mockResolvedValue({
       ok: true,
       data: { didCancel: true },
+    });
+    jest.mocked(completeEpisodePostMarkerStep).mockResolvedValue({
+      ok: true,
+      data: {
+        id: episodeId,
+        user_id: 'test-user-1',
+        symptom_preset_id: 'sym-preset-1',
+        health_marker_preset_id: markerPresetId,
+        episode_type: 'Other',
+        episode_label: null,
+        additional_notes: null,
+        note: null,
+        started_at: '2020-01-01T00:00:00Z',
+        ended_at: null,
+        post_marker_step_completed_at: '2020-01-01T01:00:00Z',
+        created_at: '2020-01-01T00:00:00Z',
+        updated_at: '2020-01-01T01:00:00Z',
+      },
     });
   });
 

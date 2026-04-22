@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { EpisodeInsert, EpisodeRow } from '@abstrack/types';
 import {
   cancelActiveEpisodeById,
+  completeEpisodePostMarkerStep,
   createEpisode,
   deleteEpisodeById,
   endEpisodeIfStillActive,
@@ -26,9 +27,11 @@ describe('createEpisode', () => {
       health_marker_preset_id: 'hm-1',
       episode_type: 'Other',
       episode_label: null,
+      additional_notes: null,
       note: null,
       started_at: inserted.started_at,
       ended_at: null,
+      post_marker_step_completed_at: null,
       created_at: '2026-04-18T12:00:00.000Z',
       updated_at: '2026-04-18T12:00:00.000Z',
     };
@@ -66,9 +69,11 @@ describe('getEpisodeById', () => {
       health_marker_preset_id: 'hm-1',
       episode_type: 'Other',
       episode_label: null,
+      additional_notes: null,
       note: null,
       started_at: '2026-04-18T12:00:00.000Z',
       ended_at: null,
+      post_marker_step_completed_at: null,
       created_at: '2026-04-18T12:00:00.000Z',
       updated_at: '2026-04-18T12:00:00.000Z',
     };
@@ -104,9 +109,11 @@ describe('getActiveEpisodeForUser', () => {
       health_marker_preset_id: 'hm-1',
       episode_type: 'Other',
       episode_label: null,
+      additional_notes: null,
       note: null,
       started_at: '2026-04-18T14:00:00.000Z',
       ended_at: null,
+      post_marker_step_completed_at: null,
       created_at: '2026-04-18T14:00:00.000Z',
       updated_at: '2026-04-18T14:00:00.000Z',
     };
@@ -173,9 +180,11 @@ describe('listCompletedEpisodesForUser', () => {
         health_marker_preset_id: null,
         episode_type: 'ABS',
         episode_label: 'Morning',
+        additional_notes: null,
         note: null,
         started_at: '2026-04-19T10:00:00.000Z',
         ended_at: '2026-04-19T11:00:00.000Z',
+        post_marker_step_completed_at: null,
         created_at: '2026-04-19T10:00:00.000Z',
         updated_at: '2026-04-19T11:00:00.000Z',
       },
@@ -186,9 +195,11 @@ describe('listCompletedEpisodesForUser', () => {
         health_marker_preset_id: null,
         episode_type: 'Other',
         episode_label: null,
+        additional_notes: null,
         note: null,
         started_at: '2026-04-18T08:00:00.000Z',
         ended_at: '2026-04-18T09:30:00.000Z',
+        post_marker_step_completed_at: null,
         created_at: '2026-04-18T08:00:00.000Z',
         updated_at: '2026-04-18T09:30:00.000Z',
       },
@@ -390,5 +401,85 @@ describe('deleteEpisodeById', () => {
     if (result.ok) {
       expect(result.data.didDelete).toBe(false);
     }
+  });
+});
+
+describe('completeEpisodePostMarkerStep', () => {
+  it('returns updated row on success', async () => {
+    const updated: EpisodeRow = {
+      id: 'ep-1',
+      user_id: 'user-1',
+      symptom_preset_id: 'sym-1',
+      health_marker_preset_id: 'hm-1',
+      episode_type: 'ABS',
+      episode_label: 'L',
+      additional_notes: 'extra',
+      note: 'n',
+      started_at: '2026-04-18T12:00:00.000Z',
+      ended_at: null,
+      post_marker_step_completed_at: '2026-04-18T13:00:00.000Z',
+      created_at: '2026-04-18T12:00:00.000Z',
+      updated_at: '2026-04-18T13:00:00.000Z',
+    };
+    const maybeSingle = vi.fn(async () => ({
+      data: updated,
+      error: null,
+    }));
+    const isEnded = vi.fn(() => ({
+      select: vi.fn(() => ({
+        maybeSingle,
+      })),
+    }));
+    const client = {
+      from: vi.fn(() => ({
+        update: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            is: isEnded,
+          })),
+        })),
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await completeEpisodePostMarkerStep(client, 'ep-1', {
+      episode_type: 'ABS',
+      episode_label: 'L',
+      additional_notes: 'extra',
+      note: 'n',
+      post_marker_step_completed_at: '2026-04-18T13:00:00.000Z',
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.episode_type).toBe('ABS');
+      expect(result.data.additional_notes).toBe('extra');
+    }
+    expect(isEnded).toHaveBeenCalledWith('ended_at', null);
+  });
+
+  it('returns error when no active row matches', async () => {
+    const maybeSingle = vi.fn(async () => ({ data: null, error: null }));
+    const client = {
+      from: vi.fn(() => ({
+        update: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            is: vi.fn(() => ({
+              select: vi.fn(() => ({
+                maybeSingle,
+              })),
+            })),
+          })),
+        })),
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await completeEpisodePostMarkerStep(client, 'ep-missing', {
+      episode_type: 'Other',
+      episode_label: null,
+      additional_notes: null,
+      note: null,
+      post_marker_step_completed_at: '2026-04-18T13:00:00.000Z',
+    });
+
+    expect(result.ok).toBe(false);
   });
 });
