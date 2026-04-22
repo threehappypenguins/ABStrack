@@ -3,7 +3,6 @@ import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { DefaultTheme, useRoute } from '@react-navigation/native';
 import { createFoodDiaryEntry } from '@abstrack/supabase';
 import { announce } from '@abstrack/ui/native';
-import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { useAppTheme } from '../theme/AppThemeContext';
 import { lightAppColors } from '../theme/app-colors';
 import { FoodDiaryEntryScreen } from './FoodDiaryEntryScreen';

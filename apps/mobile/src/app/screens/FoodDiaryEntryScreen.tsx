@@ -15,6 +15,13 @@ import type { MealTag } from '@abstrack/types';
 import { MEAL_TAGS } from '@abstrack/types';
 import { createFoodDiaryEntry } from '@abstrack/supabase';
 import { announce, COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
+import {
+  currentLocalDate,
+  currentLocalTime,
+  localDateFromDate,
+  localDateTimeToIso,
+  localTimeFromDate,
+} from '../../lib/food-diary/date-time';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { ScreenShell } from '../components/ScreenShell';
 import type { MainStackParamList } from '../navigation/types';
@@ -22,42 +29,6 @@ import { useAppTheme } from '../theme/AppThemeContext';
 import { nw } from '../theme/app-nativewind-classes';
 
 type FoodDiaryEntryRoute = RouteProp<MainStackParamList, 'FoodDiaryEntry'>;
-
-function pad2(value: number): string {
-  return String(value).padStart(2, '0');
-}
-
-function currentLocalDate(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
-}
-
-function currentLocalTime(): string {
-  const now = new Date();
-  return `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
-}
-
-function localDateTimeToIso(datePart: string, timePart: string): string | null {
-  const date = datePart.trim();
-  const time = timePart.trim();
-  if (!date || !time) {
-    return null;
-  }
-  const parsed = new Date(`${date}T${time}`);
-  const value = parsed.getTime();
-  if (!Number.isFinite(value)) {
-    return null;
-  }
-  return parsed.toISOString();
-}
-
-function localDateFromDate(value: Date): string {
-  return `${value.getFullYear()}-${pad2(value.getMonth() + 1)}-${pad2(value.getDate())}`;
-}
-
-function localTimeFromDate(value: Date): string {
-  return `${pad2(value.getHours())}:${pad2(value.getMinutes())}`;
-}
 
 /**
  * Standalone food diary creation screen (home entry point). Optional episode link can be supplied.

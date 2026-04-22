@@ -54,6 +54,15 @@ import {
 } from '@abstrack/supabase';
 import { announce, COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
 import { clearSymptomPromptSession } from '../../lib/episodes/symptom-prompt-session-store';
+import {
+  currentLocalDate,
+  currentLocalTime,
+  isoToLocalDate,
+  isoToLocalTime,
+  localDateFromDate,
+  localDateTimeToIso,
+  localTimeFromDate,
+} from '../../lib/food-diary/date-time';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { AsyncScreenContainer } from '../components/AsyncScreenContainer';
 import { ScreenShell } from '../components/ScreenShell';
@@ -180,52 +189,6 @@ function parseOptionalNumber(raw: string | undefined): number | null {
   }
   const n = Number(trimmed);
   return Number.isFinite(n) ? n : Number.NaN;
-}
-
-function pad2(value: number): string {
-  return String(value).padStart(2, '0');
-}
-
-function currentLocalDate(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
-}
-
-function currentLocalTime(): string {
-  const now = new Date();
-  return `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
-}
-
-function localDateFromDate(value: Date): string {
-  return `${value.getFullYear()}-${pad2(value.getMonth() + 1)}-${pad2(value.getDate())}`;
-}
-
-function localTimeFromDate(value: Date): string {
-  return `${pad2(value.getHours())}:${pad2(value.getMinutes())}`;
-}
-
-function localDateTimeToIso(datePart: string, timePart: string): string | null {
-  const date = datePart.trim();
-  const time = timePart.trim();
-  if (!date || !time) {
-    return null;
-  }
-  const parsed = new Date(`${date}T${time}`);
-  const value = parsed.getTime();
-  if (!Number.isFinite(value)) {
-    return null;
-  }
-  return parsed.toISOString();
-}
-
-function isoToLocalDate(value: string): string {
-  const date = new Date(value);
-  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
-}
-
-function isoToLocalTime(value: string): string {
-  const date = new Date(value);
-  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
 }
 
 /**
