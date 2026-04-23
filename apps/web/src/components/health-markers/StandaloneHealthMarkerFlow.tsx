@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   createStandaloneHealthMarkerForLine,
   listHealthMarkerPresets,
@@ -76,12 +76,27 @@ export function StandaloneHealthMarkerFlow() {
   }, [activeIndex]);
 
   const currentLine = lines[activeIndex] ?? null;
+  const currentLineId = currentLine?.id;
   const currentDraft = currentLine
     ? (drafts[currentLine.id] ?? createDraftFromMarker(null))
     : createDraftFromMarker(null);
   const canSkip = currentLine
     ? !parseMeasurementDraftForSave(currentLine, currentDraft).ok
     : false;
+
+  const patchCurrentLineDraft = useCallback(
+    (patch: Partial<MarkerDraft>) => {
+      if (!currentLineId) {
+        return;
+      }
+      const id = currentLineId;
+      setDrafts((prev) => {
+        const base = prev[id] ?? createDraftFromMarker(null);
+        return { ...prev, [id]: { ...base, ...patch } };
+      });
+    },
+    [currentLineId],
+  );
 
   const startPresetFlow = async () => {
     if (!selectedPresetId || saving) {
@@ -358,7 +373,7 @@ export function StandaloneHealthMarkerFlow() {
       </div>
 
       {feedback ? (
-        <p className="text-sm text-amber-800 dark:text-amber-200" role="status">
+        <p className="text-sm text-red-700 dark:text-red-300" role="alert">
           {feedback}
         </p>
       ) : null}
@@ -379,13 +394,7 @@ export function StandaloneHealthMarkerFlow() {
                   value={currentDraft.systolic}
                   disabled={saving}
                   onChange={(e) => {
-                    setDrafts((prev) => ({
-                      ...prev,
-                      [currentLine.id]: {
-                        ...currentDraft,
-                        systolic: e.target.value,
-                      },
-                    }));
+                    patchCurrentLineDraft({ systolic: e.target.value });
                   }}
                   className="min-h-[44px] w-full rounded-lg border border-app-border bg-app-surface px-3 text-app-ink"
                 />
@@ -399,13 +408,7 @@ export function StandaloneHealthMarkerFlow() {
                   value={currentDraft.diastolic}
                   disabled={saving}
                   onChange={(e) => {
-                    setDrafts((prev) => ({
-                      ...prev,
-                      [currentLine.id]: {
-                        ...currentDraft,
-                        diastolic: e.target.value,
-                      },
-                    }));
+                    patchCurrentLineDraft({ diastolic: e.target.value });
                   }}
                   className="min-h-[44px] w-full rounded-lg border border-app-border bg-app-surface px-3 text-app-ink"
                 />
@@ -421,13 +424,7 @@ export function StandaloneHealthMarkerFlow() {
                 value={currentDraft.value}
                 disabled={saving}
                 onChange={(e) => {
-                  setDrafts((prev) => ({
-                    ...prev,
-                    [currentLine.id]: {
-                      ...currentDraft,
-                      value: e.target.value,
-                    },
-                  }));
+                  patchCurrentLineDraft({ value: e.target.value });
                 }}
                 className="min-h-[44px] w-full rounded-lg border border-app-border bg-app-surface px-3 text-app-ink"
               />
@@ -441,10 +438,7 @@ export function StandaloneHealthMarkerFlow() {
               value={currentDraft.notes}
               disabled={saving}
               onChange={(e) => {
-                setDrafts((prev) => ({
-                  ...prev,
-                  [currentLine.id]: { ...currentDraft, notes: e.target.value },
-                }));
+                patchCurrentLineDraft({ notes: e.target.value });
               }}
               className="w-full rounded-lg border border-app-border bg-app-surface px-3 py-2 text-app-ink"
             />
