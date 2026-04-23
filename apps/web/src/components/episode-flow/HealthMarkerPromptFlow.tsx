@@ -229,6 +229,10 @@ export function HealthMarkerPromptFlow({
   );
   const [isAddFoodEntryOpen, setIsAddFoodEntryOpen] = useState(true);
   const [isAddFoodEntryDirty, setIsAddFoodEntryDirty] = useState(false);
+  const [discardAddFoodDraftDialogOpen, setDiscardAddFoodDraftDialogOpen] =
+    useState(false);
+  const [foodEntryDeleteConfirmEntryId, setFoodEntryDeleteConfirmEntryId] =
+    useState<string | null>(null);
   const [endingEpisode, setEndingEpisode] = useState(false);
   const [endDialogOpen, setEndDialogOpen] = useState(false);
   const [endFeedback, setEndFeedback] = useState<string | null>(null);
@@ -284,7 +288,11 @@ export function HealthMarkerPromptFlow({
     setFoodSaving(false);
     setFoodSaveError(null);
     setEditingFoodEntryId(null);
+    setDeletingFoodEntryId(null);
+    setDiscardAddFoodDraftDialogOpen(false);
+    setFoodEntryDeleteConfirmEntryId(null);
     setIsAddFoodEntryOpen(true);
+    setIsAddFoodEntryDirty(false);
     setEndFeedback(null);
     setEndedSummary(null);
     const {
@@ -580,12 +588,10 @@ export function HealthMarkerPromptFlow({
       setIsAddFoodEntryOpen(false);
       return;
     }
-    const shouldDiscard = window.confirm(
-      'Discard this food entry draft? Your unsaved entry will be removed.',
-    );
-    if (!shouldDiscard) {
-      return;
-    }
+    setDiscardAddFoodDraftDialogOpen(true);
+  };
+
+  const onConfirmDiscardAddFoodDraft = () => {
     resetFoodForm();
     setIsAddFoodEntryOpen(false);
   };
@@ -671,15 +677,17 @@ export function HealthMarkerPromptFlow({
     );
   };
 
-  const onDeleteFoodEntry = async (entryId: string) => {
+  const requestDeleteFoodEntry = (entryId: string) => {
     if (foodSaving || deletingFoodEntryId) {
       return;
     }
-    const shouldDelete = window.confirm(
-      'Discard this saved food entry? This cannot be undone.',
-    );
-    if (!shouldDelete) {
-      return;
+    setFoodEntryDeleteConfirmEntryId(entryId);
+  };
+
+  const onConfirmDeleteFoodEntry = async () => {
+    const entryId = foodEntryDeleteConfirmEntryId;
+    if (!entryId || foodSaving || deletingFoodEntryId) {
+      return false;
     }
     setDeletingFoodEntryId(entryId);
     setFoodSaveError(null);
@@ -688,13 +696,14 @@ export function HealthMarkerPromptFlow({
     if (!result.ok) {
       setFoodSaveError(result.error.message);
       announce(result.error.message, { politeness: 'assertive' });
-      return;
+      return false;
     }
     if (editingFoodEntryId === entryId) {
       resetFoodForm();
     }
     await loadFoodEntries();
     announce('Food entry discarded.', { politeness: 'polite' });
+    return;
   };
 
   const onContinueFromFoodDiary = () => {
@@ -1186,39 +1195,29 @@ export function HealthMarkerPromptFlow({
                             Meal tag
                           </legend>
                           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                            {MEAL_TAGS.map((tag) =>
-                              foodMealTag === tag ? (
+                            {MEAL_TAGS.map((tag) => {
+                              const selected = foodMealTag === tag;
+                              return (
                                 <button
                                   type="button"
                                   key={`edit-${entry.id}-${tag}`}
-                                  aria-pressed="true"
-                                  className="flex min-h-[40px] items-center justify-center rounded-lg border border-red-700 bg-red-50 px-3 py-2 text-xs font-medium text-red-900 shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-500 dark:bg-red-950/40 dark:text-red-100"
+                                  aria-pressed={selected}
+                                  className={`flex min-h-[40px] items-center justify-center rounded-lg border px-3 py-2 text-xs font-medium shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-60 ${
+                                    selected
+                                      ? 'border-red-700 bg-red-50 text-red-900 dark:border-red-500 dark:bg-red-950/40 dark:text-red-100'
+                                      : 'cursor-pointer border-app-border bg-app-surface text-app-ink hover:bg-app-surface/80'
+                                  }`}
                                   disabled={foodSaving}
                                   onClick={() => {
                                     if (!foodSaving) {
-                                      setFoodMealTag(null);
+                                      setFoodMealTag(selected ? null : tag);
                                     }
                                   }}
                                 >
                                   {tag}
                                 </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  key={`edit-${entry.id}-${tag}`}
-                                  aria-pressed="false"
-                                  className="flex min-h-[40px] cursor-pointer items-center justify-center rounded-lg border border-app-border bg-app-surface px-3 py-2 text-xs font-medium text-app-ink shadow-sm transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-60"
-                                  disabled={foodSaving}
-                                  onClick={() => {
-                                    if (!foodSaving) {
-                                      setFoodMealTag(tag);
-                                    }
-                                  }}
-                                >
-                                  {tag}
-                                </button>
-                              ),
-                            )}
+                              );
+                            })}
                           </div>
                         </fieldset>
                         <label className="block space-y-1 text-xs font-medium text-app-ink">
@@ -1276,7 +1275,7 @@ export function HealthMarkerPromptFlow({
                             className="inline-flex min-h-[40px] items-center justify-center rounded-lg border border-red-400 px-3 text-xs font-semibold text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg dark:border-red-500/60 dark:text-red-300 dark:hover:bg-red-950/30"
                             disabled={deletingFoodEntryId != null}
                             onClick={() => {
-                              void onDeleteFoodEntry(entry.id);
+                              requestDeleteFoodEntry(entry.id);
                             }}
                           >
                             {deletingFoodEntryId === entry.id
@@ -1302,7 +1301,7 @@ export function HealthMarkerPromptFlow({
                           className="inline-flex min-h-[36px] items-center justify-center rounded-lg border border-red-400 px-3 text-sm font-medium text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg dark:border-red-500/60 dark:text-red-300 dark:hover:bg-red-950/30"
                           disabled={deletingFoodEntryId != null}
                           onClick={() => {
-                            void onDeleteFoodEntry(entry.id);
+                            requestDeleteFoodEntry(entry.id);
                           }}
                         >
                           {deletingFoodEntryId === entry.id
@@ -1327,20 +1326,26 @@ export function HealthMarkerPromptFlow({
                   Meal tag
                 </legend>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {MEAL_TAGS.map((tag) =>
-                    foodMealTag === tag ? (
+                  {MEAL_TAGS.map((tag) => {
+                    const selected = foodMealTag === tag;
+                    return (
                       <button
                         type="button"
                         key={`add-${tag}`}
-                        aria-pressed="true"
-                        className="flex min-h-[44px] items-center justify-center rounded-lg border border-red-700 bg-red-50 px-3 py-2 text-sm font-medium text-red-900 shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-500 dark:bg-red-950/40 dark:text-red-100"
+                        aria-pressed={selected}
+                        className={`flex min-h-[44px] items-center justify-center rounded-lg border px-3 py-2 text-sm font-medium shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-60 ${
+                          selected
+                            ? 'border-red-700 bg-red-50 text-red-900 dark:border-red-500 dark:bg-red-950/40 dark:text-red-100'
+                            : 'cursor-pointer border-app-border bg-app-surface text-app-ink hover:bg-app-surface/80'
+                        }`}
                         disabled={foodSaving}
                         onClick={() => {
                           if (!foodSaving) {
-                            setFoodMealTag(null);
+                            const nextMealTag = selected ? null : tag;
+                            setFoodMealTag(nextMealTag);
                             setIsAddFoodEntryDirty(
                               computeIsAddFoodEntryDirty({
-                                mealTag: null,
+                                mealTag: nextMealTag,
                                 note: foodNote,
                                 loggedAtLocal: foodLoggedAtLocal,
                               }),
@@ -1350,30 +1355,8 @@ export function HealthMarkerPromptFlow({
                       >
                         {tag}
                       </button>
-                    ) : (
-                      <button
-                        type="button"
-                        key={`add-${tag}`}
-                        aria-pressed="false"
-                        className="flex min-h-[44px] cursor-pointer items-center justify-center rounded-lg border border-app-border bg-app-surface px-3 py-2 text-sm font-medium text-app-ink shadow-sm transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-60"
-                        disabled={foodSaving}
-                        onClick={() => {
-                          if (!foodSaving) {
-                            setFoodMealTag(tag);
-                            setIsAddFoodEntryDirty(
-                              computeIsAddFoodEntryDirty({
-                                mealTag: tag,
-                                note: foodNote,
-                                loggedAtLocal: foodLoggedAtLocal,
-                              }),
-                            );
-                          }
-                        }}
-                      >
-                        {tag}
-                      </button>
-                    ),
-                  )}
+                    );
+                  })}
                 </div>
               </fieldset>
               <label className="block space-y-1 text-sm font-medium text-app-ink">
@@ -1518,6 +1501,29 @@ export function HealthMarkerPromptFlow({
           onConfirm={onCancelEpisodeConfirm}
           onClose={() => {
             setCancelDialogOpen(false);
+          }}
+        />
+        <ConfirmDialog
+          open={discardAddFoodDraftDialogOpen}
+          title="Discard this food entry draft?"
+          description="Your unsaved entry will be removed."
+          confirmLabel="Discard draft"
+          cancelLabel="Keep editing"
+          onConfirm={onConfirmDiscardAddFoodDraft}
+          onClose={() => {
+            setDiscardAddFoodDraftDialogOpen(false);
+          }}
+        />
+        <ConfirmDialog
+          open={foodEntryDeleteConfirmEntryId != null}
+          title="Discard this saved food entry?"
+          description="This cannot be undone."
+          confirmLabel="Discard entry"
+          confirmBusyLabel="Discarding…"
+          cancelLabel="Keep entry"
+          onConfirm={onConfirmDeleteFoodEntry}
+          onClose={() => {
+            setFoodEntryDeleteConfirmEntryId(null);
           }}
         />
       </>

@@ -115,39 +115,29 @@ export function FoodDiaryEntryForm({
       <fieldset className="space-y-2" disabled={saving}>
         <legend className="text-sm font-medium text-app-ink">Meal tag</legend>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {MEAL_TAGS.map((tag) =>
-            mealTag === tag ? (
+          {MEAL_TAGS.map((tag) => {
+            const selected = mealTag === tag;
+            return (
               <button
                 type="button"
                 key={tag}
-                aria-pressed="true"
-                className="flex min-h-[44px] items-center justify-center rounded-lg border border-red-700 bg-red-50 px-3 py-2 text-sm font-medium text-red-900 shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-500 dark:bg-red-950/40 dark:text-red-100"
+                aria-pressed={selected}
+                className={`flex min-h-[44px] items-center justify-center rounded-lg border px-3 py-2 text-sm font-medium shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg ${
+                  selected
+                    ? 'border-red-700 bg-red-50 text-red-900 dark:border-red-500 dark:bg-red-950/40 dark:text-red-100'
+                    : 'cursor-pointer border-app-border bg-app-surface text-app-ink hover:bg-app-surface/80'
+                } ${saving ? 'cursor-not-allowed opacity-60' : ''}`}
                 disabled={saving}
                 onClick={() => {
                   if (!saving) {
-                    setMealTag(null);
+                    setMealTag(selected ? null : tag);
                   }
                 }}
               >
                 {tag}
               </button>
-            ) : (
-              <button
-                type="button"
-                key={tag}
-                aria-pressed="false"
-                className="flex min-h-[44px] cursor-pointer items-center justify-center rounded-lg border border-app-border bg-app-surface px-3 py-2 text-sm font-medium text-app-ink shadow-sm transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={saving}
-                onClick={() => {
-                  if (!saving) {
-                    setMealTag(tag);
-                  }
-                }}
-              >
-                {tag}
-              </button>
-            ),
-          )}
+            );
+          })}
         </div>
       </fieldset>
 

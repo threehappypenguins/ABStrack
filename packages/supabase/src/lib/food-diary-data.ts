@@ -15,19 +15,139 @@ function normalizeFoodNote(note: string): string | null {
   return next.length > 0 ? next : null;
 }
 
+/**
+ * Fractional-second digits from ISO (e.g. `007` or `7`) to 0–999 ms, matching typical
+ * `Date` / `toISOString` millisecond precision.
+ */
+function isoFractionToMs(frac: string | undefined): number {
+  if (frac == null || frac === '') {
+    return 0;
+  }
+  const n = Number(`0.${frac}`);
+  if (!Number.isFinite(n)) {
+    return 0;
+  }
+  return Math.min(999, Math.max(0, Math.floor(n * 1000)));
+}
+
+function civilDayExistsInUtcCalendar(
+  year: number,
+  month: number,
+  day: number,
+): boolean {
+  const probe = Date.UTC(year, month - 1, day, 12, 0, 0, 0);
+  const d = new Date(probe);
+  return (
+    d.getUTCFullYear() === year &&
+    d.getUTCMonth() === month - 1 &&
+    d.getUTCDate() === day
+  );
+}
+
+/** ISO-8601 instant with required clock time and explicit `Z` or `±HH:MM` (not date-only). */
+const STRICT_LOGGED_AT_ISO_RE =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,9}))?)?(Z|([+-])(\d{2}):(\d{2}))$/;
+
 function normalizeOptionalIso(value: string | null | undefined): string | null {
   if (value == null) {
     return null;
   }
-  const next = value.trim();
-  if (!next) {
+  const trimmed = value.trim();
+  if (!trimmed) {
     return null;
   }
-  const time = Date.parse(next);
-  if (!Number.isFinite(time)) {
+
+  const match = STRICT_LOGGED_AT_ISO_RE.exec(trimmed);
+  if (!match) {
     return null;
   }
-  return new Date(time).toISOString();
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = match[6] != null && match[6] !== '' ? Number(match[6]) : 0;
+  const ms = isoFractionToMs(match[7]);
+  const tz = match[8];
+
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day) ||
+    !Number.isFinite(hour) ||
+    !Number.isFinite(minute) ||
+    !Number.isFinite(second) ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31 ||
+    hour < 0 ||
+    hour > 23 ||
+    minute < 0 ||
+    minute > 59 ||
+    second < 0 ||
+    second > 59
+  ) {
+    return null;
+  }
+
+  if (!civilDayExistsInUtcCalendar(year, month, day)) {
+    return null;
+  }
+
+  let utcMs: number;
+
+  if (tz === 'Z') {
+    utcMs = Date.UTC(year, month - 1, day, hour, minute, second, ms);
+    const check = new Date(utcMs);
+    if (
+      check.getUTCFullYear() !== year ||
+      check.getUTCMonth() !== month - 1 ||
+      check.getUTCDate() !== day ||
+      check.getUTCHours() !== hour ||
+      check.getUTCMinutes() !== minute ||
+      check.getUTCSeconds() !== second ||
+      check.getUTCMilliseconds() !== ms
+    ) {
+      return null;
+    }
+  } else {
+    const sign = match[9];
+    const offH = Number(match[10]);
+    const offM = Number(match[11]);
+    if (
+      !Number.isFinite(offH) ||
+      !Number.isFinite(offM) ||
+      offH > 23 ||
+      offM > 59
+    ) {
+      return null;
+    }
+    const offsetMinutesEast =
+      sign === '+' ? offH * 60 + offM : -(offH * 60 + offM);
+    utcMs =
+      Date.UTC(year, month - 1, day, hour, minute, second, ms) -
+      offsetMinutesEast * 60 * 1000;
+    if (!Number.isFinite(utcMs)) {
+      return null;
+    }
+    const civilAsUtcTicks = utcMs + offsetMinutesEast * 60 * 1000;
+    const check = new Date(civilAsUtcTicks);
+    if (
+      check.getUTCFullYear() !== year ||
+      check.getUTCMonth() !== month - 1 ||
+      check.getUTCDate() !== day ||
+      check.getUTCHours() !== hour ||
+      check.getUTCMinutes() !== minute ||
+      check.getUTCSeconds() !== second ||
+      check.getUTCMilliseconds() !== ms
+    ) {
+      return null;
+    }
+  }
+
+  return new Date(utcMs).toISOString();
 }
 
 type FoodDiaryCreateCore = Pick<

@@ -151,6 +151,52 @@ describe('createFoodDiaryEntry', () => {
     expect(client.from).not.toHaveBeenCalled();
   });
 
+  it('returns validation_error for date-only logged_at (no time / offset)', async () => {
+    const client = {
+      from: vi.fn(() => {
+        throw new Error('should not query');
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await createFoodDiaryEntry(client, {
+      user_id: 'user-1',
+      episode_id: 'ep-1',
+      meal_tag: 'Dinner',
+      food_note: 'Soup',
+      logged_at: '2026-04-22',
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('validation_error');
+      expect(result.error.message).toContain('valid date and time');
+    }
+    expect(client.from).not.toHaveBeenCalled();
+  });
+
+  it('returns validation_error when logged_at has time but no Z or offset', async () => {
+    const client = {
+      from: vi.fn(() => {
+        throw new Error('should not query');
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await createFoodDiaryEntry(client, {
+      user_id: 'user-1',
+      episode_id: 'ep-1',
+      meal_tag: 'Dinner',
+      food_note: 'Soup',
+      logged_at: '2026-04-22T12:30',
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('validation_error');
+      expect(result.error.message).toContain('valid date and time');
+    }
+    expect(client.from).not.toHaveBeenCalled();
+  });
+
   it('normalizes food_note and logged_at before insert', async () => {
     const inserted: FoodDiaryEntryRow = {
       ...baseRow,
