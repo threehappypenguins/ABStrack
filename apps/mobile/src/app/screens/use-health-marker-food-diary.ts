@@ -159,7 +159,19 @@ export function useHealthMarkerFoodDiary({
     }
     setFoodDatePickerOpen(false);
     setFoodTimePickerOpen(false);
-  }, [enabled]);
+    // Hook mounts before the food-diary phase; refresh "now" when entering the step
+    // so defaults are not stale after time on health markers (skip in-flight add/edit).
+    if (editingFoodEntryId != null || isAddFoodEntryDirty) {
+      return;
+    }
+    const d = currentLocalDate();
+    const t = currentLocalTime();
+    initialFoodDateTimeRef.current = { date: d, time: t };
+    setFoodLoggedDate(d);
+    setFoodLoggedTime(t);
+    setAddFoodInitialDate(d);
+    setAddFoodInitialTime(t);
+  }, [enabled, editingFoodEntryId, isAddFoodEntryDirty]);
 
   const computeIsAddFoodEntryDirty = useCallback(
     (next: {

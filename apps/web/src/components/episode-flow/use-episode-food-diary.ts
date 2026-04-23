@@ -193,6 +193,21 @@ export function useEpisodeFoodDiary({
     void loadFoodEntries();
   }, [enabled, loadFoodEntries]);
 
+  useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+    // Hook mounts before the food-diary step; refresh default logged-at when entering
+    // so it matches "now" after time on health markers (skip in-flight add/edit).
+    if (editingFoodEntryId != null || isAddFoodEntryDirty) {
+      return;
+    }
+    const nowLocal = toLocalDateTimeInputValue(new Date().toISOString());
+    initialFoodLoggedAtLocalRef.current = nowLocal;
+    setFoodLoggedAtLocal(nowLocal);
+    setAddFoodInitialLoggedAtLocal(nowLocal);
+  }, [enabled, editingFoodEntryId, isAddFoodEntryDirty]);
+
   const onEditFoodEntry = useCallback((entry: FoodDiaryEntryRow) => {
     setEditingFoodEntryId(entry.id);
     setIsAddFoodEntryOpen(false);
