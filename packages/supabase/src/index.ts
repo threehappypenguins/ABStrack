@@ -96,6 +96,7 @@ export {
   upsertEpisodeSymptomAnswer,
 } from './lib/episode-symptom-data.js';
 export {
+  createStandaloneHealthMarkerForLine,
   listEpisodeHealthMarkersForEpisode,
   upsertEpisodeHealthMarkerForLine,
 } from './lib/episode-health-marker-data.js';

@@ -166,28 +166,149 @@ export async function upsertEpisodeHealthMarkerForLine(
   }
 
   return wrap(async () => {
-    const row: HealthMarkersInsert = {
-      user_id: userId,
-      episode_id: episodeId,
-      preset_health_marker_id: line.id,
-      marker_kind: line.marker_kind,
-      custom_name: customName,
-      custom_unit: customUnit,
-      value_numeric:
-        line.marker_kind === 'blood_pressure' ? null : valueNumeric,
-      systolic_numeric:
-        line.marker_kind === 'blood_pressure' ? systolicNumeric : null,
-      diastolic_numeric:
-        line.marker_kind === 'blood_pressure' ? diastolicNumeric : null,
+    const row: HealthMarkersInsert = createHealthMarkerInsertRow({
+      userId,
+      episodeId,
+      line,
+      customName,
+      customUnit,
+      valueNumeric,
+      systolicNumeric,
+      diastolicNumeric,
       notes,
-      recorded_at: recordedAt,
-    };
+      recordedAt,
+    });
 
     const r = await client
       .from('health_markers')
       .upsert(row, {
         onConflict: 'episode_id,preset_health_marker_id',
       })
+      .select('*')
+      .single();
+    return {
+      data: r.data as HealthMarkerRow | null,
+      error: r.error,
+    };
+  });
+}
+
+function createHealthMarkerInsertRow(args: {
+  userId: Uuid;
+  episodeId: Uuid | null;
+  line: PresetHealthMarkerRow;
+  customName: string | null;
+  customUnit: string | null;
+  valueNumeric: number | null;
+  systolicNumeric: number | null;
+  diastolicNumeric: number | null;
+  notes: string | null;
+  recordedAt: string;
+}): HealthMarkersInsert {
+  const {
+    userId,
+    episodeId,
+    line,
+    customName,
+    customUnit,
+    valueNumeric,
+    systolicNumeric,
+    diastolicNumeric,
+    notes,
+    recordedAt,
+  } = args;
+  return {
+    user_id: userId,
+    episode_id: episodeId,
+    preset_health_marker_id: line.id,
+    marker_kind: line.marker_kind,
+    custom_name: customName,
+    custom_unit: customUnit,
+    value_numeric: line.marker_kind === 'blood_pressure' ? null : valueNumeric,
+    systolic_numeric:
+      line.marker_kind === 'blood_pressure' ? systolicNumeric : null,
+    diastolic_numeric:
+      line.marker_kind === 'blood_pressure' ? diastolicNumeric : null,
+    notes,
+    recorded_at: recordedAt,
+  };
+}
+
+/**
+ * Inserts one standalone `health_markers` row (`episode_id = null`) from a preset line.
+ *
+ * @param client - Supabase client (RLS applies).
+ * @param args.userId - Authenticated patient (or caretaker target under RLS).
+ * @param args.line - Active preset health marker line.
+ * @param args.valueNumeric - Required finite number for non-blood-pressure kinds.
+ * @param args.systolicNumeric - Systolic value for blood pressure.
+ * @param args.diastolicNumeric - Diastolic value for blood pressure.
+ * @param args.notes - Optional free-text note.
+ * @param args.recordedAt - Timestamp override (defaults to now).
+ * @returns Inserted marker row with `episode_id = null`.
+ */
+export async function createStandaloneHealthMarkerForLine(
+  client: AbstrackSupabaseClient,
+  args: {
+    userId: Uuid;
+    line: PresetHealthMarkerRow;
+    valueNumeric?: number | null;
+    systolicNumeric?: number | null;
+    diastolicNumeric?: number | null;
+    notes?: string | null;
+    recordedAt?: string;
+  },
+): Promise<PresetDataResult<HealthMarkerRow>> {
+  const {
+    userId,
+    line,
+    valueNumeric = null,
+    systolicNumeric = null,
+    diastolicNumeric = null,
+    notes = null,
+    recordedAt = new Date().toISOString(),
+  } = args;
+  const customName = normalizeCustomField(line.custom_name);
+  const customUnit = normalizeCustomField(line.custom_unit);
+  const customValidation = validatePresetHealthMarkerCustomFields(
+    line.marker_kind,
+    customName ?? '',
+    customUnit ?? '',
+  );
+  if (customValidation) {
+    return {
+      ok: false,
+      error: new PresetDataError('validation_error', customValidation),
+    };
+  }
+  const numericValidation = validateHealthMarkerNumericPayload(
+    line.marker_kind,
+    valueNumeric,
+    systolicNumeric,
+    diastolicNumeric,
+  );
+  if (numericValidation) {
+    return {
+      ok: false,
+      error: new PresetDataError('validation_error', numericValidation),
+    };
+  }
+  return wrap(async () => {
+    const row = createHealthMarkerInsertRow({
+      userId,
+      episodeId: null,
+      line,
+      customName,
+      customUnit,
+      valueNumeric,
+      systolicNumeric,
+      diastolicNumeric,
+      notes,
+      recordedAt,
+    });
+    const r = await client
+      .from('health_markers')
+      .insert(row)
       .select('*')
       .single();
     return {
