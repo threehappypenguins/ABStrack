@@ -52,24 +52,34 @@ export function StandaloneHealthMarkerFlow() {
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
 
-  const loadPresets = async () => {
-    setLoadingPresets(true);
-    setLoadError(null);
-    const result = await listHealthMarkerPresets(supabase);
-    if (!result.ok) {
-      setLoadError(result.error.message);
-      setLoadingPresets(false);
+  useEffect(() => {
+    if (authLoading || !session?.user?.id || !loadingPresets) {
       return;
     }
-    setPresets(result.data);
-    setLoadingPresets(false);
-  };
 
-  useEffect(() => {
-    if (!authLoading && session?.user?.id && loadingPresets) {
-      void loadPresets();
-    }
-  }, [authLoading, loadingPresets, session?.user?.id]);
+    let cancelled = false;
+    const run = async () => {
+      setLoadingPresets(true);
+      setLoadError(null);
+      const result = await listHealthMarkerPresets(supabase);
+      if (cancelled) {
+        return;
+      }
+      if (!result.ok) {
+        setLoadError(result.error.message);
+        setLoadingPresets(false);
+        return;
+      }
+      setPresets(result.data);
+      setLoadingPresets(false);
+    };
+
+    void run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, loadingPresets, session?.user?.id, supabase]);
 
   useEffect(() => {
     setFeedback(null);
@@ -80,8 +90,18 @@ export function StandaloneHealthMarkerFlow() {
   const currentDraft = currentLine
     ? (drafts[currentLine.id] ?? createDraftFromMarker(null))
     : createDraftFromMarker(null);
-  const canSkip = currentLine
+  const measurementUnsavable = currentLine
     ? !parseMeasurementDraftForSave(currentLine, currentDraft).ok
+    : true;
+  const lineConfigBlocksSave = currentLine
+    ? validatePresetHealthMarkerCustomFields(
+        currentLine.marker_kind,
+        currentLine.custom_name ?? '',
+        currentLine.custom_unit ?? '',
+      ) != null
+    : false;
+  const canSkip = currentLine
+    ? measurementUnsavable || lineConfigBlocksSave
     : false;
 
   const patchCurrentLineDraft = useCallback(
