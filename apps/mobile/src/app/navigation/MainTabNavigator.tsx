@@ -92,6 +92,19 @@ function navigateFromHomeTabToEpisodes(
   stackNavigation.navigate('Episodes');
 }
 
+function navigateFromHomeTabToFoodDiary(
+  navigation: BottomTabNavigationProp<MainTabParamList, 'Home'>,
+) {
+  const stackNavigation =
+    navigation.getParent<NativeStackNavigationProp<MainStackParamList>>();
+  if (stackNavigation == null) {
+    throw new Error(
+      'MainTabNavigator: expected native stack parent (MainStack) to open FoodDiaryEntry.',
+    );
+  }
+  stackNavigation.navigate('FoodDiaryEntry', {});
+}
+
 type IonName = React.ComponentProps<typeof Ionicons>['name'];
 
 /**
@@ -156,6 +169,9 @@ export function MainTabNavigator() {
               }}
               onGoToEpisodes={() => {
                 navigateFromHomeTabToEpisodes(navigation);
+              }}
+              onGoToFoodDiary={() => {
+                navigateFromHomeTabToFoodDiary(navigation);
               }}
               onStartEpisode={() => {
                 navigateFromHomeTabToEpisodeStart(navigation);

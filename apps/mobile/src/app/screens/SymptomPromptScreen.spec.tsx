@@ -752,7 +752,7 @@ describe('SymptomPromptScreen', () => {
     );
   });
 
-  test('Next on last symptom transitions to health marker prompt and clears symptom session', async () => {
+  test('Next on last symptom transitions to health marker prompt and persists symptom session', async () => {
     const screen = render(<SymptomPromptScreen />);
 
     await waitFor(() => {
@@ -769,7 +769,13 @@ describe('SymptomPromptScreen', () => {
     fireEvent.press(screen.getByLabelText('Severity 1'));
     fireEvent.press(screen.getByLabelText('Next symptom'));
 
-    expect(clearSymptomPromptSession).toHaveBeenCalledWith(episodeId);
+    expect(setSymptomPromptSession).toHaveBeenCalledWith(episodeId, {
+      activeIndex: 1,
+      answers: {
+        [lineA.id]: { type: 'yes_no', value: true },
+        [lineB.id]: { type: 'severity_scale', value: 1 },
+      },
+    });
     expect(mockReplace).toHaveBeenCalledWith('HealthMarkerPrompt', {
       episodeId,
       resume: undefined,

@@ -2,7 +2,13 @@ import { defineConfig, devices } from '@playwright/test';
 import { nxE2EPreset } from '@nx/playwright/preset';
 import { workspaceRoot } from '@nx/devkit';
 
-const localBaseURL = 'http://localhost:3000';
+/**
+ * Dedicated port for Playwright’s `webServer` so local runs do not accidentally reuse
+ * whatever is already bound to :3000 (common default for other stacks). Override with
+ * `PLAYWRIGHT_WEB_PORT` if needed.
+ */
+const localWebPort = process.env['PLAYWRIGHT_WEB_PORT'] ?? '4310';
+const localBaseURL = `http://localhost:${localWebPort}`;
 /** When set (e.g. deployed preview), tests hit this origin and `webServer` is not started. */
 const isRemote = Boolean(process.env['BASE_URL']);
 const baseURL = process.env['BASE_URL'] || localBaseURL;
@@ -38,6 +44,9 @@ export default defineConfig({
           reuseExistingServer: !process.env.CI,
           cwd: workspaceRoot,
           timeout: 180_000,
+          env: {
+            PORT: localWebPort,
+          },
         },
       }),
   projects: [

@@ -673,7 +673,11 @@ export function SymptomPromptFlow({
 
   const continueToHealthMarkers = useCallback(() => {
     omitSymptomPromptSnapshotOnUnmountRef.current = true;
-    clearSymptomPromptSession(episodeIdRef.current);
+    // Preserve symptom step position so health-marker "Back" returns here.
+    setSymptomPromptSession(episodeIdRef.current, {
+      activeIndex: activeIndexRef.current,
+      answers: answersRef.current,
+    });
     const q = new URLSearchParams();
     if (resumeFromHomeIntentRef.current) {
       q.set('resume', '1');

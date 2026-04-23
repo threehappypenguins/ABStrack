@@ -49,6 +49,8 @@ import { ScreenShell } from '../components/ScreenShell';
 import type { MainStackParamList } from '../navigation/types';
 import { useAppTheme } from '../theme/AppThemeContext';
 import { nw } from '../theme/app-nativewind-classes';
+import { HealthMarkerFoodDiaryStep } from './HealthMarkerFoodDiaryStep';
+import { useHealthMarkerFoodDiary } from './use-health-marker-food-diary';
 
 type HealthMarkerPromptRoute = RouteProp<
   MainStackParamList,
@@ -188,9 +190,9 @@ export function HealthMarkerPromptScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [persistFeedback, setPersistFeedback] =
     useState<PersistFeedback | null>(null);
-  const [phase, setPhase] = useState<'prompting' | 'postMarkers' | 'complete'>(
-    'prompting',
-  );
+  const [phase, setPhase] = useState<
+    'prompting' | 'postMarkers' | 'foodDiary' | 'complete'
+  >('prompting');
   const [userId, setUserId] = useState<string | null>(null);
   const [lines, setLines] = useState<PresetHealthMarkerRow[]>([]);
   const [drafts, setDrafts] = useState<Record<string, MarkerDraft>>({});
@@ -204,6 +206,9 @@ export function HealthMarkerPromptScreen() {
   const [postNote, setPostNote] = useState('');
   const [savingPost, setSavingPost] = useState(false);
   const [postFeedback, setPostFeedback] = useState<string | null>(null);
+  const [foodDiaryDecision, setFoodDiaryDecision] = useState<
+    'pending' | 'saved' | 'skipped'
+  >('pending');
   const [endingEpisode, setEndingEpisode] = useState(false);
   const [endFeedback, setEndFeedback] = useState<string | null>(null);
   const [endedSummary, setEndedSummary] = useState<{
@@ -212,6 +217,33 @@ export function HealthMarkerPromptScreen() {
   } | null>(null);
   const postFormInitRef = useRef(false);
   const [cancelingEpisode, setCancelingEpisode] = useState(false);
+
+  const supabase = useMemo(() => getMobileSupabaseClient(), []);
+  /** Bumps when the screen unmounts or `load` deps change so stale async work does not setState. */
+  const loadGenerationRef = useRef(0);
+
+  const onLeaveFoodDiary = useCallback(
+    async (decision: 'saved' | 'skipped') => {
+      setFoodDiaryDecision(decision);
+      setPhase('postMarkers');
+    },
+    [],
+  );
+
+  const onBackToHealthMarkersFromFoodDiaryBody = useCallback(async () => {
+    setPhase('prompting');
+    await announce('Returned to health markers.', { politeness: 'polite' });
+  }, []);
+
+  const foodDiary = useHealthMarkerFoodDiary({
+    episodeId,
+    userId,
+    supabase,
+    enabled: phase === 'foodDiary',
+    onLeaveFoodDiary,
+    onBack: onBackToHealthMarkersFromFoodDiaryBody,
+  });
+  const resetFoodDiaryState = foodDiary.reset;
 
   useEffect(() => {
     setPersistFeedback(null);
@@ -231,10 +263,6 @@ export function HealthMarkerPromptScreen() {
     setPostNote(episodeRow.note ?? '');
   }, [phase, episodeRow, bacSuggestAbs]);
 
-  const supabase = useMemo(() => getMobileSupabaseClient(), []);
-  /** Bumps when the screen unmounts or `load` deps change so stale async work does not setState. */
-  const loadGenerationRef = useRef(0);
-
   const load = useCallback(async () => {
     const generation = ++loadGenerationRef.current;
     const stale = () => generation !== loadGenerationRef.current;
@@ -245,6 +273,8 @@ export function HealthMarkerPromptScreen() {
     setPhase('prompting');
     postFormInitRef.current = false;
     setPostFeedback(null);
+    resetFoodDiaryState();
+    setFoodDiaryDecision('pending');
     setEndFeedback(null);
     setEndedSummary(null);
 
@@ -319,7 +349,7 @@ export function HealthMarkerPromptScreen() {
     setDrafts(nextDrafts);
 
     // Initial hydrate / resume; values logged later in this session are picked up in
-    // enterPostMarkerPhaseAfterMarkers before the post-marker step.
+    // enterFoodDiaryPhaseAfterMarkers before the post-marker step.
     setBacSuggestAbs(bacReadingSuggestsAbsEpisode(markerRows.data));
 
     const firstUnanswered = presetLines.data.findIndex((line) => {
@@ -330,7 +360,7 @@ export function HealthMarkerPromptScreen() {
       if (episode.data?.post_marker_step_completed_at) {
         setPhase('complete');
       } else {
-        setPhase('postMarkers');
+        setPhase('foodDiary');
       }
     } else if (resume && firstUnanswered >= 0) {
       setActiveIndex(firstUnanswered);
@@ -338,7 +368,7 @@ export function HealthMarkerPromptScreen() {
       setActiveIndex(0);
     }
     setStatus('ready');
-  }, [episodeId, resume, supabase]);
+  }, [episodeId, resetFoodDiaryState, resume, supabase]);
 
   useEffect(() => {
     void load();
@@ -358,6 +388,8 @@ export function HealthMarkerPromptScreen() {
     : false;
   const canSkip = Boolean(currentLine) && !measurementReadyForSave;
   const skipPressable = canSkip && !saving;
+  const continueToFoodDiary =
+    lines.length === 0 || activeIndex >= lines.length - 1;
 
   const onUpdateDraft = (patch: Partial<MarkerDraft>) => {
     if (!currentLine) {
@@ -431,9 +463,9 @@ export function HealthMarkerPromptScreen() {
 
   /**
    * Re-reads saved episode markers so BAC suggestion reflects values logged during this session,
-   * then moves to the post–marker episode details step.
+   * then moves to the food diary step.
    */
-  const enterPostMarkerPhaseAfterMarkers = useCallback(async () => {
+  const enterFoodDiaryPhaseAfterMarkers = useCallback(async () => {
     const markerRows = await listEpisodeHealthMarkersForEpisode(
       supabase,
       episodeId,
@@ -441,7 +473,7 @@ export function HealthMarkerPromptScreen() {
     if (markerRows.ok) {
       setBacSuggestAbs(bacReadingSuggestsAbsEpisode(markerRows.data));
     }
-    setPhase('postMarkers');
+    setPhase('foodDiary');
   }, [episodeId, supabase]);
 
   const goNext = async () => {
@@ -449,10 +481,10 @@ export function HealthMarkerPromptScreen() {
       return;
     }
     if (!currentLine) {
-      await enterPostMarkerPhaseAfterMarkers();
+      await enterFoodDiaryPhaseAfterMarkers();
       await announce(
         lines.length === 0
-          ? 'No preset health markers to log. Continue to episode details.'
+          ? 'No preset health markers to log. Continue to food diary.'
           : 'Health marker list complete.',
         { politeness: 'polite' },
       );
@@ -463,7 +495,7 @@ export function HealthMarkerPromptScreen() {
       return;
     }
     if (activeIndex >= lines.length - 1) {
-      await enterPostMarkerPhaseAfterMarkers();
+      await enterFoodDiaryPhaseAfterMarkers();
       await announce('Health marker list complete.', { politeness: 'polite' });
       return;
     }
@@ -475,7 +507,7 @@ export function HealthMarkerPromptScreen() {
       return;
     }
     if (activeIndex >= lines.length - 1) {
-      await enterPostMarkerPhaseAfterMarkers();
+      await enterFoodDiaryPhaseAfterMarkers();
       await announce('Health marker list complete.', { politeness: 'polite' });
       return;
     }
@@ -507,6 +539,83 @@ export function HealthMarkerPromptScreen() {
     setEndedSummary(null);
     setPhase('complete');
     await announce('Episode details saved.', { politeness: 'polite' });
+  };
+
+  const onBackToSymptomsFromHealthMarkers = useCallback(async () => {
+    const symptomPresetId = episodeRow?.symptom_preset_id;
+    if (!symptomPresetId) {
+      await announce(
+        'This episode has no symptom preset linked, so symptoms cannot be reopened.',
+        { politeness: 'assertive' },
+      );
+      return;
+    }
+    navigation.replace('SymptomPrompt', {
+      episodeId,
+      symptomPresetId,
+      resume: true,
+    });
+  }, [episodeId, episodeRow, navigation]);
+
+  const onBackToFoodDiaryFromPostMarkers = async () => {
+    setPostFeedback(null);
+    setPhase('foodDiary');
+    await announce('Returned to food diary.', { politeness: 'polite' });
+  };
+
+  const onCancelEpisodePress = () => {
+    if (cancelingEpisode) {
+      return;
+    }
+    Alert.alert(
+      'Cancel this active episode?',
+      'Canceling permanently deletes this in-progress episode, its symptom answers, health markers, and media metadata. Food diary entries are kept, but this episode link is removed. This cannot be undone.',
+      [
+        { text: 'Keep episode', style: 'cancel' },
+        {
+          text: 'Cancel episode',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              setCancelingEpisode(true);
+              try {
+                const result = await cancelActiveEpisodeById(
+                  supabase,
+                  episodeId,
+                );
+                if (!result.ok) {
+                  await announce(result.error.message, {
+                    politeness: 'assertive',
+                  });
+                  return;
+                }
+                clearSymptomPromptSession(episodeId);
+                if (result.data.didCancel) {
+                  await announce(
+                    'Episode canceled. Resume is no longer available.',
+                    {
+                      politeness: 'polite',
+                    },
+                  );
+                } else {
+                  await announce('This episode is no longer active.', {
+                    politeness: 'polite',
+                  });
+                }
+                navigation.dispatch(
+                  CommonActions.reset({
+                    index: 0,
+                    routes: [{ name: 'MainTabs' }],
+                  }),
+                );
+              } finally {
+                setCancelingEpisode(false);
+              }
+            })();
+          },
+        },
+      ],
+    );
   };
 
   const onFinishToHome = () => {
@@ -609,61 +718,6 @@ export function HealthMarkerPromptScreen() {
     );
   }, [endedSummary, endingEpisode, onEndEpisode]);
 
-  const onCancelEpisodePress = () => {
-    if (cancelingEpisode) {
-      return;
-    }
-    Alert.alert(
-      'Cancel this active episode?',
-      'Canceling permanently deletes this in-progress episode, its symptom answers, health markers, and media metadata. Food diary entries are kept, but this episode link is removed. This cannot be undone.',
-      [
-        { text: 'Keep episode', style: 'cancel' },
-        {
-          text: 'Cancel episode',
-          style: 'destructive',
-          onPress: () => {
-            void (async () => {
-              setCancelingEpisode(true);
-              try {
-                const result = await cancelActiveEpisodeById(
-                  supabase,
-                  episodeId,
-                );
-                if (!result.ok) {
-                  await announce(result.error.message, {
-                    politeness: 'assertive',
-                  });
-                  return;
-                }
-                clearSymptomPromptSession(episodeId);
-                if (result.data.didCancel) {
-                  await announce(
-                    'Episode canceled. Resume is no longer available.',
-                    {
-                      politeness: 'polite',
-                    },
-                  );
-                } else {
-                  await announce('This episode is no longer active.', {
-                    politeness: 'polite',
-                  });
-                }
-                navigation.dispatch(
-                  CommonActions.reset({
-                    index: 0,
-                    routes: [{ name: 'MainTabs' }],
-                  }),
-                );
-              } finally {
-                setCancelingEpisode(false);
-              }
-            })();
-          },
-        },
-      ],
-    );
-  };
-
   return (
     <ScreenShell contentAlign="stretch">
       <View className="min-h-0 flex-1 gap-4">
@@ -674,7 +728,9 @@ export function HealthMarkerPromptScreen() {
         >
           {phase === 'postMarkers'
             ? 'Episode details'
-            : 'Episode health markers'}
+            : phase === 'foodDiary'
+              ? 'Food diary'
+              : 'Episode health markers'}
         </Text>
         {phase === 'prompting' && persistFeedback ? (
           <Text
@@ -716,8 +772,9 @@ export function HealthMarkerPromptScreen() {
                 className={`text-base leading-relaxed ${nw.textInk}`}
                 maxFontSizeMultiplier={2}
               >
-                Preset prompts and episode details are saved. End this episode
-                to prevent stale resume state.
+                {foodDiaryDecision === 'saved'
+                  ? 'Preset prompts, episode details, and food diary are saved. End this episode to prevent stale resume state.'
+                  : 'Preset prompts and episode details are saved. End this episode to prevent stale resume state.'}
               </Text>
             )}
             {endFeedback ? (
@@ -759,6 +816,12 @@ export function HealthMarkerPromptScreen() {
               </Pressable>
             )}
           </View>
+        ) : phase === 'foodDiary' ? (
+          <HealthMarkerFoodDiaryStep
+            fd={foodDiary}
+            colors={colors}
+            onCancelEpisodePress={onCancelEpisodePress}
+          />
         ) : phase === 'postMarkers' ? (
           <>
             <ScrollView
@@ -770,7 +833,8 @@ export function HealthMarkerPromptScreen() {
                 className={`mb-4 text-base leading-relaxed ${nw.textMuted}`}
                 maxFontSizeMultiplier={2}
               >
-                Choose ABS or Other; other fields are optional.
+                After health markers and food diary, choose ABS or Other; other
+                fields are optional.
               </Text>
               <Text
                 accessibilityRole="header"
@@ -907,6 +971,23 @@ export function HealthMarkerPromptScreen() {
                   {postFeedback}
                 </Text>
               ) : null}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Back"
+                accessibilityState={{ disabled: savingPost }}
+                disabled={savingPost}
+                onPress={() => {
+                  void onBackToFoodDiaryFromPostMarkers();
+                }}
+                style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                className="w-full items-center justify-center rounded-xl border-2 border-app-border bg-app-bg px-3 py-4 active:opacity-90 dark:border-app-border-dark dark:bg-app-bg-dark"
+              >
+                <Text
+                  className={`text-center text-[17px] font-semibold ${nw.textInk}`}
+                >
+                  Back
+                </Text>
+              </Pressable>
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Save episode details"
@@ -1051,23 +1132,27 @@ export function HealthMarkerPromptScreen() {
                 ) : null}
 
                 <View className="mt-6 gap-3">
-                  {activeIndex > 0 ? (
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel="Previous marker"
-                      onPress={goBackStep}
-                      disabled={saving}
-                      style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
-                      className="w-full items-center justify-center rounded-xl border-2 border-app-border bg-app-bg px-3 py-4 active:opacity-90 dark:border-app-border-dark dark:bg-app-bg-dark"
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Back"
+                    onPress={() => {
+                      if (activeIndex > 0) {
+                        goBackStep();
+                        return;
+                      }
+                      void onBackToSymptomsFromHealthMarkers();
+                    }}
+                    disabled={saving}
+                    style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                    className="w-full items-center justify-center rounded-xl border-2 border-app-border bg-app-bg px-3 py-4 active:opacity-90 dark:border-app-border-dark dark:bg-app-bg-dark"
+                  >
+                    <Text
+                      className={`text-center text-[17px] font-semibold ${nw.textInk}`}
+                      maxFontSizeMultiplier={2}
                     >
-                      <Text
-                        className={`text-center text-[17px] font-semibold ${nw.textInk}`}
-                        maxFontSizeMultiplier={2}
-                      >
-                        Back
-                      </Text>
-                    </Pressable>
-                  ) : null}
+                      Back
+                    </Text>
+                  </Pressable>
                   {currentLine ? (
                     <Pressable
                       accessibilityRole="button"
@@ -1093,11 +1178,9 @@ export function HealthMarkerPromptScreen() {
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel={
-                      lines.length === 0
-                        ? 'Continue to episode details'
-                        : activeIndex >= lines.length - 1
-                          ? 'Finish health marker list'
-                          : 'Next health marker'
+                      continueToFoodDiary
+                        ? 'Continue to food diary'
+                        : 'Next health marker'
                     }
                     accessibilityState={{ disabled: saving }}
                     disabled={saving}
@@ -1110,11 +1193,9 @@ export function HealthMarkerPromptScreen() {
                     <Text className="text-center text-[17px] font-semibold text-white">
                       {saving
                         ? 'Saving…'
-                        : lines.length === 0
-                          ? 'Continue to episode details'
-                          : activeIndex >= lines.length - 1
-                            ? 'Finish'
-                            : 'Next'}
+                        : continueToFoodDiary
+                          ? 'Continue to food diary'
+                          : 'Next'}
                     </Text>
                   </Pressable>
                 </View>

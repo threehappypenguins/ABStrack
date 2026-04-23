@@ -29,6 +29,8 @@ import { createBrowserClient } from '@/lib/supabase/browser-client';
 import { clearSymptomPromptSession } from '@/lib/episode-flow/symptom-prompt-session-store';
 import { EpisodeLocaleInstant } from '@/components/episodes/EpisodeLocaleInstant';
 import { ConfirmDialog } from '../symptom-presets/ConfirmDialog';
+import { EpisodeFoodDiaryStep } from './EpisodeFoodDiaryStep';
+import { useEpisodeFoodDiary } from './use-episode-food-diary';
 
 type MarkerDraft = {
   value: string;
@@ -177,9 +179,9 @@ export function HealthMarkerPromptFlow({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [persistFeedback, setPersistFeedback] =
     useState<PersistFeedback | null>(null);
-  const [phase, setPhase] = useState<'prompting' | 'postMarkers' | 'complete'>(
-    'prompting',
-  );
+  const [phase, setPhase] = useState<
+    'prompting' | 'postMarkers' | 'foodDiary' | 'complete'
+  >('prompting');
   const [userId, setUserId] = useState<string | null>(null);
   const [lines, setLines] = useState<PresetHealthMarkerRow[]>([]);
   const [drafts, setDrafts] = useState<Record<string, MarkerDraft>>({});
@@ -192,6 +194,9 @@ export function HealthMarkerPromptFlow({
   const [postNote, setPostNote] = useState('');
   const [savingPost, setSavingPost] = useState(false);
   const [postFeedback, setPostFeedback] = useState<string | null>(null);
+  const [foodDiaryDecision, setFoodDiaryDecision] = useState<
+    'pending' | 'saved' | 'skipped'
+  >('pending');
   const [endingEpisode, setEndingEpisode] = useState(false);
   const [endDialogOpen, setEndDialogOpen] = useState(false);
   const [endFeedback, setEndFeedback] = useState<string | null>(null);
@@ -204,6 +209,20 @@ export function HealthMarkerPromptFlow({
   const [cancelingEpisode, setCancelingEpisode] = useState(false);
   const [episodeRow, setEpisodeRow] = useState<EpisodeRow | null>(null);
   const loadGenRef = useRef(0);
+
+  const onLeaveFoodDiary = useCallback((decision: 'saved' | 'skipped') => {
+    setFoodDiaryDecision(decision);
+    setPhase('postMarkers');
+  }, []);
+
+  const foodDiary = useEpisodeFoodDiary({
+    episodeId,
+    userId,
+    supabase,
+    announce,
+    enabled: phase === 'foodDiary',
+    onLeaveFoodDiary,
+  });
 
   useEffect(() => {
     setPersistFeedback(null);
@@ -233,6 +252,8 @@ export function HealthMarkerPromptFlow({
     setPhase('prompting');
     postFormInitRef.current = false;
     setPostFeedback(null);
+    setFoodDiaryDecision('pending');
+    foodDiary.reset();
     setEndFeedback(null);
     setEndedSummary(null);
     const {
@@ -305,7 +326,7 @@ export function HealthMarkerPromptFlow({
     setDrafts(nextDrafts);
 
     // Initial hydrate / resume; values logged later in this session are picked up in
-    // enterPostMarkerPhaseAfterMarkers before the post-marker step.
+    // enterFoodDiaryPhaseAfterMarkers before the food diary step.
     setBacSuggestAbs(bacReadingSuggestsAbsEpisode(markerRows.data));
 
     const firstUnanswered = presetLines.data.findIndex((line) => {
@@ -317,7 +338,7 @@ export function HealthMarkerPromptFlow({
         if (episode.data?.post_marker_step_completed_at) {
           setPhase('complete');
         } else {
-          setPhase('postMarkers');
+          setPhase('foodDiary');
         }
       } else {
         setActiveIndex(firstUnanswered);
@@ -326,7 +347,7 @@ export function HealthMarkerPromptFlow({
       setActiveIndex(0);
     }
     setStatus('ready');
-  }, [episodeId, resumeFromEntry, supabase]);
+  }, [episodeId, foodDiary.reset, resumeFromEntry, supabase]);
 
   useEffect(() => {
     void load();
@@ -344,6 +365,8 @@ export function HealthMarkerPromptFlow({
     : false;
   const canSkip = Boolean(currentLine) && !measurementReadyForSave;
   const skipPressable = canSkip && !saving;
+  const continueToFoodDiary =
+    lines.length === 0 || activeIndex >= lines.length - 1;
 
   const onUpdateDraft = (patch: Partial<MarkerDraft>) => {
     if (!currentLine) {
@@ -415,9 +438,9 @@ export function HealthMarkerPromptFlow({
 
   /**
    * Re-reads saved episode markers so BAC suggestion reflects values logged during this session,
-   * then moves to the post–marker episode details step.
+   * then moves to the food diary step.
    */
-  const enterPostMarkerPhaseAfterMarkers = useCallback(async () => {
+  const enterFoodDiaryPhaseAfterMarkers = useCallback(async () => {
     const markerRows = await listEpisodeHealthMarkersForEpisode(
       supabase,
       episodeId,
@@ -425,7 +448,7 @@ export function HealthMarkerPromptFlow({
     if (markerRows.ok) {
       setBacSuggestAbs(bacReadingSuggestsAbsEpisode(markerRows.data));
     }
-    setPhase('postMarkers');
+    setPhase('foodDiary');
   }, [episodeId, supabase]);
 
   const goNext = async () => {
@@ -433,10 +456,10 @@ export function HealthMarkerPromptFlow({
       return;
     }
     if (!currentLine) {
-      await enterPostMarkerPhaseAfterMarkers();
+      await enterFoodDiaryPhaseAfterMarkers();
       announce(
         lines.length === 0
-          ? 'No preset health markers to log. Continue to episode details.'
+          ? 'No preset health markers to log. Continue to food diary.'
           : 'Health marker list complete.',
         { politeness: 'polite' },
       );
@@ -447,7 +470,7 @@ export function HealthMarkerPromptFlow({
       return;
     }
     if (activeIndex >= lines.length - 1) {
-      await enterPostMarkerPhaseAfterMarkers();
+      await enterFoodDiaryPhaseAfterMarkers();
       announce('Health marker list complete.', { politeness: 'polite' });
       return;
     }
@@ -459,7 +482,7 @@ export function HealthMarkerPromptFlow({
       return;
     }
     if (activeIndex >= lines.length - 1) {
-      await enterPostMarkerPhaseAfterMarkers();
+      await enterFoodDiaryPhaseAfterMarkers();
       announce('Health marker list complete.', { politeness: 'polite' });
       return;
     }
@@ -491,6 +514,30 @@ export function HealthMarkerPromptFlow({
     setEndedSummary(null);
     setPhase('complete');
     announce('Episode details saved.', { politeness: 'polite' });
+  };
+
+  const onBackToHealthMarkersFromFoodDiary = () => {
+    setPhase('prompting');
+    announce('Returned to health markers.', { politeness: 'polite' });
+  };
+
+  const onBackToSymptomsFromHealthMarkers = useCallback(() => {
+    const symptomPresetId = episodeRow?.symptom_preset_id;
+    if (!symptomPresetId) {
+      const message =
+        'This episode has no symptom preset linked, so symptoms cannot be reopened.';
+      announce(message, { politeness: 'assertive' });
+      return;
+    }
+    const query = new URLSearchParams();
+    query.set('symptomPresetId', symptomPresetId);
+    query.set('resume', '1');
+    router.push(`/episode/${episodeId}/symptoms?${query.toString()}`);
+  }, [announce, episodeId, episodeRow, router]);
+
+  const onBackToFoodDiaryFromPostMarkers = () => {
+    setPhase('foodDiary');
+    announce('Returned to food diary.', { politeness: 'polite' });
   };
 
   const onFinishToDashboard = () => {
@@ -640,7 +687,7 @@ export function HealthMarkerPromptFlow({
               Episode details
             </h1>
             <p className="mt-2 text-base text-app-muted">
-              After your preset health markers, add any extra context. Choose
+              After health markers and food diary, add any extra context. Choose
               ABS or Other; other fields are optional.
             </p>
           </div>
@@ -751,16 +798,26 @@ export function HealthMarkerPromptFlow({
             </p>
           ) : null}
 
-          <button
-            type="button"
-            className="inline-flex min-h-[56px] w-full items-center justify-center rounded-xl bg-red-700 px-5 text-base font-semibold text-white shadow-md transition hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:opacity-60 dark:bg-red-600 dark:hover:bg-red-500 sm:w-auto"
-            disabled={savingPost}
-            onClick={() => {
-              void onSubmitPostMarkers();
-            }}
-          >
-            {savingPost ? 'Saving…' : 'Save and continue'}
-          </button>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <button
+              type="button"
+              className="inline-flex min-h-[56px] w-full items-center justify-center rounded-xl border border-app-border bg-app-surface px-4 text-base font-semibold text-app-ink shadow-sm transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg sm:w-auto"
+              disabled={savingPost}
+              onClick={onBackToFoodDiaryFromPostMarkers}
+            >
+              Back
+            </button>
+            <button
+              type="button"
+              className="inline-flex min-h-[56px] w-full items-center justify-center rounded-xl bg-red-700 px-5 text-base font-semibold text-white shadow-md transition hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:opacity-60 dark:bg-red-600 dark:hover:bg-red-500 sm:w-auto"
+              disabled={savingPost}
+              onClick={() => {
+                void onSubmitPostMarkers();
+              }}
+            >
+              {savingPost ? 'Saving…' : 'Save and continue'}
+            </button>
+          </div>
 
           <button
             type="button"
@@ -815,8 +872,9 @@ export function HealthMarkerPromptFlow({
               </div>
             ) : (
               <p className="text-sm leading-relaxed text-app-ink">
-                Preset prompts and episode details are saved. End this episode
-                to prevent stale resume state.
+                {foodDiaryDecision === 'saved'
+                  ? 'Preset prompts, episode details, and food diary are saved. End this episode to prevent stale resume state.'
+                  : 'Preset prompts and episode details are saved. End this episode to prevent stale resume state.'}
               </p>
             )}
           </div>
@@ -859,6 +917,19 @@ export function HealthMarkerPromptFlow({
           }}
         />
       </>
+    );
+  }
+
+  if (phase === 'foodDiary') {
+    return (
+      <EpisodeFoodDiaryStep
+        fd={foodDiary}
+        onBack={onBackToHealthMarkersFromFoodDiary}
+        cancelDialogOpen={cancelDialogOpen}
+        setCancelDialogOpen={setCancelDialogOpen}
+        onCancelEpisodeConfirm={onCancelEpisodeConfirm}
+        cancelingEpisode={cancelingEpisode}
+      />
     );
   }
 
@@ -980,16 +1051,20 @@ export function HealthMarkerPromptFlow({
         ) : null}
 
         <div className="flex flex-col gap-3 sm:flex-row">
-          {activeIndex > 0 ? (
-            <button
-              type="button"
-              className="inline-flex min-h-[56px] flex-1 items-center justify-center rounded-xl border border-app-border bg-app-surface px-4 text-base font-semibold text-app-ink shadow-sm transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
-              onClick={goBackStep}
-              disabled={saving}
-            >
-              Back
-            </button>
-          ) : null}
+          <button
+            type="button"
+            className="inline-flex min-h-[56px] flex-1 items-center justify-center rounded-xl border border-app-border bg-app-surface px-4 text-base font-semibold text-app-ink shadow-sm transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+            onClick={() => {
+              if (activeIndex > 0) {
+                goBackStep();
+                return;
+              }
+              onBackToSymptomsFromHealthMarkers();
+            }}
+            disabled={saving}
+          >
+            Back
+          </button>
           {currentLine ? (
             <button
               type="button"
@@ -1014,20 +1089,16 @@ export function HealthMarkerPromptFlow({
             }}
             disabled={saving}
             aria-label={
-              lines.length === 0
-                ? 'Continue to episode details'
-                : activeIndex >= lines.length - 1
-                  ? 'Finish health marker list'
-                  : 'Next health marker'
+              continueToFoodDiary
+                ? 'Continue to food diary'
+                : 'Next health marker'
             }
           >
             {saving
               ? 'Saving…'
-              : lines.length === 0
-                ? 'Continue to episode details'
-                : activeIndex >= lines.length - 1
-                  ? 'Finish'
-                  : 'Next'}
+              : continueToFoodDiary
+                ? 'Continue to food diary'
+                : 'Next'}
           </button>
         </div>
         <button

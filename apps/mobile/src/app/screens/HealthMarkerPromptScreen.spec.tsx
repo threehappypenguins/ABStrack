@@ -5,11 +5,14 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import {
   cancelActiveEpisodeById,
   completeEpisodePostMarkerStep,
+  createFoodDiaryEntry,
   endEpisodeIfStillActive,
   getEpisodeById,
+  listFoodDiaryEntriesForEpisode,
   listEpisodeHealthMarkersForEpisode,
   listPresetHealthMarkersForPreset,
   PresetDataError,
+  updateFoodDiaryEntry,
   upsertEpisodeHealthMarkerForLine,
 } from '@abstrack/supabase';
 import type { PresetHealthMarkerRow } from '@abstrack/types';
@@ -33,10 +36,13 @@ jest.mock('@abstrack/supabase', () => {
     ...actual,
     cancelActiveEpisodeById: jest.fn(),
     completeEpisodePostMarkerStep: jest.fn(),
+    createFoodDiaryEntry: jest.fn(),
     endEpisodeIfStillActive: jest.fn(),
     getEpisodeById: jest.fn(),
+    listFoodDiaryEntriesForEpisode: jest.fn(),
     listEpisodeHealthMarkersForEpisode: jest.fn(),
     listPresetHealthMarkersForPreset: jest.fn(),
+    updateFoodDiaryEntry: jest.fn(),
     upsertEpisodeHealthMarkerForLine: jest.fn(),
   };
 });
@@ -191,6 +197,36 @@ describe('HealthMarkerPromptScreen', () => {
       ok: true,
       data: { didEnd: true },
     });
+    jest.mocked(createFoodDiaryEntry).mockResolvedValue({
+      ok: true,
+      data: {
+        id: 'food-1',
+        user_id: 'test-user-1',
+        episode_id: episodeId,
+        meal_tag: 'Other',
+        food_note: 'Snack',
+        logged_at: '2020-01-01T01:30:00Z',
+        created_at: '2020-01-01T01:30:00Z',
+        updated_at: '2020-01-01T01:30:00Z',
+      },
+    });
+    jest.mocked(updateFoodDiaryEntry).mockResolvedValue({
+      ok: true,
+      data: {
+        id: 'food-1',
+        user_id: 'test-user-1',
+        episode_id: episodeId,
+        meal_tag: 'Snack',
+        food_note: 'Updated note',
+        logged_at: '2020-01-01T01:30:00Z',
+        created_at: '2020-01-01T01:30:00Z',
+        updated_at: '2020-01-01T01:31:00Z',
+      },
+    });
+    jest.mocked(listFoodDiaryEntriesForEpisode).mockResolvedValue({
+      ok: true,
+      data: [],
+    });
   });
 
   test('loads marker preset lines and shows first step', async () => {
@@ -288,7 +324,7 @@ describe('HealthMarkerPromptScreen', () => {
     const skip = screen.getByLabelText('Skip this marker');
     expect(skip.props.accessibilityState?.disabled).toBe(false);
 
-    fireEvent.press(screen.getByLabelText('Finish health marker list'));
+    fireEvent.press(screen.getByLabelText('Continue to food diary'));
 
     await waitFor(() => {
       expect(
@@ -300,7 +336,7 @@ describe('HealthMarkerPromptScreen', () => {
     expect(upsertEpisodeHealthMarkerForLine).not.toHaveBeenCalled();
   });
 
-  test('post-marker episode details: save calls Supabase and shows completion UI', async () => {
+  test('food diary comes before episode details, then save shows completion UI', async () => {
     jest.mocked(listPresetHealthMarkersForPreset).mockResolvedValue({
       ok: true,
       data: [lineA],
@@ -313,13 +349,26 @@ describe('HealthMarkerPromptScreen', () => {
     });
 
     fireEvent.changeText(screen.getByLabelText('Marker value'), '100');
-    fireEvent.press(screen.getByLabelText('Finish health marker list'));
+    fireEvent.press(screen.getByLabelText('Continue to food diary'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Food diary')).toBeTruthy();
+    });
+    expect(
+      screen.getByText(
+        'Add one or more meals/snacks for this episode, or skip this step.',
+      ),
+    ).toBeTruthy();
+
+    fireEvent.press(screen.getByLabelText('Skip food diary entry'));
 
     await waitFor(() => {
       expect(screen.getByText('Episode details')).toBeTruthy();
     });
     expect(
-      screen.getByText('Choose ABS or Other; other fields are optional.'),
+      screen.getByText(
+        'After health markers and food diary, choose ABS or Other; other fields are optional.',
+      ),
     ).toBeTruthy();
 
     fireEvent.press(screen.getByLabelText('Other episode type'));
@@ -381,8 +430,12 @@ describe('HealthMarkerPromptScreen', () => {
     });
 
     fireEvent.changeText(screen.getByLabelText('Marker value'), '5');
-    fireEvent.press(screen.getByLabelText('Finish health marker list'));
+    fireEvent.press(screen.getByLabelText('Continue to food diary'));
 
+    await waitFor(() => {
+      expect(screen.getByText('Food diary')).toBeTruthy();
+    });
+    fireEvent.press(screen.getByLabelText('Skip food diary entry'));
     await waitFor(() => {
       expect(screen.getByText('Episode details')).toBeTruthy();
     });

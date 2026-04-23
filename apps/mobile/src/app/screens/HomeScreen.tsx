@@ -25,6 +25,7 @@ interface HealthCheckResult {
 type HomeScreenProps = {
   onGoToSettings: () => void;
   onGoToEpisodes: () => void;
+  onGoToFoodDiary: () => void;
   onStartEpisode: () => void;
   onResumeEpisode: (episode: ActiveEpisodeHomeSummary) => void;
 };
@@ -32,6 +33,7 @@ type HomeScreenProps = {
 export function HomeScreen({
   onGoToSettings,
   onGoToEpisodes,
+  onGoToFoodDiary,
   onStartEpisode,
   onResumeEpisode,
 }: HomeScreenProps) {
@@ -254,6 +256,19 @@ export function HomeScreen({
             maxFontSizeMultiplier={2}
           >
             Episodes
+          </Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Add food diary entry"
+          onPress={onGoToFoodDiary}
+          className={`mb-1 min-h-[48px] justify-center rounded-xl border border-app-border bg-app-surface px-4 py-3 dark:border-app-border-dark dark:bg-app-surface-dark`}
+        >
+          <Text
+            className={`text-center text-base font-semibold ${nw.textPrimary}`}
+            maxFontSizeMultiplier={2}
+          >
+            Food diary
           </Text>
         </Pressable>
 
