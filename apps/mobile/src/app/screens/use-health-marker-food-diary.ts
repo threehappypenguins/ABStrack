@@ -326,23 +326,13 @@ export function useHealthMarkerFoodDiary({
     }
     setFoodDatePickerOpen(false);
     setFoodTimePickerOpen(false);
-    const decision =
-      foodEntriesError != null
-        ? 'skipped'
-        : foodEntries.length > 0
-          ? 'saved'
-          : 'skipped';
+    const decision = foodEntries.length > 0 ? 'saved' : 'skipped';
     setFoodDiaryFeedback(null);
     await onLeaveFoodDiary(decision);
     await announce('Continue to episode details.', {
       politeness: 'polite',
     });
-  }, [
-    foodDiaryContinueDisabled,
-    foodEntries.length,
-    foodEntriesError,
-    onLeaveFoodDiary,
-  ]);
+  }, [foodDiaryContinueDisabled, foodEntries.length, onLeaveFoodDiary]);
 
   const onBackFromFoodDiary = useCallback(async () => {
     setFoodDatePickerOpen(false);

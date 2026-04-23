@@ -312,17 +312,10 @@ export function useEpisodeFoodDiary({
     if (foodSaving || deletingFoodEntryId != null || foodEntriesLoading) {
       return;
     }
-    onLeaveFoodDiary(
-      foodEntriesError != null
-        ? 'skipped'
-        : foodEntries.length > 0
-          ? 'saved'
-          : 'skipped',
-    );
+    onLeaveFoodDiary(foodEntries.length > 0 ? 'saved' : 'skipped');
   }, [
     deletingFoodEntryId,
     foodEntries.length,
-    foodEntriesError,
     foodEntriesLoading,
     foodSaving,
     onLeaveFoodDiary,
