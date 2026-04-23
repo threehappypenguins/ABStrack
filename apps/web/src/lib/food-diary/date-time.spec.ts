@@ -1,6 +1,10 @@
 import { localInputValueToIso, toLocalDateTimeInputValue } from './date-time';
 
 describe('food diary date-time helpers', () => {
+  it('returns empty string for an invalid ISO input', () => {
+    expect(toLocalDateTimeInputValue('not-a-real-iso')).toBe('');
+  });
+
   it('round-trips an ISO value through datetime-local format', () => {
     const iso = '2026-01-15T13:45:00.000Z';
     const local = toLocalDateTimeInputValue(iso);

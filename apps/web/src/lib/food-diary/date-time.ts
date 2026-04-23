@@ -2,10 +2,13 @@
  * Converts an ISO timestamp into an HTML `datetime-local` value using local time.
  *
  * @param iso - ISO timestamp to convert.
- * @returns Local datetime input string in `YYYY-MM-DDTHH:mm` format.
+ * @returns Local datetime input string in `YYYY-MM-DDTHH:mm` format, or empty string when invalid.
  */
 export function toLocalDateTimeInputValue(iso: string): string {
   const date = new Date(iso);
+  if (!Number.isFinite(date.getTime())) {
+    return '';
+  }
   const offsetMs = date.getTimezoneOffset() * 60_000;
   return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
 }
