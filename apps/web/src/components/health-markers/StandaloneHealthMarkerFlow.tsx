@@ -188,7 +188,7 @@ export function StandaloneHealthMarkerFlow() {
     setActiveIndex((prev) => prev + 1);
   };
 
-  if (authLoading || loadingPresets) {
+  if (authLoading) {
     return <PageLoading title="Log health markers" />;
   }
 
@@ -207,6 +207,10 @@ export function StandaloneHealthMarkerFlow() {
         </Link>
       </div>
     );
+  }
+
+  if (loadingPresets) {
+    return <PageLoading title="Log health markers" />;
   }
 
   if (phase === 'complete') {
