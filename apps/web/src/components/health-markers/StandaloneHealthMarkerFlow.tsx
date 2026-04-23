@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createStandaloneHealthMarkerForLine,
   listHealthMarkerPresets,
@@ -51,16 +51,48 @@ export function StandaloneHealthMarkerFlow() {
   const [drafts, setDrafts] = useState<Record<string, MarkerDraft>>({});
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [presetRefetchTick, setPresetRefetchTick] = useState(0);
+  const lastPresetUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (authLoading || !session?.user?.id || !loadingPresets) {
+    if (authLoading) {
       return;
     }
 
-    let cancelled = false;
-    const run = async () => {
-      setLoadingPresets(true);
+    const userId = session?.user?.id ?? null;
+    if (!userId) {
+      lastPresetUserIdRef.current = null;
+      setPresets([]);
       setLoadError(null);
+      setLoadingPresets(false);
+      setPhase('pickPreset');
+      setLines([]);
+      setDrafts({});
+      setActiveIndex(0);
+      setSelectedPresetId(null);
+      setFeedback(null);
+      return;
+    }
+
+    const switchedAccount =
+      lastPresetUserIdRef.current !== null &&
+      lastPresetUserIdRef.current !== userId;
+    lastPresetUserIdRef.current = userId;
+
+    if (switchedAccount) {
+      setPhase('pickPreset');
+      setLines([]);
+      setDrafts({});
+      setActiveIndex(0);
+      setSelectedPresetId(null);
+      setFeedback(null);
+    }
+
+    let cancelled = false;
+    setLoadingPresets(true);
+    setLoadError(null);
+
+    void (async () => {
       const result = await listHealthMarkerPresets(supabase);
       if (cancelled) {
         return;
@@ -72,14 +104,12 @@ export function StandaloneHealthMarkerFlow() {
       }
       setPresets(result.data);
       setLoadingPresets(false);
-    };
-
-    void run();
+    })();
 
     return () => {
       cancelled = true;
     };
-  }, [authLoading, loadingPresets, session?.user?.id, supabase]);
+  }, [authLoading, session?.user?.id, supabase, presetRefetchTick]);
 
   useEffect(() => {
     setFeedback(null);
@@ -268,11 +298,22 @@ export function StandaloneHealthMarkerFlow() {
           </p>
         </div>
         {loadError ? (
-          <p className="text-sm text-red-700 dark:text-red-300" role="alert">
-            {loadError}
-          </p>
+          <div className="space-y-3">
+            <p className="text-sm text-red-700 dark:text-red-300" role="alert">
+              {loadError}
+            </p>
+            <button
+              type="button"
+              className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-app-border bg-app-surface px-4 text-sm font-semibold text-app-ink shadow-sm transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+              onClick={() => {
+                setPresetRefetchTick((n) => n + 1);
+              }}
+            >
+              Try again
+            </button>
+          </div>
         ) : null}
-        {presets.length === 0 ? (
+        {!loadError && presets.length === 0 ? (
           <div className="rounded-2xl border border-app-border/90 bg-app-surface p-6">
             <p className="text-sm leading-relaxed text-app-ink">
               You do not have any health marker presets yet. Create one under{' '}
@@ -285,7 +326,7 @@ export function StandaloneHealthMarkerFlow() {
               .
             </p>
           </div>
-        ) : (
+        ) : presets.length > 0 ? (
           <fieldset className="space-y-3">
             <legend className="text-base font-semibold text-app-ink">
               Choose one preset
@@ -310,7 +351,7 @@ export function StandaloneHealthMarkerFlow() {
               </label>
             ))}
           </fieldset>
-        )}
+        ) : null}
         {feedback ? (
           <p className="text-sm text-red-700 dark:text-red-300" role="alert">
             {feedback}

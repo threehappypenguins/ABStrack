@@ -475,6 +475,8 @@ describe('createStandaloneHealthMarkerForLine', () => {
       created_at: '2026-04-18T12:00:00.000Z',
       updated_at: '2026-04-18T12:00:00.000Z',
     };
+    const singleMock = vi.fn(async () => ({ data: inserted, error: null }));
+    const selectMock = vi.fn(() => ({ single: singleMock }));
     const insertMock = vi.fn((payload: Record<string, unknown>) => {
       expect(payload).toEqual(
         expect.objectContaining({
@@ -484,12 +486,11 @@ describe('createStandaloneHealthMarkerForLine', () => {
           marker_kind: 'blood_glucose',
           value_numeric: 101,
           notes: 'daily check',
+          recorded_at: '2026-04-18T12:00:00.000Z',
         }),
       );
       return {
-        select: vi.fn(() => ({
-          single: vi.fn(async () => ({ data: inserted, error: null })),
-        })),
+        select: selectMock,
       };
     });
     const client = {
@@ -498,15 +499,22 @@ describe('createStandaloneHealthMarkerForLine', () => {
       })),
     } as unknown as AbstrackSupabaseClient;
 
+    const recordedAt = '2026-04-18T12:00:00.000Z';
     const result = await createStandaloneHealthMarkerForLine(client, {
       userId: 'u1',
       line,
       valueNumeric: 101,
       notes: 'daily check',
-      recordedAt: '2026-04-18T12:00:00.000Z',
+      recordedAt,
     });
 
     expect(result.ok).toBe(true);
     expect(insertMock).toHaveBeenCalledTimes(1);
+    expect(selectMock).toHaveBeenCalledTimes(1);
+    expect(selectMock).toHaveBeenCalledWith('*');
+    expect(singleMock).toHaveBeenCalledTimes(1);
+    if (result.ok) {
+      expect(result.data).toEqual(inserted);
+    }
   });
 });
