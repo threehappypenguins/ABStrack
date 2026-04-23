@@ -21,6 +21,32 @@ import {
   localTimeFromDate,
 } from '../../lib/food-diary/date-time';
 
+/** Same ordering as `listFoodDiaryEntriesForEpisode` (newest first). */
+function compareFoodDiaryEntriesDesc(
+  a: FoodDiaryEntryRow,
+  b: FoodDiaryEntryRow,
+): number {
+  let c = b.logged_at.localeCompare(a.logged_at);
+  if (c !== 0) {
+    return c;
+  }
+  c = b.created_at.localeCompare(a.created_at);
+  if (c !== 0) {
+    return c;
+  }
+  return b.id.localeCompare(a.id);
+}
+
+function upsertFoodEntrySorted(
+  prev: FoodDiaryEntryRow[],
+  row: FoodDiaryEntryRow,
+): FoodDiaryEntryRow[] {
+  const next = prev.filter((e) => e.id !== row.id);
+  next.push(row);
+  next.sort(compareFoodDiaryEntriesDesc);
+  return next;
+}
+
 export type UseHealthMarkerFoodDiaryArgs = {
   episodeId: string;
   userId: string | null;
@@ -294,6 +320,7 @@ export function useHealthMarkerFoodDiary({
       await announce(result.error.message, { politeness: 'assertive' });
       return;
     }
+    setFoodEntries((prev) => upsertFoodEntrySorted(prev, result.data));
     await loadFoodEntries();
     const initialFoodDate = currentLocalDate();
     const initialFoodTime = currentLocalTime();
