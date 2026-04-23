@@ -1,14 +1,23 @@
-# User story: Episode logging vs standalone vitals (symptom + health marker presets)
+# User story: Episode flows + standalone health and food logging
 
-**Status:** Draft (product intent; schedule on [ROADMAP.md](../ROADMAP.md) — **Week 5:** migrations (`health_marker_preset_id` + episode templates table), template settings UI, **I'm having an episode** + template picker; **Week 6:** full symptom + marker prompt flow, standalone vitals, food diary, wellness)  
+**Status:** Draft (product intent; schedule on [ROADMAP.md](../ROADMAP.md) — **Week 5:** migrations (`health_marker_preset_id` + episode templates table), template settings UI, **I'm having an episode** + template picker; **Week 6:** full symptom + marker prompt flow, standalone health markers, standalone food diary, and consolidated management requirements)  
 **Related PRD:** [PRD.md](../PRD.md) — §3 Health Marker Presets, §4 Episode Logging, §5 General Wellness Logging
 
 This document expands the **user-facing flows** for:
 
 1. Starting an **episode** when the user may be **cognitively impaired** — the UI must not dump many choices on them at once ([PRD](../PRD.md) impaired-user requirements).
-2. **Asymptomatic** use: the user only wants to **track vitals** using a health marker preset, with **no** symptom episode.
+2. **Asymptomatic** use: the user wants to **track health markers** using a preset, with **no** symptom episode.
+3. Standalone **food diary** logging outside episode prompts.
 
 The PRD states the **order** of prompts (symptoms first, then health markers). This story adds **how** pairing is chosen without overwhelming the user at episode start.
+
+## Product scope guardrails
+
+- Symptoms (including nausea/vomiting and related episode symptoms) are captured through the **episode flow**, not a standalone symptom path.
+- Standalone logging in this scope is limited to:
+  - health marker entries
+  - food diary entries
+- Generic "How are you feeling" mood/wellness capture is out of scope for these flows.
 
 ---
 
@@ -29,7 +38,7 @@ At episode start, the experience is: **pick what kind of episode this is** using
 
 So Eric needs **more than one named episode type** at start — not more complexity on one screen. He should see a **short list of big buttons** (or an equally accessible control), e.g. **“ABS Episode”** and **“CVS Episode”**, each backed by its own episode template (different symptom lines, different marker lines, or both). One tap → into the combined flow.
 
-Eric also wants to log glucose or other markers on a **good day** without starting any episode — that is **standalone vitals** (Story B).
+Eric also wants to log glucose or other markers on a **good day** without starting any episode — that is **standalone health marker logging** (Story B). He may also add food diary entries without an episode (Story C).
 
 ---
 
@@ -57,7 +66,7 @@ Naming a symptom preset and a health marker preset the same string does **not** 
 
 ---
 
-## Story B — Asymptomatic, “just checking vitals”
+## Story B — Asymptomatic, “just checking health markers”
 
 ### Setup
 
@@ -67,12 +76,39 @@ Naming a symptom preset and a health marker preset the same string does **not** 
 
 1. Eric taps something like **“Log vitals”** / **“Health markers”** from home (**not** “I'm having an episode”).
 2. Eric picks **one health marker preset** only.
-3. The app walks **only** those markers in preset order and saves readings **without** symptom prompts and **without** an episode template.
+3. The app walks **only** those markers in preset order and saves readings **without** symptom prompts and **without** an episode template (`health_markers.episode_id = null`).
 
 ### Outcome
 
 - The same health marker preset can appear inside an episode template (Story A) and **alone** (Story B).
-- Standalone vitals stay **first-class** — no requirement to link markers to symptoms for users who only need that path.
+- Standalone health marker logging stays **first-class** — no requirement to link markers to symptoms for users who only need that path.
+
+---
+
+## Story C — Standalone food diary (non-episode path)
+
+### When Eric wants to log food outside an episode
+
+1. Eric opens a dedicated **Food diary** entry path from home or secondary navigation.
+2. Eric records free-text food notes, meal tag, and timestamp without starting an episode.
+3. If Eric is already in an episode flow, food diary can still be logged at the designated episode step; this standalone path remains available outside episode context.
+
+### Outcome
+
+- Food diary logging works both **during episode flow** and **as a standalone path**.
+- Standalone food entries remain separate from symptom-only assumptions and do not imply an episode.
+
+---
+
+## Unified management concept (product-level)
+
+The product includes one consolidated management surface (implemented accessibly on web + mobile) where users can review and delete entries across three groups:
+
+- Episodes
+- Standalone health marker entries (`health_markers.episode_id IS NULL`)
+- Standalone food diary entries (entries not linked to an episode)
+
+This story defines the scope boundary only; it does not prescribe exact layout, navigation hierarchy, or component-level UI patterns.
 
 ---
 
@@ -84,10 +120,11 @@ Naming a symptom preset and a health marker preset the same string does **not** 
 | **Independent preset lists in the DB** | Symptom presets and health marker presets remain separate editable lists; **templates** are how we pair them for logging without cognitive overload. |
 | **Explicit pairing**                   | The app must not guess; the **episode template** resolves which marker list goes with which symptom list.                                            |
 | **Persist both IDs on the episode**    | For auditability, the episode row should store both `symptom_preset_id` and `health_marker_preset_id` once the schema supports it.                   |
-| **Standalone vitals**                  | Separate entry point; health marker preset only.                                                                                                     |
+| **Standalone health markers**          | Separate entry point; health marker preset only (`health_markers.episode_id = null`).                                                                |
+| **Standalone food diary**              | Separate non-episode entry path is allowed in addition to the in-episode food step.                                                                  |
 
 ---
 
 ## Implementation note
 
-Database migrations, RLS, and typed client updates for `episodes.health_marker_preset_id` and for the **episode preset templates** (bundle) table are **not** specified in this user story file. Concrete tasks live as checkboxes under **[ROADMAP.md](../ROADMAP.md)** (episode template schema + picker in **Week 5**; full prompts and standalone vitals in **Week 6**).
+Database migrations, RLS, and typed client updates for `episodes.health_marker_preset_id` and for the **episode preset templates** (bundle) table are **not** specified in this user story file. Concrete tasks live as checkboxes under **[ROADMAP.md](../ROADMAP.md)** (episode template schema + picker in **Week 5**; full prompts, standalone health markers, standalone food diary, and unified management requirements in **Week 6**).

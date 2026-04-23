@@ -96,34 +96,42 @@
 
 ---
 
-## Week 6: April 20-26 -- Episode Logging, Food Diary, and Wellness Logging
+## Week 6: April 20-26 -- Episode Logging, Food Diary, and Standalone Health Marker Logging
 
-**Goal:** Complete all core daily-use features that patients and caretakers interact with.
+**Goal:** Complete core daily logging flows: episode-first symptom capture, standalone health marker logging, and standalone food diary logging.
+
+**Scope guardrails (product direction):**
+
+- Symptoms such as nausea/vomiting are logged through an **episode flow**, not as standalone symptom entries.
+- Standalone logging paths are limited to **health markers** and **food diary**.
+- Generic mood/wellness note capture is out of scope.
 
 **Tasks:**
 
-- [ ] Complete episode prompt flow:
+- [x] Complete episode prompt flow:
   - All symptom input types functioning (yes/no, severity 1-5, free text)
   - Health marker entry **after** symptoms, using the **health marker preset** stored on the episode row (`health_marker_preset_id`) ([PRD](PRD.md) §4)
-  - "Add additional symptoms/markers" free-text entry at end
+  - "Add additional symptoms/markers" free-text entry at end (episode context only)
   - Episode type selection (ABS / Other) with custom label
   - Episode notes
   - Episode end flow (records `ended_at` timestamp and duration)
-- [ ] Active episode lifecycle and management (no overlap with prompt controls):
+- [x] Active episode lifecycle and management (no overlap with prompt controls):
   - Home screen detects active episode (`ended_at IS NULL`) and shows **Resume episode** as the primary continuation path
   - Prevent accidental duplicate starts when an active episode exists (clear routing/copy for resume vs start-new)
   - Add an **Episodes** management surface for active + recent episodes (secondary navigation, not primary impaired-user path)
   - Add explicit **Cancel accidental episode start** flow for active episodes with destructive confirmation copy
   - Define and implement episode deletion rules + confirmations (what can be deleted, when, and what related rows are removed)
 - [ ] Impaired-user UI polish: large text, large buttons, minimal cognitive load, high contrast mode
-- [ ] Food diary:
-  - Standalone food entry from home screen
+- [x] Food diary:
+  - Standalone food entry from home screen (non-episode path)
   - Food entry during episode prompt (at end of flow)
   - Free text note + meal tag (Breakfast/Lunch/Dinner/Snack/Other) + timestamp
   - Stored as plaintext in PostgreSQL under RLS (`food_diary_entries.food_note` per [PRD](PRD.md))
-- [ ] General wellness: "How are you feeling" mood/wellness entry with optional notes
-- [ ] Ad-hoc symptom logging without starting a full episode
-- [ ] **Standalone vitals:** home or wellness entry to log health markers using **one health marker preset only** (asymptomatic; no symptom preset, no episode)—separate from episode flow ([PRD](PRD.md) §5, [user story](user-stories/episode-and-health-marker-flows.md))
+- [x] **Standalone health marker logging:** home entry path to log markers using **one health marker preset only** with **no episode** (`health_markers.episode_id = null`) ([PRD](PRD.md) §5, [user story](user-stories/episode-and-health-marker-flows.md))
+- [ ] **Unified management surface (web + mobile):** one consolidated place to view/delete all three groups with accessible destructive confirmations:
+  - Episodes
+  - Standalone health entries (`health_markers.episode_id IS NULL`)
+  - Standalone food entries (food diary entries not linked to an episode)
 
 ---
 
@@ -238,7 +246,7 @@ graph TD
     W3[Week 3: Patient Auth + Security Baseline]
     W4[Week 4: UI Components + Presets]
     W5[Week 5: Auth Completion + Episode Foundation]
-    W6[Week 6: Episode Logging + Food Diary + Wellness]
+    W6[Week 6: Episode Logging + Standalone Health + Food Diary]
     W7[Week 7: Media Capture + Offline Sync]
     W8[Week 8: Practitioner App + Caretaker]
     W9[Week 9: Charts + Integration Testing]
@@ -258,7 +266,7 @@ graph TD
 
 ## Notes (constraints, not scope cuts)
 
-- **Episode + health marker presets:** Week 5 ships migrations for `episodes.health_marker_preset_id`, the **episode preset templates** table, template **settings** UI, and **I'm having an episode** → template picker → insert with both preset IDs. Week 6 completes the full prompt flow (symptoms + markers), wellness, and standalone vitals—see week checkboxes and [user story](user-stories/episode-and-health-marker-flows.md).
+- **Episode + health marker presets:** Week 5 ships migrations for `episodes.health_marker_preset_id`, the **episode preset templates** table, template **settings** UI, and **I'm having an episode** → template picker → insert with both preset IDs. Week 6 completes the full prompt flow (symptoms + markers), standalone health marker logging (`health_markers.episode_id = null`), standalone food diary, and defines the unified management surface requirements—see week checkboxes and [user story](user-stories/episode-and-health-marker-flows.md).
 - **PowerSync + RLS consistency:** Sync Rules must mirror grant logic (patient / caretaker / practitioner). Treat RLS as authoritative for API access; validate rule changes in tests ([PRD](PRD.md) Architecture). Week 7 delivers online media upload and the offline queue + PowerSync work as listed in that week’s tasks.
 - **Practitioner MFA fail-closed:** Use an Edge Function (or equivalent) that verifies MFA before returning patient data; do not rely on JWT hooks alone if they can omit claims. This is part of Week 5’s practitioner MFA work, not a downgrade path.
 - **SQLCipher / offline queue:** Week 7 pairs media and offline sync. Device-bound encryption for queued blobs matches the PRD; it is separate from server-side PHI encryption and does not involve sharing keys between users.
