@@ -196,7 +196,7 @@ export function FoodDiaryEntryForm({
                 <button
                   type="button"
                   key={tag}
-                  {...(selected ? { 'aria-pressed': true as const } : {})}
+                  aria-pressed={selected}
                   className={`flex min-h-[44px] items-center justify-center rounded-lg border px-3 py-2 text-sm font-medium shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg ${
                     selected
                       ? 'border-red-700 bg-red-50 text-red-900 dark:border-red-500 dark:bg-red-950/40 dark:text-red-100'

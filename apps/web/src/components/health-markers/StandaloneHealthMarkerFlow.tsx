@@ -28,6 +28,9 @@ import {
 /**
  * Standalone, non-episode health-marker prompt flow.
  *
+ * Presets with no marker lines stay on preset selection with guidance, or show
+ * recovery actions if prompting ever has an empty line list.
+ *
  * @returns Preset selection followed by one-line-at-a-time marker entry.
  */
 export function StandaloneHealthMarkerFlow() {
@@ -68,6 +71,10 @@ export function StandaloneHealthMarkerFlow() {
     }
   }, [authLoading, loadingPresets, session?.user?.id]);
 
+  useEffect(() => {
+    setFeedback(null);
+  }, [activeIndex]);
+
   const currentLine = lines[activeIndex] ?? null;
   const currentDraft = currentLine
     ? (drafts[currentLine.id] ?? createDraftFromMarker(null))
@@ -90,6 +97,13 @@ export function StandaloneHealthMarkerFlow() {
     if (!result.ok) {
       setFeedback(result.error.message);
       announce(result.error.message, { politeness: 'assertive' });
+      return;
+    }
+    if (result.data.length === 0) {
+      const message =
+        'This preset has no marker lines to log yet. Add markers under Health marker presets, or choose a different preset.';
+      setFeedback(message);
+      announce(message, { politeness: 'polite' });
       return;
     }
     const nextDrafts: Record<string, MarkerDraft> = {};
@@ -151,6 +165,7 @@ export function StandaloneHealthMarkerFlow() {
       return;
     }
     if (activeIndex >= lines.length - 1) {
+      setFeedback(null);
       setPhase('complete');
       announce('Standalone health markers saved.', { politeness: 'polite' });
       return;
@@ -278,6 +293,59 @@ export function StandaloneHealthMarkerFlow() {
     );
   }
 
+  if (lines.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-app-ink">
+            Standalone health markers
+          </h1>
+          <p className="mt-2 text-sm text-app-muted" role="status">
+            This preset has no marker lines to log. Nothing was saved.
+          </p>
+        </div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+          <button
+            type="button"
+            className="inline-flex min-h-[56px] items-center justify-center rounded-xl border border-app-border bg-app-surface px-5 text-base font-semibold text-app-ink shadow-sm transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+            onClick={() => {
+              setPhase('pickPreset');
+              setLines([]);
+              setDrafts({});
+              setActiveIndex(0);
+              setFeedback(null);
+              setSelectedPresetId(null);
+              announce('Choose a health marker preset.', {
+                politeness: 'polite',
+              });
+            }}
+          >
+            Choose another preset
+          </button>
+          <button
+            type="button"
+            className="inline-flex min-h-[56px] items-center justify-center rounded-xl bg-red-700 px-5 text-base font-semibold text-white shadow-md transition hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg dark:bg-red-600 dark:hover:bg-red-500"
+            onClick={() => {
+              router.push('/dashboard');
+            }}
+          >
+            Back to dashboard
+          </button>
+        </div>
+        <p className="text-sm text-app-muted">
+          Add lines to this preset under{' '}
+          <Link
+            href="/presets/health-markers"
+            className="font-medium text-app-primary underline decoration-app-primary/40 underline-offset-2 outline-none hover:text-app-ink focus-visible:ring-2 focus-visible:ring-app-ring"
+          >
+            Health marker presets
+          </Link>
+          .
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -285,9 +353,7 @@ export function StandaloneHealthMarkerFlow() {
           Standalone health markers
         </h1>
         <p className="mt-2 text-sm text-app-muted">
-          {lines.length === 0
-            ? 'This preset has no marker lines.'
-            : `Step ${activeIndex + 1} of ${lines.length}`}
+          {`Step ${activeIndex + 1} of ${lines.length}`}
         </p>
       </div>
 
@@ -384,11 +450,7 @@ export function StandaloneHealthMarkerFlow() {
             />
           </label>
         </div>
-      ) : (
-        <p className="text-sm text-app-muted" role="status">
-          No markers to log for this preset.
-        </p>
-      )}
+      ) : null}
 
       <div className="flex flex-col gap-3 sm:flex-row">
         {currentLine ? (
@@ -397,6 +459,7 @@ export function StandaloneHealthMarkerFlow() {
             disabled={!canSkip || saving}
             onClick={() => {
               if (activeIndex >= lines.length - 1) {
+                setFeedback(null);
                 setPhase('complete');
                 return;
               }
