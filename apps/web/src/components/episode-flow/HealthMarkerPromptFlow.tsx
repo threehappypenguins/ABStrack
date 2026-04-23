@@ -5,41 +5,32 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   EpisodeRow,
   EpisodeType,
-  FoodDiaryEntryRow,
   HealthMarkerRow,
-  MealTag,
   PresetHealthMarkerKind,
   PresetHealthMarkerRow,
 } from '@abstrack/types';
 import {
   bacReadingSuggestsAbsEpisode,
   formatEpisodeDurationSimple,
-  MEAL_TAGS,
   PRESET_HEALTH_MARKER_KIND_LABELS,
   validatePresetHealthMarkerCustomFields,
 } from '@abstrack/types';
 import {
   cancelActiveEpisodeById,
   completeEpisodePostMarkerStep,
-  createFoodDiaryEntry,
-  deleteFoodDiaryEntry,
   endEpisodeIfStillActive,
   getEpisodeById,
-  listFoodDiaryEntriesForEpisode,
   listEpisodeHealthMarkersForEpisode,
   listPresetHealthMarkersForPreset,
-  updateFoodDiaryEntry,
   upsertEpisodeHealthMarkerForLine,
 } from '@abstrack/supabase';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
 import { clearSymptomPromptSession } from '@/lib/episode-flow/symptom-prompt-session-store';
-import {
-  localInputValueToIso,
-  toLocalDateTimeInputValue,
-} from '@/lib/food-diary/date-time';
 import { EpisodeLocaleInstant } from '@/components/episodes/EpisodeLocaleInstant';
 import { ConfirmDialog } from '../symptom-presets/ConfirmDialog';
+import { EpisodeFoodDiaryStep } from './EpisodeFoodDiaryStep';
+import { useEpisodeFoodDiary } from './use-episode-food-diary';
 
 type MarkerDraft = {
   value: string;
@@ -206,33 +197,6 @@ export function HealthMarkerPromptFlow({
   const [foodDiaryDecision, setFoodDiaryDecision] = useState<
     'pending' | 'saved' | 'skipped'
   >('pending');
-  const [foodEntries, setFoodEntries] = useState<FoodDiaryEntryRow[]>([]);
-  const [foodEntriesLoading, setFoodEntriesLoading] = useState(false);
-  const [foodEntriesError, setFoodEntriesError] = useState<string | null>(null);
-  const [foodMealTag, setFoodMealTag] = useState<MealTag | null>(null);
-  const [foodNote, setFoodNote] = useState('');
-  const initialFoodLoggedAtLocalRef = useRef(
-    toLocalDateTimeInputValue(new Date().toISOString()),
-  );
-  const [foodLoggedAtLocal, setFoodLoggedAtLocal] = useState(
-    initialFoodLoggedAtLocalRef.current,
-  );
-  const [addFoodInitialLoggedAtLocal, setAddFoodInitialLoggedAtLocal] =
-    useState(initialFoodLoggedAtLocalRef.current);
-  const [foodSaving, setFoodSaving] = useState(false);
-  const [foodSaveError, setFoodSaveError] = useState<string | null>(null);
-  const [editingFoodEntryId, setEditingFoodEntryId] = useState<string | null>(
-    null,
-  );
-  const [deletingFoodEntryId, setDeletingFoodEntryId] = useState<string | null>(
-    null,
-  );
-  const [isAddFoodEntryOpen, setIsAddFoodEntryOpen] = useState(true);
-  const [isAddFoodEntryDirty, setIsAddFoodEntryDirty] = useState(false);
-  const [discardAddFoodDraftDialogOpen, setDiscardAddFoodDraftDialogOpen] =
-    useState(false);
-  const [foodEntryDeleteConfirmEntryId, setFoodEntryDeleteConfirmEntryId] =
-    useState<string | null>(null);
   const [endingEpisode, setEndingEpisode] = useState(false);
   const [endDialogOpen, setEndDialogOpen] = useState(false);
   const [endFeedback, setEndFeedback] = useState<string | null>(null);
@@ -245,6 +209,20 @@ export function HealthMarkerPromptFlow({
   const [cancelingEpisode, setCancelingEpisode] = useState(false);
   const [episodeRow, setEpisodeRow] = useState<EpisodeRow | null>(null);
   const loadGenRef = useRef(0);
+
+  const onLeaveFoodDiary = useCallback((decision: 'saved' | 'skipped') => {
+    setFoodDiaryDecision(decision);
+    setPhase('postMarkers');
+  }, []);
+
+  const foodDiary = useEpisodeFoodDiary({
+    episodeId,
+    userId,
+    supabase,
+    announce,
+    enabled: phase === 'foodDiary',
+    onLeaveFoodDiary,
+  });
 
   useEffect(() => {
     setPersistFeedback(null);
@@ -275,24 +253,7 @@ export function HealthMarkerPromptFlow({
     postFormInitRef.current = false;
     setPostFeedback(null);
     setFoodDiaryDecision('pending');
-    setFoodEntries([]);
-    setFoodEntriesError(null);
-    setFoodEntriesLoading(false);
-    setFoodMealTag(null);
-    setFoodNote('');
-    const initialFoodLoggedAtLocal = toLocalDateTimeInputValue(
-      new Date().toISOString(),
-    );
-    setFoodLoggedAtLocal(initialFoodLoggedAtLocal);
-    setAddFoodInitialLoggedAtLocal(initialFoodLoggedAtLocal);
-    setFoodSaving(false);
-    setFoodSaveError(null);
-    setEditingFoodEntryId(null);
-    setDeletingFoodEntryId(null);
-    setDiscardAddFoodDraftDialogOpen(false);
-    setFoodEntryDeleteConfirmEntryId(null);
-    setIsAddFoodEntryOpen(true);
-    setIsAddFoodEntryDirty(false);
+    foodDiary.reset();
     setEndFeedback(null);
     setEndedSummary(null);
     const {
@@ -386,7 +347,7 @@ export function HealthMarkerPromptFlow({
       setActiveIndex(0);
     }
     setStatus('ready');
-  }, [episodeId, resumeFromEntry, supabase]);
+  }, [episodeId, foodDiary.reset, resumeFromEntry, supabase]);
 
   useEffect(() => {
     void load();
@@ -553,172 +514,6 @@ export function HealthMarkerPromptFlow({
     setEndedSummary(null);
     setPhase('complete');
     announce('Episode details saved.', { politeness: 'polite' });
-  };
-
-  const resetFoodForm = useCallback(() => {
-    const initialFoodLoggedAtLocal = toLocalDateTimeInputValue(
-      new Date().toISOString(),
-    );
-    setEditingFoodEntryId(null);
-    setFoodMealTag(null);
-    setFoodNote('');
-    setFoodLoggedAtLocal(initialFoodLoggedAtLocal);
-    setAddFoodInitialLoggedAtLocal(initialFoodLoggedAtLocal);
-    setFoodSaveError(null);
-    setIsAddFoodEntryDirty(false);
-  }, []);
-
-  const computeIsAddFoodEntryDirty = useCallback(
-    (next: {
-      mealTag: MealTag | null;
-      note: string;
-      loggedAtLocal: string;
-    }) => {
-      return (
-        next.mealTag != null ||
-        next.note.trim().length > 0 ||
-        next.loggedAtLocal !== addFoodInitialLoggedAtLocal
-      );
-    },
-    [addFoodInitialLoggedAtLocal],
-  );
-
-  const onDiscardAddFoodDraft = () => {
-    if (!isAddFoodEntryDirty) {
-      setIsAddFoodEntryOpen(false);
-      return;
-    }
-    setDiscardAddFoodDraftDialogOpen(true);
-  };
-
-  const onConfirmDiscardAddFoodDraft = () => {
-    resetFoodForm();
-    setIsAddFoodEntryOpen(false);
-  };
-
-  const loadFoodEntries = useCallback(async () => {
-    setFoodEntriesLoading(true);
-    setFoodEntriesError(null);
-    const result = await listFoodDiaryEntriesForEpisode(supabase, episodeId);
-    setFoodEntriesLoading(false);
-    if (!result.ok) {
-      setFoodEntriesError(result.error.message);
-      return;
-    }
-    setFoodEntries(result.data);
-  }, [episodeId, supabase]);
-
-  useEffect(() => {
-    if (phase !== 'foodDiary') {
-      return;
-    }
-    void loadFoodEntries();
-  }, [phase, loadFoodEntries]);
-
-  const onEditFoodEntry = (entry: FoodDiaryEntryRow) => {
-    setEditingFoodEntryId(entry.id);
-    setIsAddFoodEntryOpen(false);
-    setFoodMealTag(entry.meal_tag);
-    setFoodNote(entry.food_note);
-    setFoodLoggedAtLocal(toLocalDateTimeInputValue(entry.logged_at));
-    setFoodSaveError(null);
-  };
-
-  const onSaveFoodEntry = async () => {
-    if (foodSaving || !userId) {
-      return;
-    }
-    setFoodSaving(true);
-    setFoodSaveError(null);
-    if (!foodMealTag) {
-      const message = 'Choose a meal tag.';
-      setFoodSaveError(message);
-      announce(message, { politeness: 'assertive' });
-      setFoodSaving(false);
-      return;
-    }
-    const loggedAtIso = localInputValueToIso(foodLoggedAtLocal);
-    if (!loggedAtIso) {
-      const message = 'Enter a valid date and time.';
-      setFoodSaveError(message);
-      announce(message, { politeness: 'assertive' });
-      setFoodSaving(false);
-      return;
-    }
-
-    const result =
-      editingFoodEntryId == null
-        ? await createFoodDiaryEntry(supabase, {
-            user_id: userId,
-            episode_id: episodeId,
-            meal_tag: foodMealTag,
-            food_note: foodNote,
-            logged_at: loggedAtIso,
-          })
-        : await updateFoodDiaryEntry(supabase, editingFoodEntryId, {
-            meal_tag: foodMealTag,
-            food_note: foodNote,
-            logged_at: loggedAtIso,
-          });
-    setFoodSaving(false);
-    if (!result.ok) {
-      setFoodSaveError(result.error.message);
-      announce(result.error.message, { politeness: 'assertive' });
-      return;
-    }
-    await loadFoodEntries();
-    resetFoodForm();
-    if (editingFoodEntryId == null) {
-      setIsAddFoodEntryOpen(false);
-    }
-    announce(
-      editingFoodEntryId == null ? 'Food entry saved.' : 'Food entry updated.',
-      { politeness: 'polite' },
-    );
-  };
-
-  const requestDeleteFoodEntry = (entryId: string) => {
-    if (foodSaving || deletingFoodEntryId) {
-      return;
-    }
-    setFoodEntryDeleteConfirmEntryId(entryId);
-  };
-
-  const onConfirmDeleteFoodEntry = async () => {
-    const entryId = foodEntryDeleteConfirmEntryId;
-    if (!entryId || foodSaving || deletingFoodEntryId) {
-      return false;
-    }
-    setDeletingFoodEntryId(entryId);
-    setFoodSaveError(null);
-    const result = await deleteFoodDiaryEntry(supabase, entryId);
-    setDeletingFoodEntryId(null);
-    if (!result.ok) {
-      setFoodSaveError(result.error.message);
-      announce(result.error.message, { politeness: 'assertive' });
-      return false;
-    }
-    if (editingFoodEntryId === entryId) {
-      resetFoodForm();
-    }
-    await loadFoodEntries();
-    announce('Food entry discarded.', { politeness: 'polite' });
-    return;
-  };
-
-  const onContinueFromFoodDiary = () => {
-    if (foodSaving || deletingFoodEntryId != null || foodEntriesLoading) {
-      return;
-    }
-    // If listing failed we cannot assert saved entries; treat as skipped for completion copy.
-    setFoodDiaryDecision(
-      foodEntriesError != null
-        ? 'skipped'
-        : foodEntries.length > 0
-          ? 'saved'
-          : 'skipped',
-    );
-    setPhase('postMarkers');
   };
 
   const onBackToHealthMarkersFromFoodDiary = () => {
@@ -1127,406 +922,14 @@ export function HealthMarkerPromptFlow({
 
   if (phase === 'foodDiary') {
     return (
-      <>
-        <div className="space-y-6">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-app-ink">
-              Food diary
-            </h1>
-            <p className="mt-2 text-base text-app-muted">
-              Add one or more meals/snacks for this episode, or skip this step.
-            </p>
-          </div>
-
-          <section className="space-y-3 rounded-2xl border border-app-border/90 bg-app-surface p-5 shadow-soft ring-1 ring-[color:var(--app-ring-slate)]">
-            <h2 className="text-base font-semibold text-app-ink">
-              Saved entries
-            </h2>
-            {foodEntriesLoading ? (
-              <p className="text-sm text-app-muted" role="status">
-                Loading entries…
-              </p>
-            ) : null}
-            {foodEntriesError ? (
-              <div className="space-y-2">
-                <p
-                  className="text-sm text-red-700 dark:text-red-300"
-                  role="alert"
-                >
-                  {foodEntriesError}
-                </p>
-                <button
-                  type="button"
-                  className="inline-flex min-h-[40px] items-center justify-center rounded-lg border border-app-border px-3 py-2 text-sm font-medium text-app-ink transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-60"
-                  disabled={foodEntriesLoading}
-                  onClick={() => {
-                    void loadFoodEntries();
-                  }}
-                >
-                  {foodEntriesLoading ? 'Retrying…' : 'Try again'}
-                </button>
-              </div>
-            ) : null}
-            {!foodEntriesLoading &&
-            !foodEntriesError &&
-            foodEntries.length === 0 ? (
-              <p className="text-sm text-app-muted">
-                No food entries yet for this episode.
-              </p>
-            ) : null}
-            {!foodEntriesLoading && foodEntries.length > 0 ? (
-              <div className="space-y-2">
-                {foodEntries.map((entry) => (
-                  <div
-                    key={entry.id}
-                    className="rounded-xl border border-app-border bg-app-surface px-3 py-3"
-                  >
-                    <p className="text-sm font-semibold text-app-ink">
-                      {entry.meal_tag} -{' '}
-                      <EpisodeLocaleInstant iso={entry.logged_at} />
-                    </p>
-                    <p className="mt-1 whitespace-pre-wrap text-sm text-app-muted">
-                      {entry.food_note}
-                    </p>
-                    {editingFoodEntryId === entry.id ? (
-                      <div className="mt-3 space-y-3 rounded-lg border border-app-border/80 p-3">
-                        <fieldset className="space-y-2" disabled={foodSaving}>
-                          <legend className="text-xs font-medium text-app-ink">
-                            Meal tag
-                          </legend>
-                          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                            {MEAL_TAGS.map((tag) => {
-                              const selected = foodMealTag === tag;
-                              return (
-                                <button
-                                  type="button"
-                                  key={`edit-${entry.id}-${tag}`}
-                                  aria-pressed={selected}
-                                  className={`flex min-h-[40px] items-center justify-center rounded-lg border px-3 py-2 text-xs font-medium shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-60 ${
-                                    selected
-                                      ? 'border-red-700 bg-red-50 text-red-900 dark:border-red-500 dark:bg-red-950/40 dark:text-red-100'
-                                      : 'cursor-pointer border-app-border bg-app-surface text-app-ink hover:bg-app-surface/80'
-                                  }`}
-                                  disabled={foodSaving}
-                                  onClick={() => {
-                                    if (!foodSaving) {
-                                      setFoodMealTag(selected ? null : tag);
-                                    }
-                                  }}
-                                >
-                                  {tag}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </fieldset>
-                        <label className="block space-y-1 text-xs font-medium text-app-ink">
-                          <span>Logged at</span>
-                          <input
-                            type="datetime-local"
-                            value={foodLoggedAtLocal}
-                            disabled={foodSaving}
-                            onChange={(e) => {
-                              setFoodLoggedAtLocal(e.target.value);
-                            }}
-                            className="min-h-[40px] w-full rounded-lg border border-app-border bg-app-surface px-3 text-app-ink outline-none focus-visible:ring-2 focus-visible:ring-app-ring"
-                          />
-                        </label>
-                        <label className="block space-y-1 text-xs font-medium text-app-ink">
-                          <span>Food note</span>
-                          <textarea
-                            rows={3}
-                            value={foodNote}
-                            disabled={foodSaving}
-                            onChange={(e) => {
-                              setFoodNote(e.target.value);
-                            }}
-                            className="w-full rounded-lg border border-app-border bg-app-surface px-3 py-2 text-app-ink outline-none focus-visible:ring-2 focus-visible:ring-app-ring"
-                          />
-                        </label>
-                        {foodSaveError ? (
-                          <p
-                            className="text-xs text-red-700 dark:text-red-300"
-                            role="alert"
-                          >
-                            {foodSaveError}
-                          </p>
-                        ) : null}
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            className="inline-flex min-h-[40px] items-center justify-center rounded-lg bg-red-700 px-3 text-xs font-semibold text-white shadow-md transition hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:opacity-60 dark:bg-red-600 dark:hover:bg-red-500"
-                            disabled={foodSaving}
-                            onClick={() => {
-                              void onSaveFoodEntry();
-                            }}
-                          >
-                            {foodSaving ? 'Saving…' : 'Update'}
-                          </button>
-                          <button
-                            type="button"
-                            className="inline-flex min-h-[40px] items-center justify-center rounded-lg border border-app-border px-3 text-xs font-semibold text-app-ink transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
-                            onClick={resetFoodForm}
-                          >
-                            Discard changes
-                          </button>
-                          <button
-                            type="button"
-                            className="inline-flex min-h-[40px] items-center justify-center rounded-lg border border-red-400 px-3 text-xs font-semibold text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg dark:border-red-500/60 dark:text-red-300 dark:hover:bg-red-950/30"
-                            disabled={deletingFoodEntryId != null}
-                            onClick={() => {
-                              requestDeleteFoodEntry(entry.id);
-                            }}
-                          >
-                            {deletingFoodEntryId === entry.id
-                              ? 'Discarding…'
-                              : 'Discard entry'}
-                          </button>
-                        </div>
-                      </div>
-                    ) : null}
-                    {editingFoodEntryId !== entry.id ? (
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          className="inline-flex min-h-[36px] items-center justify-center rounded-lg border border-app-border px-3 text-sm font-medium text-app-ink transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
-                          onClick={() => {
-                            onEditFoodEntry(entry);
-                          }}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          className="inline-flex min-h-[36px] items-center justify-center rounded-lg border border-red-400 px-3 text-sm font-medium text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg dark:border-red-500/60 dark:text-red-300 dark:hover:bg-red-950/30"
-                          disabled={deletingFoodEntryId != null}
-                          onClick={() => {
-                            requestDeleteFoodEntry(entry.id);
-                          }}
-                        >
-                          {deletingFoodEntryId === entry.id
-                            ? 'Discarding…'
-                            : 'Discard entry'}
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </section>
-
-          {editingFoodEntryId == null && isAddFoodEntryOpen ? (
-            <section className="space-y-4 rounded-2xl border border-app-border/90 bg-app-surface p-5 shadow-soft ring-1 ring-[color:var(--app-ring-slate)]">
-              <h2 className="text-base font-semibold text-app-ink">
-                Add food entry
-              </h2>
-              <fieldset className="space-y-2" disabled={foodSaving}>
-                <legend className="text-sm font-medium text-app-ink">
-                  Meal tag
-                </legend>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {MEAL_TAGS.map((tag) => {
-                    const selected = foodMealTag === tag;
-                    return (
-                      <button
-                        type="button"
-                        key={`add-${tag}`}
-                        aria-pressed={selected}
-                        className={`flex min-h-[44px] items-center justify-center rounded-lg border px-3 py-2 text-sm font-medium shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-60 ${
-                          selected
-                            ? 'border-red-700 bg-red-50 text-red-900 dark:border-red-500 dark:bg-red-950/40 dark:text-red-100'
-                            : 'cursor-pointer border-app-border bg-app-surface text-app-ink hover:bg-app-surface/80'
-                        }`}
-                        disabled={foodSaving}
-                        onClick={() => {
-                          if (!foodSaving) {
-                            const nextMealTag = selected ? null : tag;
-                            setFoodMealTag(nextMealTag);
-                            setIsAddFoodEntryDirty(
-                              computeIsAddFoodEntryDirty({
-                                mealTag: nextMealTag,
-                                note: foodNote,
-                                loggedAtLocal: foodLoggedAtLocal,
-                              }),
-                            );
-                          }
-                        }}
-                      >
-                        {tag}
-                      </button>
-                    );
-                  })}
-                </div>
-              </fieldset>
-              <label className="block space-y-1 text-sm font-medium text-app-ink">
-                <span>Logged at</span>
-                <input
-                  type="datetime-local"
-                  value={foodLoggedAtLocal}
-                  disabled={foodSaving}
-                  onChange={(e) => {
-                    const nextLoggedAtLocal = e.target.value;
-                    setFoodLoggedAtLocal(nextLoggedAtLocal);
-                    setIsAddFoodEntryDirty(
-                      computeIsAddFoodEntryDirty({
-                        mealTag: foodMealTag,
-                        note: foodNote,
-                        loggedAtLocal: nextLoggedAtLocal,
-                      }),
-                    );
-                  }}
-                  className="min-h-[44px] w-full rounded-lg border border-app-border bg-app-surface px-3 text-app-ink outline-none focus-visible:ring-2 focus-visible:ring-app-ring"
-                />
-              </label>
-              <label className="block space-y-1 text-sm font-medium text-app-ink">
-                <span>Food note</span>
-                <textarea
-                  rows={3}
-                  value={foodNote}
-                  disabled={foodSaving}
-                  onChange={(e) => {
-                    const nextFoodNote = e.target.value;
-                    setFoodNote(nextFoodNote);
-                    setIsAddFoodEntryDirty(
-                      computeIsAddFoodEntryDirty({
-                        mealTag: foodMealTag,
-                        note: nextFoodNote,
-                        loggedAtLocal: foodLoggedAtLocal,
-                      }),
-                    );
-                  }}
-                  placeholder="What did you eat or drink?"
-                  className="w-full rounded-lg border border-app-border bg-app-surface px-3 py-2 text-app-ink outline-none focus-visible:ring-2 focus-visible:ring-app-ring"
-                />
-              </label>
-              {foodSaveError ? (
-                <p
-                  className="text-sm text-red-700 dark:text-red-300"
-                  role="alert"
-                >
-                  {foodSaveError}
-                </p>
-              ) : null}
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <button
-                  type="button"
-                  className="inline-flex min-h-[48px] items-center justify-center rounded-xl bg-red-700 px-4 text-sm font-semibold text-white shadow-md transition hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:opacity-60 dark:bg-red-600 dark:hover:bg-red-500"
-                  disabled={foodSaving}
-                  onClick={() => {
-                    void onSaveFoodEntry();
-                  }}
-                >
-                  {foodSaving ? 'Saving…' : 'Save entry'}
-                </button>
-                {isAddFoodEntryDirty ? (
-                  <button
-                    type="button"
-                    className="inline-flex min-h-[48px] items-center justify-center rounded-xl border border-red-400 px-4 text-sm font-semibold text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg dark:border-red-500/60 dark:text-red-300 dark:hover:bg-red-950/30"
-                    onClick={onDiscardAddFoodDraft}
-                  >
-                    Discard entry
-                  </button>
-                ) : null}
-                {!isAddFoodEntryDirty ? (
-                  <button
-                    type="button"
-                    className="inline-flex min-h-[48px] items-center justify-center rounded-xl border border-app-border px-4 text-sm font-semibold text-app-ink transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
-                    onClick={() => {
-                      setIsAddFoodEntryOpen(false);
-                    }}
-                  >
-                    Collapse
-                  </button>
-                ) : null}
-              </div>
-            </section>
-          ) : null}
-
-          <div
-            className={`flex flex-wrap items-center gap-3 ${
-              editingFoodEntryId == null && !isAddFoodEntryOpen
-                ? 'mt-6'
-                : 'mt-3'
-            }`}
-          >
-            <button
-              type="button"
-              className="inline-flex min-h-[44px] items-center justify-center rounded-lg border border-app-border px-3 py-2 text-sm font-medium text-app-ink transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
-              onClick={onBackToHealthMarkersFromFoodDiary}
-            >
-              Back
-            </button>
-            {editingFoodEntryId == null && !isAddFoodEntryOpen ? (
-              <button
-                type="button"
-                className="inline-flex min-h-[44px] items-center justify-center rounded-lg border border-app-border px-3 py-2 text-sm font-medium text-app-ink transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
-                onClick={() => {
-                  resetFoodForm();
-                  setIsAddFoodEntryOpen(true);
-                }}
-              >
-                Add food entry
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-red-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-60 dark:bg-red-600 dark:hover:bg-red-500"
-              onClick={onContinueFromFoodDiary}
-              disabled={
-                foodSaving || deletingFoodEntryId != null || foodEntriesLoading
-              }
-            >
-              {foodEntries.length > 0 ? 'Continue' : 'Skip for now'}
-            </button>
-          </div>
-          <button
-            type="button"
-            className="inline-flex min-h-[44px] items-center justify-center rounded-lg px-3 py-2 text-sm font-medium text-red-700 transition hover:text-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg dark:text-red-300 dark:hover:text-red-200"
-            onClick={() => {
-              setCancelDialogOpen(true);
-            }}
-            disabled={cancelingEpisode}
-          >
-            Cancel episode
-          </button>
-        </div>
-        <ConfirmDialog
-          open={cancelDialogOpen}
-          title="Cancel this active episode?"
-          description="Canceling permanently deletes this in-progress episode, its symptom answers, health markers, and media metadata. Food diary entries are kept, but this episode link is removed. This cannot be undone."
-          confirmLabel="Cancel episode"
-          confirmBusyLabel="Canceling episode…"
-          cancelLabel="Keep episode"
-          onConfirm={onCancelEpisodeConfirm}
-          onClose={() => {
-            setCancelDialogOpen(false);
-          }}
-        />
-        <ConfirmDialog
-          open={discardAddFoodDraftDialogOpen}
-          title="Discard this food entry draft?"
-          description="Your unsaved entry will be removed."
-          confirmLabel="Discard draft"
-          cancelLabel="Keep editing"
-          onConfirm={onConfirmDiscardAddFoodDraft}
-          onClose={() => {
-            setDiscardAddFoodDraftDialogOpen(false);
-          }}
-        />
-        <ConfirmDialog
-          open={foodEntryDeleteConfirmEntryId != null}
-          title="Discard this saved food entry?"
-          description="This cannot be undone."
-          confirmLabel="Discard entry"
-          confirmBusyLabel="Discarding…"
-          cancelLabel="Keep entry"
-          onConfirm={onConfirmDeleteFoodEntry}
-          onClose={() => {
-            setFoodEntryDeleteConfirmEntryId(null);
-          }}
-        />
-      </>
+      <EpisodeFoodDiaryStep
+        fd={foodDiary}
+        onBack={onBackToHealthMarkersFromFoodDiary}
+        cancelDialogOpen={cancelDialogOpen}
+        setCancelDialogOpen={setCancelDialogOpen}
+        onCancelEpisodeConfirm={onCancelEpisodeConfirm}
+        cancelingEpisode={cancelingEpisode}
+      />
     );
   }
 
