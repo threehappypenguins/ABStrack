@@ -326,7 +326,7 @@ export function StandaloneHealthMarkerFlow() {
               .
             </p>
           </div>
-        ) : presets.length > 0 ? (
+        ) : !loadError && presets.length > 0 ? (
           <fieldset className="space-y-3">
             <legend className="text-base font-semibold text-app-ink">
               Choose one preset
@@ -357,7 +357,7 @@ export function StandaloneHealthMarkerFlow() {
             {feedback}
           </p>
         ) : null}
-        {presets.length > 0 ? (
+        {!loadError && presets.length > 0 ? (
           <button
             type="button"
             disabled={!selectedPresetId || saving}
