@@ -276,22 +276,13 @@ export function useHealthMarkerFoodDiary({
             food_note: foodNote,
             logged_at: loggedAtIso,
           });
-    setSavingFoodDiary(false);
     if (!result.ok) {
+      setSavingFoodDiary(false);
       setFoodDiaryFeedback(result.error.message);
       await announce(result.error.message, { politeness: 'assertive' });
       return;
     }
-    const foodEntriesResult = await listFoodDiaryEntriesForEpisode(
-      supabase,
-      episodeId,
-    );
-    if (foodEntriesResult.ok) {
-      setFoodEntries(foodEntriesResult.data);
-      setFoodEntriesError(null);
-    } else {
-      setFoodEntriesError(foodEntriesResult.error.message);
-    }
+    await loadFoodEntries();
     const initialFoodDate = currentLocalDate();
     const initialFoodTime = currentLocalTime();
     setMealTag(null);
@@ -312,6 +303,7 @@ export function useHealthMarkerFoodDiary({
       editingId == null ? 'Food entry saved.' : 'Food entry updated.',
       { politeness: 'polite' },
     );
+    setSavingFoodDiary(false);
   }, [
     editingFoodEntryId,
     episodeId,
@@ -320,6 +312,7 @@ export function useHealthMarkerFoodDiary({
     foodNote,
     mealTag,
     savingFoodDiary,
+    loadFoodEntries,
     supabase,
     userId,
   ]);
