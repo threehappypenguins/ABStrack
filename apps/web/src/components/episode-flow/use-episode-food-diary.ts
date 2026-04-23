@@ -287,7 +287,7 @@ export function useEpisodeFoodDiary({
       return;
     }
     setFoodEntries((prev) => upsertFoodEntrySorted(prev, result.data));
-    await loadFoodEntries();
+    setFoodEntriesError(null);
     resetFoodForm();
     if (editingId == null) {
       setIsAddFoodEntryOpen(false);
@@ -303,7 +303,6 @@ export function useEpisodeFoodDiary({
     foodMealTag,
     foodNote,
     foodSaving,
-    loadFoodEntries,
     resetFoodForm,
     supabase,
     userId,

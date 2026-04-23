@@ -321,7 +321,7 @@ export function useHealthMarkerFoodDiary({
       return;
     }
     setFoodEntries((prev) => upsertFoodEntrySorted(prev, result.data));
-    await loadFoodEntries();
+    setFoodEntriesError(null);
     const initialFoodDate = currentLocalDate();
     const initialFoodTime = currentLocalTime();
     setMealTag(null);
@@ -351,7 +351,6 @@ export function useHealthMarkerFoodDiary({
     foodNote,
     mealTag,
     savingFoodDiary,
-    loadFoodEntries,
     supabase,
     userId,
   ]);
