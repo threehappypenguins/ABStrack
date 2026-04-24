@@ -50,6 +50,8 @@ export function StandaloneHealthMarkerFlow() {
   const [drafts, setDrafts] = useState<Record<string, MarkerDraft>>({});
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  /** Successful `createStandaloneHealthMarkerForLine` calls in the current preset session. */
+  const [linesSavedCount, setLinesSavedCount] = useState(0);
   const [presetRefetchTick, setPresetRefetchTick] = useState(0);
   const lastPresetUserIdRef = useRef<string | null>(null);
 
@@ -70,6 +72,7 @@ export function StandaloneHealthMarkerFlow() {
       setActiveIndex(0);
       setSelectedPresetId(null);
       setFeedback(null);
+      setLinesSavedCount(0);
       return;
     }
 
@@ -85,6 +88,7 @@ export function StandaloneHealthMarkerFlow() {
       setActiveIndex(0);
       setSelectedPresetId(null);
       setFeedback(null);
+      setLinesSavedCount(0);
     }
 
     let cancelled = false;
@@ -177,6 +181,7 @@ export function StandaloneHealthMarkerFlow() {
     setDrafts(nextDrafts);
     setLines(result.data);
     setActiveIndex(0);
+    setLinesSavedCount(0);
     setPhase('prompting');
     announce('Health marker logging started.', { politeness: 'polite' });
   };
@@ -228,10 +233,19 @@ export function StandaloneHealthMarkerFlow() {
     if (!saved) {
       return;
     }
+    const nextCount = linesSavedCount + 1;
+    setLinesSavedCount(nextCount);
     if (activeIndex >= lines.length - 1) {
       setFeedback(null);
       setPhase('complete');
-      announce('Standalone health markers saved.', { politeness: 'polite' });
+      if (nextCount === lines.length) {
+        announce('Standalone health markers saved.', { politeness: 'polite' });
+      } else {
+        announce(
+          `Saved ${nextCount} of ${lines.length} marker lines. Skipped lines were not saved.`,
+          { politeness: 'polite' },
+        );
+      }
       return;
     }
     setActiveIndex((prev) => prev + 1);
@@ -263,13 +277,25 @@ export function StandaloneHealthMarkerFlow() {
   }
 
   if (phase === 'complete') {
+    const saved = linesSavedCount;
+    const total = lines.length;
+    const allLinesSaved = total > 0 && saved === total;
+    const noneSaved = saved === 0;
     return (
       <div className="space-y-4">
         <h1 className="text-2xl font-bold tracking-tight text-app-ink">
-          Health markers saved
+          {noneSaved
+            ? 'Logging finished'
+            : allLinesSaved
+              ? 'Health markers saved'
+              : 'Health markers partially saved'}
         </h1>
         <p className="text-sm text-app-muted" role="status">
-          Your marker entries were saved.
+          {noneSaved
+            ? 'No health marker entries were saved. You can go back to the dashboard or start again from Log health markers when you are ready.'
+            : allLinesSaved
+              ? 'Your marker entries were saved.'
+              : `You saved ${saved} of ${total} marker line${total === 1 ? '' : 's'}. Skipped lines were not recorded.`}
         </p>
         <button
           type="button"
@@ -394,6 +420,7 @@ export function StandaloneHealthMarkerFlow() {
               setActiveIndex(0);
               setFeedback(null);
               setSelectedPresetId(null);
+              setLinesSavedCount(0);
               announce('Choose a health marker preset.', {
                 politeness: 'polite',
               });
@@ -518,7 +545,17 @@ export function StandaloneHealthMarkerFlow() {
             onClick={() => {
               if (activeIndex >= lines.length - 1) {
                 setFeedback(null);
-                setPhase('complete');
+                const persisted = linesSavedCount;
+                const completionMessage =
+                  persisted === 0
+                    ? 'Finished logging health markers. No markers were saved; the last line was skipped.'
+                    : persisted === 1
+                      ? 'Finished logging health markers. One marker was saved. The last line was not saved.'
+                      : `Finished logging health markers. ${persisted} markers were saved. The last line was not saved.`;
+                announce(completionMessage, { politeness: 'assertive' });
+                queueMicrotask(() => {
+                  setPhase('complete');
+                });
                 return;
               }
               setActiveIndex((prev) => prev + 1);
