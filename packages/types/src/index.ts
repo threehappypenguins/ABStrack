@@ -6,3 +6,4 @@ export * from './lib/symptom-prompt-session-sanitize.js';
 export * from './lib/episode-symptom-mapping.js';
 export * from './lib/episode-bac-suggestion.js';
 export * from './lib/types.js';
+export * from './lib/marker-draft.js';

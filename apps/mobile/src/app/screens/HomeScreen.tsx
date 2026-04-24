@@ -26,6 +26,7 @@ type HomeScreenProps = {
   onGoToSettings: () => void;
   onGoToEpisodes: () => void;
   onGoToFoodDiary: () => void;
+  onGoToStandaloneHealthMarkers: () => void;
   onStartEpisode: () => void;
   onResumeEpisode: (episode: ActiveEpisodeHomeSummary) => void;
 };
@@ -34,6 +35,7 @@ export function HomeScreen({
   onGoToSettings,
   onGoToEpisodes,
   onGoToFoodDiary,
+  onGoToStandaloneHealthMarkers,
   onStartEpisode,
   onResumeEpisode,
 }: HomeScreenProps) {
@@ -269,6 +271,19 @@ export function HomeScreen({
             maxFontSizeMultiplier={2}
           >
             Food diary
+          </Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Log health markers without an episode"
+          onPress={onGoToStandaloneHealthMarkers}
+          className={`mb-1 min-h-[48px] justify-center rounded-xl border border-app-border bg-app-surface px-4 py-3 dark:border-app-border-dark dark:bg-app-surface-dark`}
+        >
+          <Text
+            className={`text-center text-base font-semibold ${nw.textPrimary}`}
+            maxFontSizeMultiplier={2}
+          >
+            Health markers
           </Text>
         </Pressable>
 

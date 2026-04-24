@@ -10,8 +10,13 @@ import type {
 } from '@abstrack/types';
 import {
   bacReadingSuggestsAbsEpisode,
+  createDraftFromMarker,
   formatEpisodeDurationSimple,
+  markerLineTitle,
+  minForPresetMarkerValueInput,
+  parseMeasurementDraftForSave,
   validatePresetHealthMarkerCustomFields,
+  type MarkerDraft,
 } from '@abstrack/types';
 import {
   cancelActiveEpisodeById,
@@ -29,14 +34,6 @@ import { EpisodeLocaleInstant } from '@/components/episodes/EpisodeLocaleInstant
 import { ConfirmDialog } from '../symptom-presets/ConfirmDialog';
 import { EpisodeFoodDiaryStep } from './EpisodeFoodDiaryStep';
 import { useEpisodeFoodDiary } from './use-episode-food-diary';
-import {
-  createDraftFromMarker,
-  markerLineTitle,
-  minForPresetMarkerValueInput,
-  parseMeasurementDraftForSave,
-  type MarkerDraft,
-} from '../health-markers/marker-draft';
-
 type PersistFeedback =
   | { source: 'validation'; message: string }
   | { source: 'sync'; message: string };

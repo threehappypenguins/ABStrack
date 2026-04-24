@@ -1,5 +1,5 @@
-import type { HealthMarkerRow, PresetHealthMarkerRow } from '@abstrack/types';
-import { PRESET_HEALTH_MARKER_KIND_LABELS } from '@abstrack/types';
+import type { HealthMarkerRow, PresetHealthMarkerRow } from './types.js';
+import { PRESET_HEALTH_MARKER_KIND_LABELS } from './types.js';
 
 export type MarkerDraft = {
   value: string;
