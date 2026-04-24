@@ -130,9 +130,16 @@ export async function listCompletedEpisodesForUser(
     endedAtOrBefore?: string | null;
   } = {},
 ): Promise<PresetDataResult<EpisodeRow[]>> {
-  const limit = options.limit ?? 25;
-  const offset = options.offset ?? 0;
-  const rangeEnd = offset + Math.max(limit, 1) - 1;
+  const rawLimit = options.limit ?? 25;
+  const rawOffset = options.offset ?? 0;
+  const limit = Number.isFinite(rawLimit) ? Math.trunc(rawLimit) : 25;
+  const offset = Number.isFinite(rawOffset)
+    ? Math.max(0, Math.trunc(rawOffset))
+    : 0;
+  if (limit <= 0) {
+    return { ok: true, data: [] };
+  }
+  const rangeEnd = offset + limit - 1;
   try {
     let query = client
       .from('episodes')

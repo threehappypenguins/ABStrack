@@ -550,6 +550,86 @@ describe('listStandaloneHealthMarkersForUser', () => {
     expect(isFn).toHaveBeenCalledWith('episode_id', null);
     expect(range).toHaveBeenCalledWith(5, 14);
   });
+
+  it('returns empty rows without querying when limit is zero', async () => {
+    const client = {
+      from: vi.fn(() => {
+        throw new Error('should not query');
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await listStandaloneHealthMarkersForUser(client, 'u1', {
+      limit: 0,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toEqual([]);
+    }
+    expect(client.from).not.toHaveBeenCalled();
+  });
+
+  it('clamps negative offset to zero before ranged query', async () => {
+    const rows = [{ id: 'hm-1' }];
+    const range = vi.fn(async () => ({ data: rows, error: null }));
+    const orderBuilder = {
+      order: vi.fn(() => orderBuilder),
+      range,
+    };
+    const isFn = vi.fn(() => orderBuilder);
+    const eq = vi.fn(() => ({ is: isFn }));
+    const client = {
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({ eq })),
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await listStandaloneHealthMarkersForUser(client, 'u1', {
+      limit: 5,
+      offset: -4,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(range).toHaveBeenCalledWith(0, 4);
+  });
+
+  it('applies recorded_at bounds when provided', async () => {
+    const rows = [{ id: 'hm-1' }];
+    const range = vi.fn(async () => ({ data: rows, error: null }));
+    const gte = vi.fn();
+    const lte = vi.fn();
+    const orderBuilder = {
+      order: vi.fn(() => orderBuilder),
+      range,
+      gte: vi.fn((...args: unknown[]) => {
+        gte(...args);
+        return orderBuilder;
+      }),
+      lte: vi.fn((...args: unknown[]) => {
+        lte(...args);
+        return orderBuilder;
+      }),
+    };
+    const isFn = vi.fn(() => orderBuilder);
+    const eq = vi.fn(() => ({ is: isFn }));
+    const client = {
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({ eq })),
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await listStandaloneHealthMarkersForUser(client, 'u1', {
+      limit: 10,
+      offset: 5,
+      recordedAtOrAfter: '2026-04-20T00:00:00.000Z',
+      recordedAtOrBefore: '2026-04-20T23:59:59.999Z',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(gte).toHaveBeenCalledWith('recorded_at', '2026-04-20T00:00:00.000Z');
+    expect(lte).toHaveBeenCalledWith('recorded_at', '2026-04-20T23:59:59.999Z');
+    expect(range).toHaveBeenCalledWith(5, 14);
+  });
 });
 
 describe('deleteHealthMarkerById', () => {

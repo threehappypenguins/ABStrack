@@ -747,8 +747,8 @@ export function ManageRecordsPage() {
             Standalone food diary
           </h2>
           <p className="mt-1 text-sm text-app-muted">
-            Entries logged outside an episode. Entries linked to an episode stay
-            attached if you delete the episode.
+            Entries logged outside an episode. If an episode is deleted, linked
+            food entries are kept and become standalone here.
           </p>
           {foodLoading ? (
             <p className="mt-3 text-sm text-app-muted">Loading…</p>
