@@ -97,7 +97,9 @@ export {
 } from './lib/episode-symptom-data.js';
 export {
   createStandaloneHealthMarkerForLine,
+  deleteHealthMarkerById,
   listEpisodeHealthMarkersForEpisode,
+  listStandaloneHealthMarkersForUser,
   upsertEpisodeHealthMarkerForLine,
 } from './lib/episode-health-marker-data.js';
 export {

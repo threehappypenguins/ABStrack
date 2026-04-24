@@ -121,18 +121,33 @@ export async function getActiveEpisodeForUser(
 export async function listCompletedEpisodesForUser(
   client: AbstrackSupabaseClient,
   userId: Uuid,
-  options: { limit?: number } = {},
+  options: {
+    limit?: number;
+    offset?: number;
+    /** Inclusive lower bound on `ended_at` (ISO timestamptz). */
+    endedAtOrAfter?: string | null;
+    /** Inclusive upper bound on `ended_at` (ISO timestamptz). */
+    endedAtOrBefore?: string | null;
+  } = {},
 ): Promise<PresetDataResult<EpisodeRow[]>> {
   const limit = options.limit ?? 25;
+  const offset = options.offset ?? 0;
+  const rangeEnd = offset + Math.max(limit, 1) - 1;
   try {
-    const { data, error } = await client
+    let query = client
       .from('episodes')
       .select('*')
       .eq('user_id', userId)
       .not('ended_at', 'is', null)
       .order('ended_at', { ascending: false })
-      .order('id', { ascending: false })
-      .limit(limit);
+      .order('id', { ascending: false });
+    if (options.endedAtOrAfter) {
+      query = query.gte('ended_at', options.endedAtOrAfter);
+    }
+    if (options.endedAtOrBefore) {
+      query = query.lte('ended_at', options.endedAtOrBefore);
+    }
+    const { data, error } = await query.range(offset, rangeEnd);
     if (error) {
       return { ok: false, error: toPresetDataError(error) };
     }

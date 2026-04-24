@@ -89,6 +89,75 @@ export async function listEpisodeHealthMarkersForEpisode(
 }
 
 /**
+ * Lists standalone `health_markers` rows for one user (`episode_id` is null), newest first.
+ *
+ * @param client - Supabase client (RLS applies).
+ * @param userId - `health_markers.user_id`.
+ * @param options - Pagination and optional `recorded_at` bounds (ISO timestamptz).
+ */
+export async function listStandaloneHealthMarkersForUser(
+  client: AbstrackSupabaseClient,
+  userId: Uuid,
+  options: {
+    limit?: number;
+    offset?: number;
+    recordedAtOrAfter?: string | null;
+    recordedAtOrBefore?: string | null;
+  } = {},
+): Promise<PresetDataResult<HealthMarkerRow[]>> {
+  const limit = options.limit ?? 50;
+  const offset = options.offset ?? 0;
+  const rangeEnd = offset + Math.max(limit, 1) - 1;
+  return wrap(async () => {
+    let query = client
+      .from('health_markers')
+      .select('*')
+      .eq('user_id', userId)
+      .is('episode_id', null);
+    if (options.recordedAtOrAfter) {
+      query = query.gte('recorded_at', options.recordedAtOrAfter);
+    }
+    if (options.recordedAtOrBefore) {
+      query = query.lte('recorded_at', options.recordedAtOrBefore);
+    }
+    const r = await query
+      .order('recorded_at', { ascending: false })
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(offset, rangeEnd);
+    return {
+      data: (r.data ?? []) as HealthMarkerRow[],
+      error: r.error,
+    };
+  });
+}
+
+/**
+ * Deletes one `health_markers` row by id when visible under RLS (typically the owner).
+ *
+ * @param client - Supabase client (RLS applies).
+ * @param markerId - `health_markers.id`.
+ * @returns `true` when a row was deleted.
+ */
+export async function deleteHealthMarkerById(
+  client: AbstrackSupabaseClient,
+  markerId: Uuid,
+): Promise<PresetDataResult<boolean>> {
+  return wrap(async () => {
+    const r = await client
+      .from('health_markers')
+      .delete()
+      .eq('id', markerId)
+      .select('id')
+      .maybeSingle();
+    return {
+      data: r.data != null,
+      error: r.error,
+    };
+  });
+}
+
+/**
  * Inserts or updates one `health_markers` row for the current episode + preset line.
  *
  * Episode-bound rows are keyed by `(episode_id, preset_health_marker_id)` where

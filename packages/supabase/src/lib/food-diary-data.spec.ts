@@ -21,12 +21,12 @@ const baseRow: FoodDiaryEntryRow = {
 };
 
 describe('listFoodDiaryEntriesForUser', () => {
-  it('orders by logged_at desc, created_at desc, id desc and applies default limit', async () => {
+  it('orders by logged_at desc, created_at desc, id desc and applies default range', async () => {
     const rows: FoodDiaryEntryRow[] = [baseRow];
-    const limit = vi.fn(async () => ({ data: rows, error: null }));
+    const range = vi.fn(async () => ({ data: rows, error: null }));
     const orderBuilder = {
       order: vi.fn(() => orderBuilder),
-      limit,
+      range,
     };
     const client = {
       from: vi.fn(() => ({
@@ -51,7 +51,7 @@ describe('listFoodDiaryEntriesForUser', () => {
     expect(orderBuilder.order).toHaveBeenNthCalledWith(3, 'id', {
       ascending: false,
     });
-    expect(limit).toHaveBeenCalledWith(50);
+    expect(range).toHaveBeenCalledWith(0, 49);
   });
 });
 

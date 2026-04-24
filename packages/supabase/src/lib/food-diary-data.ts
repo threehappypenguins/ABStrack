@@ -203,23 +203,42 @@ function validateAndNormalizeFoodDiaryCreateCore(
  *
  * @param client - Supabase client (RLS applies).
  * @param userId - `auth.users.id` / `food_diary_entries.user_id`.
- * @param options - Optional result cap (`limit`, default `50`).
+ * @param options - Pagination (`limit`, default `50`; `offset`, default `0`), optional
+ *   `standaloneOnly` (`episode_id` is null), and optional `logged_at` bounds (ISO timestamptz).
  */
 export async function listFoodDiaryEntriesForUser(
   client: AbstrackSupabaseClient,
   userId: Uuid,
-  options: { limit?: number } = {},
+  options: {
+    limit?: number;
+    offset?: number;
+    standaloneOnly?: boolean;
+    loggedAtOrAfter?: string | null;
+    loggedAtOrBefore?: string | null;
+  } = {},
 ): Promise<PresetDataResult<FoodDiaryEntryRow[]>> {
   const limit = options.limit ?? 50;
+  const offset = options.offset ?? 0;
+  const rangeEnd = offset + Math.max(limit, 1) - 1;
   return wrap(async () => {
-    const r = await client
+    let query = client
       .from('food_diary_entries')
       .select('*')
-      .eq('user_id', userId)
+      .eq('user_id', userId);
+    if (options.standaloneOnly) {
+      query = query.is('episode_id', null);
+    }
+    if (options.loggedAtOrAfter) {
+      query = query.gte('logged_at', options.loggedAtOrAfter);
+    }
+    if (options.loggedAtOrBefore) {
+      query = query.lte('logged_at', options.loggedAtOrBefore);
+    }
+    const r = await query
       .order('logged_at', { ascending: false })
       .order('created_at', { ascending: false })
       .order('id', { ascending: false })
-      .limit(limit);
+      .range(offset, rangeEnd);
     return {
       data: (r.data ?? []) as FoodDiaryEntryRow[],
       error: r.error,

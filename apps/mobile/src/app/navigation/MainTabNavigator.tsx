@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
 import type { ActiveEpisodeHomeSummary } from '../components/episode-flow/EpisodeStartHomeCta';
 import { HomeScreen } from '../screens/HomeScreen';
+import { ManageScreen } from '../screens/ManageScreen';
 import { EpisodeTemplatesNavigator } from './EpisodeTemplatesNavigator';
 import { HealthMarkerPresetsNavigator } from './HealthMarkerPresetsNavigator';
 import { SymptomPresetsNavigator } from './SymptomPresetsNavigator';
@@ -77,19 +78,6 @@ function navigateFromHomeTabToEpisodeResume(
     symptomPresetId: episode.symptomPresetId,
     resume: true,
   });
-}
-
-function navigateFromHomeTabToEpisodes(
-  navigation: BottomTabNavigationProp<MainTabParamList, 'Home'>,
-) {
-  const stackNavigation =
-    navigation.getParent<NativeStackNavigationProp<MainStackParamList>>();
-  if (stackNavigation == null) {
-    throw new Error(
-      'MainTabNavigator: expected native stack parent (MainStack) to open Episodes.',
-    );
-  }
-  stackNavigation.navigate('Episodes');
 }
 
 function navigateFromHomeTabToFoodDiary(
@@ -180,9 +168,6 @@ export function MainTabNavigator() {
               onGoToSettings={() => {
                 navigateFromHomeTabToSettings(navigation);
               }}
-              onGoToEpisodes={() => {
-                navigateFromHomeTabToEpisodes(navigation);
-              }}
               onGoToFoodDiary={() => {
                 navigateFromHomeTabToFoodDiary(navigation);
               }}
@@ -223,6 +208,15 @@ export function MainTabNavigator() {
             tabBarLabel: 'Templates',
             tabBarAccessibilityLabel: 'Episode templates',
             tabBarIcon: tabBarIonIcon('layers-outline'),
+          }}
+        />
+        <Tab.Screen
+          name="Manage"
+          component={ManageScreen}
+          options={{
+            tabBarLabel: 'Manage',
+            tabBarAccessibilityLabel: 'Manage records',
+            tabBarIcon: tabBarIonIcon('albums-outline'),
           }}
         />
       </Tab.Navigator>

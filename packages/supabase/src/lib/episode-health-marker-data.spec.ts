@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import type { PresetHealthMarkerRow } from '@abstrack/types';
 import {
   createStandaloneHealthMarkerForLine,
+  deleteHealthMarkerById,
   listEpisodeHealthMarkersForEpisode,
+  listStandaloneHealthMarkersForUser,
   upsertEpisodeHealthMarkerForLine,
 } from './episode-health-marker-data.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
@@ -515,6 +517,64 @@ describe('createStandaloneHealthMarkerForLine', () => {
     expect(singleMock).toHaveBeenCalledTimes(1);
     if (result.ok) {
       expect(result.data).toEqual(inserted);
+    }
+  });
+});
+
+describe('listStandaloneHealthMarkersForUser', () => {
+  it('filters episode_id null, orders, and ranges', async () => {
+    const rows = [{ id: 'hm-1' }];
+    const range = vi.fn(async () => ({ data: rows, error: null }));
+    const orderBuilder = {
+      order: vi.fn(() => orderBuilder),
+      range,
+    };
+    const isFn = vi.fn(() => orderBuilder);
+    const eq = vi.fn(() => ({ is: isFn }));
+    const client = {
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({ eq })),
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await listStandaloneHealthMarkersForUser(client, 'u1', {
+      limit: 10,
+      offset: 5,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toEqual(rows);
+    }
+    expect(eq).toHaveBeenCalledWith('user_id', 'u1');
+    expect(isFn).toHaveBeenCalledWith('episode_id', null);
+    expect(range).toHaveBeenCalledWith(5, 14);
+  });
+});
+
+describe('deleteHealthMarkerById', () => {
+  it('returns true when a row is deleted', async () => {
+    const maybeSingle = vi.fn(async () => ({
+      data: { id: 'hm-1' },
+      error: null,
+    }));
+    const client = {
+      from: vi.fn(() => ({
+        delete: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            select: vi.fn(() => ({
+              maybeSingle,
+            })),
+          })),
+        })),
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await deleteHealthMarkerById(client, 'hm-1');
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toBe(true);
     }
   });
 });

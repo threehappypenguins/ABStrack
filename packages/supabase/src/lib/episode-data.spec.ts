@@ -204,10 +204,10 @@ describe('listCompletedEpisodesForUser', () => {
         updated_at: '2026-04-18T09:30:00.000Z',
       },
     ];
-    const limit = vi.fn(async () => ({ data: rows, error: null }));
+    const range = vi.fn(async () => ({ data: rows, error: null }));
     const queryBuilder = {
       order: vi.fn(() => queryBuilder),
-      limit,
+      range,
     };
     const notFn = vi.fn(() => queryBuilder);
     const eq = vi.fn(() => ({ not: notFn }));
@@ -234,7 +234,7 @@ describe('listCompletedEpisodesForUser', () => {
     expect(queryBuilder.order).toHaveBeenNthCalledWith(2, 'id', {
       ascending: false,
     });
-    expect(limit).toHaveBeenCalledWith(25);
+    expect(range).toHaveBeenCalledWith(0, 24);
   });
 });
 
