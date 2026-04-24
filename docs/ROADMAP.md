@@ -132,6 +132,9 @@
   - Episodes
   - Standalone health entries (`health_markers.episode_id IS NULL`)
   - Standalone food entries (food diary entries not linked to an episode)
+- [ ] **Active-episode updates platform:** “Log update” (or equivalent) entry from active episode + routing; shared append-only persistence for time-stamped observations; block further appends when `ended_at` is set; basic chronological timeline for an episode; accessibility baseline for the update path (large targets, low cognitive load) ([PRD](PRD.md) §4)
+- [ ] **Preset symptoms during active episode:** repeat observations for preset symptom lines, including severity changes over time, using the platform.
+- [ ] **Preset markers + ad-hoc during active episode:** repeat measurements for preset health markers (e.g. BAC/glucose over one episode) and ad-hoc symptom/marker lines not in presets, using the platform.
 
 ---
 
