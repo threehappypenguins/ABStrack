@@ -13,6 +13,7 @@ import {
   useNavigation,
   useRoute,
 } from '@react-navigation/native';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { FoodDiaryEntryRow, HealthMarkerRow } from '@abstrack/types';
@@ -90,7 +91,8 @@ function healthMarkerValueLine(row: HealthMarkerRow): string {
  * @returns Manage tab root screen.
  */
 export function ManageScreen() {
-  const tabNavigation = useNavigation();
+  const tabNavigation =
+    useNavigation<BottomTabNavigationProp<MainTabParamList, 'Manage'>>();
   const stackNavigation =
     tabNavigation.getParent<NativeStackNavigationProp<MainStackParamList>>();
   if (!stackNavigation) {
@@ -100,25 +102,25 @@ export function ManageScreen() {
   }
   const route = useRoute<RouteProp<MainTabParamList, 'Manage'>>();
   const initialSegment = route.params?.initialSegment;
-  const initialAppliedRef = useRef(false);
 
   const [segment, setSegment] = useState<ManageTabSegment>('episodes');
   const [filterDay, setFilterDay] = useState<Date | null>(null);
   const [pickerVisible, setPickerVisible] = useState(false);
 
   useEffect(() => {
-    if (initialAppliedRef.current) {
-      return;
-    }
-    if (
+    const requested =
       initialSegment === 'episodes' ||
       initialSegment === 'health' ||
       initialSegment === 'food'
-    ) {
-      setSegment(initialSegment);
-      initialAppliedRef.current = true;
+        ? initialSegment
+        : null;
+    if (!requested) {
+      return;
     }
-  }, [initialSegment]);
+    setSegment(requested);
+    // Consume one-shot deep-link params so subsequent navigations can retarget segment.
+    tabNavigation.setParams({ initialSegment: undefined });
+  }, [initialSegment, tabNavigation]);
 
   const episodeDateBounds = useMemo(() => {
     if (!filterDay) {
@@ -381,14 +383,20 @@ function StandaloneHealthMarkersManageList({
     if (loadingMore || !hasMore) {
       return;
     }
+    const generation = loadGenRef.current;
+    const stale = () => generation !== loadGenRef.current;
+    setLoadingMore(true);
     const client = getMobileSupabaseClient();
     const {
       data: { user },
     } = await client.auth.getUser();
-    if (!user) {
+    if (stale()) {
       return;
     }
-    setLoadingMore(true);
+    if (!user) {
+      setHasMore(false);
+      return;
+    }
     try {
       const res = await listStandaloneHealthMarkersForUser(client, user.id, {
         limit: PAGE_SIZE,
@@ -396,6 +404,9 @@ function StandaloneHealthMarkersManageList({
         recordedAtOrAfter: recordedAtOrAfter ?? undefined,
         recordedAtOrBefore: recordedAtOrBefore ?? undefined,
       });
+      if (stale()) {
+        return;
+      }
       if (!res.ok) {
         await announce(res.error.message, { politeness: 'assertive' });
         return;
@@ -403,7 +414,9 @@ function StandaloneHealthMarkersManageList({
       setRows((prev) => [...prev, ...res.data]);
       setHasMore(res.data.length === PAGE_SIZE);
     } finally {
-      setLoadingMore(false);
+      if (!stale()) {
+        setLoadingMore(false);
+      }
     }
   }, [
     hasMore,
@@ -640,14 +653,20 @@ function StandaloneFoodDiaryManageList({
     if (loadingMore || !hasMore) {
       return;
     }
+    const generation = loadGenRef.current;
+    const stale = () => generation !== loadGenRef.current;
+    setLoadingMore(true);
     const client = getMobileSupabaseClient();
     const {
       data: { user },
     } = await client.auth.getUser();
-    if (!user) {
+    if (stale()) {
       return;
     }
-    setLoadingMore(true);
+    if (!user) {
+      setHasMore(false);
+      return;
+    }
     try {
       const res = await listFoodDiaryEntriesForUser(client, user.id, {
         limit: PAGE_SIZE,
@@ -656,6 +675,9 @@ function StandaloneFoodDiaryManageList({
         loggedAtOrAfter: loggedAtOrAfter ?? undefined,
         loggedAtOrBefore: loggedAtOrBefore ?? undefined,
       });
+      if (stale()) {
+        return;
+      }
       if (!res.ok) {
         await announce(res.error.message, { politeness: 'assertive' });
         return;
@@ -663,7 +685,9 @@ function StandaloneFoodDiaryManageList({
       setRows((prev) => [...prev, ...res.data]);
       setHasMore(res.data.length === PAGE_SIZE);
     } finally {
-      setLoadingMore(false);
+      if (!stale()) {
+        setLoadingMore(false);
+      }
     }
   }, [hasMore, loadingMore, loggedAtOrAfter, loggedAtOrBefore, rows.length]);
 

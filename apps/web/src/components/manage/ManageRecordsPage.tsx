@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -158,8 +158,11 @@ export function ManageRecordsPage() {
   const [episodesLoading, setEpisodesLoading] = useState(true);
   const [hasMoreEpisodes, setHasMoreEpisodes] = useState(false);
   const [loadingMoreEpisodes, setLoadingMoreEpisodes] = useState(false);
+  const episodesLoadGenRef = useRef(0);
 
   const loadEpisodesInitial = useCallback(async () => {
+    const generation = ++episodesLoadGenRef.current;
+    const stale = () => generation !== episodesLoadGenRef.current;
     setEpisodesLoading(true);
     setActiveEpisodeError(null);
     setRecentError(null);
@@ -168,6 +171,9 @@ export function ManageRecordsPage() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
+      if (stale()) {
+        return;
+      }
       if (!user) {
         setActiveEpisode(null);
         setRecentEpisodes([]);
@@ -183,6 +189,9 @@ export function ManageRecordsPage() {
           endedAtOrBefore: episodeBounds.endedAtOrBefore,
         }),
       ]);
+      if (stale()) {
+        return;
+      }
       if (!activeRes.ok) {
         setActiveEpisodeError(activeRes.error.message);
         setActiveEpisode(null);
@@ -204,7 +213,9 @@ export function ManageRecordsPage() {
       setRecentEpisodes([]);
       setHasMoreEpisodes(false);
     } finally {
-      setEpisodesLoading(false);
+      if (!stale()) {
+        setEpisodesLoading(false);
+      }
     }
   }, [episodeBounds.endedAtOrAfter, episodeBounds.endedAtOrBefore]);
 
@@ -218,14 +229,20 @@ export function ManageRecordsPage() {
     if (loadingMoreEpisodes || !hasMoreEpisodes) {
       return;
     }
+    const generation = episodesLoadGenRef.current;
+    const stale = () => generation !== episodesLoadGenRef.current;
+    setLoadingMoreEpisodes(true);
     const supabase = createBrowserClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    if (!user) {
+    if (stale()) {
       return;
     }
-    setLoadingMoreEpisodes(true);
+    if (!user) {
+      setHasMoreEpisodes(false);
+      return;
+    }
     try {
       const recentRes = await listCompletedEpisodesForUser(supabase, user.id, {
         limit: PAGE,
@@ -233,6 +250,9 @@ export function ManageRecordsPage() {
         endedAtOrAfter: episodeBounds.endedAtOrAfter,
         endedAtOrBefore: episodeBounds.endedAtOrBefore,
       });
+      if (stale()) {
+        return;
+      }
       if (!recentRes.ok) {
         announce(recentRes.error.message, { politeness: 'assertive' });
         return;
@@ -240,7 +260,9 @@ export function ManageRecordsPage() {
       setRecentEpisodes((prev) => [...prev, ...recentRes.data]);
       setHasMoreEpisodes(recentRes.data.length === PAGE);
     } finally {
-      setLoadingMoreEpisodes(false);
+      if (!stale()) {
+        setLoadingMoreEpisodes(false);
+      }
     }
   }, [
     announce,
@@ -260,8 +282,11 @@ export function ManageRecordsPage() {
   const [pendingDeleteMarker, setPendingDeleteMarker] =
     useState<HealthMarkerRow | null>(null);
   const [deletingMarker, setDeletingMarker] = useState(false);
+  const markersLoadGenRef = useRef(0);
 
   const loadMarkersInitial = useCallback(async () => {
+    const generation = ++markersLoadGenRef.current;
+    const stale = () => generation !== markersLoadGenRef.current;
     setMarkersLoading(true);
     setMarkersError(null);
     try {
@@ -269,6 +294,9 @@ export function ManageRecordsPage() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
+      if (stale()) {
+        return;
+      }
       if (!user) {
         setMarkers([]);
         setHasMoreMarkers(false);
@@ -280,6 +308,9 @@ export function ManageRecordsPage() {
         recordedAtOrAfter: markerBounds.recordedAtOrAfter,
         recordedAtOrBefore: markerBounds.recordedAtOrBefore,
       });
+      if (stale()) {
+        return;
+      }
       if (!res.ok) {
         setMarkersError(res.error.message);
         setMarkers([]);
@@ -293,7 +324,9 @@ export function ManageRecordsPage() {
       setMarkers([]);
       setHasMoreMarkers(false);
     } finally {
-      setMarkersLoading(false);
+      if (!stale()) {
+        setMarkersLoading(false);
+      }
     }
   }, [markerBounds.recordedAtOrAfter, markerBounds.recordedAtOrBefore]);
 
@@ -307,14 +340,20 @@ export function ManageRecordsPage() {
     if (loadingMoreMarkers || !hasMoreMarkers) {
       return;
     }
+    const generation = markersLoadGenRef.current;
+    const stale = () => generation !== markersLoadGenRef.current;
+    setLoadingMoreMarkers(true);
     const supabase = createBrowserClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    if (!user) {
+    if (stale()) {
       return;
     }
-    setLoadingMoreMarkers(true);
+    if (!user) {
+      setHasMoreMarkers(false);
+      return;
+    }
     try {
       const res = await listStandaloneHealthMarkersForUser(supabase, user.id, {
         limit: PAGE,
@@ -322,6 +361,9 @@ export function ManageRecordsPage() {
         recordedAtOrAfter: markerBounds.recordedAtOrAfter,
         recordedAtOrBefore: markerBounds.recordedAtOrBefore,
       });
+      if (stale()) {
+        return;
+      }
       if (!res.ok) {
         announce(res.error.message, { politeness: 'assertive' });
         return;
@@ -329,7 +371,9 @@ export function ManageRecordsPage() {
       setMarkers((prev) => [...prev, ...res.data]);
       setHasMoreMarkers(res.data.length === PAGE);
     } finally {
-      setLoadingMoreMarkers(false);
+      if (!stale()) {
+        setLoadingMoreMarkers(false);
+      }
     }
   }, [
     announce,
@@ -376,8 +420,11 @@ export function ManageRecordsPage() {
   const [pendingDeleteFood, setPendingDeleteFood] =
     useState<FoodDiaryEntryRow | null>(null);
   const [deletingFood, setDeletingFood] = useState(false);
+  const foodLoadGenRef = useRef(0);
 
   const loadFoodInitial = useCallback(async () => {
+    const generation = ++foodLoadGenRef.current;
+    const stale = () => generation !== foodLoadGenRef.current;
     setFoodLoading(true);
     setFoodError(null);
     try {
@@ -385,6 +432,9 @@ export function ManageRecordsPage() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
+      if (stale()) {
+        return;
+      }
       if (!user) {
         setFoodRows([]);
         setHasMoreFood(false);
@@ -397,6 +447,9 @@ export function ManageRecordsPage() {
         loggedAtOrAfter: foodBounds.loggedAtOrAfter,
         loggedAtOrBefore: foodBounds.loggedAtOrBefore,
       });
+      if (stale()) {
+        return;
+      }
       if (!res.ok) {
         setFoodError(res.error.message);
         setFoodRows([]);
@@ -410,7 +463,9 @@ export function ManageRecordsPage() {
       setFoodRows([]);
       setHasMoreFood(false);
     } finally {
-      setFoodLoading(false);
+      if (!stale()) {
+        setFoodLoading(false);
+      }
     }
   }, [foodBounds.loggedAtOrAfter, foodBounds.loggedAtOrBefore]);
 
@@ -424,14 +479,20 @@ export function ManageRecordsPage() {
     if (loadingMoreFood || !hasMoreFood) {
       return;
     }
+    const generation = foodLoadGenRef.current;
+    const stale = () => generation !== foodLoadGenRef.current;
+    setLoadingMoreFood(true);
     const supabase = createBrowserClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    if (!user) {
+    if (stale()) {
       return;
     }
-    setLoadingMoreFood(true);
+    if (!user) {
+      setHasMoreFood(false);
+      return;
+    }
     try {
       const res = await listFoodDiaryEntriesForUser(supabase, user.id, {
         limit: PAGE,
@@ -440,6 +501,9 @@ export function ManageRecordsPage() {
         loggedAtOrAfter: foodBounds.loggedAtOrAfter,
         loggedAtOrBefore: foodBounds.loggedAtOrBefore,
       });
+      if (stale()) {
+        return;
+      }
       if (!res.ok) {
         announce(res.error.message, { politeness: 'assertive' });
         return;
@@ -447,7 +511,9 @@ export function ManageRecordsPage() {
       setFoodRows((prev) => [...prev, ...res.data]);
       setHasMoreFood(res.data.length === PAGE);
     } finally {
-      setLoadingMoreFood(false);
+      if (!stale()) {
+        setLoadingMoreFood(false);
+      }
     }
   }, [
     announce,
