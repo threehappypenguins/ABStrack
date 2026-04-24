@@ -163,15 +163,21 @@ export function SettingsScreen() {
 
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Open episodes list"
-        onPress={() => navigation.navigate('Episodes')}
+        accessibilityLabel="Open manage tab on episodes"
+        onPress={() =>
+          navigation.navigate('MainTabs', {
+            screen: 'Manage',
+            params: { initialSegment: 'episodes' },
+          })
+        }
         className={`min-h-[52px] justify-center rounded-xl border border-app-border bg-app-surface px-4 py-3 dark:border-app-border-dark dark:bg-app-surface-dark`}
       >
         <Text className={`text-base font-semibold ${nw.textInk}`}>
-          Episodes
+          Manage episodes
         </Text>
         <Text className={`mt-0.5 text-sm ${nw.textMuted}`}>
-          Active and recent episodes, resume an in-progress episode.
+          Open the Manage tab to review episode history and resume an
+          in-progress episode.
         </Text>
       </Pressable>
 

@@ -19,10 +19,17 @@ const resumeLinkClass =
 /**
  * Active-episode management card with resume and destructive cancel action.
  *
- * @param props - Active episode row.
+ * @param props - Active episode row and optional post-cancel refresh hook.
  * @returns Interactive card for an in-progress episode.
  */
-export function ActiveEpisodeCard({ episode }: { episode: EpisodeRow }) {
+export function ActiveEpisodeCard({
+  episode,
+  onAfterCancel,
+}: {
+  episode: EpisodeRow;
+  /** Called after a successful cancel instead of `router.refresh()`. */
+  onAfterCancel?: () => void;
+}) {
   const router = useRouter();
   const { announce } = useAnnounce();
   const [showCancelDialog, setShowCancelDialog] = useState(false);
@@ -48,7 +55,11 @@ export function ActiveEpisodeCard({ episode }: { episode: EpisodeRow }) {
       } else {
         announce('This episode is no longer active.', { politeness: 'polite' });
       }
-      router.refresh();
+      if (onAfterCancel) {
+        onAfterCancel();
+      } else {
+        router.refresh();
+      }
       return;
     } finally {
       setCanceling(false);

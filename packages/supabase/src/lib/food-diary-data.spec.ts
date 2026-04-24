@@ -21,12 +21,12 @@ const baseRow: FoodDiaryEntryRow = {
 };
 
 describe('listFoodDiaryEntriesForUser', () => {
-  it('orders by logged_at desc, created_at desc, id desc and applies default limit', async () => {
+  it('orders by logged_at desc, created_at desc, id desc and applies default range', async () => {
     const rows: FoodDiaryEntryRow[] = [baseRow];
-    const limit = vi.fn(async () => ({ data: rows, error: null }));
+    const range = vi.fn(async () => ({ data: rows, error: null }));
     const orderBuilder = {
       order: vi.fn(() => orderBuilder),
-      limit,
+      range,
     };
     const client = {
       from: vi.fn(() => ({
@@ -51,7 +51,85 @@ describe('listFoodDiaryEntriesForUser', () => {
     expect(orderBuilder.order).toHaveBeenNthCalledWith(3, 'id', {
       ascending: false,
     });
-    expect(limit).toHaveBeenCalledWith(50);
+    expect(range).toHaveBeenCalledWith(0, 49);
+  });
+
+  it('returns empty rows without querying when limit is zero', async () => {
+    const client = {
+      from: vi.fn(() => {
+        throw new Error('should not query');
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await listFoodDiaryEntriesForUser(client, 'user-1', {
+      limit: 0,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toEqual([]);
+    }
+    expect(client.from).not.toHaveBeenCalled();
+  });
+
+  it('clamps negative offset to zero before ranged query', async () => {
+    const rows: FoodDiaryEntryRow[] = [baseRow];
+    const range = vi.fn(async () => ({ data: rows, error: null }));
+    const orderBuilder = {
+      order: vi.fn(() => orderBuilder),
+      range,
+    };
+    const client = {
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: vi.fn(() => orderBuilder),
+        })),
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await listFoodDiaryEntriesForUser(client, 'user-1', {
+      limit: 5,
+      offset: -4,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(range).toHaveBeenCalledWith(0, 4);
+  });
+
+  it('applies standalone-only, logged_at bounds, and non-zero offset range', async () => {
+    const rows: FoodDiaryEntryRow[] = [baseRow];
+    const range = vi.fn(async () => ({ data: rows, error: null }));
+    const orderBuilder = {
+      order: vi.fn(() => orderBuilder),
+      range,
+    };
+    const lte = vi.fn(() => orderBuilder);
+    const gte = vi.fn(() => ({ lte }));
+    const isFn = vi.fn(() => ({ gte }));
+    const eq = vi.fn(() => ({ is: isFn }));
+    const client = {
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({ eq })),
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await listFoodDiaryEntriesForUser(client, 'user-1', {
+      standaloneOnly: true,
+      loggedAtOrAfter: '2026-04-20T00:00:00.000Z',
+      loggedAtOrBefore: '2026-04-20T23:59:59.999Z',
+      limit: 10,
+      offset: 5,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toEqual(rows);
+    }
+    expect(eq).toHaveBeenCalledWith('user_id', 'user-1');
+    expect(isFn).toHaveBeenCalledWith('episode_id', null);
+    expect(gte).toHaveBeenCalledWith('logged_at', '2026-04-20T00:00:00.000Z');
+    expect(lte).toHaveBeenCalledWith('logged_at', '2026-04-20T23:59:59.999Z');
+    expect(range).toHaveBeenCalledWith(5, 14);
   });
 });
 

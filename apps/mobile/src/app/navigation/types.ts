@@ -25,17 +25,22 @@ export type EpisodeTemplatesStackParamList = {
   EpisodeTemplateEdit: { templateId: string };
 };
 
+/** Optional deep-link into the Manage tab (e.g. Settings shortcut). */
+export type ManageTabParams = {
+  initialSegment?: 'episodes' | 'health' | 'food';
+};
+
 export type MainTabParamList = {
   Home: undefined;
   SymptomPresets: undefined;
   HealthMarkerPresets: undefined;
   EpisodeTemplates: undefined;
+  /** Episodes, standalone health markers, and standalone food diary management. */
+  Manage: ManageTabParams | undefined;
 };
 
 export type MainStackParamList = {
   MainTabs: NavigatorScreenParams<MainTabParamList> | undefined;
-  /** Active and recent episodes with resume for the in-progress row. */
-  Episodes: undefined;
   /** Episode logging entry: shell until template selection and prompts ship. */
   EpisodeStart: undefined;
   /** Linear symptom prompts for the active episode (preset lines). */

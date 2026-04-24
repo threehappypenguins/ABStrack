@@ -204,10 +204,10 @@ describe('listCompletedEpisodesForUser', () => {
         updated_at: '2026-04-18T09:30:00.000Z',
       },
     ];
-    const limit = vi.fn(async () => ({ data: rows, error: null }));
+    const range = vi.fn(async () => ({ data: rows, error: null }));
     const queryBuilder = {
       order: vi.fn(() => queryBuilder),
-      limit,
+      range,
     };
     const notFn = vi.fn(() => queryBuilder);
     const eq = vi.fn(() => ({ not: notFn }));
@@ -234,7 +234,83 @@ describe('listCompletedEpisodesForUser', () => {
     expect(queryBuilder.order).toHaveBeenNthCalledWith(2, 'id', {
       ascending: false,
     });
-    expect(limit).toHaveBeenCalledWith(25);
+    expect(range).toHaveBeenCalledWith(0, 24);
+  });
+
+  it('returns empty rows without querying when limit is zero', async () => {
+    const client = {
+      from: vi.fn(() => {
+        throw new Error('should not query');
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await listCompletedEpisodesForUser(client, 'user-1', {
+      limit: 0,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toEqual([]);
+    }
+    expect(client.from).not.toHaveBeenCalled();
+  });
+
+  it('clamps negative offset to zero before ranged query', async () => {
+    const range = vi.fn(async () => ({ data: [], error: null }));
+    const queryBuilder = {
+      order: vi.fn(() => queryBuilder),
+      range,
+    };
+    const notFn = vi.fn(() => queryBuilder);
+    const eq = vi.fn(() => ({ not: notFn }));
+    const select = vi.fn(() => ({ eq }));
+    const client = {
+      from: vi.fn(() => ({ select })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await listCompletedEpisodesForUser(client, 'user-1', {
+      limit: 5,
+      offset: -3,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(range).toHaveBeenCalledWith(0, 4);
+  });
+
+  it('applies ended_at bounds and non-zero offset range when provided', async () => {
+    const range = vi.fn(async () => ({ data: [], error: null }));
+    const gte = vi.fn();
+    const lte = vi.fn();
+    const orderBuilder = {
+      order: vi.fn(() => orderBuilder),
+      range,
+      gte: vi.fn((...args: unknown[]) => {
+        gte(...args);
+        return orderBuilder;
+      }),
+      lte: vi.fn((...args: unknown[]) => {
+        lte(...args);
+        return orderBuilder;
+      }),
+    };
+    const notFn = vi.fn(() => orderBuilder);
+    const eq = vi.fn(() => ({ not: notFn }));
+    const select = vi.fn(() => ({ eq }));
+    const client = {
+      from: vi.fn(() => ({ select })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await listCompletedEpisodesForUser(client, 'user-1', {
+      limit: 10,
+      offset: 5,
+      endedAtOrAfter: '2026-04-20T00:00:00.000Z',
+      endedAtOrBefore: '2026-04-20T23:59:59.999Z',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(gte).toHaveBeenCalledWith('ended_at', '2026-04-20T00:00:00.000Z');
+    expect(lte).toHaveBeenCalledWith('ended_at', '2026-04-20T23:59:59.999Z');
+    expect(range).toHaveBeenCalledWith(5, 14);
   });
 });
 

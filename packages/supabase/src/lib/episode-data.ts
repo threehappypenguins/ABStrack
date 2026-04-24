@@ -115,24 +115,49 @@ export async function getActiveEpisodeForUser(
  *
  * @param client - Supabase client (RLS applies).
  * @param userId - `auth.users.id` / `episodes.user_id`.
- * @param options - `limit` caps rows (default 25).
+ * @param options - Pagination and optional `ended_at` bounds:
+ *   - `limit` (default `25`) and `offset` (default `0`) page through rows newest-first.
+ *   - `endedAtOrAfter` applies an inclusive lower bound on `ended_at`.
+ *   - `endedAtOrBefore` applies an inclusive upper bound on `ended_at`.
  * @returns Completed episode rows, or a {@link PresetDataError} on failure.
  */
 export async function listCompletedEpisodesForUser(
   client: AbstrackSupabaseClient,
   userId: Uuid,
-  options: { limit?: number } = {},
+  options: {
+    limit?: number;
+    offset?: number;
+    /** Inclusive lower bound on `ended_at` (ISO timestamptz). */
+    endedAtOrAfter?: string | null;
+    /** Inclusive upper bound on `ended_at` (ISO timestamptz). */
+    endedAtOrBefore?: string | null;
+  } = {},
 ): Promise<PresetDataResult<EpisodeRow[]>> {
-  const limit = options.limit ?? 25;
+  const rawLimit = options.limit ?? 25;
+  const rawOffset = options.offset ?? 0;
+  const limit = Number.isFinite(rawLimit) ? Math.trunc(rawLimit) : 25;
+  const offset = Number.isFinite(rawOffset)
+    ? Math.max(0, Math.trunc(rawOffset))
+    : 0;
+  if (limit <= 0) {
+    return { ok: true, data: [] };
+  }
+  const rangeEnd = offset + limit - 1;
   try {
-    const { data, error } = await client
+    let query = client
       .from('episodes')
       .select('*')
       .eq('user_id', userId)
       .not('ended_at', 'is', null)
       .order('ended_at', { ascending: false })
-      .order('id', { ascending: false })
-      .limit(limit);
+      .order('id', { ascending: false });
+    if (options.endedAtOrAfter) {
+      query = query.gte('ended_at', options.endedAtOrAfter);
+    }
+    if (options.endedAtOrBefore) {
+      query = query.lte('ended_at', options.endedAtOrBefore);
+    }
+    const { data, error } = await query.range(offset, rangeEnd);
     if (error) {
       return { ok: false, error: toPresetDataError(error) };
     }
