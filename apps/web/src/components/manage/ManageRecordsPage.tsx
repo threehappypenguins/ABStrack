@@ -159,6 +159,11 @@ export function ManageRecordsPage() {
   const [hasMoreEpisodes, setHasMoreEpisodes] = useState(false);
   const [loadingMoreEpisodes, setLoadingMoreEpisodes] = useState(false);
   const episodesLoadGenRef = useRef(0);
+  useEffect(() => {
+    if (segment !== 'episodes') {
+      episodesLoadGenRef.current += 1;
+    }
+  }, [segment]);
 
   const loadEpisodesInitial = useCallback(async () => {
     const generation = ++episodesLoadGenRef.current;
@@ -285,6 +290,11 @@ export function ManageRecordsPage() {
     useState<HealthMarkerRow | null>(null);
   const [deletingMarker, setDeletingMarker] = useState(false);
   const markersLoadGenRef = useRef(0);
+  useEffect(() => {
+    if (segment !== 'health') {
+      markersLoadGenRef.current += 1;
+    }
+  }, [segment]);
 
   const loadMarkersInitial = useCallback(async () => {
     const generation = ++markersLoadGenRef.current;
@@ -427,6 +437,19 @@ export function ManageRecordsPage() {
     useState<FoodDiaryEntryRow | null>(null);
   const [deletingFood, setDeletingFood] = useState(false);
   const foodLoadGenRef = useRef(0);
+  useEffect(() => {
+    if (segment !== 'food') {
+      foodLoadGenRef.current += 1;
+    }
+  }, [segment]);
+
+  useEffect(() => {
+    return () => {
+      episodesLoadGenRef.current += 1;
+      markersLoadGenRef.current += 1;
+      foodLoadGenRef.current += 1;
+    };
+  }, []);
 
   const loadFoodInitial = useCallback(async () => {
     const generation = ++foodLoadGenRef.current;

@@ -176,7 +176,8 @@ export function SettingsScreen() {
           Manage episodes
         </Text>
         <Text className={`mt-0.5 text-sm ${nw.textMuted}`}>
-          Open the Manage tab to review episode history and resume in progress.
+          Open the Manage tab to review episode history and resume an
+          in-progress episode.
         </Text>
       </Pressable>
 
