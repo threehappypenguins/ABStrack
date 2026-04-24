@@ -96,7 +96,7 @@
 
 ---
 
-## Week 6: April 20-26 -- Episode Logging, Food Diary, and Standalone Health Marker Logging
+## Week 6: April 20-26 -- Episode Logging, Food Diary, and Standalone Health Marker Logging (COMPLETE)
 
 **Goal:** Complete core daily logging flows: episode-first symptom capture, standalone health marker logging, and standalone food diary logging.
 
@@ -121,17 +121,20 @@
   - Add an **Episodes** management surface for active + recent episodes (secondary navigation, not primary impaired-user path)
   - Add explicit **Cancel accidental episode start** flow for active episodes with destructive confirmation copy
   - Define and implement episode deletion rules + confirmations (what can be deleted, when, and what related rows are removed)
-- [ ] Impaired-user UI polish: large text, large buttons, minimal cognitive load, high contrast mode
+- [x] Impaired-user UI polish: large text, large buttons, minimal cognitive load, high contrast mode
 - [x] Food diary:
   - Standalone food entry from home screen (non-episode path)
   - Food entry during episode prompt (at end of flow)
   - Free text note + meal tag (Breakfast/Lunch/Dinner/Snack/Other) + timestamp
   - Stored as plaintext in PostgreSQL under RLS (`food_diary_entries.food_note` per [PRD](PRD.md))
 - [x] **Standalone health marker logging:** home entry path to log markers using **one health marker preset only** with **no episode** (`health_markers.episode_id = null`) ([PRD](PRD.md) §5, [user story](user-stories/episode-and-health-marker-flows.md))
-- [ ] **Unified management surface (web + mobile):** one consolidated place to view/delete all three groups with accessible destructive confirmations:
+- [x] **Unified management surface (web + mobile):** one consolidated place to view/delete all three groups with accessible destructive confirmations:
   - Episodes
   - Standalone health entries (`health_markers.episode_id IS NULL`)
   - Standalone food entries (food diary entries not linked to an episode)
+- [ ] **Active-episode updates platform:** “Log update” (or equivalent) entry from active episode + routing; shared append-only persistence for time-stamped observations; block further appends when `ended_at` is set; basic chronological timeline for an episode; accessibility baseline for the update path (large targets, low cognitive load) ([PRD](PRD.md) §4)
+- [ ] **Preset symptoms during active episode:** repeat observations for preset symptom lines, including severity changes over time, using the platform.
+- [ ] **Preset markers + ad-hoc during active episode:** repeat measurements for preset health markers (e.g. BAC/glucose over one episode) and ad-hoc symptom/marker lines not in presets, using the platform.
 
 ---
 

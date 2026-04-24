@@ -443,16 +443,22 @@ An "episode" or "flare" is a discrete event where the user experiences ABS-relat
 2. For video/photo symptoms, the camera is launched inline with instructions shown on screen.
 3. After all preset symptoms, the app prompts through the **selected** health marker preset’s items (same preset as recorded on the episode row once `health_marker_preset_id` exists in the schema).
 4. At the end of the preset prompts, the user is offered the option to **add additional symptoms or health markers** not in their preset (free text entry).
-5. The user can flag the episode type:
+5. While an episode is active (before `ended_at` is set), the user can **log additional symptom and health marker updates over time** from the active episode surface, without restarting the full preset prompt flow.
+6. In-episode updates must support:
+   - Re-recording preset symptoms (including changed severity) as new time-stamped observations.
+   - Re-recording preset health markers (for example, BAC or glucose) as new time-stamped measurements.
+   - Adding ad-hoc symptoms/markers not in presets as new time-stamped entries.
+7. The user can flag the episode type:
    - **ABS** (manually, or automatically suggested if BAC reading is above 0.00)
    - **Other** (default)
    - Optionally, the user can add a custom episode label (e.g., "Non-ABS Vomiting Episode"), stored in plaintext column `episode_label` (protected by RLS like other PHI). The `episode_type` itself is a simple enum (`ABS` | `Other`) for sorting and filtering.
-6. The user can optionally add a note to the episode.
-7. The episode is saved with a timestamp.
+8. The user can optionally add a note to the episode.
+9. The episode is saved with a timestamp.
 
 #### Ending an Episode
 
 - The user can mark an episode as ended, which records the end timestamp and duration.
+- Once an episode is ended, no further in-episode symptom/marker updates can be appended to that episode.
 
 ---
 

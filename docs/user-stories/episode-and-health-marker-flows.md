@@ -58,11 +58,13 @@ Naming a symptom preset and a health marker preset the same string does **not** 
 1. Eric taps **“I'm having an episode”** (large target, high contrast).
 2. Eric chooses **one episode template** — e.g. **“ABS Episode”** or **“CVS Episode”** — **one choice**, not a wizard of separate preset pickers.
 3. The app runs **all symptom prompts** for that template in order, then **all health marker prompts** in order, then extras / episode type / notes per [PRD](../PRD.md).
+4. If the episode is still active, Eric can tap into the active episode and log **additional time-stamped updates** as symptoms wax/wane and markers change (for example, repeat BAC or glucose readings) without restarting the initial full prompt sequence.
 
 ### Outcome
 
 - Eric is not asked to assemble presets while impaired; he only picks **which kind of episode** this is, using labels he set up earlier.
 - The **episode record** still persists **which** symptom preset and **which** health marker preset were used (via the template resolution — see roadmap: `health_marker_preset_id` on `episodes`).
+- Eric can continue appending symptom and marker observations during the same active episode until he explicitly ends it.
 
 ---
 
@@ -114,14 +116,15 @@ This story defines the scope boundary only; it does not prescribe exact layout, 
 
 ## Design principles (summary)
 
-| Principle                              | Detail                                                                                                                                               |
-| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Minimal choices when impaired**      | Episode start favors **one template choice** (or a very small list of named templates), not multiple preset pickers.                                 |
-| **Independent preset lists in the DB** | Symptom presets and health marker presets remain separate editable lists; **templates** are how we pair them for logging without cognitive overload. |
-| **Explicit pairing**                   | The app must not guess; the **episode template** resolves which marker list goes with which symptom list.                                            |
-| **Persist both IDs on the episode**    | For auditability, the episode row should store both `symptom_preset_id` and `health_marker_preset_id` once the schema supports it.                   |
-| **Standalone health markers**          | Separate entry point; health marker preset only (`health_markers.episode_id = null`).                                                                |
-| **Standalone food diary**              | Separate non-episode entry path is allowed in addition to the in-episode food step.                                                                  |
+| Principle                              | Detail                                                                                                                                                |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Minimal choices when impaired**      | Episode start favors **one template choice** (or a very small list of named templates), not multiple preset pickers.                                  |
+| **Independent preset lists in the DB** | Symptom presets and health marker presets remain separate editable lists; **templates** are how we pair them for logging without cognitive overload.  |
+| **Explicit pairing**                   | The app must not guess; the **episode template** resolves which marker list goes with which symptom list.                                             |
+| **Persist both IDs on the episode**    | For auditability, the episode row should store both `symptom_preset_id` and `health_marker_preset_id` once the schema supports it.                    |
+| **Standalone health markers**          | Separate entry point; health marker preset only (`health_markers.episode_id = null`).                                                                 |
+| **Standalone food diary**              | Separate non-episode entry path is allowed in addition to the in-episode food step.                                                                   |
+| **Active-episode updates**             | While `episodes.ended_at IS NULL`, users can append additional symptom/marker observations (including repeat severity/marker values) with timestamps. |
 
 ---
 

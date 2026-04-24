@@ -889,7 +889,7 @@ export function ManageRecordsPage() {
                   </details>
                   <button
                     type="button"
-                    className="mt-3 text-sm font-medium text-red-700 hover:text-red-800 dark:text-red-300"
+                    className="mt-3 inline-flex min-h-[44px] items-center rounded-lg px-2 text-sm font-medium text-red-700 hover:text-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring dark:text-red-300"
                     onClick={() => setPendingDeleteMarker(row)}
                   >
                     Delete
@@ -979,7 +979,7 @@ export function ManageRecordsPage() {
                   </details>
                   <button
                     type="button"
-                    className="mt-3 text-sm font-medium text-red-700 hover:text-red-800 dark:text-red-300"
+                    className="mt-3 inline-flex min-h-[44px] items-center rounded-lg px-2 text-sm font-medium text-red-700 hover:text-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring dark:text-red-300"
                     onClick={() => setPendingDeleteFood(row)}
                   >
                     Delete
