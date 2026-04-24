@@ -56,6 +56,46 @@
     --app-shadow-header: 0 1px 0 rgba(0, 0, 0, 0.35);
   }
 
+  /* OS-level higher contrast preference: keep brand hue but increase contrast
+   * and reduce visual noise on key screens that consume semantic tokens. */
+  @media (prefers-contrast: more) {
+    :root {
+      --app-bg: 255 255 255;
+      --app-surface: 255 255 255;
+      --app-border: 15 23 42;
+      --app-muted: 15 23 42;
+      --app-ink: 2 6 23;
+      --app-primary: 30 64 175;
+      --app-primary-soft: 219 234 254;
+      --app-ring: 30 64 175;
+      --app-header-bg: rgba(255, 255, 255, 1);
+      --app-header-border: rgba(15, 23, 42, 0.85);
+      --app-nav-hover-bg: #dbeafe;
+      --app-ring-slate: rgba(15, 23, 42, 0.2);
+      --app-gradient: none;
+      --app-shadow-soft: 0 0 0 transparent;
+      --app-shadow-header: 0 0 0 transparent;
+    }
+
+    html.dark {
+      --app-bg: 0 0 0;
+      --app-surface: 0 0 0;
+      --app-border: 255 255 255;
+      --app-muted: 255 255 255;
+      --app-ink: 255 255 255;
+      --app-primary: 147 197 253;
+      --app-primary-soft: 30 64 175;
+      --app-ring: 250 204 21;
+      --app-header-bg: rgba(0, 0, 0, 1);
+      --app-header-border: rgba(255, 255, 255, 0.9);
+      --app-nav-hover-bg: #1e3a8a;
+      --app-ring-slate: rgba(255, 255, 255, 0.22);
+      --app-gradient: none;
+      --app-shadow-soft: 0 0 0 transparent;
+      --app-shadow-header: 0 0 0 transparent;
+    }
+  }
+
   html {
     -webkit-text-size-adjust: 100%;
     line-height: 1.5;

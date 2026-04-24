@@ -571,7 +571,7 @@ export function StandaloneHealthMarkersScreen() {
             accessibilityRole="button"
             accessibilityLabel="Open health marker presets tab"
             onPress={openHealthMarkerPresetsTab}
-            className="mt-2 self-start"
+            className="mt-2 min-h-[44px] self-start justify-center rounded-lg px-2"
           >
             <Text className={`text-sm font-semibold ${nw.textPrimary}`}>
               Open Markers tab

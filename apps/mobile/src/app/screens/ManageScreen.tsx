@@ -555,7 +555,7 @@ function StandaloneHealthMarkersManageList({
             accessibilityState={{ disabled: deletingId === item.id }}
             onPress={() => onDelete(item)}
             disabled={deletingId === item.id}
-            className="mt-2"
+            className="mt-2 min-h-[44px] justify-center self-start rounded-lg px-2"
           >
             <Text className="text-sm font-medium text-red-700 dark:text-red-300">
               {deletingId === item.id ? 'Deleting…' : 'Delete'}
@@ -817,7 +817,7 @@ function StandaloneFoodDiaryManageList({
             accessibilityState={{ disabled: deletingId === item.id }}
             onPress={() => onDelete(item)}
             disabled={deletingId === item.id}
-            className="mt-2"
+            className="mt-2 min-h-[44px] justify-center self-start rounded-lg px-2"
           >
             <Text className="text-sm font-medium text-red-700 dark:text-red-300">
               {deletingId === item.id ? 'Deleting…' : 'Delete'}
