@@ -1,6 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -27,6 +34,7 @@ import { createBrowserClient } from '@/lib/supabase/browser-client';
 const PAGE = 25;
 
 export type ManageSegment = 'episodes' | 'health' | 'food';
+const TAB_ORDER: ManageSegment[] = ['episodes', 'health', 'food'];
 
 function startOfLocalDay(d: Date): Date {
   const x = new Date(d);
@@ -422,6 +430,11 @@ export function ManageRecordsPage() {
       setPendingDeleteMarker(null);
       await loadMarkersInitial();
       return;
+    } catch {
+      announce('Unable to delete this health marker right now.', {
+        politeness: 'assertive',
+      });
+      return false;
     } finally {
       setDeletingMarker(false);
     }
@@ -576,6 +589,11 @@ export function ManageRecordsPage() {
       setPendingDeleteFood(null);
       await loadFoodInitial();
       return;
+    } catch {
+      announce('Unable to delete this food diary entry right now.', {
+        politeness: 'assertive',
+      });
+      return false;
     } finally {
       setDeletingFood(false);
     }
@@ -585,6 +603,39 @@ export function ManageRecordsPage() {
     segment === s
       ? 'inline-flex min-h-[44px] flex-1 items-center justify-center rounded-full bg-app-primary-soft px-4 py-2 text-sm font-semibold text-app-primary shadow-sm ring-1 ring-app-primary/25 dark:bg-app-primary-soft/28'
       : 'inline-flex min-h-[44px] flex-1 items-center justify-center rounded-full px-4 py-2 text-sm font-medium text-app-muted transition hover:bg-[var(--app-nav-hover-bg)] hover:text-app-ink';
+  const tabButtonRefs = useRef<
+    Partial<Record<ManageSegment, HTMLButtonElement>>
+  >({});
+  const tabId = (s: ManageSegment) => `manage-tab-${s}`;
+  const panelId = (s: ManageSegment) => `manage-panel-${s}`;
+  const onTabKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLButtonElement>, current: ManageSegment) => {
+      const currentIndex = TAB_ORDER.indexOf(current);
+      if (currentIndex < 0) {
+        return;
+      }
+      let nextIndex = currentIndex;
+      if (event.key === 'ArrowRight') {
+        nextIndex = (currentIndex + 1) % TAB_ORDER.length;
+      } else if (event.key === 'ArrowLeft') {
+        nextIndex = (currentIndex - 1 + TAB_ORDER.length) % TAB_ORDER.length;
+      } else if (event.key === 'Home') {
+        nextIndex = 0;
+      } else if (event.key === 'End') {
+        nextIndex = TAB_ORDER.length - 1;
+      } else {
+        return;
+      }
+      event.preventDefault();
+      const target = TAB_ORDER[nextIndex];
+      if (!target) {
+        return;
+      }
+      setSegment(target);
+      tabButtonRefs.current[target]?.focus();
+    },
+    [setSegment],
+  );
 
   return (
     <div className="w-full space-y-8">
@@ -607,8 +658,15 @@ export function ManageRecordsPage() {
         <button
           type="button"
           role="tab"
-          aria-selected={segment === 'episodes'}
+          id={tabId('episodes')}
+          aria-controls={panelId('episodes')}
+          aria-selected={segment === 'episodes' ? 'true' : 'false'}
+          tabIndex={segment === 'episodes' ? 0 : -1}
           className={tabClass('episodes')}
+          ref={(node) => {
+            tabButtonRefs.current.episodes = node ?? undefined;
+          }}
+          onKeyDown={(event) => onTabKeyDown(event, 'episodes')}
           onClick={() => setSegment('episodes')}
         >
           Episodes
@@ -616,8 +674,15 @@ export function ManageRecordsPage() {
         <button
           type="button"
           role="tab"
-          aria-selected={segment === 'health'}
+          id={tabId('health')}
+          aria-controls={panelId('health')}
+          aria-selected={segment === 'health' ? 'true' : 'false'}
+          tabIndex={segment === 'health' ? 0 : -1}
           className={tabClass('health')}
+          ref={(node) => {
+            tabButtonRefs.current.health = node ?? undefined;
+          }}
+          onKeyDown={(event) => onTabKeyDown(event, 'health')}
           onClick={() => setSegment('health')}
         >
           Health
@@ -625,8 +690,15 @@ export function ManageRecordsPage() {
         <button
           type="button"
           role="tab"
-          aria-selected={segment === 'food'}
+          id={tabId('food')}
+          aria-controls={panelId('food')}
+          aria-selected={segment === 'food' ? 'true' : 'false'}
+          tabIndex={segment === 'food' ? 0 : -1}
           className={tabClass('food')}
+          ref={(node) => {
+            tabButtonRefs.current.food = node ?? undefined;
+          }}
+          onKeyDown={(event) => onTabKeyDown(event, 'food')}
           onClick={() => setSegment('food')}
         >
           Food
@@ -661,7 +733,13 @@ export function ManageRecordsPage() {
         ) : null}
       </div>
 
-      {segment === 'episodes' ? (
+      <div
+        role="tabpanel"
+        id={panelId('episodes')}
+        aria-labelledby={tabId('episodes')}
+        hidden={segment !== 'episodes'}
+        tabIndex={0}
+      >
         <div className="space-y-10">
           <section aria-labelledby="manage-active-heading">
             <h2
@@ -744,9 +822,15 @@ export function ManageRecordsPage() {
             ) : null}
           </section>
         </div>
-      ) : null}
+      </div>
 
-      {segment === 'health' ? (
+      <div
+        role="tabpanel"
+        id={panelId('health')}
+        aria-labelledby={tabId('health')}
+        hidden={segment !== 'health'}
+        tabIndex={0}
+      >
         <section aria-labelledby="manage-health-heading">
           <h2
             id="manage-health-heading"
@@ -835,9 +919,15 @@ export function ManageRecordsPage() {
             onClose={() => setPendingDeleteMarker(null)}
           />
         </section>
-      ) : null}
+      </div>
 
-      {segment === 'food' ? (
+      <div
+        role="tabpanel"
+        id={panelId('food')}
+        aria-labelledby={tabId('food')}
+        hidden={segment !== 'food'}
+        tabIndex={0}
+      >
         <section aria-labelledby="manage-food-heading">
           <h2
             id="manage-food-heading"
@@ -919,7 +1009,7 @@ export function ManageRecordsPage() {
             onClose={() => setPendingDeleteFood(null)}
           />
         </section>
-      ) : null}
+      </div>
     </div>
   );
 }
