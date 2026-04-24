@@ -232,18 +232,18 @@ export function ManageRecordsPage() {
     const generation = episodesLoadGenRef.current;
     const stale = () => generation !== episodesLoadGenRef.current;
     setLoadingMoreEpisodes(true);
-    const supabase = createBrowserClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (stale()) {
-      return;
-    }
-    if (!user) {
-      setHasMoreEpisodes(false);
-      return;
-    }
     try {
+      const supabase = createBrowserClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (stale()) {
+        return;
+      }
+      if (!user) {
+        setHasMoreEpisodes(false);
+        return;
+      }
       const recentRes = await listCompletedEpisodesForUser(supabase, user.id, {
         limit: PAGE,
         offset: recentEpisodes.length,
@@ -259,10 +259,12 @@ export function ManageRecordsPage() {
       }
       setRecentEpisodes((prev) => [...prev, ...recentRes.data]);
       setHasMoreEpisodes(recentRes.data.length === PAGE);
-    } finally {
+    } catch {
       if (!stale()) {
-        setLoadingMoreEpisodes(false);
+        announce('Unable to load more episodes.', { politeness: 'assertive' });
       }
+    } finally {
+      setLoadingMoreEpisodes(false);
     }
   }, [
     announce,
@@ -343,18 +345,18 @@ export function ManageRecordsPage() {
     const generation = markersLoadGenRef.current;
     const stale = () => generation !== markersLoadGenRef.current;
     setLoadingMoreMarkers(true);
-    const supabase = createBrowserClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (stale()) {
-      return;
-    }
-    if (!user) {
-      setHasMoreMarkers(false);
-      return;
-    }
     try {
+      const supabase = createBrowserClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (stale()) {
+        return;
+      }
+      if (!user) {
+        setHasMoreMarkers(false);
+        return;
+      }
       const res = await listStandaloneHealthMarkersForUser(supabase, user.id, {
         limit: PAGE,
         offset: markers.length,
@@ -370,10 +372,14 @@ export function ManageRecordsPage() {
       }
       setMarkers((prev) => [...prev, ...res.data]);
       setHasMoreMarkers(res.data.length === PAGE);
-    } finally {
+    } catch {
       if (!stale()) {
-        setLoadingMoreMarkers(false);
+        announce('Unable to load more health markers.', {
+          politeness: 'assertive',
+        });
       }
+    } finally {
+      setLoadingMoreMarkers(false);
     }
   }, [
     announce,
@@ -482,18 +488,18 @@ export function ManageRecordsPage() {
     const generation = foodLoadGenRef.current;
     const stale = () => generation !== foodLoadGenRef.current;
     setLoadingMoreFood(true);
-    const supabase = createBrowserClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (stale()) {
-      return;
-    }
-    if (!user) {
-      setHasMoreFood(false);
-      return;
-    }
     try {
+      const supabase = createBrowserClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (stale()) {
+        return;
+      }
+      if (!user) {
+        setHasMoreFood(false);
+        return;
+      }
       const res = await listFoodDiaryEntriesForUser(supabase, user.id, {
         limit: PAGE,
         offset: foodRows.length,
@@ -510,10 +516,14 @@ export function ManageRecordsPage() {
       }
       setFoodRows((prev) => [...prev, ...res.data]);
       setHasMoreFood(res.data.length === PAGE);
-    } finally {
+    } catch {
       if (!stale()) {
-        setLoadingMoreFood(false);
+        announce('Unable to load more food diary entries.', {
+          politeness: 'assertive',
+        });
       }
+    } finally {
+      setLoadingMoreFood(false);
     }
   }, [
     announce,

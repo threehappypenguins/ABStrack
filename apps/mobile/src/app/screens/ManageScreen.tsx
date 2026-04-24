@@ -386,18 +386,18 @@ function StandaloneHealthMarkersManageList({
     const generation = loadGenRef.current;
     const stale = () => generation !== loadGenRef.current;
     setLoadingMore(true);
-    const client = getMobileSupabaseClient();
-    const {
-      data: { user },
-    } = await client.auth.getUser();
-    if (stale()) {
-      return;
-    }
-    if (!user) {
-      setHasMore(false);
-      return;
-    }
     try {
+      const client = getMobileSupabaseClient();
+      const {
+        data: { user },
+      } = await client.auth.getUser();
+      if (stale()) {
+        return;
+      }
+      if (!user) {
+        setHasMore(false);
+        return;
+      }
       const res = await listStandaloneHealthMarkersForUser(client, user.id, {
         limit: PAGE_SIZE,
         offset: rows.length,
@@ -413,10 +413,14 @@ function StandaloneHealthMarkersManageList({
       }
       setRows((prev) => [...prev, ...res.data]);
       setHasMore(res.data.length === PAGE_SIZE);
-    } finally {
+    } catch {
       if (!stale()) {
-        setLoadingMore(false);
+        await announce('Unable to load more health markers.', {
+          politeness: 'assertive',
+        });
       }
+    } finally {
+      setLoadingMore(false);
     }
   }, [
     hasMore,
@@ -656,18 +660,18 @@ function StandaloneFoodDiaryManageList({
     const generation = loadGenRef.current;
     const stale = () => generation !== loadGenRef.current;
     setLoadingMore(true);
-    const client = getMobileSupabaseClient();
-    const {
-      data: { user },
-    } = await client.auth.getUser();
-    if (stale()) {
-      return;
-    }
-    if (!user) {
-      setHasMore(false);
-      return;
-    }
     try {
+      const client = getMobileSupabaseClient();
+      const {
+        data: { user },
+      } = await client.auth.getUser();
+      if (stale()) {
+        return;
+      }
+      if (!user) {
+        setHasMore(false);
+        return;
+      }
       const res = await listFoodDiaryEntriesForUser(client, user.id, {
         limit: PAGE_SIZE,
         offset: rows.length,
@@ -684,10 +688,14 @@ function StandaloneFoodDiaryManageList({
       }
       setRows((prev) => [...prev, ...res.data]);
       setHasMore(res.data.length === PAGE_SIZE);
-    } finally {
+    } catch {
       if (!stale()) {
-        setLoadingMore(false);
+        await announce('Unable to load more food diary entries.', {
+          politeness: 'assertive',
+        });
       }
+    } finally {
+      setLoadingMore(false);
     }
   }, [hasMore, loadingMore, loggedAtOrAfter, loggedAtOrBefore, rows.length]);
 

@@ -115,7 +115,10 @@ export async function getActiveEpisodeForUser(
  *
  * @param client - Supabase client (RLS applies).
  * @param userId - `auth.users.id` / `episodes.user_id`.
- * @param options - `limit` caps rows (default 25).
+ * @param options - Pagination and optional `ended_at` bounds:
+ *   - `limit` (default `25`) and `offset` (default `0`) page through rows newest-first.
+ *   - `endedAtOrAfter` applies an inclusive lower bound on `ended_at`.
+ *   - `endedAtOrBefore` applies an inclusive upper bound on `ended_at`.
  * @returns Completed episode rows, or a {@link PresetDataError} on failure.
  */
 export async function listCompletedEpisodesForUser(

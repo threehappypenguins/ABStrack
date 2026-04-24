@@ -158,18 +158,18 @@ export function EpisodesManagementPanel({
     const generation = loadGenRef.current;
     const stale = () => generation !== loadGenRef.current;
     setLoadingMoreRecent(true);
-    const client = getMobileSupabaseClient();
-    const {
-      data: { user },
-    } = await client.auth.getUser();
-    if (stale()) {
-      return;
-    }
-    if (!user) {
-      setHasMoreRecent(false);
-      return;
-    }
     try {
+      const client = getMobileSupabaseClient();
+      const {
+        data: { user },
+      } = await client.auth.getUser();
+      if (stale()) {
+        return;
+      }
+      if (!user) {
+        setHasMoreRecent(false);
+        return;
+      }
       const recentRes = await listCompletedEpisodesForUser(client, user.id, {
         limit: RECENT_PAGE_SIZE,
         offset: recent.length,
@@ -185,10 +185,14 @@ export function EpisodesManagementPanel({
       }
       setRecent((prev) => [...prev, ...recentRes.data]);
       setHasMoreRecent(recentRes.data.length === RECENT_PAGE_SIZE);
-    } finally {
+    } catch {
       if (!stale()) {
-        setLoadingMoreRecent(false);
+        await announce('Unable to load more episodes.', {
+          politeness: 'assertive',
+        });
       }
+    } finally {
+      setLoadingMoreRecent(false);
     }
   }, [
     endedAtOrAfter,

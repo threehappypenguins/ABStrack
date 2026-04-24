@@ -6,8 +6,8 @@ import {
 } from './EpisodesManagementPanel';
 
 /**
- * @deprecated Episodes are opened from the Manage tab; this wrapper remains for tests and any
- *   deep links until navigation is fully consolidated.
+ * @deprecated Episodes are opened from the Manage tab; this wrapper remains for test compatibility
+ *   with existing `EpisodesScreen` specs.
  *
  * @returns Standalone episode management screen.
  */
