@@ -1,4 +1,3 @@
-import * as React from 'react';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { DefaultTheme, useRoute } from '@react-navigation/native';
 import { createFoodDiaryEntry } from '@abstrack/supabase';
@@ -181,5 +180,61 @@ describe('FoodDiaryEntryScreen', () => {
     expect(announce).toHaveBeenCalledWith('Food entry saved.', {
       politeness: 'polite',
     });
+  });
+
+  test('standalone save collapses form and add new entry restores fresh form', async () => {
+    jest.mocked(useRoute).mockReturnValue({
+      key: 'FoodDiaryEntry',
+      name: 'FoodDiaryEntry',
+      params: {},
+    } as never);
+
+    jest.mocked(createFoodDiaryEntry).mockResolvedValue({
+      ok: true,
+      data: {
+        id: 'food-standalone-1',
+        user_id: 'test-user-1',
+        episode_id: null,
+        meal_tag: 'Lunch',
+        food_note: 'Salad',
+        logged_at: '2026-04-22T12:00:00.000Z',
+        created_at: '2026-04-22T12:00:00.000Z',
+        updated_at: '2026-04-22T12:00:00.000Z',
+      },
+    });
+
+    const screen = render(<FoodDiaryEntryScreen />);
+
+    fireEvent.press(screen.getByLabelText('Lunch'));
+    fireEvent.changeText(screen.getByLabelText('Food note'), 'Salad');
+    fireEvent.press(screen.getByLabelText('Save food entry'));
+
+    await waitFor(() => {
+      expect(createFoodDiaryEntry).toHaveBeenCalledWith(
+        expect.objectContaining({ mockClient: true }),
+        expect.objectContaining({
+          user_id: 'test-user-1',
+          episode_id: null,
+          meal_tag: 'Lunch',
+          food_note: 'Salad',
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Food entry saved.')).toBeTruthy();
+    });
+    expect(screen.queryByText('Meal tag')).toBeNull();
+
+    fireEvent.press(screen.getByLabelText('Add a new food diary entry'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Meal tag')).toBeTruthy();
+    });
+    expect(screen.getByLabelText('Food note').props.value).toBe('');
+    expect(announce).toHaveBeenCalledWith(
+      'Ready to add another food diary entry.',
+      { politeness: 'polite' },
+    );
   });
 });

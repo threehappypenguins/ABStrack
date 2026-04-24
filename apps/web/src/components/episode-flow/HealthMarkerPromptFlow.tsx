@@ -6,14 +6,17 @@ import type {
   EpisodeRow,
   EpisodeType,
   HealthMarkerRow,
-  PresetHealthMarkerKind,
   PresetHealthMarkerRow,
 } from '@abstrack/types';
 import {
   bacReadingSuggestsAbsEpisode,
+  createDraftFromMarker,
   formatEpisodeDurationSimple,
-  PRESET_HEALTH_MARKER_KIND_LABELS,
+  markerLineTitle,
+  minForPresetMarkerValueInput,
+  parseMeasurementDraftForSave,
   validatePresetHealthMarkerCustomFields,
+  type MarkerDraft,
 } from '@abstrack/types';
 import {
   cancelActiveEpisodeById,
@@ -31,54 +34,13 @@ import { EpisodeLocaleInstant } from '@/components/episodes/EpisodeLocaleInstant
 import { ConfirmDialog } from '../symptom-presets/ConfirmDialog';
 import { EpisodeFoodDiaryStep } from './EpisodeFoodDiaryStep';
 import { useEpisodeFoodDiary } from './use-episode-food-diary';
-
-type MarkerDraft = {
-  value: string;
-  systolic: string;
-  diastolic: string;
-  notes: string;
-};
-
 type PersistFeedback =
   | { source: 'validation'; message: string }
   | { source: 'sync'; message: string };
 
-function normalizeNullable(value: string | null | undefined): string | null {
-  const next = value?.trim() ?? '';
-  return next.length > 0 ? next : null;
-}
-
 function trimToNull(value: string): string | null {
   const t = value.trim();
   return t.length > 0 ? t : null;
-}
-
-/**
- * HTML `min` for preset kinds with non-negative vitals; `custom` stays unconstrained (scales vary).
- * Pair with `step="any"` so decimals still validate in browsers.
- */
-function minForPresetMarkerValueInput(
-  kind: PresetHealthMarkerKind,
-): number | undefined {
-  return kind === 'custom' ? undefined : 0;
-}
-
-function markerLineTitle(line: PresetHealthMarkerRow): string {
-  if (line.marker_kind !== 'custom') {
-    return PRESET_HEALTH_MARKER_KIND_LABELS[line.marker_kind];
-  }
-  const customName = normalizeNullable(line.custom_name);
-  return customName ?? PRESET_HEALTH_MARKER_KIND_LABELS.custom;
-}
-
-function createDraftFromMarker(row: HealthMarkerRow | null): MarkerDraft {
-  return {
-    value: row?.value_numeric != null ? String(row.value_numeric) : '',
-    systolic: row?.systolic_numeric != null ? String(row.systolic_numeric) : '',
-    diastolic:
-      row?.diastolic_numeric != null ? String(row.diastolic_numeric) : '',
-    notes: row?.notes ?? '',
-  };
 }
 
 function findExistingMarkerForLine(
@@ -86,72 +48,6 @@ function findExistingMarkerForLine(
   line: PresetHealthMarkerRow,
 ): HealthMarkerRow | null {
   return rows.find((row) => row.preset_health_marker_id === line.id) ?? null;
-}
-
-type MeasurementDraftResult =
-  | {
-      ok: true;
-      valueNumeric: number | null;
-      systolicNumeric: number | null;
-      diastolicNumeric: number | null;
-    }
-  | { ok: false; message: string };
-
-/**
- * Parses numeric fields the same way as {@link saveCurrentLine} (single source of truth).
- * Skip is allowed whenever this returns `ok: false` (incomplete or invalid measurement).
- */
-function parseMeasurementDraftForSave(
-  line: PresetHealthMarkerRow,
-  draft: MarkerDraft,
-): MeasurementDraftResult {
-  const value = parseOptionalNumber(draft.value);
-  const systolic = parseOptionalNumber(draft.systolic);
-  const diastolic = parseOptionalNumber(draft.diastolic);
-
-  if (line.marker_kind === 'blood_pressure') {
-    if (systolic == null || diastolic == null) {
-      return {
-        ok: false,
-        message:
-          'Enter both systolic and diastolic blood pressure values to continue.',
-      };
-    }
-    if (Number.isNaN(systolic) || Number.isNaN(diastolic)) {
-      return {
-        ok: false,
-        message:
-          'Blood pressure values must be valid numbers (for example 120 and 80).',
-      };
-    }
-    return {
-      ok: true,
-      valueNumeric: null,
-      systolicNumeric: systolic,
-      diastolicNumeric: diastolic,
-    };
-  }
-  if (value == null) {
-    return { ok: false, message: 'Enter a numeric value to continue.' };
-  }
-  if (Number.isNaN(value)) {
-    return { ok: false, message: 'Value must be a valid number.' };
-  }
-  return {
-    ok: true,
-    valueNumeric: value,
-    systolicNumeric: null,
-    diastolicNumeric: null,
-  };
-}
-
-function parseOptionalNumber(raw: string | undefined): number | null {
-  const trimmed = (raw ?? '').trim();
-  if (!trimmed) {
-    return null;
-  }
-  const n = Number(trimmed);
-  return Number.isFinite(n) ? n : Number.NaN;
 }
 
 export type HealthMarkerPromptFlowProps = {

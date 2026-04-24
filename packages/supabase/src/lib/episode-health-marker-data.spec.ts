@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { PresetHealthMarkerRow } from '@abstrack/types';
 import {
+  createStandaloneHealthMarkerForLine,
   listEpisodeHealthMarkersForEpisode,
   upsertEpisodeHealthMarkerForLine,
 } from './episode-health-marker-data.js';
@@ -451,5 +452,69 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
     expect(upsertMock).toHaveBeenCalledWith(expect.any(Object), {
       onConflict: 'episode_id,preset_health_marker_id',
     });
+  });
+});
+
+describe('createStandaloneHealthMarkerForLine', () => {
+  it('inserts a standalone marker with episode_id null', async () => {
+    const inserted = {
+      id: 'hm-standalone-1',
+      user_id: 'u1',
+      episode_id: null,
+      preset_health_marker_id: 'phm-1',
+      marker_kind: 'blood_glucose',
+      custom_name: null,
+      custom_unit: null,
+      custom_name_key: '',
+      custom_unit_key: '',
+      value_numeric: 101,
+      systolic_numeric: null,
+      diastolic_numeric: null,
+      notes: 'daily check',
+      recorded_at: '2026-04-18T12:00:00.000Z',
+      created_at: '2026-04-18T12:00:00.000Z',
+      updated_at: '2026-04-18T12:00:00.000Z',
+    };
+    const singleMock = vi.fn(async () => ({ data: inserted, error: null }));
+    const selectMock = vi.fn(() => ({ single: singleMock }));
+    const insertMock = vi.fn((payload: Record<string, unknown>) => {
+      expect(payload).toEqual(
+        expect.objectContaining({
+          user_id: 'u1',
+          episode_id: null,
+          preset_health_marker_id: 'phm-1',
+          marker_kind: 'blood_glucose',
+          value_numeric: 101,
+          notes: 'daily check',
+          recorded_at: '2026-04-18T12:00:00.000Z',
+        }),
+      );
+      return {
+        select: selectMock,
+      };
+    });
+    const client = {
+      from: vi.fn(() => ({
+        insert: insertMock,
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const recordedAt = '2026-04-18T12:00:00.000Z';
+    const result = await createStandaloneHealthMarkerForLine(client, {
+      userId: 'u1',
+      line,
+      valueNumeric: 101,
+      notes: 'daily check',
+      recordedAt,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(insertMock).toHaveBeenCalledTimes(1);
+    expect(selectMock).toHaveBeenCalledTimes(1);
+    expect(selectMock).toHaveBeenCalledWith('*');
+    expect(singleMock).toHaveBeenCalledTimes(1);
+    if (result.ok) {
+      expect(result.data).toEqual(inserted);
+    }
   });
 });

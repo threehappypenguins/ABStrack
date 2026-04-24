@@ -129,6 +129,15 @@ export default async function DashboardPage() {
 
         <div className="space-y-4">
           <div>
+            <p className="text-sm text-app-muted">Health markers</p>
+            <Link
+              href="/health-markers/new"
+              className="inline-flex min-h-[44px] items-center justify-center rounded-lg border border-app-border bg-app-surface px-3 text-sm font-semibold text-app-ink shadow-sm transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+            >
+              Log health markers
+            </Link>
+          </div>
+          <div>
             <p className="text-sm text-app-muted">Food diary</p>
             <Link
               href="/food-diary/new"

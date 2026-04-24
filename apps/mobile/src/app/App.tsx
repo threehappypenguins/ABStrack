@@ -14,6 +14,7 @@ import { LoginScreen } from './screens/LoginScreen';
 import { EpisodeStartScreen } from './screens/EpisodeStartScreen';
 import { EpisodesScreen } from './screens/EpisodesScreen';
 import { FoodDiaryEntryScreen } from './screens/FoodDiaryEntryScreen';
+import { StandaloneHealthMarkersScreen } from './screens/StandaloneHealthMarkersScreen';
 import { HealthMarkerPromptScreen } from './screens/HealthMarkerPromptScreen';
 import { SymptomPromptScreen } from './screens/SymptomPromptScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
@@ -423,6 +424,14 @@ function AppBootstrap() {
               component={FoodDiaryEntryScreen}
               options={{
                 title: 'Food diary',
+                headerBackTitle: 'Home',
+              }}
+            />
+            <MainStack.Screen
+              name="StandaloneHealthMarkers"
+              component={StandaloneHealthMarkersScreen}
+              options={{
+                title: 'Health markers',
                 headerBackTitle: 'Home',
               }}
             />

@@ -2,6 +2,8 @@
  * Param lists for authenticated mobile navigation (tabs + stack overlays).
  */
 
+import type { NavigatorScreenParams } from '@react-navigation/native';
+
 /** Stack inside the Symptom presets tab: list, create, edit. */
 export type SymptomPresetsStackParamList = {
   SymptomPresetList: undefined;
@@ -31,7 +33,7 @@ export type MainTabParamList = {
 };
 
 export type MainStackParamList = {
-  MainTabs: undefined;
+  MainTabs: NavigatorScreenParams<MainTabParamList> | undefined;
   /** Active and recent episodes with resume for the in-progress row. */
   Episodes: undefined;
   /** Episode logging entry: shell until template selection and prompts ship. */
@@ -53,5 +55,7 @@ export type MainStackParamList = {
     /** Optional episode link for entries logged from inside an episode flow. */
     episodeId?: string;
   };
+  /** Log vitals from a preset without an episode (`episode_id` null on saved rows). */
+  StandaloneHealthMarkers: undefined;
   Settings: undefined;
 };
