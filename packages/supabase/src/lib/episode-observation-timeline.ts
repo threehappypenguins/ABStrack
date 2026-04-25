@@ -1,4 +1,4 @@
-import type { Uuid } from '@abstrack/types';
+import { PRESET_HEALTH_MARKER_KIND_LABELS, type Uuid } from '@abstrack/types';
 import type { PresetDataResult } from './preset-data.js';
 import { wrap } from './preset-data.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
@@ -17,6 +17,27 @@ export type EpisodeTimelineItem = {
   label: string;
   detail: string;
 };
+
+function healthMarkerTimelineLabel(
+  kind: string,
+  customName: string | null,
+): string {
+  const custom = customName?.trim();
+  if (kind === 'custom') {
+    return custom && custom.length > 0
+      ? custom
+      : PRESET_HEALTH_MARKER_KIND_LABELS.custom;
+  }
+  if (kind === 'wellness_mood') {
+    return 'Wellness mood';
+  }
+  if (kind in PRESET_HEALTH_MARKER_KIND_LABELS) {
+    return PRESET_HEALTH_MARKER_KIND_LABELS[
+      kind as keyof typeof PRESET_HEALTH_MARKER_KIND_LABELS
+    ];
+  }
+  return custom && custom.length > 0 ? custom : kind;
+}
 
 function compareTimeline(
   a: EpisodeTimelineItem,
@@ -119,7 +140,7 @@ export async function listEpisodeObservationTimeline(
           detail = n.length > 80 ? `${n.slice(0, 77)}…` : n;
         }
       }
-      const kindLabel = m.custom_name?.trim() || m.marker_kind;
+      const kindLabel = healthMarkerTimelineLabel(m.marker_kind, m.custom_name);
       items.push({
         kind: 'health_marker',
         sortAt: m.recorded_at,

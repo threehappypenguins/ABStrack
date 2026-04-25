@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { PRESET_HEALTH_MARKER_KIND_LABELS } from '@abstrack/types';
 import { listEpisodeObservationTimeline } from './episode-observation-timeline.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
 
@@ -77,6 +78,9 @@ describe('listEpisodeObservationTimeline', () => {
       return;
     }
     expect(result.data.map((r) => r.id)).toEqual(['fd-1', 'hm-1', 'sym-1']);
+    expect(result.data.find((r) => r.id === 'hm-1')?.label).toBe(
+      PRESET_HEALTH_MARKER_KIND_LABELS.heart_rate,
+    );
   });
 
   it('uses id as tie-breaker when timestamps are equal instants', async () => {

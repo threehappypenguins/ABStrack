@@ -10,6 +10,7 @@ import {
   getEpisodeById,
   listFoodDiaryEntriesForEpisode,
   listEpisodeHealthMarkersForEpisode,
+  listEpisodeObservationTimeline,
   listPresetHealthMarkersForPreset,
   PresetDataError,
   updateFoodDiaryEntry,
@@ -324,6 +325,7 @@ describe('HealthMarkerPromptScreen', () => {
     await waitFor(() => {
       expect(screen.getByText('Step 2 of 2')).toBeTruthy();
     });
+    expect(listEpisodeObservationTimeline).toHaveBeenCalledTimes(1);
   });
 
   test('blood pressure validation blocks when either value missing', async () => {

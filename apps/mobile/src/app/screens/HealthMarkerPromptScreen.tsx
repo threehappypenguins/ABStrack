@@ -94,6 +94,58 @@ function formatTimelineInstant(isoLike: string): string {
   return new Date(ms).toLocaleString();
 }
 
+function compareTimelineItems(
+  a: EpisodeTimelineItem,
+  b: EpisodeTimelineItem,
+): number {
+  const aMs = Date.parse(a.sortAt);
+  const bMs = Date.parse(b.sortAt);
+  const aValid = Number.isFinite(aMs);
+  const bValid = Number.isFinite(bMs);
+  if (aValid && bValid) {
+    const c = aMs - bMs;
+    if (c !== 0) {
+      return c;
+    }
+  } else {
+    const c = a.sortAt.localeCompare(b.sortAt);
+    if (c !== 0) {
+      return c;
+    }
+  }
+  return a.id.localeCompare(b.id);
+}
+
+function upsertTimelineItem(
+  prev: EpisodeTimelineItem[],
+  next: EpisodeTimelineItem,
+): EpisodeTimelineItem[] {
+  const rows = prev.filter((r) => !(r.kind === next.kind && r.id === next.id));
+  rows.push(next);
+  rows.sort(compareTimelineItems);
+  return rows;
+}
+
+function healthMarkerDetailForTimeline(row: HealthMarkerRow): string {
+  if (row.marker_kind === 'blood_pressure') {
+    if (row.systolic_numeric != null && row.diastolic_numeric != null) {
+      return `${row.systolic_numeric}/${row.diastolic_numeric}`;
+    }
+    return '—';
+  }
+  if (row.value_numeric != null) {
+    let detail = String(row.value_numeric);
+    if (row.custom_unit) {
+      detail = `${detail} ${row.custom_unit}`;
+    } else if (row.marker_kind === 'bac') {
+      detail = `${detail} g/dL`;
+    }
+    return detail;
+  }
+  const n = row.notes?.trim();
+  return n ? (n.length > 80 ? `${n.slice(0, 77)}…` : n) : '—';
+}
+
 function markerLineTitle(line: PresetHealthMarkerRow): string {
   if (line.marker_kind !== 'custom') {
     return PRESET_HEALTH_MARKER_KIND_LABELS[line.marker_kind];
@@ -485,10 +537,14 @@ export function HealthMarkerPromptScreen() {
       );
       return false;
     }
-    const tlo = await listEpisodeObservationTimeline(supabase, episodeId);
-    if (tlo.ok) {
-      setObservationTimeline(tlo.data);
-    }
+    const timelineItem: EpisodeTimelineItem = {
+      kind: 'health_marker',
+      sortAt: result.data.recorded_at,
+      id: result.data.id,
+      label: markerLineTitle(currentLine),
+      detail: healthMarkerDetailForTimeline(result.data),
+    };
+    setObservationTimeline((prev) => upsertTimelineItem(prev, timelineItem));
     return true;
   };
 
