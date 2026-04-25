@@ -216,10 +216,13 @@ export async function endEpisodeIfStillActive(
 /**
  * Persists episode type, labels, notes, and completion of the post–health-marker step.
  * Updates only rows that are still active (`ended_at IS NULL`).
+ * `post_marker_step_completed_at` is stamped atomically from a server-generated timestamp
+ * (`updated_at`) by DB trigger logic to avoid client clock skew and partial-write semantics.
  *
  * @param client - Supabase client (RLS applies).
  * @param episodeId - Target episode id.
- * @param fields - Episode fields to write; `post_marker_step_completed_at` should be set when the user finishes this step.
+ * @param fields - Episode fields to write; `post_marker_step_completed_at` acts as a completion
+ *   signal and is replaced by a server-derived timestamp.
  * @returns Updated row, or an error when the update matches no visible row.
  */
 export async function completeEpisodePostMarkerStep(
@@ -228,7 +231,12 @@ export async function completeEpisodePostMarkerStep(
   fields: EpisodePostMarkerStepWrite,
 ): Promise<PresetDataResult<EpisodeRow>> {
   try {
-    const payload: EpisodesTableUpdate = fields;
+    const payload: EpisodesTableUpdate = {
+      ...fields,
+      // Value is only a non-null signal; DB trigger stamps authoritative server timestamp.
+      post_marker_step_completed_at:
+        fields.post_marker_step_completed_at ?? new Date().toISOString(),
+    };
     const { data, error } = await client
       .from('episodes')
       .update(payload)

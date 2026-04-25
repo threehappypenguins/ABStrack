@@ -55,6 +55,11 @@ export type MainStackParamList = {
     episodeId: string;
     /** When true, initial step is derived from saved marker rows. */
     resume?: boolean;
+    /**
+     * When true with `resume`, opens the episode hub after a saved pass instead of the marker
+     * stepper (home / Manage “Continue this episode”).
+     */
+    hub?: boolean;
   };
   FoodDiaryEntry: {
     /** Optional episode link for entries logged from inside an episode flow. */

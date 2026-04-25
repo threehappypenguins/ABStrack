@@ -98,8 +98,7 @@ export function ActiveEpisodeCard({
                 episode.id,
                 episode.symptom_preset_id,
                 {
-                  toHealthMarkers:
-                    episode.post_marker_step_completed_at != null,
+                  toEpisodeHub: episode.post_marker_step_completed_at != null,
                 },
               )}
               className={resumeLinkClass}

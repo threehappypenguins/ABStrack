@@ -28,6 +28,8 @@ import type {
 } from '@abstrack/types';
 import {
   bacReadingSuggestsAbsEpisode,
+  filterHealthMarkerRowsForOpenPass,
+  findLatestHealthMarkerForLineInPass,
   formatEpisodeDurationSimple,
   PRESET_HEALTH_MARKER_KIND_LABELS,
   validatePresetHealthMarkerCustomFields,
@@ -37,9 +39,12 @@ import {
   completeEpisodePostMarkerStep,
   endEpisodeIfStillActive,
   getEpisodeById,
+  insertEpisodeHealthMarkerForLine,
   listEpisodeHealthMarkersForEpisode,
+  listEpisodeObservationTimeline,
   listPresetHealthMarkersForPreset,
-  upsertEpisodeHealthMarkerForLine,
+  type EpisodeTimelineItem,
+  upsertEpisodeTimelineItem,
 } from '@abstrack/supabase';
 import { announce, COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
 import { clearSymptomPromptSession } from '../../lib/episodes/symptom-prompt-session-store';
@@ -82,6 +87,34 @@ function trimToNull(value: string): string | null {
   return t.length > 0 ? t : null;
 }
 
+function formatTimelineInstant(isoLike: string): string {
+  const ms = Date.parse(isoLike);
+  if (!Number.isFinite(ms)) {
+    return isoLike;
+  }
+  return new Date(ms).toLocaleString();
+}
+
+function healthMarkerDetailForTimeline(row: HealthMarkerRow): string {
+  if (row.marker_kind === 'blood_pressure') {
+    if (row.systolic_numeric != null && row.diastolic_numeric != null) {
+      return `${row.systolic_numeric}/${row.diastolic_numeric}`;
+    }
+    return '—';
+  }
+  if (row.value_numeric != null) {
+    let detail = String(row.value_numeric);
+    if (row.custom_unit) {
+      detail = `${detail} ${row.custom_unit}`;
+    } else if (row.marker_kind === 'bac') {
+      detail = `${detail} g/dL`;
+    }
+    return detail;
+  }
+  const n = row.notes?.trim();
+  return n ? (n.length > 80 ? `${n.slice(0, 77)}…` : n) : '—';
+}
+
 function markerLineTitle(line: PresetHealthMarkerRow): string {
   if (line.marker_kind !== 'custom') {
     return PRESET_HEALTH_MARKER_KIND_LABELS[line.marker_kind];
@@ -98,13 +131,6 @@ function createDraftFromMarker(row: HealthMarkerRow | null): MarkerDraft {
       row?.diastolic_numeric != null ? String(row.diastolic_numeric) : '',
     notes: row?.notes ?? '',
   };
-}
-
-function findExistingMarkerForLine(
-  rows: HealthMarkerRow[],
-  line: PresetHealthMarkerRow,
-): HealthMarkerRow | null {
-  return rows.find((row) => row.preset_health_marker_id === line.id) ?? null;
 }
 
 type MeasurementDraftResult =
@@ -181,7 +207,7 @@ function parseOptionalNumber(raw: string | undefined): number | null {
 export function HealthMarkerPromptScreen() {
   const navigation = useNavigation<HealthMarkerPromptNav>();
   const route = useRoute<HealthMarkerPromptRoute>();
-  const { episodeId, resume = false } = route.params;
+  const { episodeId, resume = false, hub = false } = route.params;
   const { colors } = useAppTheme();
 
   const [status, setStatus] = useState<'loading' | 'error' | 'ready'>(
@@ -206,9 +232,6 @@ export function HealthMarkerPromptScreen() {
   const [postNote, setPostNote] = useState('');
   const [savingPost, setSavingPost] = useState(false);
   const [postFeedback, setPostFeedback] = useState<string | null>(null);
-  const [foodDiaryDecision, setFoodDiaryDecision] = useState<
-    'pending' | 'saved' | 'skipped'
-  >('pending');
   const [endingEpisode, setEndingEpisode] = useState(false);
   const [endFeedback, setEndFeedback] = useState<string | null>(null);
   const [endedSummary, setEndedSummary] = useState<{
@@ -217,17 +240,29 @@ export function HealthMarkerPromptScreen() {
   } | null>(null);
   const postFormInitRef = useRef(false);
   const [cancelingEpisode, setCancelingEpisode] = useState(false);
+  const [observationTimeline, setObservationTimeline] = useState<
+    EpisodeTimelineItem[]
+  >([]);
 
   const supabase = useMemo(() => getMobileSupabaseClient(), []);
   /** Bumps when the screen unmounts or `load` deps change so stale async work does not setState. */
   const loadGenerationRef = useRef(0);
 
+  const refreshObservationTimeline = useCallback(async () => {
+    const tl = await listEpisodeObservationTimeline(supabase, episodeId);
+    if (tl.ok) {
+      setObservationTimeline(tl.data);
+      return;
+    }
+    setObservationTimeline([]);
+  }, [episodeId, supabase]);
+
   const onLeaveFoodDiary = useCallback(
-    async (decision: 'saved' | 'skipped') => {
-      setFoodDiaryDecision(decision);
+    async (_decision: 'saved' | 'skipped') => {
+      await refreshObservationTimeline();
       setPhase('postMarkers');
     },
-    [],
+    [refreshObservationTimeline],
   );
 
   const onBackToHealthMarkersFromFoodDiaryBody = useCallback(async () => {
@@ -274,9 +309,9 @@ export function HealthMarkerPromptScreen() {
     postFormInitRef.current = false;
     setPostFeedback(null);
     resetFoodDiaryState();
-    setFoodDiaryDecision('pending');
     setEndFeedback(null);
     setEndedSummary(null);
+    setObservationTimeline([]);
 
     const {
       data: { user },
@@ -341,10 +376,20 @@ export function HealthMarkerPromptScreen() {
 
     setLines(presetLines.data);
 
+    const lastPost: string | null =
+      episode.data?.post_marker_step_completed_at ?? null;
+    const passRows = filterHealthMarkerRowsForOpenPass(
+      markerRows.data,
+      lastPost,
+    );
     const nextDrafts: Record<string, MarkerDraft> = {};
-    for (const line of presetLines.data) {
-      const marker = findExistingMarkerForLine(markerRows.data, line);
+    let firstUnanswered = -1;
+    for (const [idx, line] of presetLines.data.entries()) {
+      const marker = findLatestHealthMarkerForLineInPass(passRows, line);
       nextDrafts[line.id] = createDraftFromMarker(marker);
+      if (firstUnanswered === -1 && marker == null) {
+        firstUnanswered = idx;
+      }
     }
     setDrafts(nextDrafts);
 
@@ -352,23 +397,29 @@ export function HealthMarkerPromptScreen() {
     // enterFoodDiaryPhaseAfterMarkers before the post-marker step.
     setBacSuggestAbs(bacReadingSuggestsAbsEpisode(markerRows.data));
 
-    const firstUnanswered = presetLines.data.findIndex((line) => {
-      const row = findExistingMarkerForLine(markerRows.data, line);
-      return row === null;
-    });
-    if (resume && firstUnanswered === -1) {
-      if (episode.data?.post_marker_step_completed_at) {
-        setPhase('complete');
-      } else {
-        setPhase('foodDiary');
-      }
+    if (resume && hub && lastPost != null) {
+      setPhase('complete');
+    } else if (resume && firstUnanswered === -1) {
+      setPhase('foodDiary');
     } else if (resume && firstUnanswered >= 0) {
       setActiveIndex(firstUnanswered);
     } else {
       setActiveIndex(0);
     }
     setStatus('ready');
-  }, [episodeId, resetFoodDiaryState, resume, supabase]);
+
+    const tl = await listEpisodeObservationTimeline(supabase, episodeId, {
+      prefetchedHealthMarkers: markerRows.data,
+    });
+    if (stale()) {
+      return;
+    }
+    if (tl.ok) {
+      setObservationTimeline(tl.data);
+    } else {
+      setObservationTimeline([]);
+    }
+  }, [episodeId, hub, resetFoodDiaryState, resume, supabase]);
 
   useEffect(() => {
     void load();
@@ -438,7 +489,7 @@ export function HealthMarkerPromptScreen() {
 
     setSaving(true);
     setPersistFeedback(null);
-    const result = await upsertEpisodeHealthMarkerForLine(supabase, {
+    const result = await insertEpisodeHealthMarkerForLine(supabase, {
       userId,
       episodeId,
       line: currentLine,
@@ -458,6 +509,16 @@ export function HealthMarkerPromptScreen() {
       );
       return false;
     }
+    const timelineItem: EpisodeTimelineItem = {
+      kind: 'health_marker',
+      sortAt: result.data.recorded_at,
+      id: result.data.id,
+      label: markerLineTitle(currentLine),
+      detail: healthMarkerDetailForTimeline(result.data),
+    };
+    setObservationTimeline((prev) =>
+      upsertEpisodeTimelineItem(prev, timelineItem),
+    );
     return true;
   };
 
@@ -520,13 +581,13 @@ export function HealthMarkerPromptScreen() {
     }
     setSavingPost(true);
     setPostFeedback(null);
-    const completedAt = new Date().toISOString();
     const result = await completeEpisodePostMarkerStep(supabase, episodeId, {
       episode_type: postEpisodeKind,
       episode_label: trimToNull(postLabel),
       additional_notes: trimToNull(postAdditional),
       note: trimToNull(postNote),
-      post_marker_step_completed_at: completedAt,
+      // Completion signal only: DB overwrites stored boundary with authoritative server time.
+      post_marker_step_completed_at: null,
     });
     setSavingPost(false);
     if (!result.ok) {
@@ -537,9 +598,35 @@ export function HealthMarkerPromptScreen() {
     setEpisodeRow(result.data);
     setEndFeedback(null);
     setEndedSummary(null);
+    await refreshObservationTimeline();
     setPhase('complete');
-    await announce('Episode details saved.', { politeness: 'polite' });
+    await announce(
+      result.data.symptom_preset_id
+        ? 'This check-in is saved. You can log another when you are ready, or return home.'
+        : 'Episode details saved.',
+      { politeness: 'polite' },
+    );
   };
+
+  const onLogAnotherCheckIn = useCallback(() => {
+    const presetId = episodeRow?.symptom_preset_id;
+    if (!presetId) {
+      void announce(
+        'This episode has no symptom preset linked, so another check-in cannot start here.',
+        { politeness: 'assertive' },
+      );
+      return;
+    }
+    clearSymptomPromptSession(episodeId);
+    void announce('Opening symptoms for another check-in.', {
+      politeness: 'polite',
+    });
+    navigation.replace('SymptomPrompt', {
+      episodeId,
+      symptomPresetId: presetId,
+      resume: true,
+    });
+  }, [announce, episodeId, episodeRow?.symptom_preset_id, navigation]);
 
   const onBackToSymptomsFromHealthMarkers = useCallback(async () => {
     const symptomPresetId = episodeRow?.symptom_preset_id;
@@ -730,7 +817,9 @@ export function HealthMarkerPromptScreen() {
             ? 'Episode details'
             : phase === 'foodDiary'
               ? 'Food diary'
-              : 'Episode health markers'}
+              : phase === 'complete' && !endedSummary
+                ? 'This check-in is saved'
+                : 'Episode health markers'}
         </Text>
         {phase === 'prompting' && persistFeedback ? (
           <Text
@@ -745,77 +834,151 @@ export function HealthMarkerPromptScreen() {
         ) : null}
 
         {phase === 'complete' ? (
-          <View className="gap-4" accessibilityLiveRegion="polite">
-            {endedSummary ? (
-              <>
+          <ScrollView
+            className="flex-1"
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={{ paddingBottom: 24 }}
+          >
+            <View className="gap-4" accessibilityLiveRegion="polite">
+              {observationTimeline.length > 0 && !endedSummary ? (
+                <View
+                  className={`rounded-2xl border border-app-border bg-app-surface p-4 dark:border-app-border-dark dark:bg-app-bg-dark`}
+                  accessibilityLabel="Recent log entries in this episode"
+                >
+                  <Text
+                    className={`text-sm font-semibold ${nw.textInk}`}
+                    maxFontSizeMultiplier={2}
+                  >
+                    Recent log entries in this episode
+                  </Text>
+                  <Text
+                    className={`mt-1 text-xs ${nw.textMuted}`}
+                    maxFontSizeMultiplier={2}
+                  >
+                    Showing recent entries only. Oldest first within this slice.
+                  </Text>
+                  {observationTimeline.map((row) => (
+                    <Text
+                      key={`${row.kind}-${row.id}`}
+                      className={`mt-2 text-sm ${nw.textInk}`}
+                      maxFontSizeMultiplier={2}
+                    >
+                      {formatTimelineInstant(row.sortAt)}
+                      {' — '}
+                      {row.label}: {row.detail}
+                    </Text>
+                  ))}
+                </View>
+              ) : null}
+              {endedSummary ? (
+                <>
+                  <Text
+                    className={`text-base leading-relaxed ${nw.textInk}`}
+                    maxFontSizeMultiplier={2}
+                  >
+                    This episode is ended and saved.
+                  </Text>
+                  <Text
+                    className={`text-sm ${nw.textMuted}`}
+                    maxFontSizeMultiplier={2}
+                  >
+                    Ended {new Date(endedSummary.endedAt).toLocaleString()}
+                  </Text>
+                  <Text
+                    className={`text-sm ${nw.textMuted}`}
+                    maxFontSizeMultiplier={2}
+                  >
+                    Duration {endedSummary.durationText ?? '—'}
+                  </Text>
+                </>
+              ) : (
+                <View className="gap-3">
+                  <Text
+                    className={`text-base leading-relaxed ${nw.textInk}`}
+                    maxFontSizeMultiplier={2}
+                  >
+                    This round is saved: symptoms, health markers, any food
+                    diary entries you added, and episode details.
+                  </Text>
+                  <Text
+                    className={`text-sm leading-relaxed ${nw.textMuted}`}
+                    maxFontSizeMultiplier={2}
+                  >
+                    Return home, log another full check-in when you are ready,
+                    or end this episode when you are completely done.
+                  </Text>
+                </View>
+              )}
+              {endFeedback ? (
                 <Text
-                  className={`text-base leading-relaxed ${nw.textInk}`}
+                  className={`text-sm ${nw.textError}`}
+                  accessibilityLiveRegion="assertive"
                   maxFontSizeMultiplier={2}
                 >
-                  This episode is ended and saved.
+                  {endFeedback}
                 </Text>
-                <Text
-                  className={`text-sm ${nw.textMuted}`}
-                  maxFontSizeMultiplier={2}
+              ) : null}
+              {endedSummary ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Return to home"
+                  onPress={onFinishToHome}
+                  style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                  className="items-center justify-center rounded-xl bg-red-700 px-4 py-4 active:opacity-90 dark:bg-red-600"
                 >
-                  Ended {new Date(endedSummary.endedAt).toLocaleString()}
-                </Text>
-                <Text
-                  className={`text-sm ${nw.textMuted}`}
-                  maxFontSizeMultiplier={2}
-                >
-                  Duration {endedSummary.durationText ?? '—'}
-                </Text>
-              </>
-            ) : (
-              <Text
-                className={`text-base leading-relaxed ${nw.textInk}`}
-                maxFontSizeMultiplier={2}
-              >
-                {foodDiaryDecision === 'saved'
-                  ? 'Preset prompts, episode details, and food diary are saved. End this episode to prevent stale resume state.'
-                  : 'Preset prompts and episode details are saved. End this episode to prevent stale resume state.'}
-              </Text>
-            )}
-            {endFeedback ? (
-              <Text
-                className={`text-sm ${nw.textError}`}
-                accessibilityLiveRegion="assertive"
-                maxFontSizeMultiplier={2}
-              >
-                {endFeedback}
-              </Text>
-            ) : null}
-            {endedSummary ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Return to home"
-                onPress={onFinishToHome}
-                style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
-                className="items-center justify-center rounded-xl bg-red-700 px-4 py-4 active:opacity-90 dark:bg-red-600"
-              >
-                <Text className="text-center text-[17px] font-semibold text-white">
-                  Return home
-                </Text>
-              </Pressable>
-            ) : (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={
-                  endingEpisode ? 'Ending episode' : 'End episode'
-                }
-                accessibilityState={{ disabled: endingEpisode }}
-                disabled={endingEpisode}
-                onPress={onRequestEndEpisode}
-                style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
-                className="items-center justify-center rounded-xl bg-red-700 px-4 py-4 active:opacity-90 disabled:opacity-60 dark:bg-red-600"
-              >
-                <Text className="text-center text-[17px] font-semibold text-white">
-                  {endingEpisode ? 'Ending episode…' : 'End episode'}
-                </Text>
-              </Pressable>
-            )}
-          </View>
+                  <Text className="text-center text-[17px] font-semibold text-white">
+                    Return home
+                  </Text>
+                </Pressable>
+              ) : (
+                <View className="gap-3">
+                  {episodeRow?.symptom_preset_id ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Log another check-in"
+                      onPress={onLogAnotherCheckIn}
+                      style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                      className="items-center justify-center rounded-xl bg-red-700 px-4 py-4 active:opacity-90 dark:bg-red-600"
+                    >
+                      <Text className="text-center text-[17px] font-semibold text-white">
+                        Log another check-in
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Return to home"
+                    onPress={onFinishToHome}
+                    style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                    className="items-center justify-center rounded-xl border-2 border-app-border bg-app-bg px-4 py-4 active:opacity-90 dark:border-app-border-dark dark:bg-app-bg-dark"
+                  >
+                    <Text
+                      className={`text-center text-[17px] font-semibold ${nw.textInk}`}
+                    >
+                      Return home
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      endingEpisode ? 'Ending episode' : 'End episode'
+                    }
+                    accessibilityState={{ disabled: endingEpisode }}
+                    disabled={endingEpisode}
+                    onPress={onRequestEndEpisode}
+                    style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                    className="items-center justify-center rounded-xl border-2 border-app-border bg-app-bg px-4 py-4 active:opacity-90 disabled:opacity-60 dark:border-app-border-dark dark:bg-app-bg-dark"
+                  >
+                    <Text
+                      className={`text-center text-[17px] font-semibold ${nw.textInk}`}
+                    >
+                      {endingEpisode ? 'Ending episode…' : 'End episode'}
+                    </Text>
+                  </Pressable>
+                </View>
+              )}
+            </View>
+          </ScrollView>
         ) : phase === 'foodDiary' ? (
           <HealthMarkerFoodDiaryStep
             fd={foodDiary}
@@ -1199,6 +1362,36 @@ export function HealthMarkerPromptScreen() {
                     </Text>
                   </Pressable>
                 </View>
+                {observationTimeline.length > 0 ? (
+                  <View
+                    accessibilityLabel="Recent log entries in this episode, oldest first within this slice"
+                    className="mt-6 rounded-xl border border-app-border bg-app-surface/60 p-4"
+                  >
+                    <Text
+                      className={`text-sm font-semibold ${nw.textInk}`}
+                      maxFontSizeMultiplier={2}
+                    >
+                      Recent log entries in this episode
+                    </Text>
+                    <Text
+                      className={`mb-2 text-xs ${nw.textMuted}`}
+                      maxFontSizeMultiplier={2}
+                    >
+                      Showing recent entries only. Oldest first within this
+                      slice.
+                    </Text>
+                    {observationTimeline.map((row) => (
+                      <Text
+                        key={`${row.kind}-${row.id}`}
+                        className={`mb-2 text-sm ${nw.textInk}`}
+                        maxFontSizeMultiplier={2}
+                      >
+                        {formatTimelineInstant(row.sortAt)} — {row.label}:{' '}
+                        {row.detail}
+                      </Text>
+                    ))}
+                  </View>
+                ) : null}
               </ScrollView>
             </AsyncScreenContainer>
             <Pressable

@@ -14,19 +14,23 @@ import type {
   SymptomPromptAnswer,
   SymptomPromptAnswers,
 } from '@abstrack/types';
+import type { EpisodeRow } from '@abstrack/types';
 import {
   computeSymptomResumePlacement,
   createDefaultSymptomPromptAnswer,
   createInitialSymptomPromptSession,
-  episodeSymptomRowsToAnswersMap,
+  episodeSymptomRowsToAnswersMapForOpenPass,
+  formatEpisodeDurationSimple,
   symptomPromptAnswerHasValue,
 } from '@abstrack/types';
 import {
   cancelActiveEpisodeById,
-  deleteEpisodeSymptomAnswer,
+  deleteCurrentPassEpisodeSymptomAnswer,
+  endEpisodeIfStillActive,
+  getEpisodeById,
+  insertEpisodeSymptomAnswer,
   listEpisodeSymptomsForEpisode,
   listPresetSymptomsForPreset,
-  upsertEpisodeSymptomAnswer,
 } from '@abstrack/supabase';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
@@ -56,9 +60,6 @@ export type SymptomPromptFlowProps = {
 
 /** Delay before writing free-text drafts to `sessionStorage` (keystrokes stay snappy in React state). */
 const FREE_TEXT_PERSIST_DEBOUNCE_MS = 300;
-
-/** Same debounce for Supabase `episode_symptoms` writes (plaintext columns under RLS). */
-const SERVER_SYMPTOM_PERSIST_DEBOUNCE_MS = 300;
 
 function clampIndex(index: number, length: number): number {
   if (length <= 0) {
@@ -116,16 +117,13 @@ export function SymptomPromptFlow({
   const textPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
-  const serverPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
-  /** Latest debounced free-text payload; cleared when the write runs or is flushed. */
+  /** Latest staged free-text payload; flushed on explicit commit actions. */
   const pendingServerFreeTextPersistRef = useRef<{
     line: PresetSymptomRow;
     answer: SymptomPromptAnswer;
   } | null>(null);
   /**
-   * Per (episode, preset symptom) write queue so upsert/delete requests execute in user action
+   * Per (episode, preset symptom) write queue so insert/delete requests execute in user action
    * order within an episode only — not across `episodeId` changes while mounted.
    */
   const lineWriteQueueRef = useRef<Map<string, Promise<void>>>(new Map());
@@ -134,8 +132,8 @@ export function SymptomPromptFlow({
   const loadGenRef = useRef(0);
   /**
    * Bumped only by {@link cancelPendingServerPersist}. Used with mount + episode id to gate
-   * {@link setPersistError} only — upsert/delete for the captured `enqueueEpisodeId` always runs
-   * so Supabase stays aligned when the user navigates or cancels debounced work.
+   * {@link setPersistError} only — insert/delete for the captured `enqueueEpisodeId` always runs
+   * so Supabase stays aligned when the user navigates or cancels staged work.
    */
   const serverPersistEpochRef = useRef(0);
   /**
@@ -156,6 +154,13 @@ export function SymptomPromptFlow({
   const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancelingEpisode, setCancelingEpisode] = useState(false);
+  const [endEpisodeDialogOpen, setEndEpisodeDialogOpen] = useState(false);
+  const [endingEpisode, setEndingEpisode] = useState(false);
+  const [endEpisodeError, setEndEpisodeError] = useState<string | null>(null);
+  const [episodeForEndCta, setEpisodeForEndCta] = useState<EpisodeRow | null>(
+    null,
+  );
+  const lastPostMarkerStepCompletedAtRef = useRef<string | null>(null);
   const pendingLeaveRef = useRef<PendingLeaveAction | null>(null);
   /**
    * When `episodeId` / `symptomPresetId` change, the layout reset syncs this to `resumeFromEntry` so a
@@ -238,13 +243,13 @@ export function SymptomPromptFlow({
             }
             return;
           }
-          const r = await upsertEpisodeSymptomAnswer(supabase, {
+          const r = await insertEpisodeSymptomAnswer(supabase, {
             userId: uid,
             episodeId: targetEpisodeId,
             line,
             answer,
           });
-          // Epoch/mount/episode/attempt gate UI only — the upsert above always ran for `targetEpisodeId`.
+          // Epoch/mount/episode/attempt gate UI only — the insert above always ran for `targetEpisodeId`.
           if (
             isMountedRef.current &&
             episodeIdRef.current === enqueueEpisodeId &&
@@ -298,9 +303,11 @@ export function SymptomPromptFlow({
             }
             return;
           }
-          const r = await deleteEpisodeSymptomAnswer(supabase, {
+          const r = await deleteCurrentPassEpisodeSymptomAnswer(supabase, {
             episodeId: targetEpisodeId,
             presetSymptomId: line.id,
+            lastPostMarkerStepCompletedAt:
+              lastPostMarkerStepCompletedAtRef.current,
           });
           // Epoch/mount/episode/attempt gate UI only — the delete above always ran for `targetEpisodeId`.
           if (
@@ -327,14 +334,10 @@ export function SymptomPromptFlow({
   );
 
   /**
-   * Clears the debounced server timer and immediately persists the latest free-text
-   * payload (if any). Call before navigation / unmount so the last keystrokes are not lost.
+   * Flushes the latest staged free-text payload (if any). Call before navigation / unmount so the
+   * last keystrokes are committed once per explicit transition.
    */
   const flushPendingServerPersist = useCallback(() => {
-    if (serverPersistTimerRef.current !== null) {
-      clearTimeout(serverPersistTimerRef.current);
-      serverPersistTimerRef.current = null;
-    }
     const pending = pendingServerFreeTextPersistRef.current;
     pendingServerFreeTextPersistRef.current = null;
     if (!pending) {
@@ -344,14 +347,10 @@ export function SymptomPromptFlow({
   }, [executeServerPersist]);
 
   /**
-   * Cancels any pending debounced free-text upsert and invalidates older in-flight persists.
-   * Used before skip/delete so a delayed upsert cannot recreate a row after delete.
+   * Cancels any pending staged free-text insert and invalidates older in-flight persists.
+   * Used before skip/delete so a delayed insert cannot recreate a row after delete.
    */
   const cancelPendingServerPersist = useCallback(() => {
-    if (serverPersistTimerRef.current !== null) {
-      clearTimeout(serverPersistTimerRef.current);
-      serverPersistTimerRef.current = null;
-    }
     pendingServerFreeTextPersistRef.current = null;
     serverPersistEpochRef.current += 1;
   }, []);
@@ -365,23 +364,10 @@ export function SymptomPromptFlow({
       }
       if (answer.type === 'free_text') {
         pendingServerFreeTextPersistRef.current = { line, answer };
-        if (serverPersistTimerRef.current !== null) {
-          clearTimeout(serverPersistTimerRef.current);
-        }
-        serverPersistTimerRef.current = setTimeout(() => {
-          serverPersistTimerRef.current = null;
-          const pending = pendingServerFreeTextPersistRef.current;
-          pendingServerFreeTextPersistRef.current = null;
-          if (pending) {
-            executeServerPersist(pending.line, pending.answer);
-          }
-        }, SERVER_SYMPTOM_PERSIST_DEBOUNCE_MS);
+        // Intentional: append-only insert semantics for free-text require explicit commit writes
+        // (Next/Back/route change) to avoid generating duplicate rows from typing pauses.
       } else {
         pendingServerFreeTextPersistRef.current = null;
-        if (serverPersistTimerRef.current !== null) {
-          clearTimeout(serverPersistTimerRef.current);
-          serverPersistTimerRef.current = null;
-        }
         executeServerPersist(line, answer);
       }
     },
@@ -516,6 +502,24 @@ export function SymptomPromptFlow({
       setStatus('error');
       return;
     }
+    const ep = await getEpisodeById(supabase, episodeId);
+    if (stale()) {
+      return;
+    }
+    if (!ep.ok) {
+      setErrorMessage(ep.error.message);
+      setStatus('error');
+      return;
+    }
+    if (!ep.data) {
+      setErrorMessage('Could not load this episode.');
+      setStatus('error');
+      return;
+    }
+    setEpisodeForEndCta(ep.data);
+    const passBoundary = ep.data.post_marker_step_completed_at ?? null;
+    lastPostMarkerStepCompletedAtRef.current = passBoundary;
+
     const result = await listPresetSymptomsForPreset(supabase, symptomPresetId);
     if (stale()) {
       return;
@@ -531,7 +535,7 @@ export function SymptomPromptFlow({
       return;
     }
     const serverAnswers = fromServer.ok
-      ? episodeSymptomRowsToAnswersMap(fromServer.data)
+      ? episodeSymptomRowsToAnswersMapForOpenPass(fromServer.data, passBoundary)
       : {};
     const session = getSymptomPromptSession(episodeId);
     // Session overlays server so local drafts survive hydrate (debounced/offline/failed sync).
@@ -758,6 +762,59 @@ export function SymptomPromptFlow({
     supabase,
   ]);
 
+  const handleEndEpisodeConfirm = useCallback(async (): Promise<
+    void | false
+  > => {
+    if (endingEpisode || !episodeForEndCta) {
+      return false;
+    }
+    setEndingEpisode(true);
+    setEndEpisodeError(null);
+    try {
+      const nowIso = new Date().toISOString();
+      const startedAtMs = Date.parse(episodeForEndCta.started_at);
+      const nowMs = Date.parse(nowIso);
+      const endedAt =
+        Number.isFinite(startedAtMs) &&
+        Number.isFinite(nowMs) &&
+        nowMs < startedAtMs
+          ? episodeForEndCta.started_at
+          : nowIso;
+      const result = await endEpisodeIfStillActive(
+        supabase,
+        episodeId,
+        endedAt,
+        episodeForEndCta.started_at,
+      );
+      if (!result.ok) {
+        setEndEpisodeError(result.error.message);
+        announce(result.error.message, { politeness: 'assertive' });
+        return false;
+      }
+      clearSymptomPromptSession(episodeId);
+      omitSymptomPromptSnapshotOnUnmountRef.current = true;
+      if (result.data.didEnd) {
+        const durationText = formatEpisodeDurationSimple(
+          episodeForEndCta.started_at,
+          endedAt,
+        );
+        announce(
+          durationText
+            ? `Episode ended. Duration ${durationText}.`
+            : 'Episode ended.',
+          { politeness: 'polite' },
+        );
+        setEndEpisodeDialogOpen(false);
+        router.push('/dashboard');
+        return;
+      }
+      setEndEpisodeError('This episode is no longer active.');
+      return false;
+    } finally {
+      setEndingEpisode(false);
+    }
+  }, [announce, endingEpisode, episodeForEndCta, episodeId, router, supabase]);
+
   const goNext = () => {
     flushPendingTextPersist();
     flushPendingServerPersist();
@@ -931,6 +988,28 @@ export function SymptomPromptFlow({
         >
           Cancel episode
         </button>
+        {episodeForEndCta?.post_marker_step_completed_at &&
+        !episodeForEndCta.ended_at ? (
+          <>
+            <button
+              type="button"
+              className="inline-flex min-h-[48px] w-full max-w-md items-center justify-center rounded-xl border-2 border-app-border bg-app-surface px-4 text-base font-semibold text-app-ink shadow-sm transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+              onClick={() => {
+                setEndEpisodeDialogOpen(true);
+              }}
+            >
+              End this episode
+            </button>
+            {endEpisodeError ? (
+              <p
+                className="text-sm text-red-700 dark:text-red-300"
+                role="alert"
+              >
+                {endEpisodeError}
+              </p>
+            ) : null}
+          </>
+        ) : null}
       </div>
 
       <ConfirmDialog
@@ -957,6 +1036,18 @@ export function SymptomPromptFlow({
         onConfirm={handleCancelEpisodeConfirm}
         onClose={() => {
           setCancelDialogOpen(false);
+        }}
+      />
+      <ConfirmDialog
+        open={endEpisodeDialogOpen}
+        title="End this episode now?"
+        description="Ending sets this episode as complete. You can still view it in your episode history when you are ready."
+        confirmLabel="End episode"
+        confirmBusyLabel="Ending episode…"
+        cancelLabel="Not yet"
+        onConfirm={handleEndEpisodeConfirm}
+        onClose={() => {
+          setEndEpisodeDialogOpen(false);
         }}
       />
     </>

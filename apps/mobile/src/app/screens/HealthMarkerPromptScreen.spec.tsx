@@ -10,10 +10,11 @@ import {
   getEpisodeById,
   listFoodDiaryEntriesForEpisode,
   listEpisodeHealthMarkersForEpisode,
+  listEpisodeObservationTimeline,
   listPresetHealthMarkersForPreset,
   PresetDataError,
   updateFoodDiaryEntry,
-  upsertEpisodeHealthMarkerForLine,
+  insertEpisodeHealthMarkerForLine,
 } from '@abstrack/supabase';
 import type { PresetHealthMarkerRow } from '@abstrack/types';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
@@ -42,8 +43,12 @@ jest.mock('@abstrack/supabase', () => {
     listFoodDiaryEntriesForEpisode: jest.fn(),
     listEpisodeHealthMarkersForEpisode: jest.fn(),
     listPresetHealthMarkersForPreset: jest.fn(),
+    listEpisodeObservationTimeline: jest.fn(async () => ({
+      ok: true,
+      data: [],
+    })),
     updateFoodDiaryEntry: jest.fn(),
-    upsertEpisodeHealthMarkerForLine: jest.fn(),
+    insertEpisodeHealthMarkerForLine: jest.fn(),
   };
 });
 
@@ -150,7 +155,7 @@ describe('HealthMarkerPromptScreen', () => {
       ok: true,
       data: [],
     });
-    jest.mocked(upsertEpisodeHealthMarkerForLine).mockResolvedValue({
+    jest.mocked(insertEpisodeHealthMarkerForLine).mockResolvedValue({
       ok: true,
       data: {
         id: 'hm-row-1',
@@ -244,6 +249,21 @@ describe('HealthMarkerPromptScreen', () => {
     expect(getMobileSupabaseClient).toHaveBeenCalled();
   });
 
+  test('hub resume does not bypass flow when post-marker boundary is missing', async () => {
+    jest.mocked(useRoute).mockReturnValue({
+      key: 'HealthMarkerPrompt',
+      name: 'HealthMarkerPrompt',
+      params: { episodeId, resume: true, hub: true },
+    } as never);
+
+    const screen = render(<HealthMarkerPromptScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Step 1 of 2')).toBeTruthy();
+    });
+    expect(screen.queryByLabelText('Log another check-in')).toBeNull();
+  });
+
   test('validation blocks Next and does not upsert when numeric value missing', async () => {
     const screen = render(<HealthMarkerPromptScreen />);
 
@@ -258,7 +278,7 @@ describe('HealthMarkerPromptScreen', () => {
         screen.getByText('Enter a numeric value to continue.'),
       ).toBeTruthy();
     });
-    expect(upsertEpisodeHealthMarkerForLine).not.toHaveBeenCalled();
+    expect(insertEpisodeHealthMarkerForLine).not.toHaveBeenCalled();
   });
 
   test('Skip advances to next marker when current line is unanswered', async () => {
@@ -288,9 +308,9 @@ describe('HealthMarkerPromptScreen', () => {
     fireEvent.press(screen.getByLabelText('Next health marker'));
 
     await waitFor(() => {
-      expect(upsertEpisodeHealthMarkerForLine).toHaveBeenCalledTimes(1);
+      expect(insertEpisodeHealthMarkerForLine).toHaveBeenCalledTimes(1);
     });
-    expect(upsertEpisodeHealthMarkerForLine).toHaveBeenCalledWith(
+    expect(insertEpisodeHealthMarkerForLine).toHaveBeenCalledWith(
       expect.objectContaining({ mockClient: true }),
       expect.objectContaining({
         userId: 'test-user-1',
@@ -305,6 +325,7 @@ describe('HealthMarkerPromptScreen', () => {
     await waitFor(() => {
       expect(screen.getByText('Step 2 of 2')).toBeTruthy();
     });
+    expect(listEpisodeObservationTimeline).toHaveBeenCalledTimes(1);
   });
 
   test('blood pressure validation blocks when either value missing', async () => {
@@ -333,10 +354,10 @@ describe('HealthMarkerPromptScreen', () => {
         ),
       ).toBeTruthy();
     });
-    expect(upsertEpisodeHealthMarkerForLine).not.toHaveBeenCalled();
+    expect(insertEpisodeHealthMarkerForLine).not.toHaveBeenCalled();
   });
 
-  test('food diary comes before episode details, then save shows completion UI', async () => {
+  test('food diary comes before episode details, then save opens episode hub with log another check-in', async () => {
     jest.mocked(listPresetHealthMarkersForPreset).mockResolvedValue({
       ok: true,
       data: [lineA],
@@ -395,19 +416,17 @@ describe('HealthMarkerPromptScreen', () => {
         episode_label: 'Evening flare',
         additional_notes: 'Extra symptom text',
         note: 'Felt off',
-        post_marker_step_completed_at:
-          expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+        post_marker_step_completed_at: null,
       }),
     );
 
     await waitFor(() => {
-      expect(
-        screen.getByText(
-          /Preset prompts and episode details are saved\. End this episode to prevent stale resume state\./,
-        ),
-      ).toBeTruthy();
+      expect(screen.getByLabelText('Log another check-in')).toBeTruthy();
     });
-    expect(screen.getByLabelText('End episode')).toBeTruthy();
+    expect(mockReplace).not.toHaveBeenCalledWith(
+      'SymptomPrompt',
+      expect.anything(),
+    );
   });
 
   test('post-marker save failure shows postFeedback', async () => {

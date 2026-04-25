@@ -68,19 +68,28 @@ function validateHealthMarkerNumericPayload(
  *
  * @param client - Supabase client (RLS applies).
  * @param episodeId - `episodes.id`.
+ * @param options - Optional cap (`limit`) for newest rows after source ordering.
  */
 export async function listEpisodeHealthMarkersForEpisode(
   client: AbstrackSupabaseClient,
   episodeId: Uuid,
+  options: {
+    limit?: number;
+  } = {},
 ): Promise<PresetDataResult<HealthMarkerRow[]>> {
+  const limit = options.limit;
   return wrap(async () => {
-    const r = await client
+    let query = client
       .from('health_markers')
       .select('*')
       .eq('episode_id', episodeId)
       .order('recorded_at', { ascending: false })
       .order('created_at', { ascending: false })
       .order('id', { ascending: false });
+    if (limit != null) {
+      query = query.limit(limit);
+    }
+    const r = await query;
     return {
       data: (r.data ?? []) as HealthMarkerRow[],
       error: r.error,
@@ -165,15 +174,10 @@ export async function deleteHealthMarkerById(
 }
 
 /**
- * Inserts or updates one `health_markers` row for the current episode + preset line.
- *
- * Episode-bound rows are keyed by `(episode_id, preset_health_marker_id)` where
- * `preset_health_marker_id` is {@link PresetHealthMarkerRow.id}. That allows multiple template lines
- * with the same `marker_kind` (e.g. two glucose steps) without colliding. A non-partial unique
- * constraint on `(episode_id, preset_health_marker_id)` (see migration
- * `20260421120000_health_markers_episode_line_unique.sql`) is required so PostgREST can infer
- * `onConflict`; partial unique indexes do not match. Wellness rows stay allowed (NULL distinctness).
- * This function uses one `upsert` so concurrent clients cannot double-insert the same line.
+ * Inserts one `health_markers` row for the current episode + preset line (a new observation per
+ * pass; prior rows are kept and ordered by `recorded_at` / `id`).
+ * Intentional: episode observations are append-only for auditability/history, so this helper is
+ * insert-only (no upsert path).
  *
  * @param client - Supabase client (RLS applies).
  * @param args.userId - Must match the episode owner (`episodes.user_id`) under RLS.
@@ -190,7 +194,7 @@ export async function deleteHealthMarkerById(
  * leaves `value_numeric` empty; other kinds use `value_numeric` only). Otherwise returns
  * `validation_error`.
  */
-export async function upsertEpisodeHealthMarkerForLine(
+export async function insertEpisodeHealthMarkerForLine(
   client: AbstrackSupabaseClient,
   args: {
     userId: Uuid;
@@ -257,9 +261,7 @@ export async function upsertEpisodeHealthMarkerForLine(
 
     const r = await client
       .from('health_markers')
-      .upsert(row, {
-        onConflict: 'episode_id,preset_health_marker_id',
-      })
+      .insert(row)
       .select('*')
       .single();
     return {

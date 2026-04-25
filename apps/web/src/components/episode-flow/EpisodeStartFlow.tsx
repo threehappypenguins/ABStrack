@@ -296,7 +296,7 @@ export function EpisodeStartFlow() {
           {canResume ? (
             <Link
               href={buildResumeEpisodeHref(blockingActiveEpisode.id, presetId, {
-                toHealthMarkers: isAtEndStep,
+                toEpisodeHub: isAtEndStep,
               })}
               className={primaryLinkClass}
               aria-describedby={gateStatusId}

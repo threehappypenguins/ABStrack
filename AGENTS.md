@@ -18,7 +18,7 @@ Details: **[docs/SUPABASE_CLOUD_DEVELOPER.md](docs/SUPABASE_CLOUD_DEVELOPER.md)*
 ### Correct flow for migrations and database.types.ts (agents: follow this)
 
 1. **Change `supabase/migrations/*.sql` only.** Do **not** edit **`packages/supabase/src/lib/database.types.ts`** to “match” new tables/columns or to fix TypeScript before generation—that file is **only** the output of **`supabase gen types`** (see step 4).
-2. **Push and finish reviews** (Copilot, humans). Revise migration SQL as needed. Still **do not** hand-edit `database.types.ts`.
+2. **Push and finish reviews** (Copilot, humans). Revise the **same migration file(s)** as needed. **Do not create a new migration file during review iterations** unless Sarah explicitly asks. Assume migrations are **not pushed to cloud yet** until Sarah says she is done reviewing and ready. Still **do not** hand-edit `database.types.ts`.
 3. **After reviews are done**, Sarah runs **`db push`** and **`gen types typescript --linked`** in **her** terminal (see commands below). **`--linked` reads Supabase Cloud**; it does **not** read migration files from git, so types cannot honestly reflect new SQL until it is applied to the linked project.
 4. **Regenerated `database.types.ts`** is committed **with** the migration(s), then the PR merges.
 
