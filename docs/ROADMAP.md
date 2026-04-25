@@ -96,7 +96,7 @@
 
 ---
 
-## Week 6: April 20-26 -- Episode Logging, Food Diary, and Standalone Health Marker Logging (foundation **complete**; multi-round **in progress**)
+## Week 6: April 20-26 -- Episode Logging, Food Diary, and Standalone Health Marker Logging (**complete**)
 
 **Goal:** Complete core daily logging flows: episode-first symptom capture, standalone health marker logging, and standalone food diary logging.
 
@@ -135,9 +135,9 @@
 
 **In progress — multiple guided passes:** While `ended_at IS NULL`, the user can complete one full pass of **Continue this episode** (symptom preset → health marker preset → food diary, through **Episode details** and **Save and continue**), then start **another pass** of the same steps. Data is **one row per observation** in the existing tables with **uniqueness on preset lines relaxed**; **timestamps** order the history (no required “round” id). Entry is **only** from **Resume / Continue this episode**. See [user story](user-stories/episode-and-health-marker-flows.md).
 
-- [ ] **Multiple passes in Continue + schema foundation:** **Save and continue** on **Episode details** re-enters the guided path for the next pass; migrate to allow **multiple** rows per `(episode, preset line)` on `episode_symptoms` and `health_markers` (review `food_diary_entries` if any constraint blocks it); new saves are **inserts** with `recorded_at` / `logged_at`; minimal time-ordered history; `ended_at` lock; a11y. (Full **repeat** UI and history polish per field type follow in the two items below, not in this item alone.)
-- [ ] **Preset symptoms (multiple `episode_symptoms` rows):** Re-capture and history for **preset symptom lines** only. Does **not** own preset health markers, episode-tied food, or ad-hoc non-preset lines.
-- [ ] **Preset health markers, episode-tied food, and ad-hoc lines:** `health_markers` and `food_diary_entries` with `episode_id` while the episode is active, plus ad-hoc symptom/marker content when the product includes it. Does **not** own **preset** `episode_symptoms` (previous item).
+- [x] **Multiple passes in Continue + schema foundation:** **Save and continue** on **Episode details** re-enters the guided path for the next pass; migrate to allow **multiple** rows per `(episode, preset line)` on `episode_symptoms` and `health_markers` (review `food_diary_entries` if any constraint blocks it); new saves are **inserts** with `recorded_at` / `logged_at`; minimal time-ordered history; `ended_at` lock; a11y. (Full **repeat** UI and history polish per field type follow in the two items below, not in this item alone.)
+- [x] **Preset symptoms (multiple `episode_symptoms` rows):** Re-capture and history for **preset symptom lines** only. Does **not** own preset health markers, episode-tied food, or ad-hoc non-preset lines.
+- [x] **Preset health markers, episode-tied food, and ad-hoc lines:** `health_markers` and `food_diary_entries` with `episode_id` while the episode is active, plus ad-hoc symptom/marker content when the product includes it. Does **not** own **preset** `episode_symptoms` (previous item).
 
 ---
 

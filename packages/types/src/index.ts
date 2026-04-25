@@ -4,6 +4,7 @@ export * from './lib/episode-template.js';
 export * from './lib/symptom-prompt-session.js';
 export * from './lib/symptom-prompt-session-sanitize.js';
 export * from './lib/episode-symptom-mapping.js';
+export * from './lib/episode-symptom-history.js';
 export * from './lib/episode-open-pass.js';
 export * from './lib/episode-bac-suggestion.js';
 export * from './lib/types.js';

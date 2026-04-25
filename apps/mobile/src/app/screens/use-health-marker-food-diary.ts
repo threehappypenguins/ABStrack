@@ -152,7 +152,7 @@ export function useHealthMarkerFoodDiary({
   const [deletingFoodEntryId, setDeletingFoodEntryId] = useState<string | null>(
     null,
   );
-  const [isAddFoodEntryOpen, setIsAddFoodEntryOpen] = useState(true);
+  const [isAddFoodEntryOpen, setIsAddFoodEntryOpen] = useState(false);
   const [isAddFoodEntryDirty, setIsAddFoodEntryDirty] = useState(false);
   const [foodDatePickerOpen, setFoodDatePickerOpen] = useState(false);
   const [foodTimePickerOpen, setFoodTimePickerOpen] = useState(false);
@@ -173,7 +173,7 @@ export function useHealthMarkerFoodDiary({
     setFoodDiaryFeedback(null);
     setEditingFoodEntryId(null);
     setDeletingFoodEntryId(null);
-    setIsAddFoodEntryOpen(true);
+    setIsAddFoodEntryOpen(false);
     setIsAddFoodEntryDirty(false);
     setFoodDatePickerOpen(false);
     setFoodTimePickerOpen(false);
@@ -300,6 +300,13 @@ export function useHealthMarkerFoodDiary({
       return;
     }
     const editingId = editingFoodEntryId;
+    const useCurrentTimestampForDefaultAdd =
+      editingId == null &&
+      foodLoggedDate === addFoodInitialDate &&
+      foodLoggedTime === addFoodInitialTime;
+    const createLoggedAtIso = useCurrentTimestampForDefaultAdd
+      ? new Date().toISOString()
+      : loggedAtIso;
     const result =
       editingId == null
         ? await createFoodDiaryEntry(supabase, {
@@ -307,7 +314,7 @@ export function useHealthMarkerFoodDiary({
             episode_id: episodeId,
             meal_tag: mealTag,
             food_note: foodNote,
-            logged_at: loggedAtIso,
+            logged_at: createLoggedAtIso,
           })
         : await updateFoodDiaryEntry(supabase, editingId, {
             meal_tag: mealTag,
@@ -353,6 +360,8 @@ export function useHealthMarkerFoodDiary({
     savingFoodDiary,
     supabase,
     userId,
+    addFoodInitialDate,
+    addFoodInitialTime,
   ]);
 
   const foodDiaryContinueDisabled =

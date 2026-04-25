@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import type { AppThemeColors } from '../theme/app-colors';
 import { nw } from '../theme/app-nativewind-classes';
+import { EpisodeFlowSecondaryActionsSection } from '../components/episode-flow/EpisodeFlowSecondaryActionsSection';
 import type { HealthMarkerFoodDiaryHookResult } from './use-health-marker-food-diary';
 
 function formatFoodDiaryLoggedAtForDisplay(iso: string): string {
@@ -48,6 +49,7 @@ export function HealthMarkerFoodDiaryStep({
       <ScrollView
         className="flex-1"
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator
         contentContainerStyle={{ paddingBottom: 24 }}
       >
         <Text
@@ -615,6 +617,22 @@ export function HealthMarkerFoodDiaryStep({
             {fd.foodEntries.length === 0 ? 'Skip for now' : 'Continue'}
           </Text>
         </Pressable>
+        <EpisodeFlowSecondaryActionsSection>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Cancel episode"
+            onPress={onCancelEpisodePress}
+            style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+            className="w-full items-center justify-center rounded-lg px-3 py-3 active:opacity-80"
+          >
+            <Text
+              className="text-sm font-medium text-red-700 dark:text-red-300"
+              maxFontSizeMultiplier={2}
+            >
+              Cancel episode
+            </Text>
+          </Pressable>
+        </EpisodeFlowSecondaryActionsSection>
       </ScrollView>
       {fd.foodDatePickerOpen ? (
         <DateTimePicker
@@ -633,20 +651,6 @@ export function HealthMarkerFoodDiaryStep({
           onChange={fd.onFoodTimePickerChange}
         />
       ) : null}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Cancel episode"
-        onPress={onCancelEpisodePress}
-        style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
-        className="w-full items-center justify-center rounded-lg px-3 py-3 active:opacity-80"
-      >
-        <Text
-          className="text-sm font-medium text-red-700 dark:text-red-300"
-          maxFontSizeMultiplier={2}
-        >
-          Cancel episode
-        </Text>
-      </Pressable>
     </>
   );
 }

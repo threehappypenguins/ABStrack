@@ -10,16 +10,19 @@ import {
   useState,
 } from 'react';
 import type {
+  EpisodeSymptomRow,
   PresetSymptomRow,
   SymptomPromptAnswer,
   SymptomPromptAnswers,
 } from '@abstrack/types';
 import type { EpisodeRow } from '@abstrack/types';
 import {
+  compareEpisodeSymptomRowsForHistory,
   computeSymptomResumePlacement,
   createDefaultSymptomPromptAnswer,
   createInitialSymptomPromptSession,
   episodeSymptomRowsToAnswersMapForOpenPass,
+  formatEpisodeSymptomHistoryDetail,
   formatEpisodeDurationSimple,
   symptomPromptAnswerHasValue,
 } from '@abstrack/types';
@@ -45,6 +48,7 @@ import {
 } from '@/lib/episode-flow/symptom-prompt-session-store';
 import { ConfirmDialog } from '../symptom-presets/ConfirmDialog';
 import { SymptomPromptResponseField } from './SymptomPromptResponseField';
+import { EpisodeLocaleInstant } from '../episodes/EpisodeLocaleInstant';
 
 export type SymptomPromptFlowProps = {
   /** `episodes.id` from the route. */
@@ -105,6 +109,7 @@ export function SymptomPromptFlow({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [persistError, setPersistError] = useState<string | null>(null);
   const [lines, setLines] = useState<PresetSymptomRow[]>([]);
+  const [symptomHistory, setSymptomHistory] = useState<EpisodeSymptomRow[]>([]);
 
   const [activeIndex, setActiveIndex] = useState(0);
   const [answers, setAnswers] = useState(
@@ -395,6 +400,7 @@ export function SymptomPromptFlow({
     setStatus('loading');
     setErrorMessage(null);
     setLines([]);
+    setSymptomHistory([]);
     setHydrated(true);
   }, [episodeId, symptomPresetId, flushPendingServerPersist]);
 
@@ -530,13 +536,26 @@ export function SymptomPromptFlow({
       return;
     }
     setLines(result.data);
-    const fromServer = await listEpisodeSymptomsForEpisode(supabase, episodeId);
+    const fromServer = await listEpisodeSymptomsForEpisode(
+      supabase,
+      episodeId,
+      {
+        orderBy: 'recent',
+      },
+    );
     if (stale()) {
       return;
     }
     const serverAnswers = fromServer.ok
       ? episodeSymptomRowsToAnswersMapForOpenPass(fromServer.data, passBoundary)
       : {};
+    if (fromServer.ok) {
+      setSymptomHistory(
+        fromServer.data.slice().sort(compareEpisodeSymptomRowsForHistory),
+      );
+    } else {
+      setSymptomHistory([]);
+    }
     const session = getSymptomPromptSession(episodeId);
     // Session overlays server so local drafts survive hydrate (debounced/offline/failed sync).
     const mergedAnswers = { ...serverAnswers, ...session.answers };
@@ -935,6 +954,37 @@ export function SymptomPromptFlow({
               disabled={status !== 'ready'}
             />
           </div>
+        ) : null}
+
+        {symptomHistory.length > 0 ? (
+          <section
+            className="rounded-2xl border border-app-border/90 bg-app-surface/60 p-4"
+            aria-label="Symptom history in this episode"
+          >
+            <h2 className="text-sm font-semibold text-app-ink">
+              Symptom history in this episode
+            </h2>
+            <p
+              className="mt-1 text-xs text-app-muted"
+              id="ep-symptom-history-hint"
+            >
+              Oldest first. Each entry is saved as its own row.
+            </p>
+            <ol
+              className="mt-3 list-decimal space-y-2 pl-5 text-sm text-app-ink"
+              aria-describedby="ep-symptom-history-hint"
+            >
+              {symptomHistory.map((row) => (
+                <li key={row.id} className="break-words">
+                  <span className="text-app-muted">
+                    <EpisodeLocaleInstant iso={row.created_at} />
+                    {' — '}
+                  </span>
+                  {row.symptom_name}: {formatEpisodeSymptomHistoryDetail(row)}
+                </li>
+              ))}
+            </ol>
+          </section>
         ) : null}
 
         <div className="flex flex-col gap-3 sm:flex-row">

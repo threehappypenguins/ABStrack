@@ -1,6 +1,6 @@
 # User story: Episode flows + standalone health and food logging
 
-**Status:** Draft (product intent; schedule on [ROADMAP.md](../ROADMAP.md) — **Week 5:** migrations (`health_marker_preset_id` + episode templates table), template settings UI, **I'm having an episode** + template picker; **Week 6 (shipped):** full symptom + marker + food-in-flow prompt, standalone health markers, standalone food diary, consolidated management; **Week 6+ (in progress):** [multiple guided passes](#multiple-guided-passes-while-the-episode-is-open) and the [data model](#data-model-for-repeat-observations) — see **Week 6** unchecked items on the roadmap.  
+**Status:** Draft (product intent; schedule on [ROADMAP.md](../ROADMAP.md) — **Week 5:** migrations (`health_marker_preset_id` + episode templates table), template settings UI, **I'm having an episode** + template picker; **Week 6 (shipped):** full symptom + marker + food-in-flow prompt, standalone health markers, standalone food diary, consolidated management, [multiple guided passes](#multiple-guided-passes-while-the-episode-is-open), and the [data model for repeat observations](#data-model-for-repeat-observations)).  
 **Related PRD:** [PRD.md](../PRD.md) — §3 Health Marker Presets, §4 Episode Logging, §5 General Wellness Logging
 
 This document expands the **user-facing flows** for:

@@ -15,14 +15,17 @@ import {
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type {
   EpisodeRow,
+  EpisodeSymptomRow,
   PresetSymptomRow,
   SymptomPromptAnswer,
   SymptomPromptAnswers,
 } from '@abstrack/types';
 import {
+  compareEpisodeSymptomRowsForHistory,
   computeSymptomResumePlacement,
   createDefaultSymptomPromptAnswer,
   episodeSymptomRowsToAnswersMapForOpenPass,
+  formatEpisodeSymptomHistoryDetail,
   formatEpisodeDurationSimple,
   symptomPromptAnswerHasValue,
 } from '@abstrack/types';
@@ -46,6 +49,7 @@ import {
 import { AsyncScreenContainer } from '../components/AsyncScreenContainer';
 import { SymptomPromptResponseField } from '../components/episode-flow/SymptomPromptResponseField';
 import { ScreenShell } from '../components/ScreenShell';
+import { EpisodeFlowSecondaryActionsSection } from '../components/episode-flow/EpisodeFlowSecondaryActionsSection';
 import type { MainStackParamList } from '../navigation/types';
 import { nw } from '../theme/app-nativewind-classes';
 
@@ -71,6 +75,14 @@ function lineWriteQueueKey(episodeId: string, presetSymptomId: string): string {
   return `${episodeId}:${presetSymptomId}`;
 }
 
+function formatSymptomHistoryInstant(isoLike: string): string {
+  const ms = Date.parse(isoLike);
+  if (!Number.isFinite(ms)) {
+    return isoLike;
+  }
+  return new Date(ms).toLocaleString();
+}
+
 /**
  * Linear symptom stepper for the active episode’s selected preset (Week 5 skeleton).
  *
@@ -94,6 +106,7 @@ export function SymptomPromptScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [persistError, setPersistError] = useState<string | null>(null);
   const [lines, setLines] = useState<PresetSymptomRow[]>([]);
+  const [symptomHistory, setSymptomHistory] = useState<EpisodeSymptomRow[]>([]);
 
   const [activeIndex, setActiveIndex] = useState(
     () => getSymptomPromptSession(episodeId).activeIndex,
@@ -420,6 +433,9 @@ export function SymptomPromptScreen() {
       const fromServer = await listEpisodeSymptomsForEpisode(
         supabase,
         episodeId,
+        {
+          orderBy: 'recent',
+        },
       );
       if (stale()) {
         return;
@@ -430,6 +446,13 @@ export function SymptomPromptScreen() {
             passBoundary,
           )
         : {};
+      if (fromServer.ok) {
+        setSymptomHistory(
+          fromServer.data.slice().sort(compareEpisodeSymptomRowsForHistory),
+        );
+      } else {
+        setSymptomHistory([]);
+      }
       const session = getSymptomPromptSession(episodeId);
       // Session overlays server so local drafts survive hydrate (debounced/offline/failed sync).
       const mergedAnswers = { ...serverAnswers, ...session.answers };
@@ -493,6 +516,7 @@ export function SymptomPromptScreen() {
     setErrorMessage(null);
     setPersistError(null);
     setLines([]);
+    setSymptomHistory([]);
   }, [episodeId, symptomPresetId, resumeFromEntry, flushPendingServerPersist]);
 
   const currentLine = lines[activeIndex] ?? null;
@@ -795,6 +819,7 @@ export function SymptomPromptScreen() {
           <ScrollView
             className="flex-1"
             keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator
             contentContainerStyle={{ paddingBottom: 24 }}
           >
             <Text
@@ -836,6 +861,36 @@ export function SymptomPromptScreen() {
                   onChange={onChangeAnswer}
                   disabled={status !== 'ready'}
                 />
+              </View>
+            ) : null}
+
+            {symptomHistory.length > 0 ? (
+              <View
+                accessibilityLabel="Symptom history in this episode, oldest first"
+                className="mt-6 rounded-xl border border-app-border bg-app-surface p-4 dark:border-app-border-dark dark:bg-app-bg-dark"
+              >
+                <Text
+                  className={`text-sm font-semibold ${nw.textInk}`}
+                  maxFontSizeMultiplier={2}
+                >
+                  Symptom history in this episode
+                </Text>
+                <Text
+                  className={`mb-2 text-xs ${nw.textMuted}`}
+                  maxFontSizeMultiplier={2}
+                >
+                  Oldest first. Each entry is saved as its own row.
+                </Text>
+                {symptomHistory.map((row) => (
+                  <Text
+                    key={row.id}
+                    className={`mb-2 text-sm ${nw.textInk}`}
+                    maxFontSizeMultiplier={2}
+                  >
+                    {formatSymptomHistoryInstant(row.created_at)} —{' '}
+                    {row.symptom_name}: {formatEpisodeSymptomHistoryDetail(row)}
+                  </Text>
+                ))}
               </View>
             ) : null}
 
@@ -896,55 +951,58 @@ export function SymptomPromptScreen() {
                 </Text>
               </Pressable>
             </View>
+
+            <EpisodeFlowSecondaryActionsSection>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Exit symptom flow"
+                onPress={onExitFlowPress}
+                style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                className="w-full items-center justify-center rounded-lg px-3 py-3 active:opacity-80"
+              >
+                <Text
+                  className={`text-base font-medium ${nw.textMuted}`}
+                  maxFontSizeMultiplier={2}
+                >
+                  Exit symptom flow
+                </Text>
+              </Pressable>
+              {episodeForEndCta?.post_marker_step_completed_at &&
+              !episodeForEndCta.ended_at ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="End this episode"
+                  accessibilityState={{ disabled: endingEpisode }}
+                  disabled={endingEpisode}
+                  onPress={onEndEpisodePress}
+                  style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                  className="mt-3 w-full items-center justify-center rounded-xl border-2 border-app-border bg-app-bg px-3 py-4 active:opacity-90 dark:border-app-border-dark dark:bg-app-bg-dark"
+                >
+                  <Text
+                    className={`text-center text-[17px] font-semibold ${nw.textInk}`}
+                    maxFontSizeMultiplier={2}
+                  >
+                    {endingEpisode ? 'Ending…' : 'End this episode'}
+                  </Text>
+                </Pressable>
+              ) : null}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Cancel episode"
+                onPress={onCancelEpisodePress}
+                style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                className="mt-3 w-full items-center justify-center rounded-lg px-3 py-3 active:opacity-80"
+              >
+                <Text
+                  className="text-sm font-medium text-red-700 dark:text-red-300"
+                  maxFontSizeMultiplier={2}
+                >
+                  Cancel episode
+                </Text>
+              </Pressable>
+            </EpisodeFlowSecondaryActionsSection>
           </ScrollView>
         </AsyncScreenContainer>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Exit symptom flow"
-          onPress={onExitFlowPress}
-          style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
-          className="mt-auto w-full items-center justify-center rounded-lg px-3 py-3 active:opacity-80"
-        >
-          <Text
-            className={`text-base font-medium ${nw.textMuted}`}
-            maxFontSizeMultiplier={2}
-          >
-            Exit symptom flow
-          </Text>
-        </Pressable>
-        {episodeForEndCta?.post_marker_step_completed_at &&
-        !episodeForEndCta.ended_at ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="End this episode"
-            accessibilityState={{ disabled: endingEpisode }}
-            disabled={endingEpisode}
-            onPress={onEndEpisodePress}
-            style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
-            className="w-full items-center justify-center rounded-xl border-2 border-app-border bg-app-bg px-3 py-4 active:opacity-90 dark:border-app-border-dark dark:bg-app-bg-dark"
-          >
-            <Text
-              className={`text-center text-[17px] font-semibold ${nw.textInk}`}
-              maxFontSizeMultiplier={2}
-            >
-              {endingEpisode ? 'Ending…' : 'End this episode'}
-            </Text>
-          </Pressable>
-        ) : null}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Cancel episode"
-          onPress={onCancelEpisodePress}
-          style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
-          className="w-full items-center justify-center rounded-lg px-3 py-3 active:opacity-80"
-        >
-          <Text
-            className="text-sm font-medium text-red-700 dark:text-red-300"
-            maxFontSizeMultiplier={2}
-          >
-            Cancel episode
-          </Text>
-        </Pressable>
       </View>
     </ScreenShell>
   );

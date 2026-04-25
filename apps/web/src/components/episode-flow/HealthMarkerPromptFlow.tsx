@@ -71,10 +71,7 @@ function healthMarkerDetailForTimeline(row: HealthMarkerRow): string {
 export type HealthMarkerPromptFlowProps = {
   episodeId: string;
   resumeFromEntry?: boolean;
-  /**
-   * When true with `resumeFromEntry`, opens the episode hub (after a saved pass) instead of the
-   * marker stepper or food diary.
-   */
+  /** When true with `resumeFromEntry`, opens the check-in-saved hub when available. */
   resumeToEpisodeHub?: boolean;
 };
 
@@ -472,17 +469,10 @@ export function HealthMarkerPromptFlow({
       announce(result.error.message, { politeness: 'assertive' });
       return;
     }
-    setEpisodeRow(result.data);
-    setEndFeedback(null);
-    setEndedSummary(null);
-    await refreshObservationTimeline();
-    setPhase('complete');
-    announce(
-      result.data.symptom_preset_id
-        ? 'This check-in is saved. You can log another when you are ready, or return to the dashboard.'
-        : 'Episode details saved.',
-      { politeness: 'polite' },
-    );
+    announce('Check-in saved. Opening your check-in summary.', {
+      politeness: 'polite',
+    });
+    router.replace(`/episode/${episodeId}/check-in-saved`);
   };
 
   const onLogAnotherCheckIn = useCallback(() => {
@@ -867,12 +857,24 @@ export function HealthMarkerPromptFlow({
               </ol>
             </section>
           ) : null}
-          <div
-            className="rounded-2xl border border-app-border/90 bg-app-surface p-6 shadow-soft ring-1 ring-[color:var(--app-ring-slate)] sm:p-8"
-            role="status"
-            aria-live="polite"
-          >
-            {endedSummary ? (
+          {!endedSummary ? (
+            <div
+              className="rounded-xl border border-app-border/80 bg-app-surface px-4 py-3"
+              role="status"
+              aria-live="polite"
+            >
+              <p className="text-sm text-app-ink">
+                This check-in is saved. You can log another check-in, return to
+                the dashboard, or end this episode.
+              </p>
+            </div>
+          ) : null}
+          {endedSummary ? (
+            <div
+              className="rounded-2xl border border-app-border/90 bg-app-surface p-6 shadow-soft ring-1 ring-[color:var(--app-ring-slate)] sm:p-8"
+              role="status"
+              aria-live="polite"
+            >
               <div className="space-y-2">
                 <p className="text-sm leading-relaxed text-app-ink">
                   This episode is ended and saved.
@@ -884,19 +886,8 @@ export function HealthMarkerPromptFlow({
                   Duration {endedSummary.durationText ?? '—'}
                 </p>
               </div>
-            ) : (
-              <div className="space-y-3 text-sm leading-relaxed text-app-ink">
-                <p>
-                  This round is saved: symptoms, health markers, any food diary
-                  entries you added, and episode details.
-                </p>
-                <p className="text-app-muted">
-                  Return to the dashboard, log another full check-in when you
-                  are ready, or end this episode when you are completely done.
-                </p>
-              </div>
-            )}
-          </div>
+            </div>
+          ) : null}
           {endFeedback ? (
             <p className="text-sm text-red-700 dark:text-red-300" role="alert">
               {endFeedback}
