@@ -103,9 +103,6 @@ export async function listEpisodeObservationTimeline(
     const items: EpisodeTimelineItem[] = [];
 
     for (const s of sy.data) {
-      if (!s.preset_symptom_id) {
-        continue;
-      }
       let detail = '—';
       if (s.response_type === 'yes_no' && s.response_boolean != null) {
         detail = s.response_boolean ? 'Yes' : 'No';
@@ -126,7 +123,8 @@ export async function listEpisodeObservationTimeline(
         kind: 'symptom',
         sortAt: s.created_at,
         id: s.id,
-        label: s.symptom_name,
+        label:
+          s.symptom_name.trim().length > 0 ? s.symptom_name : 'Symptom entry',
         detail,
       });
     }

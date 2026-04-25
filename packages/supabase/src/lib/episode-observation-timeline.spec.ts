@@ -239,4 +239,49 @@ describe('listEpisodeObservationTimeline', () => {
     }
     expect(result.data.map((r) => r.id)).toContain('hm-prefetched');
   });
+
+  it('keeps symptom timeline rows when preset_symptom_id is null', async () => {
+    listEpisodeSymptomsForEpisode.mockResolvedValue({
+      ok: true,
+      data: [
+        {
+          id: 'sym-null-link',
+          preset_symptom_id: null,
+          symptom_name: 'Legacy symptom',
+          response_type: 'free_text',
+          response_boolean: null,
+          response_severity: null,
+          response_text: 'Still include me',
+          created_at: '2026-04-24T12:00:00.000Z',
+        },
+      ],
+    });
+    listEpisodeHealthMarkersForEpisode.mockResolvedValue({
+      ok: true,
+      data: [],
+    });
+    listFoodDiaryEntriesForEpisode.mockResolvedValue({
+      ok: true,
+      data: [],
+    });
+
+    const result = await listEpisodeObservationTimeline(
+      {} as AbstrackSupabaseClient,
+      'ep-1',
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.data).toEqual([
+      {
+        kind: 'symptom',
+        sortAt: '2026-04-24T12:00:00.000Z',
+        id: 'sym-null-link',
+        label: 'Legacy symptom',
+        detail: 'Still include me',
+      },
+    ]);
+  });
 });

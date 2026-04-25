@@ -29,6 +29,7 @@ import type {
 import {
   bacReadingSuggestsAbsEpisode,
   filterHealthMarkerRowsForOpenPass,
+  findLatestHealthMarkerForLineInPass,
   formatEpisodeDurationSimple,
   PRESET_HEALTH_MARKER_KIND_LABELS,
   validatePresetHealthMarkerCustomFields,
@@ -161,52 +162,6 @@ function createDraftFromMarker(row: HealthMarkerRow | null): MarkerDraft {
       row?.diastolic_numeric != null ? String(row.diastolic_numeric) : '',
     notes: row?.notes ?? '',
   };
-}
-
-function isHealthMarkerRowLater(
-  a: HealthMarkerRow,
-  b: HealthMarkerRow,
-): boolean {
-  const recA = Date.parse(a.recorded_at);
-  const recB = Date.parse(b.recorded_at);
-  const recAValid = Number.isFinite(recA);
-  const recBValid = Number.isFinite(recB);
-  if (recAValid && recBValid && recA !== recB) {
-    return recA > recB;
-  }
-  if (recAValid !== recBValid) {
-    return recAValid;
-  }
-
-  const createdA = Date.parse(a.created_at);
-  const createdB = Date.parse(b.created_at);
-  const createdAValid = Number.isFinite(createdA);
-  const createdBValid = Number.isFinite(createdB);
-  if (createdAValid && createdBValid && createdA !== createdB) {
-    return createdA > createdB;
-  }
-  if (createdAValid !== createdBValid) {
-    return createdAValid;
-  }
-
-  return a.id.localeCompare(b.id) > 0;
-}
-
-function buildLatestMarkerByLineMap(
-  passRows: HealthMarkerRow[],
-): Map<string, HealthMarkerRow> {
-  const latestByLine = new Map<string, HealthMarkerRow>();
-  for (const row of passRows) {
-    const lineId = row.preset_health_marker_id;
-    if (!lineId) {
-      continue;
-    }
-    const prev = latestByLine.get(lineId);
-    if (!prev || isHealthMarkerRowLater(row, prev)) {
-      latestByLine.set(lineId, row);
-    }
-  }
-  return latestByLine;
 }
 
 type MeasurementDraftResult =
@@ -458,11 +413,14 @@ export function HealthMarkerPromptScreen() {
       markerRows.data,
       lastPost,
     );
-    const latestMarkerByLine = buildLatestMarkerByLineMap(passRows);
     const nextDrafts: Record<string, MarkerDraft> = {};
-    for (const line of presetLines.data) {
-      const marker = latestMarkerByLine.get(line.id) ?? null;
+    let firstUnanswered = -1;
+    for (const [idx, line] of presetLines.data.entries()) {
+      const marker = findLatestHealthMarkerForLineInPass(passRows, line);
       nextDrafts[line.id] = createDraftFromMarker(marker);
+      if (firstUnanswered === -1 && marker == null) {
+        firstUnanswered = idx;
+      }
     }
     setDrafts(nextDrafts);
 
@@ -470,9 +428,6 @@ export function HealthMarkerPromptScreen() {
     // enterFoodDiaryPhaseAfterMarkers before the post-marker step.
     setBacSuggestAbs(bacReadingSuggestsAbsEpisode(markerRows.data));
 
-    const firstUnanswered = presetLines.data.findIndex(
-      (line) => !latestMarkerByLine.has(line.id),
-    );
     if (resume && hub && lastPost != null) {
       setPhase('complete');
     } else if (resume && firstUnanswered === -1) {
