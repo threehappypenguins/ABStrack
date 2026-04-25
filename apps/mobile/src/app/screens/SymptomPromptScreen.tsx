@@ -21,9 +21,11 @@ import type {
   SymptomPromptAnswers,
 } from '@abstrack/types';
 import {
+  compareEpisodeSymptomRowsForHistory,
   computeSymptomResumePlacement,
   createDefaultSymptomPromptAnswer,
   episodeSymptomRowsToAnswersMapForOpenPass,
+  formatEpisodeSymptomHistoryDetail,
   formatEpisodeDurationSimple,
   symptomPromptAnswerHasValue,
 } from '@abstrack/types';
@@ -71,48 +73,6 @@ function clampIndex(index: number, length: number): number {
 /** Queue key so the same preset symptom id does not serialize writes across episodes. */
 function lineWriteQueueKey(episodeId: string, presetSymptomId: string): string {
   return `${episodeId}:${presetSymptomId}`;
-}
-
-function compareSymptomRowsForHistory(
-  a: EpisodeSymptomRow,
-  b: EpisodeSymptomRow,
-): number {
-  const aMs = Date.parse(a.created_at);
-  const bMs = Date.parse(b.created_at);
-  const aValid = Number.isFinite(aMs);
-  const bValid = Number.isFinite(bMs);
-  if (aValid && bValid) {
-    const byTime = aMs - bMs;
-    if (byTime !== 0) {
-      return byTime;
-    }
-  } else {
-    const byText = a.created_at.localeCompare(b.created_at);
-    if (byText !== 0) {
-      return byText;
-    }
-  }
-  return a.id.localeCompare(b.id);
-}
-
-function symptomHistoryDetail(row: EpisodeSymptomRow): string {
-  if (row.response_type === 'yes_no' && row.response_boolean != null) {
-    return row.response_boolean ? 'Yes' : 'No';
-  }
-  if (row.response_type === 'severity_scale' && row.response_severity != null) {
-    return `Severity ${row.response_severity}`;
-  }
-  if (row.response_type === 'free_text') {
-    const text = row.response_text?.trim() ?? '';
-    return text.length > 0 ? text : '—';
-  }
-  if (row.response_type === 'photo') {
-    return 'Photo';
-  }
-  if (row.response_type === 'video') {
-    return 'Video';
-  }
-  return '—';
 }
 
 function formatSymptomHistoryInstant(isoLike: string): string {
@@ -488,7 +448,7 @@ export function SymptomPromptScreen() {
         : {};
       if (fromServer.ok) {
         setSymptomHistory(
-          fromServer.data.slice().sort(compareSymptomRowsForHistory),
+          fromServer.data.slice().sort(compareEpisodeSymptomRowsForHistory),
         );
       } else {
         setSymptomHistory([]);
@@ -928,7 +888,7 @@ export function SymptomPromptScreen() {
                     maxFontSizeMultiplier={2}
                   >
                     {formatSymptomHistoryInstant(row.created_at)} —{' '}
-                    {row.symptom_name}: {symptomHistoryDetail(row)}
+                    {row.symptom_name}: {formatEpisodeSymptomHistoryDetail(row)}
                   </Text>
                 ))}
               </View>
