@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { PresetSymptomRow } from '@abstrack/types';
 import {
-  deleteEpisodeSymptomAnswer,
+  deleteCurrentPassEpisodeSymptomAnswer,
+  insertEpisodeSymptomAnswer,
   listEpisodeSymptomsForEpisode,
-  upsertEpisodeSymptomAnswer,
 } from './episode-symptom-data.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
 
@@ -17,21 +17,6 @@ const line: PresetSymptomRow = {
   created_at: '2026-04-18T12:00:00.000Z',
   updated_at: '2026-04-18T12:00:00.000Z',
 };
-
-/** Matches `.select().eq().eq().order(created_at desc).order(id desc)` from `fetchEpisodeSymptomRowsForLine`. */
-function chainSelectEpisodeLine(data: unknown): Record<string, unknown> {
-  return {
-    select: vi.fn(() => ({
-      eq: vi.fn(() => ({
-        eq: vi.fn(() => ({
-          order: vi.fn(() => ({
-            order: vi.fn(async () => ({ data, error: null })),
-          })),
-        })),
-      })),
-    })),
-  };
-}
 
 describe('listEpisodeSymptomsForEpisode', () => {
   it('orders by sort_order asc, then created_at desc, then id desc', async () => {
@@ -67,7 +52,7 @@ describe('listEpisodeSymptomsForEpisode', () => {
   });
 });
 
-describe('upsertEpisodeSymptomAnswer', () => {
+describe('insertEpisodeSymptomAnswer', () => {
   it('returns validation_error when answer.type does not match line.response_type', async () => {
     const client = {
       from: vi.fn(() => {
@@ -75,7 +60,7 @@ describe('upsertEpisodeSymptomAnswer', () => {
       }),
     } as unknown as AbstrackSupabaseClient;
 
-    const result = await upsertEpisodeSymptomAnswer(client, {
+    const result = await insertEpisodeSymptomAnswer(client, {
       userId: 'u1',
       episodeId: 'ep-1',
       line: { ...line, response_type: 'free_text' },
@@ -90,7 +75,7 @@ describe('upsertEpisodeSymptomAnswer', () => {
     expect(client.from).not.toHaveBeenCalled();
   });
 
-  it('inserts when no existing row', async () => {
+  it('inserts a new row', async () => {
     const inserted = {
       id: 'es-1',
       user_id: 'u1',
@@ -105,14 +90,9 @@ describe('upsertEpisodeSymptomAnswer', () => {
       created_at: '2026-04-18T12:00:00.000Z',
       updated_at: '2026-04-18T12:00:00.000Z',
     };
-    let fromCalls = 0;
     const client = {
       from: vi.fn((table: string) => {
-        fromCalls += 1;
-        if (fromCalls === 1) {
-          expect(table).toBe('episode_symptoms');
-          return chainSelectEpisodeLine([]);
-        }
+        expect(table).toBe('episode_symptoms');
         return {
           insert: vi.fn(() => ({
             select: vi.fn(() => ({
@@ -126,7 +106,7 @@ describe('upsertEpisodeSymptomAnswer', () => {
       }),
     } as unknown as AbstrackSupabaseClient;
 
-    const result = await upsertEpisodeSymptomAnswer(client, {
+    const result = await insertEpisodeSymptomAnswer(client, {
       userId: 'u1',
       episodeId: 'ep-1',
       line,
@@ -137,258 +117,47 @@ describe('upsertEpisodeSymptomAnswer', () => {
     if (result.ok) {
       expect(result.data.response_boolean).toBe(true);
     }
-    expect(fromCalls).toBe(2);
-  });
-
-  it('updates when a row exists', async () => {
-    const existingId = 'existing-es';
-    const updated = {
-      id: existingId,
-      user_id: 'u1',
-      episode_id: 'ep-1',
-      preset_symptom_id: line.id,
-      symptom_name: line.symptom_name,
-      response_type: 'yes_no',
-      response_boolean: false,
-      response_severity: null,
-      response_text: null,
-      sort_order: 0,
-      created_at: '2026-04-18T12:00:00.000Z',
-      updated_at: '2026-04-18T12:01:00.000Z',
-    };
-    let fromCalls = 0;
-    const client = {
-      from: vi.fn(() => {
-        fromCalls += 1;
-        if (fromCalls === 1) {
-          return chainSelectEpisodeLine([
-            {
-              id: existingId,
-              user_id: 'u1',
-              episode_id: 'ep-1',
-              preset_symptom_id: line.id,
-              created_at: '2026-04-18T12:00:00.000Z',
-            },
-          ]);
-        }
-        return {
-          update: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              select: vi.fn(() => ({
-                single: vi.fn(async () => ({
-                  data: updated,
-                  error: null,
-                })),
-              })),
-            })),
-          })),
-        };
-      }),
-    } as unknown as AbstrackSupabaseClient;
-
-    const result = await upsertEpisodeSymptomAnswer(client, {
-      userId: 'u1',
-      episodeId: 'ep-1',
-      line,
-      answer: { type: 'yes_no', value: false },
-    });
-
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.data.response_boolean).toBe(false);
-    }
-    expect(fromCalls).toBe(2);
-  });
-
-  it('deletes duplicate rows then updates the newest', async () => {
-    const newestId = 'es-newest';
-    const olderId = 'es-older';
-    const updated = {
-      id: newestId,
-      user_id: 'u1',
-      episode_id: 'ep-1',
-      preset_symptom_id: line.id,
-      symptom_name: line.symptom_name,
-      response_type: 'yes_no',
-      response_boolean: true,
-      response_severity: null,
-      response_text: null,
-      sort_order: 0,
-      created_at: '2026-04-18T12:00:00.000Z',
-      updated_at: '2026-04-18T12:02:00.000Z',
-    };
-    let fromCalls = 0;
-    const client = {
-      from: vi.fn((table: string) => {
-        fromCalls += 1;
-        if (fromCalls === 1) {
-          expect(table).toBe('episode_symptoms');
-          return chainSelectEpisodeLine([
-            {
-              id: newestId,
-              user_id: 'u1',
-              episode_id: 'ep-1',
-              preset_symptom_id: line.id,
-              created_at: '2026-04-18T12:00:01.000Z',
-            },
-            {
-              id: olderId,
-              user_id: 'u1',
-              episode_id: 'ep-1',
-              preset_symptom_id: line.id,
-              created_at: '2026-04-18T12:00:00.000Z',
-            },
-          ]);
-        }
-        if (fromCalls === 2) {
-          expect(table).toBe('episode_media');
-          return {
-            update: vi.fn((payload: { episode_symptom_id: string }) => {
-              expect(payload).toEqual({ episode_symptom_id: newestId });
-              return {
-                eq: vi.fn(() => ({
-                  in: vi.fn(async () => ({ error: null })),
-                })),
-              };
-            }),
-          };
-        }
-        if (fromCalls === 3) {
-          expect(table).toBe('episode_symptoms');
-          return {
-            delete: vi.fn(() => ({
-              in: vi.fn(async () => ({ error: null })),
-            })),
-          };
-        }
-        return {
-          update: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              select: vi.fn(() => ({
-                single: vi.fn(async () => ({
-                  data: updated,
-                  error: null,
-                })),
-              })),
-            })),
-          })),
-        };
-      }),
-    } as unknown as AbstrackSupabaseClient;
-
-    const result = await upsertEpisodeSymptomAnswer(client, {
-      userId: 'u1',
-      episodeId: 'ep-1',
-      line,
-      answer: { type: 'yes_no', value: true },
-    });
-
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.data.id).toBe(newestId);
-    }
-    expect(fromCalls).toBe(4);
-  });
-
-  it('on insert unique violation (23505), refetches and updates the concurrent row', async () => {
-    const raceRowId = 'es-concurrent';
-    const afterUpdate = {
-      id: raceRowId,
-      user_id: 'u1',
-      episode_id: 'ep-1',
-      preset_symptom_id: line.id,
-      symptom_name: line.symptom_name,
-      response_type: 'yes_no' as const,
-      response_boolean: true,
-      response_severity: null,
-      response_text: null,
-      sort_order: 0,
-      created_at: '2026-04-18T12:00:00.000Z',
-      updated_at: '2026-04-18T12:00:01.000Z',
-    };
-    let fromCalls = 0;
-    const client = {
-      from: vi.fn(() => {
-        fromCalls += 1;
-        if (fromCalls === 1) {
-          return chainSelectEpisodeLine([]);
-        }
-        if (fromCalls === 2) {
-          return {
-            insert: vi.fn(() => ({
-              select: vi.fn(() => ({
-                single: vi.fn(async () => ({
-                  data: null,
-                  error: { code: '23505', message: 'duplicate key value' },
-                })),
-              })),
-            })),
-          };
-        }
-        if (fromCalls === 3) {
-          return chainSelectEpisodeLine([
-            {
-              id: raceRowId,
-              user_id: 'u1',
-              episode_id: 'ep-1',
-              preset_symptom_id: line.id,
-              created_at: '2026-04-18T12:00:00.000Z',
-            },
-          ]);
-        }
-        return {
-          update: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              select: vi.fn(() => ({
-                single: vi.fn(async () => ({
-                  data: afterUpdate,
-                  error: null,
-                })),
-              })),
-            })),
-          })),
-        };
-      }),
-    } as unknown as AbstrackSupabaseClient;
-
-    const result = await upsertEpisodeSymptomAnswer(client, {
-      userId: 'u1',
-      episodeId: 'ep-1',
-      line,
-      answer: { type: 'yes_no', value: true },
-    });
-
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.data.id).toBe(raceRowId);
-      expect(result.data.response_boolean).toBe(true);
-    }
-    expect(fromCalls).toBe(4);
   });
 });
 
-describe('deleteEpisodeSymptomAnswer', () => {
-  it('deletes rows by episode_id and preset_symptom_id', async () => {
-    const eqPreset = vi.fn(() => ({ error: null }));
-    const eqEpisode = vi.fn(() => ({ eq: eqPreset }));
+describe('deleteCurrentPassEpisodeSymptomAnswer', () => {
+  it('deletes all rows in the current pass for that preset line', async () => {
+    const inDelete = vi.fn(async () => ({ error: null }));
+    let fromCalls = 0;
     const client = {
-      from: vi.fn(() => ({
-        delete: vi.fn(() => ({
-          eq: eqEpisode,
-        })),
-      })),
+      from: vi.fn((table: string) => {
+        expect(table).toBe('episode_symptoms');
+        fromCalls += 1;
+        if (fromCalls === 1) {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(async () => ({
+                  data: [
+                    { id: 'a', created_at: '2026-04-20T12:00:00.000Z' },
+                    { id: 'b', created_at: '2026-04-21T12:00:00.000Z' },
+                  ],
+                  error: null,
+                })),
+              })),
+            })),
+          };
+        }
+        return {
+          delete: vi.fn(() => ({
+            in: inDelete,
+          })),
+        };
+      }),
     } as unknown as AbstrackSupabaseClient;
 
-    const result = await deleteEpisodeSymptomAnswer(client, {
+    const result = await deleteCurrentPassEpisodeSymptomAnswer(client, {
       episodeId: 'ep-1',
       presetSymptomId: 'ps-line-1',
+      lastPostMarkerStepCompletedAt: '2026-04-19T00:00:00.000Z',
     });
 
     expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.data).toBe(true);
-    }
-    expect(eqEpisode).toHaveBeenCalledWith('episode_id', 'ep-1');
-    expect(eqPreset).toHaveBeenCalledWith('preset_symptom_id', 'ps-line-1');
+    expect(inDelete).toHaveBeenCalledWith('id', ['a', 'b']);
   });
 });

@@ -65,6 +65,7 @@ function navigateFromHomeTabToEpisodeResume(
     stackNavigation.navigate('HealthMarkerPrompt', {
       episodeId: episode.episodeId,
       resume: true,
+      hub: true,
     });
     return;
   }

@@ -255,6 +255,7 @@ export function EpisodeStartScreen() {
       navigation.replace('HealthMarkerPrompt', {
         episodeId: row.id,
         resume: true,
+        hub: true,
       });
       return;
     }

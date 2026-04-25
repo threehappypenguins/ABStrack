@@ -9,11 +9,14 @@ describe('buildResumeEpisodeHref', () => {
     expect(url.searchParams.get('resume')).toBe('1');
   });
 
-  it('builds direct health-marker resume link when requested', () => {
+  it('builds episode-hub health-marker resume link when requested', () => {
     const href = buildResumeEpisodeHref('ep-uuid', null, {
       toHealthMarkers: true,
     });
-    expect(href).toBe('/episode/ep-uuid/health-markers?resume=1');
+    const url = new URL(`https://example.test${href}`);
+    expect(url.pathname).toBe('/episode/ep-uuid/health-markers');
+    expect(url.searchParams.get('resume')).toBe('1');
+    expect(url.searchParams.get('hub')).toBe('1');
   });
 
   it('throws when symptom resume has no symptomPresetId', () => {

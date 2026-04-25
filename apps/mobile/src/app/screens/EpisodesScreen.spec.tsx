@@ -211,6 +211,7 @@ describe('EpisodesScreen', () => {
     expect(mockNavigate).toHaveBeenCalledWith('HealthMarkerPrompt', {
       episodeId: 'ep-end-step',
       resume: true,
+      hub: true,
     });
   });
 

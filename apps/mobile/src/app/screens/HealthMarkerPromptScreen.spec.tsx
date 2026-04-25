@@ -13,7 +13,7 @@ import {
   listPresetHealthMarkersForPreset,
   PresetDataError,
   updateFoodDiaryEntry,
-  upsertEpisodeHealthMarkerForLine,
+  insertEpisodeHealthMarkerForLine,
 } from '@abstrack/supabase';
 import type { PresetHealthMarkerRow } from '@abstrack/types';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
@@ -42,8 +42,12 @@ jest.mock('@abstrack/supabase', () => {
     listFoodDiaryEntriesForEpisode: jest.fn(),
     listEpisodeHealthMarkersForEpisode: jest.fn(),
     listPresetHealthMarkersForPreset: jest.fn(),
+    listEpisodeObservationTimeline: jest.fn(async () => ({
+      ok: true,
+      data: [],
+    })),
     updateFoodDiaryEntry: jest.fn(),
-    upsertEpisodeHealthMarkerForLine: jest.fn(),
+    insertEpisodeHealthMarkerForLine: jest.fn(),
   };
 });
 
@@ -150,7 +154,7 @@ describe('HealthMarkerPromptScreen', () => {
       ok: true,
       data: [],
     });
-    jest.mocked(upsertEpisodeHealthMarkerForLine).mockResolvedValue({
+    jest.mocked(insertEpisodeHealthMarkerForLine).mockResolvedValue({
       ok: true,
       data: {
         id: 'hm-row-1',
@@ -258,7 +262,7 @@ describe('HealthMarkerPromptScreen', () => {
         screen.getByText('Enter a numeric value to continue.'),
       ).toBeTruthy();
     });
-    expect(upsertEpisodeHealthMarkerForLine).not.toHaveBeenCalled();
+    expect(insertEpisodeHealthMarkerForLine).not.toHaveBeenCalled();
   });
 
   test('Skip advances to next marker when current line is unanswered', async () => {
@@ -288,9 +292,9 @@ describe('HealthMarkerPromptScreen', () => {
     fireEvent.press(screen.getByLabelText('Next health marker'));
 
     await waitFor(() => {
-      expect(upsertEpisodeHealthMarkerForLine).toHaveBeenCalledTimes(1);
+      expect(insertEpisodeHealthMarkerForLine).toHaveBeenCalledTimes(1);
     });
-    expect(upsertEpisodeHealthMarkerForLine).toHaveBeenCalledWith(
+    expect(insertEpisodeHealthMarkerForLine).toHaveBeenCalledWith(
       expect.objectContaining({ mockClient: true }),
       expect.objectContaining({
         userId: 'test-user-1',
@@ -333,10 +337,10 @@ describe('HealthMarkerPromptScreen', () => {
         ),
       ).toBeTruthy();
     });
-    expect(upsertEpisodeHealthMarkerForLine).not.toHaveBeenCalled();
+    expect(insertEpisodeHealthMarkerForLine).not.toHaveBeenCalled();
   });
 
-  test('food diary comes before episode details, then save shows completion UI', async () => {
+  test('food diary comes before episode details, then save opens episode hub with log another check-in', async () => {
     jest.mocked(listPresetHealthMarkersForPreset).mockResolvedValue({
       ok: true,
       data: [lineA],
@@ -401,13 +405,12 @@ describe('HealthMarkerPromptScreen', () => {
     );
 
     await waitFor(() => {
-      expect(
-        screen.getByText(
-          /Preset prompts and episode details are saved\. End this episode to prevent stale resume state\./,
-        ),
-      ).toBeTruthy();
+      expect(screen.getByLabelText('Log another check-in')).toBeTruthy();
     });
-    expect(screen.getByLabelText('End episode')).toBeTruthy();
+    expect(mockReplace).not.toHaveBeenCalledWith(
+      'SymptomPrompt',
+      expect.anything(),
+    );
   });
 
   test('post-marker save failure shows postFeedback', async () => {

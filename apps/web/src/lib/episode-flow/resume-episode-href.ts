@@ -1,7 +1,7 @@
 export type BuildResumeEpisodeHrefOptions = {
   /**
-   * When true, resume enters `/health-markers` directly. Use this for episodes that already
-   * completed post-marker details and only need explicit ending.
+   * When true, resume enters `/health-markers` with `hub=1`: the episode hub (dashboard / another
+   * check-in / end), not the marker stepper. Use when `post_marker_step_completed_at` is set.
    */
   toHealthMarkers?: boolean;
 };
@@ -15,7 +15,8 @@ export type BuildResumeEpisodeHrefOptions = {
  * @param episodeId - `episodes.id`.
  * @param symptomPresetId - `symptom_presets.id` on the episode row (ignored for health-marker resumes).
  * @param options - Optional destination override.
- * @returns Path under `/episode/[id]/symptoms` or `/episode/[id]/health-markers`.
+ * @returns Path under `/episode/[id]/symptoms` or `/episode/[id]/health-markers` (with `hub=1`
+ * when resuming to the episode hub after a completed pass).
  */
 export function buildResumeEpisodeHref(
   episodeId: string,
@@ -25,6 +26,7 @@ export function buildResumeEpisodeHref(
   const q = new URLSearchParams();
   q.set('resume', '1');
   if (options.toHealthMarkers) {
+    q.set('hub', '1');
     return `/episode/${episodeId}/health-markers?${q.toString()}`;
   }
   if (!symptomPresetId) {

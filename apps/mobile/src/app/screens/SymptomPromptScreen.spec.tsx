@@ -5,10 +5,11 @@ import { CommonActions, DefaultTheme } from '@react-navigation/native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import {
   cancelActiveEpisodeById,
-  deleteEpisodeSymptomAnswer,
+  deleteCurrentPassEpisodeSymptomAnswer,
+  getEpisodeById,
   listEpisodeSymptomsForEpisode,
   listPresetSymptomsForPreset,
-  upsertEpisodeSymptomAnswer,
+  insertEpisodeSymptomAnswer,
 } from '@abstrack/supabase';
 import { createInitialSymptomPromptSession } from '@abstrack/types';
 import type { PresetSymptomRow } from '@abstrack/types';
@@ -31,10 +32,11 @@ jest.mock('@react-navigation/native', () => ({
 
 jest.mock('@abstrack/supabase', () => ({
   cancelActiveEpisodeById: jest.fn(),
-  deleteEpisodeSymptomAnswer: jest.fn(),
+  getEpisodeById: jest.fn(),
+  deleteCurrentPassEpisodeSymptomAnswer: jest.fn(),
   listPresetSymptomsForPreset: jest.fn(),
   listEpisodeSymptomsForEpisode: jest.fn(),
-  upsertEpisodeSymptomAnswer: jest.fn(),
+  insertEpisodeSymptomAnswer: jest.fn(),
 }));
 
 jest.mock('../../lib/supabase-wiring', () => ({
@@ -131,6 +133,25 @@ describe('SymptomPromptScreen', () => {
       .mocked(getSymptomPromptSession)
       .mockReturnValue(createInitialSymptomPromptSession());
 
+    jest.mocked(getEpisodeById).mockResolvedValue({
+      ok: true,
+      data: {
+        id: episodeId,
+        user_id: 'test-user-1',
+        symptom_preset_id: symptomPresetId,
+        health_marker_preset_id: 'hm-preset-1',
+        episode_type: 'Other',
+        episode_label: null,
+        additional_notes: null,
+        note: null,
+        started_at: '2020-01-01T00:00:00Z',
+        ended_at: null,
+        post_marker_step_completed_at: null,
+        created_at: '2020-01-01T00:00:00Z',
+        updated_at: '2020-01-01T00:00:00Z',
+      },
+    });
+
     jest.mocked(listPresetSymptomsForPreset).mockResolvedValue({
       ok: true,
       data: [lineA, lineB],
@@ -139,7 +160,7 @@ describe('SymptomPromptScreen', () => {
       ok: true,
       data: [],
     });
-    jest.mocked(upsertEpisodeSymptomAnswer).mockResolvedValue({
+    jest.mocked(insertEpisodeSymptomAnswer).mockResolvedValue({
       ok: true,
       data: {
         id: 'es-1',
@@ -156,7 +177,7 @@ describe('SymptomPromptScreen', () => {
         updated_at: '2020-01-01T00:00:00Z',
       },
     });
-    jest.mocked(deleteEpisodeSymptomAnswer).mockResolvedValue({
+    jest.mocked(deleteCurrentPassEpisodeSymptomAnswer).mockResolvedValue({
       ok: true,
       data: true,
     });
@@ -166,22 +187,22 @@ describe('SymptomPromptScreen', () => {
     });
   });
 
-  test('non-free-text answer triggers upsertEpisodeSymptomAnswer', async () => {
+  test('non-free-text answer triggers insertEpisodeSymptomAnswer', async () => {
     const screen = render(<SymptomPromptScreen />);
 
     await waitFor(() => {
       expect(screen.getByText('Step 1 of 2')).toBeTruthy();
     });
 
-    jest.mocked(upsertEpisodeSymptomAnswer).mockClear();
+    jest.mocked(insertEpisodeSymptomAnswer).mockClear();
 
     fireEvent.press(screen.getByText('yes'));
 
     await waitFor(() => {
-      expect(upsertEpisodeSymptomAnswer).toHaveBeenCalledTimes(1);
+      expect(insertEpisodeSymptomAnswer).toHaveBeenCalledTimes(1);
     });
 
-    expect(upsertEpisodeSymptomAnswer).toHaveBeenCalledWith(
+    expect(insertEpisodeSymptomAnswer).toHaveBeenCalledWith(
       expect.objectContaining({ mockClient: true }),
       expect.objectContaining({
         userId: 'test-user-1',
@@ -205,7 +226,7 @@ describe('SymptomPromptScreen', () => {
 
     fireEvent.press(screen.getByLabelText('Severity 3'));
     await waitFor(() => {
-      expect(upsertEpisodeSymptomAnswer).toHaveBeenCalledWith(
+      expect(insertEpisodeSymptomAnswer).toHaveBeenCalledWith(
         expect.objectContaining({ mockClient: true }),
         expect.objectContaining({
           line: lineSeverityOnly,
@@ -214,20 +235,21 @@ describe('SymptomPromptScreen', () => {
       );
     });
 
-    jest.mocked(upsertEpisodeSymptomAnswer).mockClear();
-    jest.mocked(deleteEpisodeSymptomAnswer).mockClear();
+    jest.mocked(insertEpisodeSymptomAnswer).mockClear();
+    jest.mocked(deleteCurrentPassEpisodeSymptomAnswer).mockClear();
     fireEvent.press(screen.getByLabelText('Severity 3'));
 
     await waitFor(() => {
-      expect(deleteEpisodeSymptomAnswer).toHaveBeenCalledWith(
+      expect(deleteCurrentPassEpisodeSymptomAnswer).toHaveBeenCalledWith(
         expect.objectContaining({ mockClient: true }),
         expect.objectContaining({
           episodeId,
           presetSymptomId: lineSeverityOnly.id,
+          lastPostMarkerStepCompletedAt: null,
         }),
       );
     });
-    expect(upsertEpisodeSymptomAnswer).not.toHaveBeenCalled();
+    expect(insertEpisodeSymptomAnswer).not.toHaveBeenCalled();
   });
 
   test('free_text changes debounce to a single upsert', async () => {
@@ -242,14 +264,14 @@ describe('SymptomPromptScreen', () => {
       expect(screen.getByText('Step 1 of 1')).toBeTruthy();
     });
 
-    jest.mocked(upsertEpisodeSymptomAnswer).mockClear();
+    jest.mocked(insertEpisodeSymptomAnswer).mockClear();
 
     jest.useFakeTimers();
     try {
       const input = screen.getByLabelText('Notes notes');
       fireEvent.changeText(input, 'a');
       fireEvent.changeText(input, 'ab');
-      expect(upsertEpisodeSymptomAnswer).not.toHaveBeenCalled();
+      expect(insertEpisodeSymptomAnswer).not.toHaveBeenCalled();
 
       await act(async () => {
         jest.advanceTimersByTime(300);
@@ -259,10 +281,10 @@ describe('SymptomPromptScreen', () => {
       });
 
       await waitFor(() => {
-        expect(upsertEpisodeSymptomAnswer).toHaveBeenCalledTimes(1);
+        expect(insertEpisodeSymptomAnswer).toHaveBeenCalledTimes(1);
       });
 
-      expect(upsertEpisodeSymptomAnswer).toHaveBeenCalledWith(
+      expect(insertEpisodeSymptomAnswer).toHaveBeenCalledWith(
         expect.objectContaining({ mockClient: true }),
         expect.objectContaining({
           userId: 'test-user-1',
@@ -289,12 +311,12 @@ describe('SymptomPromptScreen', () => {
       expect(screen.getByText('Step 1 of 2')).toBeTruthy();
     });
 
-    jest.mocked(upsertEpisodeSymptomAnswer).mockClear();
+    jest.mocked(insertEpisodeSymptomAnswer).mockClear();
 
     jest.useFakeTimers();
     try {
       fireEvent.changeText(screen.getByLabelText('Notes notes'), 'draft');
-      expect(upsertEpisodeSymptomAnswer).not.toHaveBeenCalled();
+      expect(insertEpisodeSymptomAnswer).not.toHaveBeenCalled();
 
       fireEvent.press(screen.getByLabelText('Next symptom'));
 
@@ -303,10 +325,10 @@ describe('SymptomPromptScreen', () => {
       });
 
       await waitFor(() => {
-        expect(upsertEpisodeSymptomAnswer).toHaveBeenCalledTimes(1);
+        expect(insertEpisodeSymptomAnswer).toHaveBeenCalledTimes(1);
       });
 
-      expect(upsertEpisodeSymptomAnswer).toHaveBeenCalledWith(
+      expect(insertEpisodeSymptomAnswer).toHaveBeenCalledWith(
         expect.objectContaining({ mockClient: true }),
         expect.objectContaining({
           answer: { type: 'free_text', value: 'draft' },
@@ -398,18 +420,19 @@ describe('SymptomPromptScreen', () => {
       expect(screen.getByText('Step 1 of 2')).toBeTruthy();
     });
 
-    jest.mocked(deleteEpisodeSymptomAnswer).mockClear();
+    jest.mocked(deleteCurrentPassEpisodeSymptomAnswer).mockClear();
     fireEvent.press(screen.getByLabelText('Skip this symptom'));
 
     await waitFor(() => {
       expect(screen.getByText('Step 2 of 2')).toBeTruthy();
     });
 
-    expect(deleteEpisodeSymptomAnswer).toHaveBeenCalledWith(
+    expect(deleteCurrentPassEpisodeSymptomAnswer).toHaveBeenCalledWith(
       expect.objectContaining({ mockClient: true }),
       expect.objectContaining({
         episodeId,
         presetSymptomId: lineA.id,
+        lastPostMarkerStepCompletedAt: null,
       }),
     );
     expect(setSymptomPromptSession).toHaveBeenCalledWith(episodeId, {
@@ -586,7 +609,7 @@ describe('SymptomPromptScreen', () => {
     });
 
     fireEvent.changeText(screen.getByLabelText('Notes notes'), 'draft text');
-    jest.mocked(deleteEpisodeSymptomAnswer).mockClear();
+    jest.mocked(deleteCurrentPassEpisodeSymptomAnswer).mockClear();
 
     const skipButton = screen.getByLabelText('Skip this symptom');
     expect(skipButton.props.accessibilityState).toEqual({ disabled: true });
@@ -598,11 +621,12 @@ describe('SymptomPromptScreen', () => {
       expect(screen.getByText('Step 2 of 2')).toBeTruthy();
     });
 
-    expect(deleteEpisodeSymptomAnswer).toHaveBeenCalledWith(
+    expect(deleteCurrentPassEpisodeSymptomAnswer).toHaveBeenCalledWith(
       expect.objectContaining({ mockClient: true }),
       expect.objectContaining({
         episodeId,
         presetSymptomId: lineFreeOnly.id,
+        lastPostMarkerStepCompletedAt: null,
       }),
     );
   });

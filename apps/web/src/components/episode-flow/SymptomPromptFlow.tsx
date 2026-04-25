@@ -14,19 +14,23 @@ import type {
   SymptomPromptAnswer,
   SymptomPromptAnswers,
 } from '@abstrack/types';
+import type { EpisodeRow } from '@abstrack/types';
 import {
   computeSymptomResumePlacement,
   createDefaultSymptomPromptAnswer,
   createInitialSymptomPromptSession,
-  episodeSymptomRowsToAnswersMap,
+  episodeSymptomRowsToAnswersMapForOpenPass,
+  formatEpisodeDurationSimple,
   symptomPromptAnswerHasValue,
 } from '@abstrack/types';
 import {
   cancelActiveEpisodeById,
-  deleteEpisodeSymptomAnswer,
+  deleteCurrentPassEpisodeSymptomAnswer,
+  endEpisodeIfStillActive,
+  getEpisodeById,
+  insertEpisodeSymptomAnswer,
   listEpisodeSymptomsForEpisode,
   listPresetSymptomsForPreset,
-  upsertEpisodeSymptomAnswer,
 } from '@abstrack/supabase';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
@@ -156,6 +160,13 @@ export function SymptomPromptFlow({
   const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancelingEpisode, setCancelingEpisode] = useState(false);
+  const [endEpisodeDialogOpen, setEndEpisodeDialogOpen] = useState(false);
+  const [endingEpisode, setEndingEpisode] = useState(false);
+  const [endEpisodeError, setEndEpisodeError] = useState<string | null>(null);
+  const [episodeForEndCta, setEpisodeForEndCta] = useState<EpisodeRow | null>(
+    null,
+  );
+  const lastPostMarkerStepCompletedAtRef = useRef<string | null>(null);
   const pendingLeaveRef = useRef<PendingLeaveAction | null>(null);
   /**
    * When `episodeId` / `symptomPresetId` change, the layout reset syncs this to `resumeFromEntry` so a
@@ -238,7 +249,7 @@ export function SymptomPromptFlow({
             }
             return;
           }
-          const r = await upsertEpisodeSymptomAnswer(supabase, {
+          const r = await insertEpisodeSymptomAnswer(supabase, {
             userId: uid,
             episodeId: targetEpisodeId,
             line,
@@ -298,9 +309,11 @@ export function SymptomPromptFlow({
             }
             return;
           }
-          const r = await deleteEpisodeSymptomAnswer(supabase, {
+          const r = await deleteCurrentPassEpisodeSymptomAnswer(supabase, {
             episodeId: targetEpisodeId,
             presetSymptomId: line.id,
+            lastPostMarkerStepCompletedAt:
+              lastPostMarkerStepCompletedAtRef.current,
           });
           // Epoch/mount/episode/attempt gate UI only — the delete above always ran for `targetEpisodeId`.
           if (
@@ -516,6 +529,24 @@ export function SymptomPromptFlow({
       setStatus('error');
       return;
     }
+    const ep = await getEpisodeById(supabase, episodeId);
+    if (stale()) {
+      return;
+    }
+    if (!ep.ok) {
+      setErrorMessage(ep.error.message);
+      setStatus('error');
+      return;
+    }
+    if (!ep.data) {
+      setErrorMessage('Could not load this episode.');
+      setStatus('error');
+      return;
+    }
+    setEpisodeForEndCta(ep.data);
+    const passBoundary = ep.data.post_marker_step_completed_at ?? null;
+    lastPostMarkerStepCompletedAtRef.current = passBoundary;
+
     const result = await listPresetSymptomsForPreset(supabase, symptomPresetId);
     if (stale()) {
       return;
@@ -531,7 +562,7 @@ export function SymptomPromptFlow({
       return;
     }
     const serverAnswers = fromServer.ok
-      ? episodeSymptomRowsToAnswersMap(fromServer.data)
+      ? episodeSymptomRowsToAnswersMapForOpenPass(fromServer.data, passBoundary)
       : {};
     const session = getSymptomPromptSession(episodeId);
     // Session overlays server so local drafts survive hydrate (debounced/offline/failed sync).
@@ -758,6 +789,59 @@ export function SymptomPromptFlow({
     supabase,
   ]);
 
+  const handleEndEpisodeConfirm = useCallback(async (): Promise<
+    void | false
+  > => {
+    if (endingEpisode || !episodeForEndCta) {
+      return false;
+    }
+    setEndingEpisode(true);
+    setEndEpisodeError(null);
+    try {
+      const nowIso = new Date().toISOString();
+      const startedAtMs = Date.parse(episodeForEndCta.started_at);
+      const nowMs = Date.parse(nowIso);
+      const endedAt =
+        Number.isFinite(startedAtMs) &&
+        Number.isFinite(nowMs) &&
+        nowMs < startedAtMs
+          ? episodeForEndCta.started_at
+          : nowIso;
+      const result = await endEpisodeIfStillActive(
+        supabase,
+        episodeId,
+        endedAt,
+        episodeForEndCta.started_at,
+      );
+      if (!result.ok) {
+        setEndEpisodeError(result.error.message);
+        announce(result.error.message, { politeness: 'assertive' });
+        return false;
+      }
+      clearSymptomPromptSession(episodeId);
+      omitSymptomPromptSnapshotOnUnmountRef.current = true;
+      if (result.data.didEnd) {
+        const durationText = formatEpisodeDurationSimple(
+          episodeForEndCta.started_at,
+          endedAt,
+        );
+        announce(
+          durationText
+            ? `Episode ended. Duration ${durationText}.`
+            : 'Episode ended.',
+          { politeness: 'polite' },
+        );
+        setEndEpisodeDialogOpen(false);
+        router.push('/dashboard');
+        return;
+      }
+      setEndEpisodeError('This episode is no longer active.');
+      return false;
+    } finally {
+      setEndingEpisode(false);
+    }
+  }, [announce, endingEpisode, episodeForEndCta, episodeId, router, supabase]);
+
   const goNext = () => {
     flushPendingTextPersist();
     flushPendingServerPersist();
@@ -931,6 +1015,28 @@ export function SymptomPromptFlow({
         >
           Cancel episode
         </button>
+        {episodeForEndCta?.post_marker_step_completed_at &&
+        !episodeForEndCta.ended_at ? (
+          <>
+            <button
+              type="button"
+              className="inline-flex min-h-[48px] w-full max-w-md items-center justify-center rounded-xl border-2 border-app-border bg-app-surface px-4 text-base font-semibold text-app-ink shadow-sm transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+              onClick={() => {
+                setEndEpisodeDialogOpen(true);
+              }}
+            >
+              End this episode
+            </button>
+            {endEpisodeError ? (
+              <p
+                className="text-sm text-red-700 dark:text-red-300"
+                role="alert"
+              >
+                {endEpisodeError}
+              </p>
+            ) : null}
+          </>
+        ) : null}
       </div>
 
       <ConfirmDialog
@@ -957,6 +1063,18 @@ export function SymptomPromptFlow({
         onConfirm={handleCancelEpisodeConfirm}
         onClose={() => {
           setCancelDialogOpen(false);
+        }}
+      />
+      <ConfirmDialog
+        open={endEpisodeDialogOpen}
+        title="End this episode now?"
+        description="Ending sets this episode as complete. You can still view it in your episode history when you are ready."
+        confirmLabel="End episode"
+        confirmBusyLabel="Ending episode…"
+        cancelLabel="Not yet"
+        onConfirm={handleEndEpisodeConfirm}
+        onClose={() => {
+          setEndEpisodeDialogOpen(false);
         }}
       />
     </>

@@ -218,6 +218,7 @@ export function EpisodesManagementPanel({
       navigation.navigate('HealthMarkerPrompt', {
         episodeId: episode.id,
         resume: true,
+        hub: true,
       });
       return;
     }

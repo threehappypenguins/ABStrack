@@ -5,7 +5,7 @@ import {
   deleteHealthMarkerById,
   listEpisodeHealthMarkersForEpisode,
   listStandaloneHealthMarkersForUser,
-  upsertEpisodeHealthMarkerForLine,
+  insertEpisodeHealthMarkerForLine,
 } from './episode-health-marker-data.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
 
@@ -54,7 +54,7 @@ describe('listEpisodeHealthMarkersForEpisode', () => {
   });
 });
 
-describe('upsertEpisodeHealthMarkerForLine', () => {
+describe('insertEpisodeHealthMarkerForLine', () => {
   it('returns validation_error when non-blood_pressure line omits valueNumeric', async () => {
     const client = {
       from: vi.fn(() => {
@@ -62,7 +62,7 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
       }),
     } as unknown as AbstrackSupabaseClient;
 
-    const result = await upsertEpisodeHealthMarkerForLine(client, {
+    const result = await insertEpisodeHealthMarkerForLine(client, {
       userId: 'u1',
       episodeId: 'ep-1',
       line,
@@ -83,7 +83,7 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
       }),
     } as unknown as AbstrackSupabaseClient;
 
-    const nanResult = await upsertEpisodeHealthMarkerForLine(client, {
+    const nanResult = await insertEpisodeHealthMarkerForLine(client, {
       userId: 'u1',
       episodeId: 'ep-1',
       line,
@@ -94,7 +94,7 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
       expect(nanResult.error.message).toContain('valid number');
     }
 
-    const infResult = await upsertEpisodeHealthMarkerForLine(client, {
+    const infResult = await insertEpisodeHealthMarkerForLine(client, {
       userId: 'u1',
       episodeId: 'ep-1',
       line,
@@ -114,7 +114,7 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
       }),
     } as unknown as AbstrackSupabaseClient;
 
-    const result = await upsertEpisodeHealthMarkerForLine(client, {
+    const result = await insertEpisodeHealthMarkerForLine(client, {
       userId: 'u1',
       episodeId: 'ep-1',
       line,
@@ -138,7 +138,7 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
       }),
     } as unknown as AbstrackSupabaseClient;
 
-    const result = await upsertEpisodeHealthMarkerForLine(client, {
+    const result = await insertEpisodeHealthMarkerForLine(client, {
       userId: 'u1',
       episodeId: 'ep-1',
       line: { ...line, marker_kind: 'blood_pressure' },
@@ -162,7 +162,7 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
       }),
     } as unknown as AbstrackSupabaseClient;
 
-    const result = await upsertEpisodeHealthMarkerForLine(client, {
+    const result = await insertEpisodeHealthMarkerForLine(client, {
       userId: 'u1',
       episodeId: 'ep-1',
       line: { ...line, marker_kind: 'blood_pressure' },
@@ -177,7 +177,7 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
     expect(client.from).not.toHaveBeenCalled();
   });
 
-  it('upserts blood_pressure with systolic/diastolic and null value_numeric', async () => {
+  it('inserts blood_pressure with systolic/diastolic and null value_numeric', async () => {
     const bpLine: PresetHealthMarkerRow = {
       ...line,
       marker_kind: 'blood_pressure',
@@ -200,18 +200,18 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
       created_at: '2026-04-18T12:05:00.000Z',
       updated_at: '2026-04-18T12:05:00.000Z',
     };
-    const upsertMock = vi.fn((_payload: unknown, _opts: unknown) => ({
+    const insertMock = vi.fn(() => ({
       select: vi.fn(() => ({
         single: vi.fn(async () => ({ data: updated, error: null })),
       })),
     }));
     const client = {
       from: vi.fn(() => ({
-        upsert: upsertMock,
+        insert: insertMock,
       })),
     } as unknown as AbstrackSupabaseClient;
 
-    const result = await upsertEpisodeHealthMarkerForLine(client, {
+    const result = await insertEpisodeHealthMarkerForLine(client, {
       userId: 'u1',
       episodeId: 'ep-1',
       line: bpLine,
@@ -220,14 +220,13 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(upsertMock).toHaveBeenCalledWith(
+    expect(insertMock).toHaveBeenCalledWith(
       expect.objectContaining({
         marker_kind: 'blood_pressure',
         value_numeric: null,
         systolic_numeric: 118,
         diastolic_numeric: 76,
       }),
-      expect.any(Object),
     );
   });
 
@@ -238,7 +237,7 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
       }),
     } as unknown as AbstrackSupabaseClient;
 
-    const result = await upsertEpisodeHealthMarkerForLine(client, {
+    const result = await insertEpisodeHealthMarkerForLine(client, {
       userId: 'u1',
       episodeId: 'ep-1',
       line: {
@@ -258,10 +257,10 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
     expect(client.from).not.toHaveBeenCalled();
   });
 
-  it('upserts (updates on conflict) when a row already exists for the line signature', async () => {
-    const existingId = 'hm-existing';
+  it('inserts a new row for each save (no upsert)', async () => {
+    const newId = 'hm-existing';
     const updated = {
-      id: existingId,
+      id: newId,
       user_id: 'u1',
       episode_id: 'ep-1',
       preset_health_marker_id: 'phm-1',
@@ -278,18 +277,18 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
       created_at: '2026-04-18T12:05:00.000Z',
       updated_at: '2026-04-18T12:05:00.000Z',
     };
-    const upsertMock = vi.fn((_payload: unknown, _opts: unknown) => ({
+    const insertMock = vi.fn(() => ({
       select: vi.fn(() => ({
         single: vi.fn(async () => ({ data: updated, error: null })),
       })),
     }));
     const client = {
       from: vi.fn(() => ({
-        upsert: upsertMock,
+        insert: insertMock,
       })),
     } as unknown as AbstrackSupabaseClient;
 
-    const result = await upsertEpisodeHealthMarkerForLine(client, {
+    const result = await insertEpisodeHealthMarkerForLine(client, {
       userId: 'u1',
       episodeId: 'ep-1',
       line,
@@ -298,11 +297,11 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
 
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.data.id).toBe(existingId);
+      expect(result.data.id).toBe(newId);
       expect(result.data.value_numeric).toBe(120);
     }
-    expect(upsertMock).toHaveBeenCalledTimes(1);
-    expect(upsertMock).toHaveBeenCalledWith(
+    expect(insertMock).toHaveBeenCalledTimes(1);
+    expect(insertMock).toHaveBeenCalledWith(
       expect.objectContaining({
         user_id: 'u1',
         episode_id: 'ep-1',
@@ -312,17 +311,10 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
         custom_unit: null,
         value_numeric: 120,
       }),
-      {
-        onConflict: 'episode_id,preset_health_marker_id',
-      },
     );
   });
 
-  /**
-   * First time saving a line, Postgres performs an INSERT as part of ON CONFLICT upsert.
-   * The client always sends one `.upsert` payload (no separate `.insert()` branch).
-   */
-  it('performs first save via upsert with full episode payload (insert branch inside Postgres)', async () => {
+  it('inserts a row with the full episode payload', async () => {
     const inserted = {
       id: 'hm-new',
       user_id: 'u1',
@@ -341,7 +333,7 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
       created_at: '2026-04-18T12:00:00.000Z',
       updated_at: '2026-04-18T12:00:00.000Z',
     };
-    const upsertMock = vi.fn((payload: Record<string, unknown>) => {
+    const insertMock = vi.fn((payload: Record<string, unknown>) => {
       expect(payload).toEqual(
         expect.objectContaining({
           user_id: 'u1',
@@ -365,11 +357,11 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
 
     const client = {
       from: vi.fn(() => ({
-        upsert: upsertMock,
+        insert: insertMock,
       })),
     } as unknown as AbstrackSupabaseClient;
 
-    const result = await upsertEpisodeHealthMarkerForLine(client, {
+    const result = await insertEpisodeHealthMarkerForLine(client, {
       userId: 'u1',
       episodeId: 'ep-1',
       line,
@@ -383,13 +375,10 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
       expect(result.data.id).toBe('hm-new');
       expect(result.data.value_numeric).toBe(88);
     }
-    expect(upsertMock).toHaveBeenCalledTimes(1);
-    expect(upsertMock).toHaveBeenCalledWith(expect.any(Object), {
-      onConflict: 'episode_id,preset_health_marker_id',
-    });
+    expect(insertMock).toHaveBeenCalledTimes(1);
   });
 
-  it('first save normalizes trimmed custom_name and custom_unit on the upsert payload', async () => {
+  it('first save normalizes trimmed custom_name and custom_unit on the insert payload', async () => {
     const customLine: PresetHealthMarkerRow = {
       ...line,
       id: 'phm-custom',
@@ -415,7 +404,7 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
       created_at: '2026-04-18T12:00:00.000Z',
       updated_at: '2026-04-18T12:00:00.000Z',
     };
-    const upsertMock = vi.fn((payload: Record<string, unknown>) => {
+    const insertMock = vi.fn((payload: Record<string, unknown>) => {
       expect(payload).toEqual({
         user_id: 'u1',
         episode_id: 'ep-1',
@@ -437,11 +426,11 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
     });
     const client = {
       from: vi.fn(() => ({
-        upsert: upsertMock,
+        insert: insertMock,
       })),
     } as unknown as AbstrackSupabaseClient;
 
-    const result = await upsertEpisodeHealthMarkerForLine(client, {
+    const result = await insertEpisodeHealthMarkerForLine(client, {
       userId: 'u1',
       episodeId: 'ep-1',
       line: customLine,
@@ -450,10 +439,7 @@ describe('upsertEpisodeHealthMarkerForLine', () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(upsertMock).toHaveBeenCalledTimes(1);
-    expect(upsertMock).toHaveBeenCalledWith(expect.any(Object), {
-      onConflict: 'episode_id,preset_health_marker_id',
-    });
+    expect(insertMock).toHaveBeenCalledTimes(1);
   });
 });
 

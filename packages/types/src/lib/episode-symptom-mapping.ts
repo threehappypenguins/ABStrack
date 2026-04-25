@@ -1,4 +1,5 @@
 import type { EpisodeSymptomRow, SymptomResponseType } from './types.js';
+import { filterEpisodeSymptomRowsForOpenPass } from './episode-open-pass.js';
 import type {
   SymptomPromptAnswer,
   SymptomPromptAnswers,
@@ -123,4 +124,20 @@ export function episodeSymptomRowsToAnswersMap(
     out[presetId] = episodeSymptomRowToPromptAnswer(row);
   }
   return out;
+}
+
+/**
+ * Like {@link episodeSymptomRowsToAnswersMap}, but only includes rows from the current open pass
+ * (after the last `post_marker_step_completed_at` Save and continue, if any).
+ *
+ * @param rows - All `episode_symptoms` rows for the episode.
+ * @param lastPostMarkerStepCompletedAt - `episodes.post_marker_step_completed_at` (ISO), or null.
+ */
+export function episodeSymptomRowsToAnswersMapForOpenPass(
+  rows: EpisodeSymptomRow[],
+  lastPostMarkerStepCompletedAt: string | null,
+): SymptomPromptAnswers {
+  return episodeSymptomRowsToAnswersMap(
+    filterEpisodeSymptomRowsForOpenPass(rows, lastPostMarkerStepCompletedAt),
+  );
 }

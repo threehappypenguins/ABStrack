@@ -14,6 +14,7 @@ import {
 } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type {
+  EpisodeRow,
   PresetSymptomRow,
   SymptomPromptAnswer,
   SymptomPromptAnswers,
@@ -21,15 +22,18 @@ import type {
 import {
   computeSymptomResumePlacement,
   createDefaultSymptomPromptAnswer,
-  episodeSymptomRowsToAnswersMap,
+  episodeSymptomRowsToAnswersMapForOpenPass,
+  formatEpisodeDurationSimple,
   symptomPromptAnswerHasValue,
 } from '@abstrack/types';
 import {
   cancelActiveEpisodeById,
-  deleteEpisodeSymptomAnswer,
+  deleteCurrentPassEpisodeSymptomAnswer,
+  endEpisodeIfStillActive,
+  getEpisodeById,
+  insertEpisodeSymptomAnswer,
   listEpisodeSymptomsForEpisode,
   listPresetSymptomsForPreset,
-  upsertEpisodeSymptomAnswer,
 } from '@abstrack/supabase';
 import { announce } from '@abstrack/ui/native';
 import { COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
@@ -132,6 +136,11 @@ export function SymptomPromptScreen() {
   /** Suppresses {@link setPersistError} after unmount. */
   const isMountedRef = useRef(true);
   const allowRemovalRef = useRef(false);
+  const lastPostMarkerStepCompletedAtRef = useRef<string | null>(null);
+  const [episodeForEndCta, setEpisodeForEndCta] = useState<EpisodeRow | null>(
+    null,
+  );
+  const [endingEpisode, setEndingEpisode] = useState(false);
 
   /**
    * Caches the auth user id on {@link userIdRef}. Called from {@link load} before `ready`, and
@@ -200,7 +209,7 @@ export function SymptomPromptScreen() {
             }
             return;
           }
-          const r = await upsertEpisodeSymptomAnswer(supabase, {
+          const r = await insertEpisodeSymptomAnswer(supabase, {
             userId: uid,
             episodeId: targetEpisodeId,
             line,
@@ -265,9 +274,11 @@ export function SymptomPromptScreen() {
             }
             return;
           }
-          const r = await deleteEpisodeSymptomAnswer(supabase, {
+          const r = await deleteCurrentPassEpisodeSymptomAnswer(supabase, {
             episodeId: targetEpisodeId,
             presetSymptomId: line.id,
+            lastPostMarkerStepCompletedAt:
+              lastPostMarkerStepCompletedAtRef.current,
           });
           if (enqueueEpoch !== serverPersistEpochRef.current) {
             return;
@@ -402,6 +413,24 @@ export function SymptomPromptScreen() {
         setStatus('error');
         return;
       }
+      const ep = await getEpisodeById(supabase, episodeId);
+      if (stale()) {
+        return;
+      }
+      if (!ep.ok) {
+        setErrorMessage(ep.error.message);
+        setStatus('error');
+        return;
+      }
+      if (!ep.data) {
+        setErrorMessage('Could not load this episode.');
+        setStatus('error');
+        return;
+      }
+      setEpisodeForEndCta(ep.data);
+      const passBoundary = ep.data.post_marker_step_completed_at ?? null;
+      lastPostMarkerStepCompletedAtRef.current = passBoundary;
+
       const result = await listPresetSymptomsForPreset(
         supabase,
         symptomPresetId,
@@ -423,7 +452,10 @@ export function SymptomPromptScreen() {
         return;
       }
       const serverAnswers = fromServer.ok
-        ? episodeSymptomRowsToAnswersMap(fromServer.data)
+        ? episodeSymptomRowsToAnswersMapForOpenPass(
+            fromServer.data,
+            passBoundary,
+          )
         : {};
       const session = getSymptomPromptSession(episodeId);
       // Session overlays server so local drafts survive hydrate (debounced/offline/failed sync).
@@ -638,6 +670,68 @@ export function SymptomPromptScreen() {
     );
   }, [cancelPendingServerPersist, navigation]);
 
+  const onEndEpisodePress = useCallback(() => {
+    if (endingEpisode || !episodeForEndCta) {
+      return;
+    }
+    Alert.alert('End this episode now?', 'You can still view it in history.', [
+      { text: 'Not yet', style: 'cancel' },
+      {
+        text: 'End episode',
+        style: 'destructive',
+        onPress: () => {
+          void (async () => {
+            if (!episodeForEndCta) {
+              return;
+            }
+            setEndingEpisode(true);
+            const nowIso = new Date().toISOString();
+            const startedAtMs = Date.parse(episodeForEndCta.started_at);
+            const nowMs = Date.parse(nowIso);
+            const endedAt =
+              Number.isFinite(startedAtMs) &&
+              Number.isFinite(nowMs) &&
+              nowMs < startedAtMs
+                ? episodeForEndCta.started_at
+                : nowIso;
+            const supabase = getMobileSupabaseClient();
+            const result = await endEpisodeIfStillActive(
+              supabase,
+              episodeId,
+              endedAt,
+              episodeForEndCta.started_at,
+            );
+            setEndingEpisode(false);
+            if (!result.ok) {
+              await announce(result.error.message, { politeness: 'assertive' });
+              return;
+            }
+            clearSymptomPromptSession(episodeId);
+            if (result.data.didEnd) {
+              const durationText = formatEpisodeDurationSimple(
+                episodeForEndCta.started_at,
+                endedAt,
+              );
+              await announce(
+                durationText
+                  ? `Episode ended. Duration ${durationText}.`
+                  : 'Episode ended.',
+                { politeness: 'polite' },
+              );
+            }
+            allowRemovalRef.current = true;
+            navigation.dispatch(
+              CommonActions.reset({
+                index: 0,
+                routes: [{ name: 'MainTabs' }],
+              }),
+            );
+          })();
+        },
+      },
+    ]);
+  }, [endingEpisode, episodeForEndCta, episodeId, navigation]);
+
   const advanceToNextStep = () => {
     if (lines.length === 0) {
       setSymptomPromptSession(episodeIdRef.current, {
@@ -845,6 +939,25 @@ export function SymptomPromptScreen() {
             Exit symptom flow
           </Text>
         </Pressable>
+        {episodeForEndCta?.post_marker_step_completed_at &&
+        !episodeForEndCta.ended_at ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="End this episode"
+            accessibilityState={{ disabled: endingEpisode }}
+            disabled={endingEpisode}
+            onPress={onEndEpisodePress}
+            style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+            className="w-full items-center justify-center rounded-xl border-2 border-app-border bg-app-bg px-3 py-4 active:opacity-90 dark:border-app-border-dark dark:bg-app-bg-dark"
+          >
+            <Text
+              className={`text-center text-[17px] font-semibold ${nw.textInk}`}
+              maxFontSizeMultiplier={2}
+            >
+              {endingEpisode ? 'Ending…' : 'End this episode'}
+            </Text>
+          </Pressable>
+        ) : null}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Cancel episode"

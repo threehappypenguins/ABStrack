@@ -91,17 +91,21 @@ export {
   listCompletedEpisodesForUser,
 } from './lib/episode-data.js';
 export {
-  deleteEpisodeSymptomAnswer,
+  deleteCurrentPassEpisodeSymptomAnswer,
+  insertEpisodeSymptomAnswer,
   listEpisodeSymptomsForEpisode,
-  upsertEpisodeSymptomAnswer,
 } from './lib/episode-symptom-data.js';
 export {
   createStandaloneHealthMarkerForLine,
   deleteHealthMarkerById,
+  insertEpisodeHealthMarkerForLine,
   listEpisodeHealthMarkersForEpisode,
   listStandaloneHealthMarkersForUser,
-  upsertEpisodeHealthMarkerForLine,
 } from './lib/episode-health-marker-data.js';
+export {
+  listEpisodeObservationTimeline,
+  type EpisodeTimelineItem,
+} from './lib/episode-observation-timeline.js';
 export {
   createFoodDiaryEntry,
   deleteFoodDiaryEntry,

@@ -101,14 +101,14 @@ export function EpisodeStartHomeCta({
       <p id={descId} className="mt-1.5 text-sm leading-relaxed text-app-muted">
         {ctaMode === 'loading' && 'Checking for an episode in progress…'}
         {ctaMode === 'resume' &&
-          'You have an episode in progress. Continue this episode to pick up where you left off in the guided symptom flow.'}
+          'You have an episode in progress. Continue opens your episode hub: return to the dashboard, log another full check-in, or end the episode when you are done.'}
         {ctaMode === 'start' &&
           'Opens the guided flow to record what you are experiencing during this episode.'}
       </p>
       <p id={statusId} className="sr-only" role="status" aria-live="polite">
         {ctaMode === 'loading' && 'Checking for an in-progress episode.'}
         {ctaMode === 'resume' &&
-          'An episode is in progress. Primary action: Continue this episode.'}
+          'An episode is in progress. Primary action: Continue this episode to the episode hub.'}
         {ctaMode === 'start' &&
           'No episode in progress. Primary action: start a new episode.'}
       </p>

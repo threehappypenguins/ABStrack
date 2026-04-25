@@ -19,7 +19,7 @@ import {
 } from './lib/episode-data.js';
 import {
   listEpisodeSymptomsForEpisode,
-  upsertEpisodeSymptomAnswer,
+  insertEpisodeSymptomAnswer,
 } from './lib/episode-symptom-data.js';
 import {
   createHealthMarkerPreset,
@@ -244,7 +244,7 @@ describe.skipIf(!episodeFoundationReady)(
       });
 
       it('writes episode_symptoms and reads plaintext under the same session', async () => {
-        const upsert = await upsertEpisodeSymptomAnswer(clientA, {
+        const upsert = await insertEpisodeSymptomAnswer(clientA, {
           userId: userAId,
           episodeId,
           line: presetLineRow,
@@ -460,7 +460,7 @@ describe.skipIf(!episodeFoundationReady)(
         }
         victimEpisodeId = ep.data.id;
 
-        const up = await upsertEpisodeSymptomAnswer(clientA, {
+        const up = await insertEpisodeSymptomAnswer(clientA, {
           userId: userAId,
           episodeId: victimEpisodeId,
           line: victimPresetLine,

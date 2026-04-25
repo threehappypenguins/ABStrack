@@ -11,6 +11,8 @@ import type {
 import {
   bacReadingSuggestsAbsEpisode,
   createDraftFromMarker,
+  filterHealthMarkerRowsForOpenPass,
+  findLatestHealthMarkerForLineInPass,
   formatEpisodeDurationSimple,
   markerLineTitle,
   minForPresetMarkerValueInput,
@@ -23,9 +25,11 @@ import {
   completeEpisodePostMarkerStep,
   endEpisodeIfStillActive,
   getEpisodeById,
+  insertEpisodeHealthMarkerForLine,
   listEpisodeHealthMarkersForEpisode,
+  listEpisodeObservationTimeline,
   listPresetHealthMarkersForPreset,
-  upsertEpisodeHealthMarkerForLine,
+  type EpisodeTimelineItem,
 } from '@abstrack/supabase';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
@@ -43,27 +47,38 @@ function trimToNull(value: string): string | null {
   return t.length > 0 ? t : null;
 }
 
-function findExistingMarkerForLine(
-  rows: HealthMarkerRow[],
+function findCurrentPassMarkerForLine(
+  allRows: HealthMarkerRow[],
   line: PresetHealthMarkerRow,
+  lastPostMarkerStepCompletedAt: string | null,
 ): HealthMarkerRow | null {
-  return rows.find((row) => row.preset_health_marker_id === line.id) ?? null;
+  const pass = filterHealthMarkerRowsForOpenPass(
+    allRows,
+    lastPostMarkerStepCompletedAt,
+  );
+  return findLatestHealthMarkerForLineInPass(pass, line);
 }
 
 export type HealthMarkerPromptFlowProps = {
   episodeId: string;
   resumeFromEntry?: boolean;
+  /**
+   * When true with `resumeFromEntry`, opens the episode hub (after a saved pass) instead of the
+   * marker stepper or food diary.
+   */
+  resumeToEpisodeHub?: boolean;
 };
 
 /**
  * Linear in-episode health marker stepper that runs after symptom prompts.
  *
- * @param props - Episode id and optional resume intent.
+ * @param props - Episode id and optional resume / hub intent.
  * @returns Marker prompt UI with per-line manual entry and persistence.
  */
 export function HealthMarkerPromptFlow({
   episodeId,
   resumeFromEntry = false,
+  resumeToEpisodeHub = false,
 }: HealthMarkerPromptFlowProps) {
   const router = useRouter();
   const { announce } = useAnnounce();
@@ -90,9 +105,6 @@ export function HealthMarkerPromptFlow({
   const [postNote, setPostNote] = useState('');
   const [savingPost, setSavingPost] = useState(false);
   const [postFeedback, setPostFeedback] = useState<string | null>(null);
-  const [foodDiaryDecision, setFoodDiaryDecision] = useState<
-    'pending' | 'saved' | 'skipped'
-  >('pending');
   const [endingEpisode, setEndingEpisode] = useState(false);
   const [endDialogOpen, setEndDialogOpen] = useState(false);
   const [endFeedback, setEndFeedback] = useState<string | null>(null);
@@ -104,10 +116,12 @@ export function HealthMarkerPromptFlow({
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancelingEpisode, setCancelingEpisode] = useState(false);
   const [episodeRow, setEpisodeRow] = useState<EpisodeRow | null>(null);
+  const [observationTimeline, setObservationTimeline] = useState<
+    EpisodeTimelineItem[]
+  >([]);
   const loadGenRef = useRef(0);
 
-  const onLeaveFoodDiary = useCallback((decision: 'saved' | 'skipped') => {
-    setFoodDiaryDecision(decision);
+  const onLeaveFoodDiary = useCallback((_decision: 'saved' | 'skipped') => {
     setPhase('postMarkers');
   }, []);
 
@@ -148,7 +162,6 @@ export function HealthMarkerPromptFlow({
     setPhase('prompting');
     postFormInitRef.current = false;
     setPostFeedback(null);
-    setFoodDiaryDecision('pending');
     foodDiary.reset();
     setEndFeedback(null);
     setEndedSummary(null);
@@ -214,9 +227,15 @@ export function HealthMarkerPromptFlow({
     }
 
     setLines(presetLines.data);
+    const lastPost: string | null =
+      episode.data?.post_marker_step_completed_at ?? null;
     const nextDrafts: Record<string, MarkerDraft> = {};
     for (const line of presetLines.data) {
-      const marker = findExistingMarkerForLine(markerRows.data, line);
+      const marker = findCurrentPassMarkerForLine(
+        markerRows.data,
+        line,
+        lastPost,
+      );
       nextDrafts[line.id] = createDraftFromMarker(marker);
     }
     setDrafts(nextDrafts);
@@ -226,16 +245,14 @@ export function HealthMarkerPromptFlow({
     setBacSuggestAbs(bacReadingSuggestsAbsEpisode(markerRows.data));
 
     const firstUnanswered = presetLines.data.findIndex((line) => {
-      const row = findExistingMarkerForLine(markerRows.data, line);
+      const row = findCurrentPassMarkerForLine(markerRows.data, line, lastPost);
       return row === null;
     });
     if (resumeFromEntry) {
-      if (firstUnanswered === -1) {
-        if (episode.data?.post_marker_step_completed_at) {
-          setPhase('complete');
-        } else {
-          setPhase('foodDiary');
-        }
+      if (resumeToEpisodeHub) {
+        setPhase('complete');
+      } else if (firstUnanswered === -1) {
+        setPhase('foodDiary');
       } else {
         setActiveIndex(firstUnanswered);
       }
@@ -243,7 +260,21 @@ export function HealthMarkerPromptFlow({
       setActiveIndex(0);
     }
     setStatus('ready');
-  }, [episodeId, foodDiary.reset, resumeFromEntry, supabase]);
+
+    const tl = await listEpisodeObservationTimeline(supabase, episodeId);
+    if (isStale()) {
+      return;
+    }
+    if (tl.ok) {
+      setObservationTimeline(tl.data);
+    }
+  }, [
+    episodeId,
+    foodDiary.reset,
+    resumeFromEntry,
+    resumeToEpisodeHub,
+    supabase,
+  ]);
 
   useEffect(() => {
     void load();
@@ -311,7 +342,7 @@ export function HealthMarkerPromptFlow({
 
     setSaving(true);
     setPersistFeedback(null);
-    const result = await upsertEpisodeHealthMarkerForLine(supabase, {
+    const result = await insertEpisodeHealthMarkerForLine(supabase, {
       userId,
       episodeId,
       line: currentLine,
@@ -328,7 +359,10 @@ export function HealthMarkerPromptFlow({
       });
       return false;
     }
-
+    const tl = await listEpisodeObservationTimeline(supabase, episodeId);
+    if (tl.ok) {
+      setObservationTimeline(tl.data);
+    }
     return true;
   };
 
@@ -409,8 +443,31 @@ export function HealthMarkerPromptFlow({
     setEndFeedback(null);
     setEndedSummary(null);
     setPhase('complete');
-    announce('Episode details saved.', { politeness: 'polite' });
+    announce(
+      result.data.symptom_preset_id
+        ? 'This check-in is saved. You can log another when you are ready, or return to the dashboard.'
+        : 'Episode details saved.',
+      { politeness: 'polite' },
+    );
   };
+
+  const onLogAnotherCheckIn = useCallback(() => {
+    const presetId = episodeRow?.symptom_preset_id;
+    if (!presetId) {
+      const message =
+        'This episode has no symptom preset linked, so another check-in cannot start here.';
+      announce(message, { politeness: 'assertive' });
+      return;
+    }
+    clearSymptomPromptSession(episodeId);
+    const q = new URLSearchParams();
+    q.set('symptomPresetId', presetId);
+    q.set('resume', '1');
+    announce('Opening symptoms for another check-in.', {
+      politeness: 'polite',
+    });
+    router.push(`/episode/${episodeId}/symptoms?${q.toString()}`);
+  }, [announce, episodeId, episodeRow?.symptom_preset_id, router]);
 
   const onBackToHealthMarkersFromFoodDiary = () => {
     setPhase('prompting');
@@ -747,8 +804,38 @@ export function HealthMarkerPromptFlow({
       <>
         <div className="space-y-4">
           <h1 className="text-2xl font-bold tracking-tight text-app-ink">
-            Episode health markers
+            {endedSummary ? 'Episode health markers' : 'This check-in is saved'}
           </h1>
+          {observationTimeline.length > 0 ? (
+            <section
+              className="rounded-2xl border border-app-border/90 bg-app-surface/60 p-4"
+              aria-label="Log so far in this episode"
+            >
+              <h2 className="text-sm font-semibold text-app-ink">
+                Log so far in this episode
+              </h2>
+              <p className="mt-1 text-xs text-app-muted" id="ep-hub-tl-hint">
+                Oldest first. New entries are added as you go.
+              </p>
+              <ol
+                className="mt-3 list-decimal space-y-2 pl-5 text-sm text-app-ink"
+                aria-describedby="ep-hub-tl-hint"
+              >
+                {observationTimeline.map((row) => (
+                  <li key={`${row.kind}-${row.id}`} className="break-words">
+                    <span className="text-app-muted">
+                      {row.sortAt
+                        .replace('T', ' ')
+                        .replace(/\.\d{3}Z$/, ' UTC')
+                        .slice(0, 19)}
+                      {' — '}
+                    </span>
+                    {row.label}: {row.detail}
+                  </li>
+                ))}
+              </ol>
+            </section>
+          ) : null}
           <div
             className="rounded-2xl border border-app-border/90 bg-app-surface p-6 shadow-soft ring-1 ring-[color:var(--app-ring-slate)] sm:p-8"
             role="status"
@@ -767,11 +854,16 @@ export function HealthMarkerPromptFlow({
                 </p>
               </div>
             ) : (
-              <p className="text-sm leading-relaxed text-app-ink">
-                {foodDiaryDecision === 'saved'
-                  ? 'Preset prompts, episode details, and food diary are saved. End this episode to prevent stale resume state.'
-                  : 'Preset prompts and episode details are saved. End this episode to prevent stale resume state.'}
-              </p>
+              <div className="space-y-3 text-sm leading-relaxed text-app-ink">
+                <p>
+                  This round is saved: symptoms, health markers, any food diary
+                  entries you added, and episode details.
+                </p>
+                <p className="text-app-muted">
+                  Return to the dashboard, log another full check-in when you
+                  are ready, or end this episode when you are completely done.
+                </p>
+              </div>
             )}
           </div>
           {endFeedback ? (
@@ -788,16 +880,34 @@ export function HealthMarkerPromptFlow({
               Back to dashboard
             </button>
           ) : (
-            <button
-              type="button"
-              className="inline-flex min-h-[56px] items-center justify-center rounded-xl bg-red-700 px-5 text-base font-semibold text-white shadow-md transition hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:opacity-60 dark:bg-red-600 dark:hover:bg-red-500"
-              onClick={() => {
-                setEndDialogOpen(true);
-              }}
-              disabled={endingEpisode}
-            >
-              {endingEpisode ? 'Ending episode…' : 'End episode'}
-            </button>
+            <div className="flex flex-col gap-3 sm:max-w-md">
+              {episodeRow?.symptom_preset_id ? (
+                <button
+                  type="button"
+                  className="inline-flex min-h-[56px] w-full items-center justify-center rounded-xl bg-red-700 px-5 text-base font-semibold text-white shadow-md transition hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg dark:bg-red-600 dark:hover:bg-red-500"
+                  onClick={onLogAnotherCheckIn}
+                >
+                  Log another check-in
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="inline-flex min-h-[56px] w-full items-center justify-center rounded-xl border-2 border-app-border bg-app-surface px-5 text-base font-semibold text-app-ink shadow-sm transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg dark:border-neutral-600 dark:bg-neutral-900/60"
+                onClick={onFinishToDashboard}
+              >
+                Back to dashboard
+              </button>
+              <button
+                type="button"
+                className="inline-flex min-h-[56px] w-full items-center justify-center rounded-xl border-2 border-app-border bg-app-surface px-5 text-base font-semibold text-app-ink shadow-sm transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:opacity-60 dark:border-neutral-600 dark:bg-neutral-900/60"
+                onClick={() => {
+                  setEndDialogOpen(true);
+                }}
+                disabled={endingEpisode}
+              >
+                {endingEpisode ? 'Ending episode…' : 'End episode'}
+              </button>
+            </div>
           )}
         </div>
         <ConfirmDialog
@@ -997,6 +1107,36 @@ export function HealthMarkerPromptFlow({
                 : 'Next'}
           </button>
         </div>
+        {observationTimeline.length > 0 ? (
+          <section
+            className="rounded-2xl border border-app-border/90 bg-app-surface/60 p-4"
+            aria-label="Log so far in this episode"
+          >
+            <h2 className="text-sm font-semibold text-app-ink">
+              Log so far in this episode
+            </h2>
+            <p className="mt-1 text-xs text-app-muted" id="ep-tl-hint">
+              Oldest first. New entries are added as you go.
+            </p>
+            <ol
+              className="mt-3 list-decimal space-y-2 pl-5 text-sm text-app-ink"
+              aria-describedby="ep-tl-hint"
+            >
+              {observationTimeline.map((row) => (
+                <li key={`${row.kind}-${row.id}`} className="break-words">
+                  <span className="text-app-muted">
+                    {row.sortAt
+                      .replace('T', ' ')
+                      .replace(/\.\d{3}Z$/, ' UTC')
+                      .slice(0, 19)}
+                    {' — '}
+                  </span>
+                  {row.label}: {row.detail}
+                </li>
+              ))}
+            </ol>
+          </section>
+        ) : null}
         <button
           type="button"
           className="inline-flex min-h-[44px] items-center justify-center rounded-lg px-3 py-2 text-sm font-medium text-red-700 transition hover:text-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg dark:text-red-300 dark:hover:text-red-200"
