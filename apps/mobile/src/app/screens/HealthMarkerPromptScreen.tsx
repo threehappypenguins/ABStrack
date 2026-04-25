@@ -291,11 +291,21 @@ export function HealthMarkerPromptScreen() {
   /** Bumps when the screen unmounts or `load` deps change so stale async work does not setState. */
   const loadGenerationRef = useRef(0);
 
+  const refreshObservationTimeline = useCallback(async () => {
+    const tl = await listEpisodeObservationTimeline(supabase, episodeId);
+    if (tl.ok) {
+      setObservationTimeline(tl.data);
+      return;
+    }
+    setObservationTimeline([]);
+  }, [episodeId, supabase]);
+
   const onLeaveFoodDiary = useCallback(
     async (_decision: 'saved' | 'skipped') => {
+      await refreshObservationTimeline();
       setPhase('postMarkers');
     },
-    [],
+    [refreshObservationTimeline],
   );
 
   const onBackToHealthMarkersFromFoodDiaryBody = useCallback(async () => {
@@ -627,6 +637,7 @@ export function HealthMarkerPromptScreen() {
     setEpisodeRow(result.data);
     setEndFeedback(null);
     setEndedSummary(null);
+    await refreshObservationTimeline();
     setPhase('complete');
     await announce(
       result.data.symptom_preset_id

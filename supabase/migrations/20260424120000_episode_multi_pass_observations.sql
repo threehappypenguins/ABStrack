@@ -110,3 +110,32 @@ CREATE TRIGGER food_diary_block_after_end
   BEFORE INSERT OR UPDATE ON public.food_diary_entries
   FOR EACH ROW
   EXECUTE FUNCTION public.assert_episode_child_not_after_episode_end ();
+
+-- ---------------------------------------------------------------------------
+-- 4) Episodes: stamp post-marker boundary from server timestamp atomically
+-- ---------------------------------------------------------------------------
+-- When post_marker_step_completed_at is set (completion signal), stamp it from NEW.updated_at in
+-- the same UPDATE statement so pass-boundary comparisons stay in DB time.
+CREATE OR REPLACE FUNCTION public.stamp_episode_post_marker_boundary_from_updated_at ()
+  RETURNS TRIGGER
+  LANGUAGE plpgsql
+  AS $$
+BEGIN
+  IF
+    NEW.post_marker_step_completed_at IS NOT NULL
+    AND NEW.post_marker_step_completed_at IS DISTINCT FROM OLD.post_marker_step_completed_at
+  THEN
+    NEW.post_marker_step_completed_at := NEW.updated_at;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+COMMENT ON FUNCTION public.stamp_episode_post_marker_boundary_from_updated_at () IS
+  'When post_marker_step_completed_at changes, stamps it from NEW.updated_at so pass boundary and row update share one server timestamp.';
+
+DROP TRIGGER IF EXISTS zz_episode_post_marker_boundary_stamp ON public.episodes;
+CREATE TRIGGER zz_episode_post_marker_boundary_stamp
+  BEFORE UPDATE ON public.episodes
+  FOR EACH ROW
+  EXECUTE FUNCTION public.stamp_episode_post_marker_boundary_from_updated_at ();

@@ -191,9 +191,22 @@ export function HealthMarkerPromptFlow({
   >([]);
   const loadGenRef = useRef(0);
 
-  const onLeaveFoodDiary = useCallback((_decision: 'saved' | 'skipped') => {
-    setPhase('postMarkers');
-  }, []);
+  const refreshObservationTimeline = useCallback(async () => {
+    const tl = await listEpisodeObservationTimeline(supabase, episodeId);
+    if (tl.ok) {
+      setObservationTimeline(tl.data);
+      return;
+    }
+    setObservationTimeline([]);
+  }, [episodeId, supabase]);
+
+  const onLeaveFoodDiary = useCallback(
+    (_decision: 'saved' | 'skipped') => {
+      void refreshObservationTimeline();
+      setPhase('postMarkers');
+    },
+    [refreshObservationTimeline],
+  );
 
   const foodDiary = useEpisodeFoodDiary({
     episodeId,
@@ -519,6 +532,7 @@ export function HealthMarkerPromptFlow({
     setEpisodeRow(result.data);
     setEndFeedback(null);
     setEndedSummary(null);
+    await refreshObservationTimeline();
     setPhase('complete');
     announce(
       result.data.symptom_preset_id
