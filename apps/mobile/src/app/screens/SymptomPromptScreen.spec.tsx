@@ -252,7 +252,7 @@ describe('SymptomPromptScreen', () => {
     expect(insertEpisodeSymptomAnswer).not.toHaveBeenCalled();
   });
 
-  test('free_text changes debounce to a single upsert', async () => {
+  test('free_text typing stages changes without server insert until explicit commit', async () => {
     jest.mocked(listPresetSymptomsForPreset).mockResolvedValue({
       ok: true,
       data: [lineFreeOnly],
@@ -266,36 +266,10 @@ describe('SymptomPromptScreen', () => {
 
     jest.mocked(insertEpisodeSymptomAnswer).mockClear();
 
-    jest.useFakeTimers();
-    try {
-      const input = screen.getByLabelText('Notes notes');
-      fireEvent.changeText(input, 'a');
-      fireEvent.changeText(input, 'ab');
-      expect(insertEpisodeSymptomAnswer).not.toHaveBeenCalled();
-
-      await act(async () => {
-        jest.advanceTimersByTime(300);
-      });
-      await act(async () => {
-        await Promise.resolve();
-      });
-
-      await waitFor(() => {
-        expect(insertEpisodeSymptomAnswer).toHaveBeenCalledTimes(1);
-      });
-
-      expect(insertEpisodeSymptomAnswer).toHaveBeenCalledWith(
-        expect.objectContaining({ mockClient: true }),
-        expect.objectContaining({
-          userId: 'test-user-1',
-          episodeId,
-          line: lineFreeOnly,
-          answer: { type: 'free_text', value: 'ab' },
-        }),
-      );
-    } finally {
-      jest.useRealTimers();
-    }
+    const input = screen.getByLabelText('Notes notes');
+    fireEvent.changeText(input, 'a');
+    fireEvent.changeText(input, 'ab');
+    expect(insertEpisodeSymptomAnswer).not.toHaveBeenCalled();
   });
 
   test('free_text flush on Next runs upsert without waiting for debounce', async () => {

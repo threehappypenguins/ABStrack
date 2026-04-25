@@ -71,9 +71,6 @@ function lineWriteQueueKey(episodeId: string, presetSymptomId: string): string {
   return `${episodeId}:${presetSymptomId}`;
 }
 
-/** Debounce Supabase writes for free-text answers (matches web episode flow). */
-const SERVER_SYMPTOM_PERSIST_DEBOUNCE_MS = 300;
-
 /**
  * Linear symptom stepper for the active episode’s selected preset (Week 5 skeleton).
  *
@@ -110,7 +107,7 @@ export function SymptomPromptScreen() {
   const serverPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
-  /** Latest debounced free-text payload for Supabase; read in {@link flushPendingServerPersist}. */
+  /** Latest staged free-text payload for Supabase; flushed on explicit commit actions. */
   const pendingServerFreeTextPersistRef = useRef<{
     line: PresetSymptomRow;
     answer: SymptomPromptAnswer;
@@ -309,9 +306,9 @@ export function SymptomPromptScreen() {
   );
 
   /**
-   * Cancels the debounced server timer, then **immediately** persists the latest free-text
-   * `{ line, answer }` from {@link pendingServerFreeTextPersistRef} (if any). Call from
-   * Next/Back, `useLayoutEffect` (episode change), and unmount so the last keystrokes are not lost.
+   * Flushes the latest staged free-text `{ line, answer }` (if any). Call from Next/Back,
+   * `useLayoutEffect` (episode change), and unmount so the last keystrokes are committed once per
+   * explicit transition.
    */
   const flushPendingServerPersist = useCallback(() => {
     if (serverPersistTimerRef.current !== null) {
@@ -354,15 +351,10 @@ export function SymptomPromptScreen() {
         pendingServerFreeTextPersistRef.current = { line, answer };
         if (serverPersistTimerRef.current !== null) {
           clearTimeout(serverPersistTimerRef.current);
-        }
-        serverPersistTimerRef.current = setTimeout(() => {
           serverPersistTimerRef.current = null;
-          const pending = pendingServerFreeTextPersistRef.current;
-          pendingServerFreeTextPersistRef.current = null;
-          if (pending) {
-            executeServerPersist(pending.line, pending.answer);
-          }
-        }, SERVER_SYMPTOM_PERSIST_DEBOUNCE_MS);
+        }
+        // Intentional: free-text answers are insert-only now, so we stage while typing and only
+        // write on explicit commit actions (Next/Back/unmount) via flushPendingServerPersist.
       } else {
         pendingServerFreeTextPersistRef.current = null;
         if (serverPersistTimerRef.current !== null) {

@@ -61,9 +61,6 @@ export type SymptomPromptFlowProps = {
 /** Delay before writing free-text drafts to `sessionStorage` (keystrokes stay snappy in React state). */
 const FREE_TEXT_PERSIST_DEBOUNCE_MS = 300;
 
-/** Same debounce for Supabase `episode_symptoms` writes (plaintext columns under RLS). */
-const SERVER_SYMPTOM_PERSIST_DEBOUNCE_MS = 300;
-
 function clampIndex(index: number, length: number): number {
   if (length <= 0) {
     return 0;
@@ -123,7 +120,7 @@ export function SymptomPromptFlow({
   const serverPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
-  /** Latest debounced free-text payload; cleared when the write runs or is flushed. */
+  /** Latest staged free-text payload; flushed on explicit commit actions. */
   const pendingServerFreeTextPersistRef = useRef<{
     line: PresetSymptomRow;
     answer: SymptomPromptAnswer;
@@ -340,8 +337,8 @@ export function SymptomPromptFlow({
   );
 
   /**
-   * Clears the debounced server timer and immediately persists the latest free-text
-   * payload (if any). Call before navigation / unmount so the last keystrokes are not lost.
+   * Flushes the latest staged free-text payload (if any). Call before navigation / unmount so the
+   * last keystrokes are committed once per explicit transition.
    */
   const flushPendingServerPersist = useCallback(() => {
     if (serverPersistTimerRef.current !== null) {
@@ -380,15 +377,10 @@ export function SymptomPromptFlow({
         pendingServerFreeTextPersistRef.current = { line, answer };
         if (serverPersistTimerRef.current !== null) {
           clearTimeout(serverPersistTimerRef.current);
-        }
-        serverPersistTimerRef.current = setTimeout(() => {
           serverPersistTimerRef.current = null;
-          const pending = pendingServerFreeTextPersistRef.current;
-          pendingServerFreeTextPersistRef.current = null;
-          if (pending) {
-            executeServerPersist(pending.line, pending.answer);
-          }
-        }, SERVER_SYMPTOM_PERSIST_DEBOUNCE_MS);
+        }
+        // Intentional: append-only insert semantics for free-text require explicit commit writes
+        // (Next/Back/route change) to avoid generating duplicate rows from typing pauses.
       } else {
         pendingServerFreeTextPersistRef.current = null;
         if (serverPersistTimerRef.current !== null) {

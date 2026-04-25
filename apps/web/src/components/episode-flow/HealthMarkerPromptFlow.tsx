@@ -46,24 +46,6 @@ function trimToNull(value: string): string | null {
   return t.length > 0 ? t : null;
 }
 
-const timelineInstantFormatter = new Intl.DateTimeFormat(undefined, {
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  timeZoneName: 'short',
-});
-
-function formatTimelineInstant(isoLike: string): string {
-  const ms = Date.parse(isoLike);
-  if (!Number.isFinite(ms)) {
-    return isoLike;
-  }
-  return timelineInstantFormatter.format(new Date(ms));
-}
-
 function compareTimelineItems(
   a: EpisodeTimelineItem,
   b: EpisodeTimelineItem,
@@ -950,7 +932,7 @@ export function HealthMarkerPromptFlow({
                 {observationTimeline.map((row) => (
                   <li key={`${row.kind}-${row.id}`} className="break-words">
                     <span className="text-app-muted">
-                      {formatTimelineInstant(row.sortAt)}
+                      <EpisodeLocaleInstant iso={row.sortAt} />
                       {' — '}
                     </span>
                     {row.label}: {row.detail}
@@ -1248,7 +1230,7 @@ export function HealthMarkerPromptFlow({
               {observationTimeline.map((row) => (
                 <li key={`${row.kind}-${row.id}`} className="break-words">
                   <span className="text-app-muted">
-                    {formatTimelineInstant(row.sortAt)}
+                    <EpisodeLocaleInstant iso={row.sortAt} />
                     {' — '}
                   </span>
                   {row.label}: {row.detail}
