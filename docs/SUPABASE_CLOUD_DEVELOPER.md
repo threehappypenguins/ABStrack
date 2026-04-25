@@ -177,6 +177,8 @@ pnpm exec nx test @abstrack/supabase
 
 2. **Recommended migration flow for Sarah:** when changing **`supabase/migrations/`**, tell her—in the **same message**—to **`db push`** to cloud **only when the migration SQL is stable** (e.g. after Copilot/PR review), **then** **`gen types --linked`** + Prettier **then** commit **both** migration and `packages/supabase/src/lib/database.types.ts` **before** or as part of merge (see **Recommended workflow** and **Revising a migration already pushed** above). **GitHub Actions** still runs `db push` on `main` as a backstop. **Do not** imply she must `db push` immediately on first draft if reviews may rewrite the same file.
 
+   **Critical review-phase rule:** while Sarah is still iterating on Copilot/PR review feedback, assume migrations have **not** been pushed yet and **modify existing migration file(s) only**. **Do not create new migration files during review iterations** unless Sarah explicitly asks.
+
 3. **Never imply `supabase db reset` affects cloud.** Local Docker only (or CI-only).
 
 4. **Say explicitly** when she must use **her terminal** (CLI login, link, `db push`, `gen types`) vs what CI does after merge.
