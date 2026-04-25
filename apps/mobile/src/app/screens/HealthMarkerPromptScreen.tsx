@@ -344,6 +344,7 @@ export function HealthMarkerPromptScreen() {
     resetFoodDiaryState();
     setEndFeedback(null);
     setEndedSummary(null);
+    setObservationTimeline([]);
 
     const {
       data: { user },
@@ -446,6 +447,8 @@ export function HealthMarkerPromptScreen() {
     }
     if (tl.ok) {
       setObservationTimeline(tl.data);
+    } else {
+      setObservationTimeline([]);
     }
   }, [episodeId, hub, resetFoodDiaryState, resume, supabase]);
 
@@ -607,13 +610,13 @@ export function HealthMarkerPromptScreen() {
     }
     setSavingPost(true);
     setPostFeedback(null);
-    const completedAt = new Date().toISOString();
     const result = await completeEpisodePostMarkerStep(supabase, episodeId, {
       episode_type: postEpisodeKind,
       episode_label: trimToNull(postLabel),
       additional_notes: trimToNull(postAdditional),
       note: trimToNull(postNote),
-      post_marker_step_completed_at: completedAt,
+      // Ignored by completeEpisodePostMarkerStep: boundary is server-derived to avoid clock skew.
+      post_marker_step_completed_at: null,
     });
     setSavingPost(false);
     if (!result.ok) {

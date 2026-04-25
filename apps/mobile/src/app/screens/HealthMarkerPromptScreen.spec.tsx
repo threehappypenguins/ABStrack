@@ -416,8 +416,7 @@ describe('HealthMarkerPromptScreen', () => {
         episode_label: 'Evening flare',
         additional_notes: 'Extra symptom text',
         note: 'Felt off',
-        post_marker_step_completed_at:
-          expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+        post_marker_step_completed_at: null,
       }),
     );
 

@@ -216,10 +216,13 @@ export async function endEpisodeIfStillActive(
 /**
  * Persists episode type, labels, notes, and completion of the post–health-marker step.
  * Updates only rows that are still active (`ended_at IS NULL`).
+ * `post_marker_step_completed_at` is stamped from a server-generated timestamp (`updated_at`) to
+ * avoid client clock skew affecting pass-boundary semantics.
  *
  * @param client - Supabase client (RLS applies).
  * @param episodeId - Target episode id.
- * @param fields - Episode fields to write; `post_marker_step_completed_at` should be set when the user finishes this step.
+ * @param fields - Episode fields to write; provided `post_marker_step_completed_at` is ignored and
+ *   replaced with a server-derived timestamp.
  * @returns Updated row, or an error when the update matches no visible row.
  */
 export async function completeEpisodePostMarkerStep(
@@ -228,18 +231,24 @@ export async function completeEpisodePostMarkerStep(
   fields: EpisodePostMarkerStepWrite,
 ): Promise<PresetDataResult<EpisodeRow>> {
   try {
-    const payload: EpisodesTableUpdate = fields;
-    const { data, error } = await client
+    const {
+      // Intentionally ignored; server timestamp is used instead.
+      post_marker_step_completed_at: _ignoredBoundary,
+      ...rest
+    } = fields;
+
+    const firstPayload: EpisodesTableUpdate = rest;
+    const { data: first, error: firstError } = await client
       .from('episodes')
-      .update(payload)
+      .update(firstPayload)
       .eq('id', episodeId)
       .is('ended_at', null)
       .select('*')
       .maybeSingle();
-    if (error) {
-      return { ok: false, error: toPresetDataError(error) };
+    if (firstError) {
+      return { ok: false, error: toPresetDataError(firstError) };
     }
-    if (!data) {
+    if (!first) {
       return {
         ok: false,
         error: new PresetDataError(
@@ -248,7 +257,31 @@ export async function completeEpisodePostMarkerStep(
         ),
       };
     }
-    return { ok: true, data: data as EpisodeRow };
+
+    const secondPayload: EpisodesTableUpdate = {
+      post_marker_step_completed_at: first.updated_at,
+    };
+    const { data: second, error: secondError } = await client
+      .from('episodes')
+      .update(secondPayload)
+      .eq('id', episodeId)
+      .is('ended_at', null)
+      .select('*')
+      .maybeSingle();
+    if (secondError) {
+      return { ok: false, error: toPresetDataError(secondError) };
+    }
+    if (!second) {
+      return {
+        ok: false,
+        error: new PresetDataError(
+          'not_found',
+          'Could not save episode details. This episode may be missing, already ended, or no longer available.',
+        ),
+      };
+    }
+
+    return { ok: true, data: second as EpisodeRow };
   } catch (caught) {
     return { ok: false, error: toPresetDataError(caught) };
   }

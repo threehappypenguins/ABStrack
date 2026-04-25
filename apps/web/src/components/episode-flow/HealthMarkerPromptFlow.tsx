@@ -235,6 +235,7 @@ export function HealthMarkerPromptFlow({
     foodDiary.reset();
     setEndFeedback(null);
     setEndedSummary(null);
+    setObservationTimeline([]);
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -337,6 +338,8 @@ export function HealthMarkerPromptFlow({
     }
     if (tl.ok) {
       setObservationTimeline(tl.data);
+    } else {
+      setObservationTimeline([]);
     }
   }, [
     episodeId,

@@ -35,6 +35,7 @@ export function EpisodeStartHomeCta({
 
   const [ctaMode, setCtaMode] = useState<CtaMode>('loading');
   const [resumeHref, setResumeHref] = useState<string | null>(null);
+  const [resumeToHub, setResumeToHub] = useState(false);
 
   useEffect(() => {
     if (authLoading) {
@@ -44,12 +45,14 @@ export function EpisodeStartHomeCta({
     if (!userId) {
       setCtaMode('start');
       setResumeHref(null);
+      setResumeToHub(false);
       return;
     }
 
     let cancelled = false;
     setCtaMode('loading');
     setResumeHref(null);
+    setResumeToHub(false);
 
     const run = async (): Promise<void> => {
       const supabase = createBrowserClient();
@@ -60,21 +63,25 @@ export function EpisodeStartHomeCta({
       if (!result.ok) {
         setCtaMode('start');
         setResumeHref(null);
+        setResumeToHub(false);
         return;
       }
       const row = result.data;
       const presetId = row?.symptom_preset_id ?? null;
       if (row && (row.post_marker_step_completed_at != null || presetId)) {
+        const toHub = row.post_marker_step_completed_at != null;
         setResumeHref(
           buildResumeEpisodeHref(row.id, presetId, {
-            toHealthMarkers: row.post_marker_step_completed_at != null,
+            toHealthMarkers: toHub,
           }),
         );
+        setResumeToHub(toHub);
         setCtaMode('resume');
         return;
       }
       setCtaMode('start');
       setResumeHref(null);
+      setResumeToHub(false);
     };
 
     void run();
@@ -101,14 +108,18 @@ export function EpisodeStartHomeCta({
       <p id={descId} className="mt-1.5 text-sm leading-relaxed text-app-muted">
         {ctaMode === 'loading' && 'Checking for an episode in progress…'}
         {ctaMode === 'resume' &&
-          'You have an episode in progress. Continue opens your episode hub: return to the dashboard, log another full check-in, or end the episode when you are done.'}
+          (resumeToHub
+            ? 'You have an episode in progress. Continue opens your episode hub: return to the dashboard, log another full check-in, or end the episode when you are done.'
+            : 'You have an episode in progress. Continue resumes the guided symptom flow where you left off.')}
         {ctaMode === 'start' &&
           'Opens the guided flow to record what you are experiencing during this episode.'}
       </p>
       <p id={statusId} className="sr-only" role="status" aria-live="polite">
         {ctaMode === 'loading' && 'Checking for an in-progress episode.'}
         {ctaMode === 'resume' &&
-          'An episode is in progress. Primary action: Continue this episode to the episode hub.'}
+          (resumeToHub
+            ? 'An episode is in progress. Primary action: Continue this episode to the episode hub.'
+            : 'An episode is in progress. Primary action: Continue this episode in the guided symptom flow.')}
         {ctaMode === 'start' &&
           'No episode in progress. Primary action: start a new episode.'}
       </p>
