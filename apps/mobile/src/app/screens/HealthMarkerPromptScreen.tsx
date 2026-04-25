@@ -586,7 +586,7 @@ export function HealthMarkerPromptScreen() {
       episode_label: trimToNull(postLabel),
       additional_notes: trimToNull(postAdditional),
       note: trimToNull(postNote),
-      // Ignored by completeEpisodePostMarkerStep: boundary is server-derived to avoid clock skew.
+      // Completion signal only: DB overwrites stored boundary with authoritative server time.
       post_marker_step_completed_at: null,
     });
     setSavingPost(false);
