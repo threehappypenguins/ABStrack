@@ -45,31 +45,11 @@ CREATE OR REPLACE FUNCTION public.assert_episode_child_not_after_episode_end ()
   LANGUAGE plpgsql
   AS $$
 DECLARE
-  old_ep_ended timestamptz;
   new_ep_ended timestamptz;
-  old_eid uuid;
   new_eid uuid;
 BEGIN
   IF TG_OP = 'DELETE' THEN
     RETURN OLD;
-  END IF;
-
-  IF TG_OP = 'UPDATE' THEN
-    old_eid := OLD.episode_id;
-    IF old_eid IS NOT NULL THEN
-      SELECT
-        e.ended_at INTO old_ep_ended
-      FROM
-        public.episodes e
-      WHERE
-        e.id = old_eid
-      FOR SHARE;
-      IF old_ep_ended IS NOT NULL THEN
-        RAISE EXCEPTION
-          'This episode has ended. You cannot add or change entries for it.' USING
-            ERRCODE = 'check_violation';
-      END IF;
-    END IF;
   END IF;
 
   new_eid := NEW.episode_id;
@@ -93,7 +73,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION public.assert_episode_child_not_after_episode_end () IS
-  'Blocks INSERT/UPDATE on episode_id–linked child rows when episodes.ended_at is not null. DELETE is allowed.';
+  'Blocks INSERT/UPDATE when NEW.episode_id points at an ended episode. UPDATE paths that detach rows (NEW.episode_id is null), including FK ON DELETE SET NULL, are allowed. DELETE is allowed.';
 
 DROP TRIGGER IF EXISTS episode_symptoms_block_after_end ON public.episode_symptoms;
 CREATE TRIGGER episode_symptoms_block_after_end
