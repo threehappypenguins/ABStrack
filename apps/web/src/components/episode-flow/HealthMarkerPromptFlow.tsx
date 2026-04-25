@@ -469,6 +469,9 @@ export function HealthMarkerPromptFlow({
       announce(result.error.message, { politeness: 'assertive' });
       return;
     }
+    announce('Check-in saved. Opening your check-in summary.', {
+      politeness: 'polite',
+    });
     router.replace(`/episode/${episodeId}/check-in-saved`);
   };
 
@@ -853,6 +856,18 @@ export function HealthMarkerPromptFlow({
                 ))}
               </ol>
             </section>
+          ) : null}
+          {!endedSummary ? (
+            <div
+              className="rounded-xl border border-app-border/80 bg-app-surface px-4 py-3"
+              role="status"
+              aria-live="polite"
+            >
+              <p className="text-sm text-app-ink">
+                This check-in is saved. You can log another check-in, return to
+                the dashboard, or end this episode.
+              </p>
+            </div>
           ) : null}
           {endedSummary ? (
             <div

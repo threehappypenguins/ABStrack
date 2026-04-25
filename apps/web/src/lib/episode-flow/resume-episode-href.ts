@@ -9,8 +9,9 @@ export type BuildResumeEpisodeHrefOptions = {
 /**
  * Builds a resume URL for an active episode.
  *
- * `resume=1` tells flows to hydrate with resume logic. The symptom step index is not encoded in the
- * URL; the symptom flow computes it from merged server + session answers.
+ * Symptom resumes include `resume=1` so the symptom flow hydrates merged server + session answers;
+ * the step index itself is not encoded in the URL. Episode-hub resumes go directly to
+ * `/check-in-saved` and do not require resume query flags.
  *
  * @param episodeId - `episodes.id`.
  * @param symptomPresetId - `symptom_presets.id` on the episode row (ignored for health-marker resumes).
@@ -22,8 +23,6 @@ export function buildResumeEpisodeHref(
   symptomPresetId: string | null,
   options: BuildResumeEpisodeHrefOptions = {},
 ): string {
-  const q = new URLSearchParams();
-  q.set('resume', '1');
   if (options.toEpisodeHub) {
     return `/episode/${episodeId}/check-in-saved`;
   }
@@ -32,6 +31,8 @@ export function buildResumeEpisodeHref(
       'buildResumeEpisodeHref requires symptomPresetId when resuming to symptoms.',
     );
   }
+  const q = new URLSearchParams();
+  q.set('resume', '1');
   q.set('symptomPresetId', symptomPresetId);
   return `/episode/${episodeId}/symptoms?${q.toString()}`;
 }
