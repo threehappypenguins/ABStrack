@@ -104,9 +104,6 @@ export function SymptomPromptScreen() {
   const answersRef = useRef(answers);
   const activeIndexRef = useRef(activeIndex);
   const episodeIdRef = useRef(episodeId);
-  const serverPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
   /** Latest staged free-text payload for Supabase; flushed on explicit commit actions. */
   const pendingServerFreeTextPersistRef = useRef<{
     line: PresetSymptomRow;
@@ -311,10 +308,6 @@ export function SymptomPromptScreen() {
    * explicit transition.
    */
   const flushPendingServerPersist = useCallback(() => {
-    if (serverPersistTimerRef.current !== null) {
-      clearTimeout(serverPersistTimerRef.current);
-      serverPersistTimerRef.current = null;
-    }
     const pending = pendingServerFreeTextPersistRef.current;
     pendingServerFreeTextPersistRef.current = null;
     if (!pending) {
@@ -324,14 +317,10 @@ export function SymptomPromptScreen() {
   }, [executeServerPersist]);
 
   /**
-   * Cancels pending debounced free-text upserts and invalidates older in-flight persists.
-   * Used on skip/delete so delayed upserts cannot recreate deleted symptom rows.
+   * Cancels pending staged free-text inserts and invalidates older in-flight persists.
+   * Used on skip/delete so delayed inserts cannot recreate deleted symptom rows.
    */
   const cancelPendingServerPersist = useCallback(() => {
-    if (serverPersistTimerRef.current !== null) {
-      clearTimeout(serverPersistTimerRef.current);
-      serverPersistTimerRef.current = null;
-    }
     pendingServerFreeTextPersistRef.current = null;
     serverPersistEpochRef.current += 1;
   }, []);
@@ -349,18 +338,10 @@ export function SymptomPromptScreen() {
       }
       if (answer.type === 'free_text') {
         pendingServerFreeTextPersistRef.current = { line, answer };
-        if (serverPersistTimerRef.current !== null) {
-          clearTimeout(serverPersistTimerRef.current);
-          serverPersistTimerRef.current = null;
-        }
         // Intentional: free-text answers are insert-only now, so we stage while typing and only
         // write on explicit commit actions (Next/Back/unmount) via flushPendingServerPersist.
       } else {
         pendingServerFreeTextPersistRef.current = null;
-        if (serverPersistTimerRef.current !== null) {
-          clearTimeout(serverPersistTimerRef.current);
-          serverPersistTimerRef.current = null;
-        }
         executeServerPersist(line, answer);
       }
     },

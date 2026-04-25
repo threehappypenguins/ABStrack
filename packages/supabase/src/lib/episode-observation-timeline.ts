@@ -35,7 +35,7 @@ function healthMarkerTimelineLabel(
   if (kind === 'wellness_mood') {
     return 'Wellness mood';
   }
-  if (kind in PRESET_HEALTH_MARKER_KIND_LABELS) {
+  if (Object.hasOwn(PRESET_HEALTH_MARKER_KIND_LABELS, kind)) {
     return PRESET_HEALTH_MARKER_KIND_LABELS[
       kind as keyof typeof PRESET_HEALTH_MARKER_KIND_LABELS
     ];
@@ -128,6 +128,7 @@ export async function listEpisodeObservationTimeline(
     const items: EpisodeTimelineItem[] = [];
 
     for (const s of sy.data) {
+      const symptomLabel = s.symptom_name.trim();
       let detail = '—';
       if (s.response_type === 'yes_no' && s.response_boolean != null) {
         detail = s.response_boolean ? 'Yes' : 'No';
@@ -148,8 +149,7 @@ export async function listEpisodeObservationTimeline(
         kind: 'symptom',
         sortAt: s.created_at,
         id: s.id,
-        label:
-          s.symptom_name.trim().length > 0 ? s.symptom_name : 'Symptom entry',
+        label: symptomLabel.length > 0 ? symptomLabel : 'Symptom entry',
         detail,
       });
     }

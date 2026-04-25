@@ -117,9 +117,6 @@ export function SymptomPromptFlow({
   const textPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
-  const serverPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
   /** Latest staged free-text payload; flushed on explicit commit actions. */
   const pendingServerFreeTextPersistRef = useRef<{
     line: PresetSymptomRow;
@@ -136,7 +133,7 @@ export function SymptomPromptFlow({
   /**
    * Bumped only by {@link cancelPendingServerPersist}. Used with mount + episode id to gate
    * {@link setPersistError} only — insert/delete for the captured `enqueueEpisodeId` always runs
-   * so Supabase stays aligned when the user navigates or cancels debounced work.
+   * so Supabase stays aligned when the user navigates or cancels staged work.
    */
   const serverPersistEpochRef = useRef(0);
   /**
@@ -341,10 +338,6 @@ export function SymptomPromptFlow({
    * last keystrokes are committed once per explicit transition.
    */
   const flushPendingServerPersist = useCallback(() => {
-    if (serverPersistTimerRef.current !== null) {
-      clearTimeout(serverPersistTimerRef.current);
-      serverPersistTimerRef.current = null;
-    }
     const pending = pendingServerFreeTextPersistRef.current;
     pendingServerFreeTextPersistRef.current = null;
     if (!pending) {
@@ -358,10 +351,6 @@ export function SymptomPromptFlow({
    * Used before skip/delete so a delayed insert cannot recreate a row after delete.
    */
   const cancelPendingServerPersist = useCallback(() => {
-    if (serverPersistTimerRef.current !== null) {
-      clearTimeout(serverPersistTimerRef.current);
-      serverPersistTimerRef.current = null;
-    }
     pendingServerFreeTextPersistRef.current = null;
     serverPersistEpochRef.current += 1;
   }, []);
@@ -375,18 +364,10 @@ export function SymptomPromptFlow({
       }
       if (answer.type === 'free_text') {
         pendingServerFreeTextPersistRef.current = { line, answer };
-        if (serverPersistTimerRef.current !== null) {
-          clearTimeout(serverPersistTimerRef.current);
-          serverPersistTimerRef.current = null;
-        }
         // Intentional: append-only insert semantics for free-text require explicit commit writes
         // (Next/Back/route change) to avoid generating duplicate rows from typing pauses.
       } else {
         pendingServerFreeTextPersistRef.current = null;
-        if (serverPersistTimerRef.current !== null) {
-          clearTimeout(serverPersistTimerRef.current);
-          serverPersistTimerRef.current = null;
-        }
         executeServerPersist(line, answer);
       }
     },
