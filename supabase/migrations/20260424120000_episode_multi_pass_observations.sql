@@ -138,6 +138,6 @@ COMMENT ON FUNCTION public.stamp_episode_post_marker_boundary_from_updated_at ()
 
 DROP TRIGGER IF EXISTS zz_episode_post_marker_boundary_stamp ON public.episodes;
 CREATE TRIGGER zz_episode_post_marker_boundary_stamp
-  BEFORE UPDATE ON public.episodes
+  BEFORE UPDATE OF post_marker_step_completed_at ON public.episodes
   FOR EACH ROW
   EXECUTE FUNCTION public.stamp_episode_post_marker_boundary_from_updated_at ();
