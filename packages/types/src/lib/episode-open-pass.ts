@@ -4,6 +4,33 @@ import type {
   PresetHealthMarkerRow,
 } from './types.js';
 
+function isAfterPassBoundary(
+  createdAt: string,
+  lastPostMarkerStepCompletedAt: string,
+): boolean {
+  const createdAtMs = Date.parse(createdAt);
+  const boundaryMs = Date.parse(lastPostMarkerStepCompletedAt);
+  const createdAtIsValid = Number.isFinite(createdAtMs);
+  const boundaryIsValid = Number.isFinite(boundaryMs);
+  if (createdAtIsValid && boundaryIsValid) {
+    return createdAtMs > boundaryMs;
+  }
+  // Defensive fallback for unexpected timestamp serialization.
+  return createdAt > lastPostMarkerStepCompletedAt;
+}
+
+function compareTimestampDesc(a: string, b: string): number {
+  const aMs = Date.parse(a);
+  const bMs = Date.parse(b);
+  const aValid = Number.isFinite(aMs);
+  const bValid = Number.isFinite(bMs);
+  if (aValid && bValid) {
+    return bMs - aMs;
+  }
+  // Defensive fallback for unexpected timestamp serialization.
+  return b.localeCompare(a);
+}
+
 /**
  * Returns episode symptom rows that belong to the **open pass** after the last time the user
  * finished the episode-details step (Save and continue). When that timestamp is null, the whole
@@ -19,7 +46,9 @@ export function filterEpisodeSymptomRowsForOpenPass(
   if (lastPostMarkerStepCompletedAt == null) {
     return rows;
   }
-  return rows.filter((r) => r.created_at > lastPostMarkerStepCompletedAt);
+  return rows.filter((r) =>
+    isAfterPassBoundary(r.created_at, lastPostMarkerStepCompletedAt),
+  );
 }
 
 /**
@@ -37,7 +66,9 @@ export function filterHealthMarkerRowsForOpenPass(
   if (lastPostMarkerStepCompletedAt == null) {
     return rows;
   }
-  return rows.filter((r) => r.created_at > lastPostMarkerStepCompletedAt);
+  return rows.filter((r) =>
+    isAfterPassBoundary(r.created_at, lastPostMarkerStepCompletedAt),
+  );
 }
 
 /**
@@ -56,11 +87,11 @@ export function findLatestHealthMarkerForLineInPass(
     return null;
   }
   forLine.sort((a, b) => {
-    const c = b.recorded_at.localeCompare(a.recorded_at);
+    const c = compareTimestampDesc(a.recorded_at, b.recorded_at);
     if (c !== 0) {
       return c;
     }
-    const d = b.created_at.localeCompare(a.created_at);
+    const d = compareTimestampDesc(a.created_at, b.created_at);
     if (d !== 0) {
       return d;
     }

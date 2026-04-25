@@ -95,8 +95,9 @@ export async function listEpisodeSymptomsForEpisode(
 }
 
 /**
- * Deletes all `episode_symptoms` rows for a preset line that belong to the current open pass
- * (used when the user skips a symptom in that pass, so the pass has no answer for the line).
+ * Deletes all `episode_symptoms` rows for a preset line that belong to the current open pass in
+ * one SQL statement (used when the user skips a symptom in that pass, so the pass has no answer
+ * for the line).
  *
  * @param client - Supabase client (RLS applies).
  * @param args.episodeId - `episodes.id`.
@@ -114,27 +115,17 @@ export async function deleteCurrentPassEpisodeSymptomAnswer(
 ): Promise<PresetDataResult<boolean>> {
   const { episodeId, presetSymptomId, lastPostMarkerStepCompletedAt } = args;
   return wrap(async () => {
-    const { data, error: fetchError } = await client
-      .from('episode_symptoms')
-      .select('id, created_at')
-      .eq('episode_id', episodeId)
-      .eq('preset_symptom_id', presetSymptomId);
-    if (fetchError) {
-      return { data: null, error: fetchError };
-    }
-    const rows = (data ?? []) as { id: string; created_at: string }[];
-    const inPass =
-      lastPostMarkerStepCompletedAt == null
-        ? rows
-        : rows.filter((r) => r.created_at > lastPostMarkerStepCompletedAt);
-    if (inPass.length === 0) {
-      return { data: true, error: null };
-    }
-    const ids = inPass.map((row) => row.id);
-    const { error: delError } = await client
+    let delQuery = client
       .from('episode_symptoms')
       .delete()
-      .in('id', ids);
+      .eq('episode_id', episodeId)
+      .eq('preset_symptom_id', presetSymptomId);
+
+    if (lastPostMarkerStepCompletedAt != null) {
+      delQuery = delQuery.gt('created_at', lastPostMarkerStepCompletedAt);
+    }
+
+    const { error: delError } = await delQuery;
     return {
       data: delError ? null : true,
       error: delError,

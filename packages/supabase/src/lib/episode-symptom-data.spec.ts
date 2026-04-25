@@ -121,32 +121,19 @@ describe('insertEpisodeSymptomAnswer', () => {
 });
 
 describe('deleteCurrentPassEpisodeSymptomAnswer', () => {
-  it('deletes all rows in the current pass for that preset line', async () => {
-    const inDelete = vi.fn(async () => ({ error: null }));
-    let fromCalls = 0;
+  it('deletes rows in the first pass when boundary is null', async () => {
+    const eqPreset = vi.fn(async () => ({ error: null }));
+    const eqEpisode = vi.fn(() => ({
+      eq: eqPreset,
+    }));
+    const del = vi.fn(() => ({
+      eq: eqEpisode,
+    }));
     const client = {
       from: vi.fn((table: string) => {
         expect(table).toBe('episode_symptoms');
-        fromCalls += 1;
-        if (fromCalls === 1) {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                eq: vi.fn(async () => ({
-                  data: [
-                    { id: 'a', created_at: '2026-04-20T12:00:00.000Z' },
-                    { id: 'b', created_at: '2026-04-21T12:00:00.000Z' },
-                  ],
-                  error: null,
-                })),
-              })),
-            })),
-          };
-        }
         return {
-          delete: vi.fn(() => ({
-            in: inDelete,
-          })),
+          delete: del,
         };
       }),
     } as unknown as AbstrackSupabaseClient;
@@ -154,10 +141,45 @@ describe('deleteCurrentPassEpisodeSymptomAnswer', () => {
     const result = await deleteCurrentPassEpisodeSymptomAnswer(client, {
       episodeId: 'ep-1',
       presetSymptomId: 'ps-line-1',
-      lastPostMarkerStepCompletedAt: '2026-04-19T00:00:00.000Z',
+      lastPostMarkerStepCompletedAt: null,
     });
 
     expect(result.ok).toBe(true);
-    expect(inDelete).toHaveBeenCalledWith('id', ['a', 'b']);
+    expect(del).toHaveBeenCalledTimes(1);
+    expect(eqEpisode).toHaveBeenCalledWith('episode_id', 'ep-1');
+    expect(eqPreset).toHaveBeenCalledWith('preset_symptom_id', 'ps-line-1');
+  });
+
+  it('adds created_at boundary when deleting current pass rows', async () => {
+    const gtBoundary = vi.fn(async () => ({ error: null }));
+    const eqPreset = vi.fn(() => ({
+      gt: gtBoundary,
+    }));
+    const eqEpisode = vi.fn(() => ({
+      eq: eqPreset,
+    }));
+    const del = vi.fn(() => ({
+      eq: eqEpisode,
+    }));
+    const client = {
+      from: vi.fn((table: string) => {
+        expect(table).toBe('episode_symptoms');
+        return {
+          delete: del,
+        };
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await deleteCurrentPassEpisodeSymptomAnswer(client, {
+      episodeId: 'ep-1',
+      presetSymptomId: 'ps-line-1',
+      lastPostMarkerStepCompletedAt: '2026-04-19T00:00:00.000+00:00',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(gtBoundary).toHaveBeenCalledWith(
+      'created_at',
+      '2026-04-19T00:00:00.000+00:00',
+    );
   });
 });

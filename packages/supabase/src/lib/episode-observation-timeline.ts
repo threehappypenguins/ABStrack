@@ -21,10 +21,23 @@ function compareTimeline(
   a: EpisodeTimelineItem,
   b: EpisodeTimelineItem,
 ): number {
-  const c = a.sortAt.localeCompare(b.sortAt);
-  if (c !== 0) {
-    return c;
+  const aMs = Date.parse(a.sortAt);
+  const bMs = Date.parse(b.sortAt);
+  const aValid = Number.isFinite(aMs);
+  const bValid = Number.isFinite(bMs);
+  if (aValid && bValid) {
+    const c = aMs - bMs;
+    if (c !== 0) {
+      return c;
+    }
+  } else {
+    // Defensive fallback for unexpected timestamp serialization.
+    const c = a.sortAt.localeCompare(b.sortAt);
+    if (c !== 0) {
+      return c;
+    }
   }
+  // Stable tie-break so merged timeline order is deterministic.
   return a.id.localeCompare(b.id);
 }
 
