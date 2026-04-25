@@ -62,7 +62,8 @@ BEGIN
       FROM
         public.episodes e
       WHERE
-        e.id = old_eid;
+        e.id = old_eid
+      FOR SHARE;
       IF old_ep_ended IS NOT NULL THEN
         RAISE EXCEPTION
           'This episode has ended. You cannot add or change entries for it.' USING
@@ -80,7 +81,8 @@ BEGIN
   FROM
     public.episodes e
   WHERE
-    e.id = new_eid;
+    e.id = new_eid
+  FOR SHARE;
   IF new_ep_ended IS NULL THEN
     RETURN NEW;
   END IF;

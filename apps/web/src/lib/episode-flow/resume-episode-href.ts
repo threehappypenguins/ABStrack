@@ -3,7 +3,7 @@ export type BuildResumeEpisodeHrefOptions = {
    * When true, resume enters `/health-markers` with `hub=1`: the episode hub (dashboard / another
    * check-in / end), not the marker stepper. Use when `post_marker_step_completed_at` is set.
    */
-  toHealthMarkers?: boolean;
+  toEpisodeHub?: boolean;
 };
 
 /**
@@ -25,7 +25,7 @@ export function buildResumeEpisodeHref(
 ): string {
   const q = new URLSearchParams();
   q.set('resume', '1');
-  if (options.toHealthMarkers) {
+  if (options.toEpisodeHub) {
     q.set('hub', '1');
     return `/episode/${episodeId}/health-markers?${q.toString()}`;
   }

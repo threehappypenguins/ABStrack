@@ -77,7 +77,7 @@ export function EpisodeStartHomeCta({
         const toHub = row.post_marker_step_completed_at != null;
         setResumeHref(
           buildResumeEpisodeHref(row.id, presetId, {
-            toHealthMarkers: toHub,
+            toEpisodeHub: toHub,
           }),
         );
         setResumeToHub(toHub);

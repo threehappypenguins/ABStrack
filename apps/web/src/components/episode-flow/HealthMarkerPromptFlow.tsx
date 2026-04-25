@@ -12,7 +12,6 @@ import {
   bacReadingSuggestsAbsEpisode,
   createDraftFromMarker,
   filterHealthMarkerRowsForOpenPass,
-  findLatestHealthMarkerForLineInPass,
   formatEpisodeDurationSimple,
   markerLineTitle,
   minForPresetMarkerValueInput,
@@ -117,16 +116,50 @@ function healthMarkerDetailForTimeline(row: HealthMarkerRow): string {
   return n ? (n.length > 80 ? `${n.slice(0, 77)}…` : n) : '—';
 }
 
-function findCurrentPassMarkerForLine(
-  allRows: HealthMarkerRow[],
-  line: PresetHealthMarkerRow,
-  lastPostMarkerStepCompletedAt: string | null,
-): HealthMarkerRow | null {
-  const pass = filterHealthMarkerRowsForOpenPass(
-    allRows,
-    lastPostMarkerStepCompletedAt,
-  );
-  return findLatestHealthMarkerForLineInPass(pass, line);
+function isHealthMarkerRowLater(
+  a: HealthMarkerRow,
+  b: HealthMarkerRow,
+): boolean {
+  const recA = Date.parse(a.recorded_at);
+  const recB = Date.parse(b.recorded_at);
+  const recAValid = Number.isFinite(recA);
+  const recBValid = Number.isFinite(recB);
+  if (recAValid && recBValid && recA !== recB) {
+    return recA > recB;
+  }
+  if (recAValid !== recBValid) {
+    return recAValid;
+  }
+
+  const createdA = Date.parse(a.created_at);
+  const createdB = Date.parse(b.created_at);
+  const createdAValid = Number.isFinite(createdA);
+  const createdBValid = Number.isFinite(createdB);
+  if (createdAValid && createdBValid && createdA !== createdB) {
+    return createdA > createdB;
+  }
+  if (createdAValid !== createdBValid) {
+    return createdAValid;
+  }
+
+  return a.id.localeCompare(b.id) > 0;
+}
+
+function buildLatestMarkerByLineMap(
+  passRows: HealthMarkerRow[],
+): Map<string, HealthMarkerRow> {
+  const latestByLine = new Map<string, HealthMarkerRow>();
+  for (const row of passRows) {
+    const lineId = row.preset_health_marker_id;
+    if (!lineId) {
+      continue;
+    }
+    const prev = latestByLine.get(lineId);
+    if (!prev || isHealthMarkerRowLater(row, prev)) {
+      latestByLine.set(lineId, row);
+    }
+  }
+  return latestByLine;
 }
 
 export type HealthMarkerPromptFlowProps = {
@@ -313,13 +346,14 @@ export function HealthMarkerPromptFlow({
     setLines(presetLines.data);
     const lastPost: string | null =
       episode.data?.post_marker_step_completed_at ?? null;
+    const passRows = filterHealthMarkerRowsForOpenPass(
+      markerRows.data,
+      lastPost,
+    );
+    const latestMarkerByLine = buildLatestMarkerByLineMap(passRows);
     const nextDrafts: Record<string, MarkerDraft> = {};
     for (const line of presetLines.data) {
-      const marker = findCurrentPassMarkerForLine(
-        markerRows.data,
-        line,
-        lastPost,
-      );
+      const marker = latestMarkerByLine.get(line.id) ?? null;
       nextDrafts[line.id] = createDraftFromMarker(marker);
     }
     setDrafts(nextDrafts);
@@ -328,10 +362,9 @@ export function HealthMarkerPromptFlow({
     // enterFoodDiaryPhaseAfterMarkers before the food diary step.
     setBacSuggestAbs(bacReadingSuggestsAbsEpisode(markerRows.data));
 
-    const firstUnanswered = presetLines.data.findIndex((line) => {
-      const row = findCurrentPassMarkerForLine(markerRows.data, line, lastPost);
-      return row === null;
-    });
+    const firstUnanswered = presetLines.data.findIndex(
+      (line) => !latestMarkerByLine.has(line.id),
+    );
     if (resumeFromEntry) {
       if (resumeToEpisodeHub && lastPost != null) {
         setPhase('complete');
@@ -345,7 +378,9 @@ export function HealthMarkerPromptFlow({
     }
     setStatus('ready');
 
-    const tl = await listEpisodeObservationTimeline(supabase, episodeId);
+    const tl = await listEpisodeObservationTimeline(supabase, episodeId, {
+      prefetchedHealthMarkers: markerRows.data,
+    });
     if (isStale()) {
       return;
     }

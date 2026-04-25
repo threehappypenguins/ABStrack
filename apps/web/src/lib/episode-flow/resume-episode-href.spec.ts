@@ -11,7 +11,7 @@ describe('buildResumeEpisodeHref', () => {
 
   it('builds episode-hub health-marker resume link when requested', () => {
     const href = buildResumeEpisodeHref('ep-uuid', null, {
-      toHealthMarkers: true,
+      toEpisodeHub: true,
     });
     const url = new URL(`https://example.test${href}`);
     expect(url.pathname).toBe('/episode/ep-uuid/health-markers');
