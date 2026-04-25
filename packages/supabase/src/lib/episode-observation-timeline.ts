@@ -43,7 +43,15 @@ function healthMarkerTimelineLabel(
   return custom && custom.length > 0 ? custom : kind;
 }
 
-function compareTimeline(
+/**
+ * Compares two timeline items using the canonical merged-history ordering: oldest timestamp first,
+ * then `id` as a stable tie-breaker.
+ *
+ * @param a - Left timeline item.
+ * @param b - Right timeline item.
+ * @returns Negative when `a` sorts before `b`.
+ */
+export function compareEpisodeTimelineItems(
   a: EpisodeTimelineItem,
   b: EpisodeTimelineItem,
 ): number {
@@ -65,6 +73,23 @@ function compareTimeline(
   }
   // Stable tie-break so merged timeline order is deterministic.
   return a.id.localeCompare(b.id);
+}
+
+/**
+ * Inserts or replaces one timeline row in-memory and returns a canonically sorted copy.
+ *
+ * @param prev - Existing timeline rows.
+ * @param next - Row to insert/replace by (`kind`, `id`).
+ * @returns New sorted timeline rows.
+ */
+export function upsertEpisodeTimelineItem(
+  prev: EpisodeTimelineItem[],
+  next: EpisodeTimelineItem,
+): EpisodeTimelineItem[] {
+  const rows = prev.filter((r) => !(r.kind === next.kind && r.id === next.id));
+  rows.push(next);
+  rows.sort(compareEpisodeTimelineItems);
+  return rows;
 }
 
 /**
@@ -169,7 +194,7 @@ export async function listEpisodeObservationTimeline(
       });
     }
 
-    items.sort(compareTimeline);
+    items.sort(compareEpisodeTimelineItems);
     return { data: items, error: null };
   });
 }

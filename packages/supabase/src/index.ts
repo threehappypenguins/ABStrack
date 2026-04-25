@@ -103,8 +103,10 @@ export {
   listStandaloneHealthMarkersForUser,
 } from './lib/episode-health-marker-data.js';
 export {
+  compareEpisodeTimelineItems,
   listEpisodeObservationTimeline,
   type EpisodeTimelineItem,
+  upsertEpisodeTimelineItem,
 } from './lib/episode-observation-timeline.js';
 export {
   createFoodDiaryEntry,

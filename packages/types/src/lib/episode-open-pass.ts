@@ -82,20 +82,34 @@ export function findLatestHealthMarkerForLineInPass(
   passRows: HealthMarkerRow[],
   line: PresetHealthMarkerRow,
 ): HealthMarkerRow | null {
-  const forLine = passRows.filter((r) => r.preset_health_marker_id === line.id);
-  if (forLine.length === 0) {
-    return null;
+  let latest: HealthMarkerRow | null = null;
+  for (const row of passRows) {
+    if (row.preset_health_marker_id !== line.id) {
+      continue;
+    }
+    if (!latest) {
+      latest = row;
+      continue;
+    }
+    const c = compareTimestampDesc(row.recorded_at, latest.recorded_at);
+    if (c < 0) {
+      latest = row;
+      continue;
+    }
+    if (c > 0) {
+      continue;
+    }
+    const d = compareTimestampDesc(row.created_at, latest.created_at);
+    if (d < 0) {
+      latest = row;
+      continue;
+    }
+    if (d > 0) {
+      continue;
+    }
+    if (row.id.localeCompare(latest.id) > 0) {
+      latest = row;
+    }
   }
-  forLine.sort((a, b) => {
-    const c = compareTimestampDesc(a.recorded_at, b.recorded_at);
-    if (c !== 0) {
-      return c;
-    }
-    const d = compareTimestampDesc(a.created_at, b.created_at);
-    if (d !== 0) {
-      return d;
-    }
-    return b.id.localeCompare(a.id);
-  });
-  return forLine[0] ?? null;
+  return latest;
 }

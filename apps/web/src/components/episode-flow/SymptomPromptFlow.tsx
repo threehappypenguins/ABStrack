@@ -126,7 +126,7 @@ export function SymptomPromptFlow({
     answer: SymptomPromptAnswer;
   } | null>(null);
   /**
-   * Per (episode, preset symptom) write queue so upsert/delete requests execute in user action
+   * Per (episode, preset symptom) write queue so insert/delete requests execute in user action
    * order within an episode only — not across `episodeId` changes while mounted.
    */
   const lineWriteQueueRef = useRef<Map<string, Promise<void>>>(new Map());
@@ -135,7 +135,7 @@ export function SymptomPromptFlow({
   const loadGenRef = useRef(0);
   /**
    * Bumped only by {@link cancelPendingServerPersist}. Used with mount + episode id to gate
-   * {@link setPersistError} only — upsert/delete for the captured `enqueueEpisodeId` always runs
+   * {@link setPersistError} only — insert/delete for the captured `enqueueEpisodeId` always runs
    * so Supabase stays aligned when the user navigates or cancels debounced work.
    */
   const serverPersistEpochRef = useRef(0);
@@ -252,7 +252,7 @@ export function SymptomPromptFlow({
             line,
             answer,
           });
-          // Epoch/mount/episode/attempt gate UI only — the upsert above always ran for `targetEpisodeId`.
+          // Epoch/mount/episode/attempt gate UI only — the insert above always ran for `targetEpisodeId`.
           if (
             isMountedRef.current &&
             episodeIdRef.current === enqueueEpisodeId &&
@@ -354,8 +354,8 @@ export function SymptomPromptFlow({
   }, [executeServerPersist]);
 
   /**
-   * Cancels any pending debounced free-text upsert and invalidates older in-flight persists.
-   * Used before skip/delete so a delayed upsert cannot recreate a row after delete.
+   * Cancels any pending staged free-text insert and invalidates older in-flight persists.
+   * Used before skip/delete so a delayed insert cannot recreate a row after delete.
    */
   const cancelPendingServerPersist = useCallback(() => {
     if (serverPersistTimerRef.current !== null) {

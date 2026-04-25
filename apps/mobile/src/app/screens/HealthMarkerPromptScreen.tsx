@@ -44,6 +44,7 @@ import {
   listEpisodeObservationTimeline,
   listPresetHealthMarkersForPreset,
   type EpisodeTimelineItem,
+  upsertEpisodeTimelineItem,
 } from '@abstrack/supabase';
 import { announce, COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
 import { clearSymptomPromptSession } from '../../lib/episodes/symptom-prompt-session-store';
@@ -92,38 +93,6 @@ function formatTimelineInstant(isoLike: string): string {
     return isoLike;
   }
   return new Date(ms).toLocaleString();
-}
-
-function compareTimelineItems(
-  a: EpisodeTimelineItem,
-  b: EpisodeTimelineItem,
-): number {
-  const aMs = Date.parse(a.sortAt);
-  const bMs = Date.parse(b.sortAt);
-  const aValid = Number.isFinite(aMs);
-  const bValid = Number.isFinite(bMs);
-  if (aValid && bValid) {
-    const c = aMs - bMs;
-    if (c !== 0) {
-      return c;
-    }
-  } else {
-    const c = a.sortAt.localeCompare(b.sortAt);
-    if (c !== 0) {
-      return c;
-    }
-  }
-  return a.id.localeCompare(b.id);
-}
-
-function upsertTimelineItem(
-  prev: EpisodeTimelineItem[],
-  next: EpisodeTimelineItem,
-): EpisodeTimelineItem[] {
-  const rows = prev.filter((r) => !(r.kind === next.kind && r.id === next.id));
-  rows.push(next);
-  rows.sort(compareTimelineItems);
-  return rows;
 }
 
 function healthMarkerDetailForTimeline(row: HealthMarkerRow): string {
@@ -547,7 +516,9 @@ export function HealthMarkerPromptScreen() {
       label: markerLineTitle(currentLine),
       detail: healthMarkerDetailForTimeline(result.data),
     };
-    setObservationTimeline((prev) => upsertTimelineItem(prev, timelineItem));
+    setObservationTimeline((prev) =>
+      upsertEpisodeTimelineItem(prev, timelineItem),
+    );
     return true;
   };
 
