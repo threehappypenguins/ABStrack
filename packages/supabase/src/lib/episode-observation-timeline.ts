@@ -1,4 +1,8 @@
-import { PRESET_HEALTH_MARKER_KIND_LABELS, type Uuid } from '@abstrack/types';
+import {
+  PRESET_HEALTH_MARKER_KIND_LABELS,
+  type HealthMarkerRow,
+  type Uuid,
+} from '@abstrack/types';
 import type { PresetDataResult } from './preset-data.js';
 import { wrap } from './preset-data.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
@@ -74,13 +78,19 @@ function compareTimeline(
 export async function listEpisodeObservationTimeline(
   client: AbstrackSupabaseClient,
   episodeId: Uuid,
+  options: {
+    prefetchedHealthMarkers?: HealthMarkerRow[];
+  } = {},
 ): Promise<PresetDataResult<EpisodeTimelineItem[]>> {
   return wrap(async () => {
-    const [sy, hm, fd] = await Promise.all([
+    const [sy, fd] = await Promise.all([
       listEpisodeSymptomsForEpisode(client, episodeId),
-      listEpisodeHealthMarkersForEpisode(client, episodeId),
       listFoodDiaryEntriesForEpisode(client, episodeId, { limit: 200 }),
     ]);
+    const hm =
+      options.prefetchedHealthMarkers != null
+        ? ({ ok: true, data: options.prefetchedHealthMarkers } as const)
+        : await listEpisodeHealthMarkersForEpisode(client, episodeId);
     if (!sy.ok) {
       return { data: null, error: sy.error };
     }

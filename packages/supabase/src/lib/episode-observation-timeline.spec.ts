@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { PRESET_HEALTH_MARKER_KIND_LABELS } from '@abstrack/types';
+import {
+  PRESET_HEALTH_MARKER_KIND_LABELS,
+  type HealthMarkerRow,
+} from '@abstrack/types';
 import { listEpisodeObservationTimeline } from './episode-observation-timeline.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
 
@@ -190,5 +193,50 @@ describe('listEpisodeObservationTimeline', () => {
       'id-b:food',
       'id-c:symptom',
     ]);
+  });
+
+  it('reuses prefetched health markers when provided', async () => {
+    listEpisodeSymptomsForEpisode.mockResolvedValue({
+      ok: true,
+      data: [],
+    });
+    listFoodDiaryEntriesForEpisode.mockResolvedValue({
+      ok: true,
+      data: [],
+    });
+
+    const result = await listEpisodeObservationTimeline(
+      {} as AbstrackSupabaseClient,
+      'ep-1',
+      {
+        prefetchedHealthMarkers: [
+          {
+            id: 'hm-prefetched',
+            user_id: 'user-1',
+            episode_id: 'ep-1',
+            preset_health_marker_id: 'phm-1',
+            marker_kind: 'heart_rate',
+            custom_name: null,
+            custom_name_key: null,
+            custom_unit: null,
+            custom_unit_key: null,
+            value_numeric: 72,
+            systolic_numeric: null,
+            diastolic_numeric: null,
+            notes: null,
+            recorded_at: '2026-04-24T10:00:00.000Z',
+            created_at: '2026-04-24T10:00:00.000Z',
+            updated_at: '2026-04-24T10:00:00.000Z',
+          },
+        ] satisfies HealthMarkerRow[],
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(listEpisodeHealthMarkersForEpisode).not.toHaveBeenCalled();
+    if (!result.ok) {
+      return;
+    }
+    expect(result.data.map((r) => r.id)).toContain('hm-prefetched');
   });
 });

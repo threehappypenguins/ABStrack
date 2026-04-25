@@ -244,17 +244,17 @@ describe.skipIf(!episodeFoundationReady)(
       });
 
       it('writes episode_symptoms and reads plaintext under the same session', async () => {
-        const upsert = await insertEpisodeSymptomAnswer(clientA, {
+        const insert = await insertEpisodeSymptomAnswer(clientA, {
           userId: userAId,
           episodeId,
           line: presetLineRow,
           answer: { type: 'free_text', value: 'mild cramping' },
         });
-        expect(upsert.ok).toBe(true);
-        if (!upsert.ok) {
+        expect(insert.ok).toBe(true);
+        if (!insert.ok) {
           return;
         }
-        expect(upsert.data.response_text).toBe('mild cramping');
+        expect(insert.data.response_text).toBe('mild cramping');
 
         const list = await listEpisodeSymptomsForEpisode(clientA, episodeId);
         expect(list.ok).toBe(true);
@@ -460,13 +460,13 @@ describe.skipIf(!episodeFoundationReady)(
         }
         victimEpisodeId = ep.data.id;
 
-        const up = await insertEpisodeSymptomAnswer(clientA, {
+        const insert = await insertEpisodeSymptomAnswer(clientA, {
           userId: userAId,
           episodeId: victimEpisodeId,
           line: victimPresetLine,
           answer: { type: 'yes_no', value: true },
         });
-        expect(up.ok).toBe(true);
+        expect(insert.ok).toBe(true);
       });
 
       afterAll(async () => {
