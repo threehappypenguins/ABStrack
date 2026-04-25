@@ -86,6 +86,14 @@ function trimToNull(value: string): string | null {
   return t.length > 0 ? t : null;
 }
 
+function formatTimelineInstant(isoLike: string): string {
+  const ms = Date.parse(isoLike);
+  if (!Number.isFinite(ms)) {
+    return isoLike;
+  }
+  return new Date(ms).toLocaleString();
+}
+
 function markerLineTitle(line: PresetHealthMarkerRow): string {
   if (line.marker_kind !== 'custom') {
     return PRESET_HEALTH_MARKER_KIND_LABELS[line.marker_kind];
@@ -369,7 +377,7 @@ export function HealthMarkerPromptScreen() {
       const row = findCurrentPassMarkerForLine(markerRows.data, line, lastPost);
       return row === null;
     });
-    if (resume && hub) {
+    if (resume && hub && lastPost != null) {
       setPhase('complete');
     } else if (resume && firstUnanswered === -1) {
       setPhase('foodDiary');
@@ -824,10 +832,7 @@ export function HealthMarkerPromptScreen() {
                       className={`mt-2 text-sm ${nw.textInk}`}
                       maxFontSizeMultiplier={2}
                     >
-                      {row.sortAt
-                        .replace('T', ' ')
-                        .replace(/\.\d{3}Z$/, ' UTC')
-                        .slice(0, 19)}
+                      {formatTimelineInstant(row.sortAt)}
                       {' — '}
                       {row.label}: {row.detail}
                     </Text>
@@ -1349,8 +1354,8 @@ export function HealthMarkerPromptScreen() {
                         className={`mb-2 text-sm ${nw.textInk}`}
                         maxFontSizeMultiplier={2}
                       >
-                        {row.sortAt.replace('T', ' ').slice(0, 19)} —{' '}
-                        {row.label}: {row.detail}
+                        {formatTimelineInstant(row.sortAt)} — {row.label}:{' '}
+                        {row.detail}
                       </Text>
                     ))}
                   </View>

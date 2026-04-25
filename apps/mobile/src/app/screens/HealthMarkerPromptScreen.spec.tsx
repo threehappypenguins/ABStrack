@@ -248,6 +248,21 @@ describe('HealthMarkerPromptScreen', () => {
     expect(getMobileSupabaseClient).toHaveBeenCalled();
   });
 
+  test('hub resume does not bypass flow when post-marker boundary is missing', async () => {
+    jest.mocked(useRoute).mockReturnValue({
+      key: 'HealthMarkerPrompt',
+      name: 'HealthMarkerPrompt',
+      params: { episodeId, resume: true, hub: true },
+    } as never);
+
+    const screen = render(<HealthMarkerPromptScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Step 1 of 2')).toBeTruthy();
+    });
+    expect(screen.queryByLabelText('Log another check-in')).toBeNull();
+  });
+
   test('validation blocks Next and does not upsert when numeric value missing', async () => {
     const screen = render(<HealthMarkerPromptScreen />);
 

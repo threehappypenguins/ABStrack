@@ -87,7 +87,7 @@ BEGIN
   RAISE EXCEPTION
     'This episode has ended. You cannot add or change entries for it.' USING
       ERRCODE = 'check_violation';
-END
+END;
 $$;
 
 COMMENT ON FUNCTION public.assert_episode_child_not_after_episode_end () IS

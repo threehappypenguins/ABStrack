@@ -47,6 +47,24 @@ function trimToNull(value: string): string | null {
   return t.length > 0 ? t : null;
 }
 
+const timelineInstantFormatter = new Intl.DateTimeFormat(undefined, {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  timeZoneName: 'short',
+});
+
+function formatTimelineInstant(isoLike: string): string {
+  const ms = Date.parse(isoLike);
+  if (!Number.isFinite(ms)) {
+    return isoLike;
+  }
+  return timelineInstantFormatter.format(new Date(ms));
+}
+
 function findCurrentPassMarkerForLine(
   allRows: HealthMarkerRow[],
   line: PresetHealthMarkerRow,
@@ -249,7 +267,7 @@ export function HealthMarkerPromptFlow({
       return row === null;
     });
     if (resumeFromEntry) {
-      if (resumeToEpisodeHub) {
+      if (resumeToEpisodeHub && lastPost != null) {
         setPhase('complete');
       } else if (firstUnanswered === -1) {
         setPhase('foodDiary');
@@ -824,10 +842,7 @@ export function HealthMarkerPromptFlow({
                 {observationTimeline.map((row) => (
                   <li key={`${row.kind}-${row.id}`} className="break-words">
                     <span className="text-app-muted">
-                      {row.sortAt
-                        .replace('T', ' ')
-                        .replace(/\.\d{3}Z$/, ' UTC')
-                        .slice(0, 19)}
+                      {formatTimelineInstant(row.sortAt)}
                       {' — '}
                     </span>
                     {row.label}: {row.detail}
@@ -1125,10 +1140,7 @@ export function HealthMarkerPromptFlow({
               {observationTimeline.map((row) => (
                 <li key={`${row.kind}-${row.id}`} className="break-words">
                   <span className="text-app-muted">
-                    {row.sortAt
-                      .replace('T', ' ')
-                      .replace(/\.\d{3}Z$/, ' UTC')
-                      .slice(0, 19)}
+                    {formatTimelineInstant(row.sortAt)}
                     {' — '}
                   </span>
                   {row.label}: {row.detail}
