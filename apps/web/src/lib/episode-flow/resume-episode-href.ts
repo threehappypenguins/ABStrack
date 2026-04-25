@@ -14,7 +14,7 @@ export type BuildResumeEpisodeHrefOptions = {
  * `/check-in-saved` and do not require resume query flags.
  *
  * @param episodeId - `episodes.id`.
- * @param symptomPresetId - `symptom_presets.id` on the episode row (ignored for health-marker resumes).
+ * @param symptomPresetId - `symptom_presets.id` on the episode row; required for symptom resumes and nullable only when `options.toEpisodeHub` is true.
  * @param options - Optional destination override.
  * @returns Path under `/episode/[id]/symptoms` or `/episode/[id]/check-in-saved`.
  */
