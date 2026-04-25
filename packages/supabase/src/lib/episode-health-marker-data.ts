@@ -68,19 +68,28 @@ function validateHealthMarkerNumericPayload(
  *
  * @param client - Supabase client (RLS applies).
  * @param episodeId - `episodes.id`.
+ * @param options - Optional cap (`limit`) for newest rows after source ordering.
  */
 export async function listEpisodeHealthMarkersForEpisode(
   client: AbstrackSupabaseClient,
   episodeId: Uuid,
+  options: {
+    limit?: number;
+  } = {},
 ): Promise<PresetDataResult<HealthMarkerRow[]>> {
+  const limit = options.limit;
   return wrap(async () => {
-    const r = await client
+    let query = client
       .from('health_markers')
       .select('*')
       .eq('episode_id', episodeId)
       .order('recorded_at', { ascending: false })
       .order('created_at', { ascending: false })
       .order('id', { ascending: false });
+    if (limit != null) {
+      query = query.limit(limit);
+    }
+    const r = await query;
     return {
       data: (r.data ?? []) as HealthMarkerRow[],
       error: r.error,

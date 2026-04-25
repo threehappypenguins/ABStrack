@@ -843,19 +843,19 @@ export function HealthMarkerPromptScreen() {
               {observationTimeline.length > 0 && !endedSummary ? (
                 <View
                   className={`rounded-2xl border border-app-border bg-app-surface p-4 dark:border-app-border-dark dark:bg-app-bg-dark`}
-                  accessibilityLabel="Log so far in this episode"
+                  accessibilityLabel="Recent log entries in this episode"
                 >
                   <Text
                     className={`text-sm font-semibold ${nw.textInk}`}
                     maxFontSizeMultiplier={2}
                   >
-                    Log so far in this episode
+                    Recent log entries in this episode
                   </Text>
                   <Text
                     className={`mt-1 text-xs ${nw.textMuted}`}
                     maxFontSizeMultiplier={2}
                   >
-                    Oldest first. New entries are added as you go.
+                    Showing recent entries only. Oldest first within this slice.
                   </Text>
                   {observationTimeline.map((row) => (
                     <Text
@@ -1364,20 +1364,21 @@ export function HealthMarkerPromptScreen() {
                 </View>
                 {observationTimeline.length > 0 ? (
                   <View
-                    accessibilityLabel="Log so far in this episode, oldest first"
+                    accessibilityLabel="Recent log entries in this episode, oldest first within this slice"
                     className="mt-6 rounded-xl border border-app-border bg-app-surface/60 p-4"
                   >
                     <Text
                       className={`text-sm font-semibold ${nw.textInk}`}
                       maxFontSizeMultiplier={2}
                     >
-                      Log so far in this episode
+                      Recent log entries in this episode
                     </Text>
                     <Text
                       className={`mb-2 text-xs ${nw.textMuted}`}
                       maxFontSizeMultiplier={2}
                     >
-                      Oldest first
+                      Showing recent entries only. Oldest first within this
+                      slice.
                     </Text>
                     {observationTimeline.map((row) => (
                       <Text

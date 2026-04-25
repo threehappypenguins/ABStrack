@@ -33,7 +33,7 @@ CREATE INDEX IF NOT EXISTS health_markers_episode_preset_line_idx
     AND preset_health_marker_id IS NOT NULL;
 
 COMMENT ON INDEX public.health_markers_episode_preset_line_idx IS
-  'Non-unique lookup for episode + preset line; multiple rows per pair are allowed (ordered by recorded_at, id).';
+  'Non-unique lookup for episode + preset line; multiple rows per pair are allowed (ordered by recorded_at, created_at, id).';
 
 -- food_diary_entries: no unique on episode; no change.
 

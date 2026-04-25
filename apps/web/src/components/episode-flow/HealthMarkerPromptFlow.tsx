@@ -843,13 +843,13 @@ export function HealthMarkerPromptFlow({
           {observationTimeline.length > 0 ? (
             <section
               className="rounded-2xl border border-app-border/90 bg-app-surface/60 p-4"
-              aria-label="Log so far in this episode"
+              aria-label="Recent log entries in this episode"
             >
               <h2 className="text-sm font-semibold text-app-ink">
-                Log so far in this episode
+                Recent log entries in this episode
               </h2>
               <p className="mt-1 text-xs text-app-muted" id="ep-hub-tl-hint">
-                Oldest first. New entries are added as you go.
+                Showing recent entries only. Oldest first within this slice.
               </p>
               <ol
                 className="mt-3 list-decimal space-y-2 pl-5 text-sm text-app-ink"
@@ -1141,13 +1141,13 @@ export function HealthMarkerPromptFlow({
         {observationTimeline.length > 0 ? (
           <section
             className="rounded-2xl border border-app-border/90 bg-app-surface/60 p-4"
-            aria-label="Log so far in this episode"
+            aria-label="Recent log entries in this episode"
           >
             <h2 className="text-sm font-semibold text-app-ink">
-              Log so far in this episode
+              Recent log entries in this episode
             </h2>
             <p className="mt-1 text-xs text-app-muted" id="ep-tl-hint">
-              Oldest first. New entries are added as you go.
+              Showing recent entries only. Oldest first within this slice.
             </p>
             <ol
               className="mt-3 list-decimal space-y-2 pl-5 text-sm text-app-ink"

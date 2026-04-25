@@ -76,19 +76,28 @@ export async function insertEpisodeSymptomAnswer(
  *
  * @param client - Supabase client (RLS applies).
  * @param episodeId - `episodes.id`.
+ * @param options - Optional cap (`limit`) for newest rows after source ordering.
  */
 export async function listEpisodeSymptomsForEpisode(
   client: AbstrackSupabaseClient,
   episodeId: Uuid,
+  options: {
+    limit?: number;
+  } = {},
 ): Promise<PresetDataResult<EpisodeSymptomRow[]>> {
+  const limit = options.limit;
   return wrap(async () => {
-    const r = await client
+    let query = client
       .from('episode_symptoms')
       .select('*')
       .eq('episode_id', episodeId)
       .order('sort_order', { ascending: true })
       .order('created_at', { ascending: false })
       .order('id', { ascending: false });
+    if (limit != null) {
+      query = query.limit(limit);
+    }
+    const r = await query;
     return {
       data: (r.data ?? []) as EpisodeSymptomRow[],
       error: r.error,

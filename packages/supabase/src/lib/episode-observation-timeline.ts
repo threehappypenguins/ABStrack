@@ -10,6 +10,8 @@ import { listEpisodeHealthMarkersForEpisode } from './episode-health-marker-data
 import { listEpisodeSymptomsForEpisode } from './episode-symptom-data.js';
 import { listFoodDiaryEntriesForEpisode } from './food-diary-data.js';
 
+const EPISODE_TIMELINE_SOURCE_LIMIT = 200;
+
 /**
  * One row in a merged, time-ordered episode view (symptoms, health markers, food).
  */
@@ -93,9 +95,9 @@ export function upsertEpisodeTimelineItem(
 }
 
 /**
- * Loads episode-tied symptoms, health markers, and up to 200 episode-tied food entries (newest
- * food rows from the source query) and returns them in one merged list ordered by product
- * timestamps (oldest first, `id` as tie-breaker) — a minimal “history” surface.
+ * Loads a bounded recent slice of episode-tied symptoms, health markers, and food entries
+ * (currently up to 200 from each source query) and returns them in one merged list ordered by
+ * product timestamps (oldest first, `id` as tie-breaker) — a minimal “history” surface.
  *
  * @param client - Supabase client (RLS applies).
  * @param episodeId - `episodes.id`.
@@ -109,13 +111,25 @@ export async function listEpisodeObservationTimeline(
 ): Promise<PresetDataResult<EpisodeTimelineItem[]>> {
   return wrap(async () => {
     const [sy, fd] = await Promise.all([
-      listEpisodeSymptomsForEpisode(client, episodeId),
-      listFoodDiaryEntriesForEpisode(client, episodeId, { limit: 200 }),
+      listEpisodeSymptomsForEpisode(client, episodeId, {
+        limit: EPISODE_TIMELINE_SOURCE_LIMIT,
+      }),
+      listFoodDiaryEntriesForEpisode(client, episodeId, {
+        limit: EPISODE_TIMELINE_SOURCE_LIMIT,
+      }),
     ]);
     const hm =
       options.prefetchedHealthMarkers != null
-        ? ({ ok: true, data: options.prefetchedHealthMarkers } as const)
-        : await listEpisodeHealthMarkersForEpisode(client, episodeId);
+        ? ({
+            ok: true,
+            data: options.prefetchedHealthMarkers.slice(
+              0,
+              EPISODE_TIMELINE_SOURCE_LIMIT,
+            ),
+          } as const)
+        : await listEpisodeHealthMarkersForEpisode(client, episodeId, {
+            limit: EPISODE_TIMELINE_SOURCE_LIMIT,
+          });
     if (!sy.ok) {
       return { data: null, error: sy.error };
     }
