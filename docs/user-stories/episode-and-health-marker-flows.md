@@ -1,6 +1,6 @@
 # User story: Episode flows + standalone health and food logging
 
-**Status:** Draft (product intent; schedule on [ROADMAP.md](../ROADMAP.md) — **Week 5:** migrations (`health_marker_preset_id` + episode templates table), template settings UI, **I'm having an episode** + template picker; **Week 6:** full symptom + marker prompt flow, standalone health markers, standalone food diary, and consolidated management requirements)  
+**Status:** Draft (product intent; schedule on [ROADMAP.md](../ROADMAP.md) — **Week 5:** migrations (`health_marker_preset_id` + episode templates table), template settings UI, **I'm having an episode** + template picker; **Week 6 (shipped):** full symptom + marker + food-in-flow prompt, standalone health markers, standalone food diary, consolidated management; **Week 6+ (in progress):** [multiple guided passes](#multiple-guided-passes-while-the-episode-is-open) and the [data model](#data-model-for-repeat-observations) — see **Week 6** unchecked items on the roadmap.  
 **Related PRD:** [PRD.md](../PRD.md) — §3 Health Marker Presets, §4 Episode Logging, §5 General Wellness Logging
 
 This document expands the **user-facing flows** for:
@@ -25,7 +25,19 @@ The PRD states the **order** of prompts (symptoms first, then health markers). T
 
 Episode templates exist so that **configuration complexity** (symptom list + health marker list + how they pair) lives in **settings**, not at the moment someone taps **“I'm having an episode.”**
 
-At episode start, the experience is: **pick what kind of episode this is** using **one** large, high-contrast choice per row (e.g. **“ABS Episode”**, **“CVS Episode”**) — each label is an **episode template** that already points at the right symptom preset **and** health marker preset. After that single decision, the app runs **one linear prompt flow** (symptoms in order, then markers in order). There is **no** separate “pick symptom preset” and “pick health marker preset” step during an episode; pairing is **only** done ahead of time when editing templates in settings.
+At episode start, the experience is: **pick what kind of episode this is** using **one** large, high-contrast choice per row (e.g. **“ABS Episode”**, **“CVS Episode”**) — each label is an **episode template** that already points at the right symptom preset **and** health marker preset. After that single decision, the app runs **one linear prompt flow** (symptoms in order, then markers in order, then food and **Episode details** as the product defines). There is **no** separate “pick symptom preset” and “pick health marker preset” step during an episode; pairing is **only** done ahead of time when editing templates in settings.
+
+### Multiple guided passes while the episode is open
+
+While `episodes.ended_at` is still **null**, Eric can run **more than one full pass** of the **same** guided sequence, and the **only** primary path to do that is **Resume / Continue this episode** (not a separate “log an update” route or new home-level shortcut for the same work). One **pass** means: run through symptom prompts → health marker prompts → in-flow food step (if included) → **Episode details** (episode type, notes, etc. per [PRD](../PRD.md)), then **Save and continue**. That action **completes the current pass** and returns Eric to the **start of the next pass** (symptom prompts again, then markers, then food, and so on), so **symptom severities, marker values, and episode-tied food** can all change as the episode progresses. That supports practitioners who need to see **how things moved over time** during one flare.
+
+There is **no** required `round` or `sequence` column in the data model for ordering: each saved value is a **separate row** in the same tables as today, with **uniqueness relaxed** so more than one row can exist for the same `(episode, preset line)` where needed; the UI orders history by **timestamps** (and a stable tie-breaker such as `id`).
+
+### Data model for repeat observations
+
+- **One row per observation** in the existing tables (`episode_symptoms`, `health_markers` for episode-bound lines, and `food_diary_entries` when `episode_id` is set), not destructive overwrites of a single “current” row per line.
+- **Order** of what happened when: by `recorded_at` / `logged_at` (and `id` if two events share a timestamp).
+- **After the episode is ended** (`ended_at` set), **new** episode-tied structured data (symptoms, markers, food with that `episode_id`) follows the product rule used in the app (typically: **no** new in-episode appends; **standalone** food and health markers on home remain available with `episode_id` null for “not on this episode” context).
 
 ---
 
@@ -57,14 +69,14 @@ Naming a symptom preset and a health marker preset the same string does **not** 
 
 1. Eric taps **“I'm having an episode”** (large target, high contrast).
 2. Eric chooses **one episode template** — e.g. **“ABS Episode”** or **“CVS Episode”** — **one choice**, not a wizard of separate preset pickers.
-3. The app runs **all symptom prompts** for that template in order, then **all health marker prompts** in order, then extras / episode type / notes per [PRD](../PRD.md).
-4. If the episode is still active, Eric can tap into the active episode and log **additional time-stamped updates** as symptoms wax/wane and markers change (for example, repeat BAC or glucose readings) without restarting the initial full prompt sequence.
+3. The app runs **all symptom prompts** for that template in order, then **all health marker prompts** in order, then the in-flow **food** step and **Episode details** (type, notes, and other fields per [PRD](../PRD.md)), then **Save and continue** to finish that **pass**.
+4. If the episode is still **open** (`ended_at` not set) and Eric needs to log again — because symptoms, markers, or relevant food have **changed** — he uses **Resume / Continue this episode** and runs **another full pass** of the same order (symptoms → markers → food → Episode details → **Save and continue**). Each pass **adds** new time-stamped rows; it does not replace the previous pass with a single “current” value per line (see [Data model for repeat observations](#data-model-for-repeat-observations) above).
 
 ### Outcome
 
 - Eric is not asked to assemble presets while impaired; he only picks **which kind of episode** this is, using labels he set up earlier.
 - The **episode record** still persists **which** symptom preset and **which** health marker preset were used (via the template resolution — see roadmap: `health_marker_preset_id` on `episodes`).
-- Eric can continue appending symptom and marker observations during the same active episode until he explicitly ends it.
+- While the episode is open, Eric can run **multiple passes** through the **same** guided path from **Continue** until he **ends** the episode; the practitioner can see a **time-ordered** history of preset symptoms, markers, and **episode-tied** food.
 
 ---
 
@@ -93,12 +105,12 @@ Naming a symptom preset and a health marker preset the same string does **not** 
 
 1. Eric opens a dedicated **Food diary** entry path from home or secondary navigation.
 2. Eric records free-text food notes, meal tag, and timestamp without starting an episode.
-3. If Eric is already in an episode flow, food diary can still be logged at the designated episode step; this standalone path remains available outside episode context.
+3. **During** an open episode, **episode-tied** food (meals that belong to that flare for care-team review) is logged in the **guided** flow as part of a **pass** (see [Multiple guided passes](#multiple-guided-passes-while-the-episode-is-open)). The standalone path is for food **not** tied to a specific episode record (`episode_id` null).
 
 ### Outcome
 
-- Food diary logging works both **during episode flow** and **as a standalone path**.
-- Standalone food entries remain separate from symptom-only assumptions and do not imply an episode.
+- Food diary supports **two** clear lanes: **standalone** (home / manage; not bound to an episode) and **in the guided episode flow** (rows with `episode_id` set, time-ordered with other episode data for practitioners).
+- Standalone food entries do not imply an episode; they are the right choice for “around the episode” or general logging without starting a flare record.
 
 ---
 
@@ -123,11 +135,11 @@ This story defines the scope boundary only; it does not prescribe exact layout, 
 | **Explicit pairing**                   | The app must not guess; the **episode template** resolves which marker list goes with which symptom list.                                             |
 | **Persist both IDs on the episode**    | For auditability, the episode row should store both `symptom_preset_id` and `health_marker_preset_id` once the schema supports it.                    |
 | **Standalone health markers**          | Separate entry point; health marker preset only (`health_markers.episode_id = null`).                                                                 |
-| **Standalone food diary**              | Separate non-episode entry path is allowed in addition to the in-episode food step.                                                                   |
-| **Active-episode updates**             | While `episodes.ended_at IS NULL`, users can append additional symptom/marker observations (including repeat severity/marker values) with timestamps. |
+| **Standalone food diary**              | Separate non-episode entry path is allowed in addition to in-flow **episode-tied** food during a pass.                                                |
+| **Multiple passes (open episode)**     | **Continue** only: after **Save and continue** on **Episode details**, another full pass of symptoms → markers → food; one row per observation, timestamp-ordered. |
 
 ---
 
 ## Implementation note
 
-Database migrations, RLS, and typed client updates for `episodes.health_marker_preset_id` and for the **episode preset templates** (bundle) table are **not** specified in this user story file. Concrete tasks live as checkboxes under **[ROADMAP.md](../ROADMAP.md)** (episode template schema + picker in **Week 5**; full prompts, standalone health markers, standalone food diary, and unified management requirements in **Week 6**).
+Database migrations, RLS, and typed client updates for `episodes.health_marker_preset_id` and for the **episode preset templates** (bundle) table are **not** specified in this user story file. Concrete tasks live as checkboxes under **[ROADMAP.md](../ROADMAP.md)** (episode template schema + picker in **Week 5**; full prompts, standalone health markers, standalone food diary, and unified management in **Week 6**; items for [multiple passes](#multiple-guided-passes-while-the-episode-is-open) and [repeat observations](#data-model-for-repeat-observations)).
