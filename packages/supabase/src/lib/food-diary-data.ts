@@ -284,6 +284,8 @@ export async function listFoodDiaryEntriesForEpisode(
 
 /**
  * Creates one food diary entry. `episode_id` can be `null` for standalone home entries.
+ * In episode flows, this is the preferred append-only observation write (new entries insert rows
+ * rather than overwriting prior logs).
  *
  * @param client - Supabase client (RLS applies).
  * @param row - Insert payload.

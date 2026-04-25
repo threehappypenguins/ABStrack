@@ -167,6 +167,8 @@ export async function deleteHealthMarkerById(
 /**
  * Inserts one `health_markers` row for the current episode + preset line (a new observation per
  * pass; prior rows are kept and ordered by `recorded_at` / `id`).
+ * Intentional: episode observations are append-only for auditability/history, so this helper is
+ * insert-only (no upsert path).
  *
  * @param client - Supabase client (RLS applies).
  * @param args.userId - Must match the episode owner (`episodes.user_id`) under RLS.

@@ -1,5 +1,7 @@
 -- Multiple time-ordered observations per (episode, preset line) for open-episode repeat passes.
 -- Drop uniqueness that forced a single row per line; add non-unique indexes for lookups.
+-- Intentional product rule: episode observations are append-only (new logs INSERT new rows; no
+-- in-place overwrite of prior episode observations).
 -- Triggers: block INSERT/UPDATE of episode-tied rows when episodes.ended_at is set.
 --
 -- Note: `database.types.ts` is generated after cloud apply; no hand-edits in repo.
@@ -43,23 +45,43 @@ CREATE OR REPLACE FUNCTION public.assert_episode_child_not_after_episode_end ()
   LANGUAGE plpgsql
   AS $$
 DECLARE
-  ep_ended timestamptz;
-  eid uuid;
+  old_ep_ended timestamptz;
+  new_ep_ended timestamptz;
+  old_eid uuid;
+  new_eid uuid;
 BEGIN
   IF TG_OP = 'DELETE' THEN
     RETURN OLD;
   END IF;
-  eid := NEW.episode_id;
-  IF eid IS NULL THEN
+
+  IF TG_OP = 'UPDATE' THEN
+    old_eid := OLD.episode_id;
+    IF old_eid IS NOT NULL THEN
+      SELECT
+        e.ended_at INTO old_ep_ended
+      FROM
+        public.episodes e
+      WHERE
+        e.id = old_eid;
+      IF old_ep_ended IS NOT NULL THEN
+        RAISE EXCEPTION
+          'This episode has ended. You cannot add or change entries for it.' USING
+            ERRCODE = 'check_violation';
+      END IF;
+    END IF;
+  END IF;
+
+  new_eid := NEW.episode_id;
+  IF new_eid IS NULL THEN
     RETURN NEW;
   END IF;
   SELECT
-    e.ended_at INTO ep_ended
+    e.ended_at INTO new_ep_ended
   FROM
     public.episodes e
   WHERE
-    e.id = eid;
-  IF ep_ended IS NULL THEN
+    e.id = new_eid;
+  IF new_ep_ended IS NULL THEN
     RETURN NEW;
   END IF;
   RAISE EXCEPTION

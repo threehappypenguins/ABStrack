@@ -13,6 +13,8 @@ import type { AbstrackSupabaseClient } from './supabase-client-type.js';
 /**
  * Inserts a new `episode_symptoms` row for one preset line (one observation per pass; time-ordered
  * history is `created_at` with `id` as tie-breaker). Does not update prior pass rows.
+ * Intentional: episode observations are append-only for auditability/history, so this helper is
+ * insert-only (no upsert path).
  *
  * @param client - Supabase client (RLS applies).
  * @param args.userId - Must match the episode owner (`episodes.user_id`) for patient-owned episodes.
