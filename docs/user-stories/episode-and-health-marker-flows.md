@@ -128,14 +128,14 @@ This story defines the scope boundary only; it does not prescribe exact layout, 
 
 ## Design principles (summary)
 
-| Principle                              | Detail                                                                                                                                                |
-| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Minimal choices when impaired**      | Episode start favors **one template choice** (or a very small list of named templates), not multiple preset pickers.                                  |
-| **Independent preset lists in the DB** | Symptom presets and health marker presets remain separate editable lists; **templates** are how we pair them for logging without cognitive overload.  |
-| **Explicit pairing**                   | The app must not guess; the **episode template** resolves which marker list goes with which symptom list.                                             |
-| **Persist both IDs on the episode**    | For auditability, the episode row should store both `symptom_preset_id` and `health_marker_preset_id` once the schema supports it.                    |
-| **Standalone health markers**          | Separate entry point; health marker preset only (`health_markers.episode_id = null`).                                                                 |
-| **Standalone food diary**              | Separate non-episode entry path is allowed in addition to in-flow **episode-tied** food during a pass.                                                |
+| Principle                              | Detail                                                                                                                                                             |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Minimal choices when impaired**      | Episode start favors **one template choice** (or a very small list of named templates), not multiple preset pickers.                                               |
+| **Independent preset lists in the DB** | Symptom presets and health marker presets remain separate editable lists; **templates** are how we pair them for logging without cognitive overload.               |
+| **Explicit pairing**                   | The app must not guess; the **episode template** resolves which marker list goes with which symptom list.                                                          |
+| **Persist both IDs on the episode**    | For auditability, the episode row should store both `symptom_preset_id` and `health_marker_preset_id` once the schema supports it.                                 |
+| **Standalone health markers**          | Separate entry point; health marker preset only (`health_markers.episode_id = null`).                                                                              |
+| **Standalone food diary**              | Separate non-episode entry path is allowed in addition to in-flow **episode-tied** food during a pass.                                                             |
 | **Multiple passes (open episode)**     | **Continue** only: after **Save and continue** on **Episode details**, another full pass of symptoms → markers → food; one row per observation, timestamp-ordered. |
 
 ---
