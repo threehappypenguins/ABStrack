@@ -51,6 +51,7 @@ import { clearSymptomPromptSession } from '../../lib/episodes/symptom-prompt-ses
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { AsyncScreenContainer } from '../components/AsyncScreenContainer';
 import { ScreenShell } from '../components/ScreenShell';
+import { EpisodeFlowSecondaryActionsSection } from '../components/episode-flow/EpisodeFlowSecondaryActionsSection';
 import type { MainStackParamList } from '../navigation/types';
 import { useAppTheme } from '../theme/AppThemeContext';
 import { nw } from '../theme/app-nativewind-classes';
@@ -990,6 +991,7 @@ export function HealthMarkerPromptScreen() {
             <ScrollView
               className="flex-1"
               keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator
               contentContainerStyle={{ paddingBottom: 24 }}
             >
               <Text
@@ -1166,21 +1168,23 @@ export function HealthMarkerPromptScreen() {
                   {savingPost ? 'Saving…' : 'Save and continue'}
                 </Text>
               </Pressable>
+              <EpisodeFlowSecondaryActionsSection>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel episode"
+                  onPress={onCancelEpisodePress}
+                  style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                  className="w-full items-center justify-center rounded-lg px-3 py-3 active:opacity-80"
+                >
+                  <Text
+                    className="text-sm font-medium text-red-700 dark:text-red-300"
+                    maxFontSizeMultiplier={2}
+                  >
+                    Cancel episode
+                  </Text>
+                </Pressable>
+              </EpisodeFlowSecondaryActionsSection>
             </ScrollView>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Cancel episode"
-              onPress={onCancelEpisodePress}
-              style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
-              className="w-full items-center justify-center rounded-lg px-3 py-3 active:opacity-80"
-            >
-              <Text
-                className="text-sm font-medium text-red-700 dark:text-red-300"
-                maxFontSizeMultiplier={2}
-              >
-                Cancel episode
-              </Text>
-            </Pressable>
           </>
         ) : (
           <>
@@ -1196,6 +1200,7 @@ export function HealthMarkerPromptScreen() {
               <ScrollView
                 className="flex-1"
                 keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator
                 contentContainerStyle={{ paddingBottom: 24 }}
               >
                 <Text
@@ -1365,7 +1370,7 @@ export function HealthMarkerPromptScreen() {
                 {observationTimeline.length > 0 ? (
                   <View
                     accessibilityLabel="Recent log entries in this episode, oldest first within this slice"
-                    className="mt-6 rounded-xl border border-app-border bg-app-surface/60 p-4"
+                    className="mt-6 rounded-xl border border-app-border bg-app-surface p-4 dark:border-app-border-dark dark:bg-app-bg-dark"
                   >
                     <Text
                       className={`text-sm font-semibold ${nw.textInk}`}
@@ -1392,22 +1397,24 @@ export function HealthMarkerPromptScreen() {
                     ))}
                   </View>
                 ) : null}
+                <EpisodeFlowSecondaryActionsSection>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Cancel episode"
+                    onPress={onCancelEpisodePress}
+                    style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                    className="w-full items-center justify-center rounded-lg px-3 py-3 active:opacity-80"
+                  >
+                    <Text
+                      className="text-sm font-medium text-red-700 dark:text-red-300"
+                      maxFontSizeMultiplier={2}
+                    >
+                      Cancel episode
+                    </Text>
+                  </Pressable>
+                </EpisodeFlowSecondaryActionsSection>
               </ScrollView>
             </AsyncScreenContainer>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Cancel episode"
-              onPress={onCancelEpisodePress}
-              style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
-              className="w-full items-center justify-center rounded-lg px-3 py-3 active:opacity-80"
-            >
-              <Text
-                className="text-sm font-medium text-red-700 dark:text-red-300"
-                maxFontSizeMultiplier={2}
-              >
-                Cancel episode
-              </Text>
-            </Pressable>
           </>
         )}
       </View>

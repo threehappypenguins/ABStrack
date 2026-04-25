@@ -131,7 +131,7 @@ export function useEpisodeFoodDiary({
   const [deletingFoodEntryId, setDeletingFoodEntryId] = useState<string | null>(
     null,
   );
-  const [isAddFoodEntryOpen, setIsAddFoodEntryOpen] = useState(true);
+  const [isAddFoodEntryOpen, setIsAddFoodEntryOpen] = useState(false);
   const [isAddFoodEntryDirty, setIsAddFoodEntryDirty] = useState(false);
   const [discardAddFoodDraftDialogOpen, setDiscardAddFoodDraftDialogOpen] =
     useState(false);
@@ -168,7 +168,7 @@ export function useEpisodeFoodDiary({
     setDeletingFoodEntryId(null);
     setDiscardAddFoodDraftDialogOpen(false);
     setFoodEntryDeleteConfirmEntryId(null);
-    setIsAddFoodEntryOpen(true);
+    setIsAddFoodEntryOpen(false);
     setIsAddFoodEntryDirty(false);
   }, []);
 
@@ -266,6 +266,11 @@ export function useEpisodeFoodDiary({
     }
 
     const editingId = editingFoodEntryId;
+    const useCurrentTimestampForDefaultAdd =
+      editingId == null && foodLoggedAtLocal === addFoodInitialLoggedAtLocal;
+    const createLoggedAtIso = useCurrentTimestampForDefaultAdd
+      ? new Date().toISOString()
+      : loggedAtIso;
     const result =
       editingId == null
         ? await createFoodDiaryEntry(supabase, {
@@ -273,7 +278,7 @@ export function useEpisodeFoodDiary({
             episode_id: episodeId,
             meal_tag: foodMealTag,
             food_note: foodNote,
-            logged_at: loggedAtIso,
+            logged_at: createLoggedAtIso,
           })
         : await updateFoodDiaryEntry(supabase, editingId, {
             meal_tag: foodMealTag,
@@ -306,6 +311,7 @@ export function useEpisodeFoodDiary({
     resetFoodForm,
     supabase,
     userId,
+    addFoodInitialLoggedAtLocal,
   ]);
 
   const requestDeleteFoodEntry = useCallback(

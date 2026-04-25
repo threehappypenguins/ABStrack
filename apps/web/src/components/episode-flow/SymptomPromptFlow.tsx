@@ -10,6 +10,7 @@ import {
   useState,
 } from 'react';
 import type {
+  EpisodeSymptomRow,
   PresetSymptomRow,
   SymptomPromptAnswer,
   SymptomPromptAnswers,
@@ -45,6 +46,7 @@ import {
 } from '@/lib/episode-flow/symptom-prompt-session-store';
 import { ConfirmDialog } from '../symptom-presets/ConfirmDialog';
 import { SymptomPromptResponseField } from './SymptomPromptResponseField';
+import { EpisodeLocaleInstant } from '../episodes/EpisodeLocaleInstant';
 
 export type SymptomPromptFlowProps = {
   /** `episodes.id` from the route. */
@@ -77,6 +79,48 @@ function lineWriteQueueKey(episodeId: string, presetSymptomId: string): string {
   return `${episodeId}:${presetSymptomId}`;
 }
 
+function compareSymptomRowsForHistory(
+  a: EpisodeSymptomRow,
+  b: EpisodeSymptomRow,
+): number {
+  const aMs = Date.parse(a.created_at);
+  const bMs = Date.parse(b.created_at);
+  const aValid = Number.isFinite(aMs);
+  const bValid = Number.isFinite(bMs);
+  if (aValid && bValid) {
+    const byTime = aMs - bMs;
+    if (byTime !== 0) {
+      return byTime;
+    }
+  } else {
+    const byText = a.created_at.localeCompare(b.created_at);
+    if (byText !== 0) {
+      return byText;
+    }
+  }
+  return a.id.localeCompare(b.id);
+}
+
+function symptomHistoryDetail(row: EpisodeSymptomRow): string {
+  if (row.response_type === 'yes_no' && row.response_boolean != null) {
+    return row.response_boolean ? 'Yes' : 'No';
+  }
+  if (row.response_type === 'severity_scale' && row.response_severity != null) {
+    return `Severity ${row.response_severity}`;
+  }
+  if (row.response_type === 'free_text') {
+    const text = row.response_text?.trim() ?? '';
+    return text.length > 0 ? text : '—';
+  }
+  if (row.response_type === 'photo') {
+    return 'Photo';
+  }
+  if (row.response_type === 'video') {
+    return 'Video';
+  }
+  return '—';
+}
+
 /**
  * No form in this flow uses this id; the shared leave guard requires a truthy `exemptFormId` to
  * register submit capture so non-exempt forms (all of them, here) are intercepted.
@@ -105,6 +149,7 @@ export function SymptomPromptFlow({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [persistError, setPersistError] = useState<string | null>(null);
   const [lines, setLines] = useState<PresetSymptomRow[]>([]);
+  const [symptomHistory, setSymptomHistory] = useState<EpisodeSymptomRow[]>([]);
 
   const [activeIndex, setActiveIndex] = useState(0);
   const [answers, setAnswers] = useState(
@@ -395,6 +440,7 @@ export function SymptomPromptFlow({
     setStatus('loading');
     setErrorMessage(null);
     setLines([]);
+    setSymptomHistory([]);
     setHydrated(true);
   }, [episodeId, symptomPresetId, flushPendingServerPersist]);
 
@@ -530,13 +576,26 @@ export function SymptomPromptFlow({
       return;
     }
     setLines(result.data);
-    const fromServer = await listEpisodeSymptomsForEpisode(supabase, episodeId);
+    const fromServer = await listEpisodeSymptomsForEpisode(
+      supabase,
+      episodeId,
+      {
+        orderBy: 'recent',
+      },
+    );
     if (stale()) {
       return;
     }
     const serverAnswers = fromServer.ok
       ? episodeSymptomRowsToAnswersMapForOpenPass(fromServer.data, passBoundary)
       : {};
+    if (fromServer.ok) {
+      setSymptomHistory(
+        fromServer.data.slice().sort(compareSymptomRowsForHistory),
+      );
+    } else {
+      setSymptomHistory([]);
+    }
     const session = getSymptomPromptSession(episodeId);
     // Session overlays server so local drafts survive hydrate (debounced/offline/failed sync).
     const mergedAnswers = { ...serverAnswers, ...session.answers };
@@ -935,6 +994,37 @@ export function SymptomPromptFlow({
               disabled={status !== 'ready'}
             />
           </div>
+        ) : null}
+
+        {symptomHistory.length > 0 ? (
+          <section
+            className="rounded-2xl border border-app-border/90 bg-app-surface/60 p-4"
+            aria-label="Symptom history in this episode"
+          >
+            <h2 className="text-sm font-semibold text-app-ink">
+              Symptom history in this episode
+            </h2>
+            <p
+              className="mt-1 text-xs text-app-muted"
+              id="ep-symptom-history-hint"
+            >
+              Oldest first. Each entry is saved as its own row.
+            </p>
+            <ol
+              className="mt-3 list-decimal space-y-2 pl-5 text-sm text-app-ink"
+              aria-describedby="ep-symptom-history-hint"
+            >
+              {symptomHistory.map((row) => (
+                <li key={row.id} className="break-words">
+                  <span className="text-app-muted">
+                    <EpisodeLocaleInstant iso={row.created_at} />
+                    {' — '}
+                  </span>
+                  {row.symptom_name}: {symptomHistoryDetail(row)}
+                </li>
+              ))}
+            </ol>
+          </section>
         ) : null}
 
         <div className="flex flex-col gap-3 sm:flex-row">

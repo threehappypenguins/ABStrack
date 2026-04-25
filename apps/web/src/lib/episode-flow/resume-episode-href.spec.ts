@@ -9,14 +9,12 @@ describe('buildResumeEpisodeHref', () => {
     expect(url.searchParams.get('resume')).toBe('1');
   });
 
-  it('builds episode-hub health-marker resume link when requested', () => {
+  it('builds check-in-saved link when episode hub is requested', () => {
     const href = buildResumeEpisodeHref('ep-uuid', null, {
       toEpisodeHub: true,
     });
     const url = new URL(`https://example.test${href}`);
-    expect(url.pathname).toBe('/episode/ep-uuid/health-markers');
-    expect(url.searchParams.get('resume')).toBe('1');
-    expect(url.searchParams.get('hub')).toBe('1');
+    expect(url.pathname).toBe('/episode/ep-uuid/check-in-saved');
   });
 
   it('throws when symptom resume has no symptomPresetId', () => {
