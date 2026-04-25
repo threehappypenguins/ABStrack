@@ -76,24 +76,34 @@ export async function insertEpisodeSymptomAnswer(
  *
  * @param client - Supabase client (RLS applies).
  * @param episodeId - `episodes.id`.
- * @param options - Optional cap (`limit`) for newest rows after source ordering.
+ * @param options - Optional row ordering (`orderBy`: `preset` default, or `recent` for
+ *   timeline-style newest-first reads) and optional cap (`limit`) applied after that ordering.
  */
 export async function listEpisodeSymptomsForEpisode(
   client: AbstrackSupabaseClient,
   episodeId: Uuid,
   options: {
     limit?: number;
+    orderBy?: 'preset' | 'recent';
   } = {},
 ): Promise<PresetDataResult<EpisodeSymptomRow[]>> {
   const limit = options.limit;
+  const orderBy = options.orderBy ?? 'preset';
   return wrap(async () => {
     let query = client
       .from('episode_symptoms')
       .select('*')
-      .eq('episode_id', episodeId)
-      .order('sort_order', { ascending: true })
-      .order('created_at', { ascending: false })
-      .order('id', { ascending: false });
+      .eq('episode_id', episodeId);
+    if (orderBy === 'recent') {
+      query = query
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false });
+    } else {
+      query = query
+        .order('sort_order', { ascending: true })
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false });
+    }
     if (limit != null) {
       query = query.limit(limit);
     }

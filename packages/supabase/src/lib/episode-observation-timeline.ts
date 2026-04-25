@@ -113,6 +113,7 @@ export async function listEpisodeObservationTimeline(
     const [sy, fd] = await Promise.all([
       listEpisodeSymptomsForEpisode(client, episodeId, {
         limit: EPISODE_TIMELINE_SOURCE_LIMIT,
+        orderBy: 'recent',
       }),
       listFoodDiaryEntriesForEpisode(client, episodeId, {
         limit: EPISODE_TIMELINE_SOURCE_LIMIT,
