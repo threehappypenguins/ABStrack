@@ -288,6 +288,7 @@ function SymptomVideoCaptureField({
   const chunksRef = useRef<Blob[]>([]);
   const startMsRef = useRef(0);
   const autoStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const createdObjectUrlRef = useRef<string | null>(null);
   const [recording, setRecording] = useState(false);
   const [starting, setStarting] = useState(false);
   const [recorderOpen, setRecorderOpen] = useState(false);
@@ -303,6 +304,14 @@ function SymptomVideoCaptureField({
       clearTimeout(autoStopTimerRef.current);
       autoStopTimerRef.current = null;
     }
+  };
+
+  const revokeCreatedObjectUrl = () => {
+    if (!createdObjectUrlRef.current) {
+      return;
+    }
+    URL.revokeObjectURL(createdObjectUrlRef.current);
+    createdObjectUrlRef.current = null;
   };
 
   const stopAllTracks = () => {
@@ -337,6 +346,7 @@ function SymptomVideoCaptureField({
     return () => {
       stopRecording();
       stopAllTracks();
+      revokeCreatedObjectUrl();
       recorderRef.current = null;
     };
   }, []);
@@ -436,7 +446,9 @@ function SymptomVideoCaptureField({
         type: recorder.mimeType || 'video/webm',
       });
       if (blob.size > 0) {
+        revokeCreatedObjectUrl();
         const localUri = URL.createObjectURL(blob);
+        createdObjectUrlRef.current = localUri;
         onChange({
           type: 'video',
           value: {
@@ -514,8 +526,13 @@ function SymptomVideoCaptureField({
               <button
                 type="button"
                 aria-label="Close recorder"
+                aria-disabled={recording}
                 className="inline-flex min-h-[44px] items-center justify-center rounded-lg border border-app-border px-3 text-sm font-medium text-app-ink"
+                disabled={recording}
                 onClick={() => {
+                  if (recording) {
+                    return;
+                  }
                   setRecorderOpen(false);
                 }}
               >

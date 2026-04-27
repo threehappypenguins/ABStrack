@@ -58,6 +58,7 @@ export function SymptomPromptResponseField({
   const videoPausedStartedAtRef = useRef<number | null>(null);
   const videoPausedTotalMsRef = useRef(0);
   const cameraRef = useRef<CameraView | null>(null);
+  const didCancelRecordingRef = useRef(false);
   const pinchStartDistanceRef = useRef<number | null>(null);
   const pinchStartZoomRef = useRef(0);
   const recordingTaskRef = useRef<Promise<{ uri: string } | undefined> | null>(
@@ -118,6 +119,7 @@ export function SymptomPromptResponseField({
 
   const closeVideoModal = () => {
     if (videoRecording) {
+      didCancelRecordingRef.current = true;
       void cameraRef.current?.stopRecording();
     }
     setVideoRecording(false);
@@ -134,6 +136,7 @@ export function SymptomPromptResponseField({
     if (!videoRecording) {
       return;
     }
+    didCancelRecordingRef.current = false;
     void cameraRef.current?.stopRecording();
   };
   const effective =
@@ -474,6 +477,7 @@ export function SymptomPromptResponseField({
                         if (recordingTaskRef.current) {
                           return;
                         }
+                        didCancelRecordingRef.current = false;
                         setVideoRecording(true);
                         setVideoPaused(false);
                         startVideoTimer();
@@ -510,6 +514,10 @@ export function SymptomPromptResponseField({
                         videoStartMsRef.current = null;
                         videoPausedStartedAtRef.current = null;
                         videoPausedTotalMsRef.current = 0;
+                        if (didCancelRecordingRef.current) {
+                          didCancelRecordingRef.current = false;
+                          return;
+                        }
                         if (!result?.uri) {
                           return;
                         }

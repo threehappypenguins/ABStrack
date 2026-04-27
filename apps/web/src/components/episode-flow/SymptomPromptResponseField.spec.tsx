@@ -10,6 +10,11 @@ import { SymptomPromptResponseField } from './SymptomPromptResponseField';
 
 const getUserMediaMock = jest.fn();
 const createObjectUrlMock = jest.fn();
+const revokeObjectUrlMock = jest.fn();
+let originalNavigatorDescriptor: PropertyDescriptor | undefined;
+let originalMediaRecorderDescriptor: PropertyDescriptor | undefined;
+let originalCreateObjectUrlDescriptor: PropertyDescriptor | undefined;
+let originalRevokeObjectUrlDescriptor: PropertyDescriptor | undefined;
 
 const stopTrackMock = jest.fn();
 const mockStream = {
@@ -54,6 +59,25 @@ function makeLine(symptomName = 'Dizziness'): PresetSymptomRow {
 }
 
 describe('SymptomPromptResponseField video capture', () => {
+  beforeAll(() => {
+    originalNavigatorDescriptor = Object.getOwnPropertyDescriptor(
+      globalThis,
+      'navigator',
+    );
+    originalMediaRecorderDescriptor = Object.getOwnPropertyDescriptor(
+      globalThis,
+      'MediaRecorder',
+    );
+    originalCreateObjectUrlDescriptor = Object.getOwnPropertyDescriptor(
+      globalThis.URL,
+      'createObjectURL',
+    );
+    originalRevokeObjectUrlDescriptor = Object.getOwnPropertyDescriptor(
+      globalThis.URL,
+      'revokeObjectURL',
+    );
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     getUserMediaMock.mockResolvedValue(mockStream);
@@ -76,6 +100,42 @@ describe('SymptomPromptResponseField video capture', () => {
       configurable: true,
       writable: true,
     });
+    Object.defineProperty(globalThis.URL, 'revokeObjectURL', {
+      value: revokeObjectUrlMock,
+      configurable: true,
+      writable: true,
+    });
+  });
+
+  afterEach(() => {
+    if (originalNavigatorDescriptor) {
+      Object.defineProperty(
+        globalThis,
+        'navigator',
+        originalNavigatorDescriptor,
+      );
+    }
+    if (originalMediaRecorderDescriptor) {
+      Object.defineProperty(
+        globalThis,
+        'MediaRecorder',
+        originalMediaRecorderDescriptor,
+      );
+    }
+    if (originalCreateObjectUrlDescriptor) {
+      Object.defineProperty(
+        globalThis.URL,
+        'createObjectURL',
+        originalCreateObjectUrlDescriptor,
+      );
+    }
+    if (originalRevokeObjectUrlDescriptor) {
+      Object.defineProperty(
+        globalThis.URL,
+        'revokeObjectURL',
+        originalRevokeObjectUrlDescriptor,
+      );
+    }
   });
 
   it('records and saves local video when stopped early', async () => {
@@ -184,5 +244,88 @@ describe('SymptomPromptResponseField video capture', () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  it('revokes prior object URL when recording again', async () => {
+    createObjectUrlMock
+      .mockReturnValueOnce('blob:first-video')
+      .mockReturnValueOnce('blob:second-video');
+    const onChange = jest.fn();
+    render(
+      <SymptomPromptResponseField
+        line={makeLine('Headache')}
+        answer={undefined}
+        onChange={onChange}
+        disabled={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Record Headache video'));
+    await waitFor(() => {
+      expect(
+        screen
+          .getByLabelText('Start Headache video recording')
+          .hasAttribute('disabled'),
+      ).toBe(false);
+    });
+    fireEvent.click(screen.getByLabelText('Start Headache video recording'));
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText('Stop Headache video recording'),
+      ).toBeTruthy();
+    });
+    fireEvent.click(screen.getByLabelText('Stop Headache video recording'));
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalledTimes(1);
+    });
+    expect(revokeObjectUrlMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByLabelText('Record Headache video'));
+    await waitFor(() => {
+      expect(
+        screen
+          .getByLabelText('Start Headache video recording')
+          .hasAttribute('disabled'),
+      ).toBe(false);
+    });
+    fireEvent.click(screen.getByLabelText('Start Headache video recording'));
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText('Stop Headache video recording'),
+      ).toBeTruthy();
+    });
+    fireEvent.click(screen.getByLabelText('Stop Headache video recording'));
+
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalledTimes(2);
+    });
+    expect(revokeObjectUrlMock).toHaveBeenCalledWith('blob:first-video');
+  });
+
+  it('disables close button while recording to avoid implicit save', async () => {
+    const onChange = jest.fn();
+    render(
+      <SymptomPromptResponseField
+        line={makeLine('Fatigue')}
+        answer={undefined}
+        onChange={onChange}
+        disabled={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Record Fatigue video'));
+    await waitFor(() => {
+      expect(
+        screen
+          .getByLabelText('Start Fatigue video recording')
+          .hasAttribute('disabled'),
+      ).toBe(false);
+    });
+    fireEvent.click(screen.getByLabelText('Start Fatigue video recording'));
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText('Close recorder').hasAttribute('disabled'),
+      ).toBe(true);
+    });
   });
 });
