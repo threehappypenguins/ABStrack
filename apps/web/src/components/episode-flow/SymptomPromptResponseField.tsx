@@ -456,7 +456,10 @@ function SymptomVideoCaptureField({
     };
     recorder.onstop = () => {
       clearAutoStop();
-      const durationMs = Math.max(0, Date.now() - startMsRef.current);
+      const durationMs = Math.min(
+        VIDEO_MAX_DURATION_MS,
+        Math.max(0, Date.now() - startMsRef.current),
+      );
       const blob = new Blob(chunksRef.current, {
         type: recorder.mimeType || 'video/webm',
       });

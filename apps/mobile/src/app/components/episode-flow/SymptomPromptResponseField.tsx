@@ -285,7 +285,7 @@ export function SymptomPromptResponseField({
               void (async () => {
                 setVideoBusy(true);
                 try {
-                  if (Platform.OS === 'android') {
+                  if (Platform.OS === 'android' || Platform.OS === 'ios') {
                     if (!cameraPermission?.granted) {
                       const granted = await requestCameraPermission();
                       if (!granted.granted) {

@@ -84,15 +84,22 @@ export function sanitizeSymptomPromptAnswerEntry(
         return null;
       }
       const videoRef = v as Record<string, unknown>;
-      const durationMs = videoRef.durationMs;
+      let durationMs: number | null;
+      if (videoRef.durationMs === undefined || videoRef.durationMs === null) {
+        durationMs = null;
+      } else if (
+        typeof videoRef.durationMs === 'number' &&
+        Number.isFinite(videoRef.durationMs) &&
+        videoRef.durationMs >= 0 &&
+        videoRef.durationMs <= VIDEO_MAX_DURATION_MS
+      ) {
+        durationMs = videoRef.durationMs;
+      } else {
+        return null;
+      }
       if (
         typeof videoRef.localUri !== 'string' ||
         videoRef.localUri.trim().length === 0 ||
-        (durationMs !== null &&
-          (typeof durationMs !== 'number' ||
-            !Number.isFinite(durationMs) ||
-            durationMs < 0 ||
-            durationMs > VIDEO_MAX_DURATION_MS)) ||
         typeof videoRef.capturedAt !== 'string' ||
         videoRef.capturedAt.trim().length === 0
       ) {
