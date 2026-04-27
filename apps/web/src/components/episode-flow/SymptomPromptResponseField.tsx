@@ -13,6 +13,10 @@ import {
   createDefaultSymptomPromptAnswer,
 } from '@abstrack/types';
 
+const SYMPTOM_PROMPT_VIDEO_MAX_SECONDS = Math.round(
+  SYMPTOM_PROMPT_VIDEO_MAX_DURATION_MS / 1000,
+);
+
 /** Visible focus ring on keyboard-focused radio buttons (`button[role="radio"]`). */
 const radioLabelFocusVisibleClass =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg';
@@ -561,7 +565,9 @@ function SymptomVideoCaptureField({
             setRecorderOpen(true);
           }}
         >
-          {captured ? 'Record again (max 15s)' : 'Record video (max 15s)'}
+          {captured
+            ? `Record again (max ${SYMPTOM_PROMPT_VIDEO_MAX_SECONDS}s)`
+            : `Record video (max ${SYMPTOM_PROMPT_VIDEO_MAX_SECONDS}s)`}
         </button>
       </div>
       {recorderOpen ? (
@@ -574,7 +580,7 @@ function SymptomVideoCaptureField({
           >
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-base font-semibold text-app-ink">
-                Record video (max 15s)
+                {`Record video (max ${SYMPTOM_PROMPT_VIDEO_MAX_SECONDS}s)`}
               </h3>
               <div
                 className={`rounded-md px-2 py-1 text-sm font-semibold tabular-nums ${
@@ -661,14 +667,14 @@ function SymptomVideoCaptureField({
       ) : null}
       <p className="text-sm text-app-muted" role="status">
         {recording
-          ? 'Recording in progress. It stops automatically at 15 seconds, or you can stop now.'
+          ? `Recording in progress. It stops automatically at ${SYMPTOM_PROMPT_VIDEO_MAX_SECONDS} seconds, or you can stop now.`
           : captured
             ? `Video captured. Duration ${
                 captured.durationMs !== null
                   ? `${Math.round(captured.durationMs / 1000)}s`
                   : 'unknown'
               }.`
-            : 'Use camera capture for up to 15 seconds. Stop any time to finish early.'}
+            : `Use camera capture for up to ${SYMPTOM_PROMPT_VIDEO_MAX_SECONDS} seconds. Stop any time to finish early.`}
       </p>
       {error ? (
         <p className="text-sm text-red-700 dark:text-red-300" role="alert">

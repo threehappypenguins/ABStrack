@@ -108,10 +108,12 @@ export function setSymptomPromptSession(
   if (typeof window === 'undefined') {
     return;
   }
-  runtimeVideoAnswersByEpisode.set(
-    episodeId,
-    extractRuntimeVideoAnswers(state),
-  );
+  const runtimeVideoAnswers = extractRuntimeVideoAnswers(state);
+  if (Object.keys(runtimeVideoAnswers).length === 0) {
+    runtimeVideoAnswersByEpisode.delete(episodeId);
+  } else {
+    runtimeVideoAnswersByEpisode.set(episodeId, runtimeVideoAnswers);
+  }
   try {
     sessionStorage.setItem(
       storageKey(episodeId),

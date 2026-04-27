@@ -180,6 +180,48 @@ describe('symptom-prompt-session-store', () => {
     });
   });
 
+  it('setSymptomPromptSession clears runtime video cache when no video answers remain', () => {
+    setSymptomPromptSession('ep-1', {
+      activeIndex: 0,
+      answers: {
+        drop: {
+          type: 'video',
+          value: {
+            localUri: 'blob:https://example.test/abc',
+            durationMs: 5000,
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        },
+      },
+    });
+    expect(getSymptomPromptSession('ep-1')).toEqual({
+      activeIndex: 0,
+      answers: {
+        drop: {
+          type: 'video',
+          value: {
+            localUri: 'blob:https://example.test/abc',
+            durationMs: 5000,
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        },
+      },
+    });
+
+    setSymptomPromptSession('ep-1', {
+      activeIndex: 0,
+      answers: {
+        keep: { type: 'yes_no', value: true },
+      },
+    });
+    expect(getSymptomPromptSession('ep-1')).toEqual({
+      activeIndex: 0,
+      answers: {
+        keep: { type: 'yes_no', value: true },
+      },
+    });
+  });
+
   it('clearSymptomPromptSession clears runtime-only video answers', () => {
     setSymptomPromptSession('ep-1', {
       activeIndex: 0,

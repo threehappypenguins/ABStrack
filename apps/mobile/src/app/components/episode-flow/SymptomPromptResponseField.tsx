@@ -284,7 +284,7 @@ export function SymptomPromptResponseField({
                 ? `Record ${line.symptom_name} video again`
                 : `Record ${line.symptom_name} video`
             }
-            accessibilityHint="Opens camera video capture with a 15 second limit."
+            accessibilityHint={`Opens camera video capture with a ${VIDEO_MAX_DURATION_SECONDS} second limit.`}
             accessibilityState={{ disabled: disabled || videoBusy }}
             disabled={disabled || videoBusy}
             onPress={() => {
@@ -355,8 +355,8 @@ export function SymptomPromptResponseField({
               {videoBusy
                 ? 'Opening camera…'
                 : captured
-                  ? 'Record again (max 15s)'
-                  : 'Record video (max 15s)'}
+                  ? `Record again (max ${VIDEO_MAX_DURATION_SECONDS}s)`
+                  : `Record video (max ${VIDEO_MAX_DURATION_SECONDS}s)`}
             </Text>
           </Pressable>
           <Text
@@ -371,7 +371,7 @@ export function SymptomPromptResponseField({
                     ? `${Math.round(captured.durationMs / 1000)}s`
                     : 'unknown'
                 }.`
-              : 'Stop early in the camera to save a shorter clip. Maximum is 15 seconds.'}
+              : `Stop early in the camera to save a shorter clip. Maximum is ${VIDEO_MAX_DURATION_SECONDS} seconds.`}
           </Text>
           <Text
             className={`text-xs leading-relaxed ${nw.textMuted}`}
