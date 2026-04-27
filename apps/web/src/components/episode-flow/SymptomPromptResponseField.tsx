@@ -289,6 +289,7 @@ function SymptomVideoCaptureField({
   const startMsRef = useRef(0);
   const autoStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const createdObjectUrlRef = useRef<string | null>(null);
+  const isUnmountedRef = useRef(false);
   const [recording, setRecording] = useState(false);
   const [starting, setStarting] = useState(false);
   const [recorderOpen, setRecorderOpen] = useState(false);
@@ -323,7 +324,9 @@ function SymptomVideoCaptureField({
       track.stop();
     });
     streamRef.current = null;
-    setCameraReady(false);
+    if (!isUnmountedRef.current) {
+      setCameraReady(false);
+    }
     if (previewRef.current) {
       previewRef.current.srcObject = null;
     }
@@ -343,7 +346,9 @@ function SymptomVideoCaptureField({
   };
 
   useEffect(() => {
+    isUnmountedRef.current = false;
     return () => {
+      isUnmountedRef.current = true;
       stopRecording();
       stopAllTracks();
       recorderRef.current = null;
@@ -449,6 +454,10 @@ function SymptomVideoCaptureField({
       }
     };
     recorder.onerror = () => {
+      if (isUnmountedRef.current) {
+        stopAllTracks();
+        return;
+      }
       setError('Video recording failed. Please try again.');
       setRecording(false);
       stopAllTracks();
@@ -456,6 +465,10 @@ function SymptomVideoCaptureField({
     };
     recorder.onstop = () => {
       clearAutoStop();
+      if (isUnmountedRef.current) {
+        stopAllTracks();
+        return;
+      }
       const durationMs = Math.min(
         VIDEO_MAX_DURATION_MS,
         Math.max(0, Date.now() - startMsRef.current),
@@ -480,12 +493,21 @@ function SymptomVideoCaptureField({
       stopAllTracks();
       setRecorderOpen(false);
     };
-    recorder.start();
-    setElapsedMs(0);
-    autoStopTimerRef.current = setTimeout(() => {
-      stopRecording();
-    }, VIDEO_MAX_DURATION_MS);
-    setRecording(true);
+    try {
+      recorder.start();
+      setElapsedMs(0);
+      autoStopTimerRef.current = setTimeout(() => {
+        stopRecording();
+      }, VIDEO_MAX_DURATION_MS);
+      setRecording(true);
+    } catch {
+      recorderRef.current = null;
+      setRecording(false);
+      clearAutoStop();
+      stopAllTracks();
+      setRecorderOpen(false);
+      setError('Video recording failed to start. Please try again.');
+    }
   };
 
   const elapsedSeconds = Math.floor(elapsedMs / 1000);

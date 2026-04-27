@@ -28,6 +28,8 @@ export type SymptomPromptResponseFieldProps = {
   disabled: boolean;
 };
 
+const VIDEO_MAX_DURATION_MS = 15000;
+
 /**
  * Renders the capture UI for one preset symptom line (Week 5 skeleton: no media pipeline).
  *
@@ -508,12 +510,15 @@ export function SymptomPromptResponseField({
                             : 0;
                         const durationMs =
                           videoStartMsRef.current !== null
-                            ? Math.max(
-                                0,
-                                Date.now() -
-                                  videoStartMsRef.current -
-                                  (videoPausedTotalMsRef.current +
-                                    activePausedMs),
+                            ? Math.min(
+                                VIDEO_MAX_DURATION_MS,
+                                Math.max(
+                                  0,
+                                  Date.now() -
+                                    videoStartMsRef.current -
+                                    (videoPausedTotalMsRef.current +
+                                      activePausedMs),
+                                ),
                               )
                             : null;
                         videoStartMsRef.current = null;

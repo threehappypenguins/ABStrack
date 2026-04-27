@@ -101,7 +101,8 @@ export function sanitizeSymptomPromptAnswerEntry(
         typeof videoRef.localUri !== 'string' ||
         videoRef.localUri.trim().length === 0 ||
         typeof videoRef.capturedAt !== 'string' ||
-        videoRef.capturedAt.trim().length === 0
+        videoRef.capturedAt.trim().length === 0 ||
+        !Number.isFinite(Date.parse(videoRef.capturedAt))
       ) {
         return null;
       }

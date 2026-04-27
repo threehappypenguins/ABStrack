@@ -72,4 +72,17 @@ describe('symptom-prompt-session-sanitize', () => {
       }),
     ).toBeNull();
   });
+
+  it('sanitizeSymptomPromptAnswerEntry rejects video refs with invalid capturedAt', () => {
+    expect(
+      sanitizeSymptomPromptAnswerEntry({
+        type: 'video',
+        value: {
+          localUri: 'blob:https://example.test/abc',
+          durationMs: 1000,
+          capturedAt: 'not-a-date',
+        },
+      }),
+    ).toBeNull();
+  });
 });
