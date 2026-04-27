@@ -567,19 +567,29 @@ export function SymptomPromptResponseField({
                             : 'Pause video recording'
                         }
                         onPress={() => {
-                          void cameraRef.current?.toggleRecordingAsync();
-                          setVideoPaused((v) => {
-                            if (!v) {
-                              videoPausedStartedAtRef.current = Date.now();
-                            } else if (
-                              videoPausedStartedAtRef.current !== null
-                            ) {
-                              videoPausedTotalMsRef.current +=
-                                Date.now() - videoPausedStartedAtRef.current;
-                              videoPausedStartedAtRef.current = null;
+                          void (async () => {
+                            const camera = cameraRef.current;
+                            if (!camera || !canTogglePause) {
+                              return;
                             }
-                            return !v;
-                          });
+                            try {
+                              await camera.toggleRecordingAsync();
+                            } catch {
+                              return;
+                            }
+                            setVideoPaused((v) => {
+                              if (!v) {
+                                videoPausedStartedAtRef.current = Date.now();
+                              } else if (
+                                videoPausedStartedAtRef.current !== null
+                              ) {
+                                videoPausedTotalMsRef.current +=
+                                  Date.now() - videoPausedStartedAtRef.current;
+                                videoPausedStartedAtRef.current = null;
+                              }
+                              return !v;
+                            });
+                          })();
                         }}
                         style={{
                           minHeight: COMFORTABLE_TOUCH_TARGET_DP,

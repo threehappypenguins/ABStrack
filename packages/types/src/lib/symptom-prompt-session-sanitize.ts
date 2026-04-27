@@ -95,21 +95,26 @@ export function sanitizeSymptomPromptAnswerEntry(
       } else {
         return null;
       }
-      if (
-        typeof videoRef.localUri !== 'string' ||
-        videoRef.localUri.trim().length === 0 ||
-        typeof videoRef.capturedAt !== 'string' ||
-        videoRef.capturedAt.trim().length === 0 ||
-        !Number.isFinite(Date.parse(videoRef.capturedAt))
-      ) {
+      if (typeof videoRef.localUri !== 'string') {
+        return null;
+      }
+      const localUri = videoRef.localUri.trim();
+      if (localUri.length === 0) {
+        return null;
+      }
+      if (typeof videoRef.capturedAt !== 'string') {
+        return null;
+      }
+      const capturedAt = videoRef.capturedAt.trim();
+      if (capturedAt.length === 0 || !Number.isFinite(Date.parse(capturedAt))) {
         return null;
       }
       return {
         type: 'video',
         value: {
-          localUri: videoRef.localUri,
+          localUri,
           durationMs,
-          capturedAt: videoRef.capturedAt,
+          capturedAt,
         },
       };
     }

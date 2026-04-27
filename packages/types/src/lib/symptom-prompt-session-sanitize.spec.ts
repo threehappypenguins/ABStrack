@@ -50,6 +50,26 @@ describe('symptom-prompt-session-sanitize', () => {
     });
   });
 
+  it('sanitizeSymptomPromptAnswerEntry trims video localUri and capturedAt', () => {
+    expect(
+      sanitizeSymptomPromptAnswerEntry({
+        type: 'video',
+        value: {
+          localUri: '  blob:https://example.test/abc  ',
+          durationMs: 12000,
+          capturedAt: '  2026-04-27T12:00:00.000Z  ',
+        },
+      }),
+    ).toEqual({
+      type: 'video',
+      value: {
+        localUri: 'blob:https://example.test/abc',
+        durationMs: 12000,
+        capturedAt: '2026-04-27T12:00:00.000Z',
+      },
+    });
+  });
+
   it('sanitizeSymptomPromptAnswerEntry rejects video refs with invalid duration range', () => {
     expect(
       sanitizeSymptomPromptAnswerEntry({

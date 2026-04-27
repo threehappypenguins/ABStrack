@@ -342,7 +342,9 @@ function SymptomVideoCaptureField({
     clearAutoStop();
     const recorder = recorderRef.current;
     if (!recorder) {
-      setRecording(false);
+      if (!isUnmountedRef.current) {
+        setRecording(false);
+      }
       stopAllTracks();
       return;
     }
