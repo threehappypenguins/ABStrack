@@ -346,7 +346,6 @@ function SymptomVideoCaptureField({
     return () => {
       stopRecording();
       stopAllTracks();
-      revokeCreatedObjectUrl();
       recorderRef.current = null;
     };
   }, []);

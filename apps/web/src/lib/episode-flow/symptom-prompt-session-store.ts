@@ -12,6 +12,24 @@ function storageKey(episodeId: string): string {
 }
 
 /**
+ * Blob URLs are document-scoped and not durable across reload/navigation.
+ * Keep video answers in runtime state only; omit them from `sessionStorage`.
+ */
+function stripNonDurableAnswers(
+  state: SymptomPromptSessionState,
+): SymptomPromptSessionState {
+  const answers = Object.fromEntries(
+    Object.entries(state.answers).filter(
+      ([, answer]) => answer.type !== 'video',
+    ),
+  );
+  return {
+    activeIndex: state.activeIndex,
+    answers,
+  };
+}
+
+/**
  * Reads traversal state from `sessionStorage` for the current browser session.
  *
  * @param episodeId - `episodes.id`.
@@ -42,10 +60,10 @@ export function getSymptomPromptSession(
     if (activeIndex === null) {
       return createInitialSymptomPromptSession();
     }
-    return {
+    return stripNonDurableAnswers({
       activeIndex,
       answers: sanitizeSymptomPromptAnswers(parsed.answers),
-    };
+    });
   } catch {
     return createInitialSymptomPromptSession();
   }
@@ -65,7 +83,10 @@ export function setSymptomPromptSession(
     return;
   }
   try {
-    sessionStorage.setItem(storageKey(episodeId), JSON.stringify(state));
+    sessionStorage.setItem(
+      storageKey(episodeId),
+      JSON.stringify(stripNonDurableAnswers(state)),
+    );
   } catch {
     // Quota or private mode — ignore; in-flow state still works for the current mount.
   }

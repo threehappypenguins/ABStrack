@@ -2,6 +2,7 @@ import { createInitialSymptomPromptSession } from '@abstrack/types';
 import {
   clearSymptomPromptSession,
   getSymptomPromptSession,
+  setSymptomPromptSession,
 } from './symptom-prompt-session-store';
 
 const initial = createInitialSymptomPromptSession();
@@ -138,5 +139,28 @@ describe('symptom-prompt-session-store', () => {
     setStored('ep-1', { activeIndex: 0, answers: {} });
     clearSymptomPromptSession('ep-1');
     expect(getSymptomPromptSession('ep-1')).toEqual(initial);
+  });
+
+  it('setSymptomPromptSession omits video answers from storage', () => {
+    setSymptomPromptSession('ep-1', {
+      activeIndex: 1,
+      answers: {
+        keep: { type: 'yes_no', value: true },
+        drop: {
+          type: 'video',
+          value: {
+            localUri: 'blob:https://example.test/abc',
+            durationMs: 5000,
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        },
+      },
+    });
+    expect(getSymptomPromptSession('ep-1')).toEqual({
+      activeIndex: 1,
+      answers: {
+        keep: { type: 'yes_no', value: true },
+      },
+    });
   });
 });

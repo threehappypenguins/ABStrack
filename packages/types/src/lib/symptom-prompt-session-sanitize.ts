@@ -6,6 +6,8 @@ import type {
 /** Matches severity UI (1–5 scale); integers only. */
 const SEVERITY_MIN = 1;
 const SEVERITY_MAX = 5;
+/** Current capture UX limit for local video clips (15s max). */
+const VIDEO_MAX_DURATION_MS = 15000;
 
 /**
  * Produces a safe non-negative step index from untrusted JSON (rejects non-finite numbers and non-numbers).
@@ -82,12 +84,15 @@ export function sanitizeSymptomPromptAnswerEntry(
         return null;
       }
       const videoRef = v as Record<string, unknown>;
+      const durationMs = videoRef.durationMs;
       if (
         typeof videoRef.localUri !== 'string' ||
         videoRef.localUri.trim().length === 0 ||
-        (videoRef.durationMs !== null &&
-          (typeof videoRef.durationMs !== 'number' ||
-            !Number.isFinite(videoRef.durationMs))) ||
+        (durationMs !== null &&
+          (typeof durationMs !== 'number' ||
+            !Number.isFinite(durationMs) ||
+            durationMs < 0 ||
+            durationMs > VIDEO_MAX_DURATION_MS)) ||
         typeof videoRef.capturedAt !== 'string' ||
         videoRef.capturedAt.trim().length === 0
       ) {
@@ -97,7 +102,7 @@ export function sanitizeSymptomPromptAnswerEntry(
         type: 'video',
         value: {
           localUri: videoRef.localUri,
-          durationMs: videoRef.durationMs,
+          durationMs,
           capturedAt: videoRef.capturedAt,
         },
       };

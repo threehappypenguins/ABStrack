@@ -49,4 +49,27 @@ describe('symptom-prompt-session-sanitize', () => {
       },
     });
   });
+
+  it('sanitizeSymptomPromptAnswerEntry rejects video refs with invalid duration range', () => {
+    expect(
+      sanitizeSymptomPromptAnswerEntry({
+        type: 'video',
+        value: {
+          localUri: 'blob:https://example.test/abc',
+          durationMs: -1,
+          capturedAt: '2026-04-27T12:00:00.000Z',
+        },
+      }),
+    ).toBeNull();
+    expect(
+      sanitizeSymptomPromptAnswerEntry({
+        type: 'video',
+        value: {
+          localUri: 'blob:https://example.test/abc',
+          durationMs: 16000,
+          capturedAt: '2026-04-27T12:00:00.000Z',
+        },
+      }),
+    ).toBeNull();
+  });
 });
