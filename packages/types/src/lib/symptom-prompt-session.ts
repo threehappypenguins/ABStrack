@@ -99,7 +99,11 @@ export function symptomPromptAnswerHasValue(
     case 'photo':
       return false;
     case 'video':
-      return answer.value !== null;
+      return (
+        answer.value !== null &&
+        answer.value.localUri.trim().length > 0 &&
+        Number.isFinite(Date.parse(answer.value.capturedAt))
+      );
     default: {
       const _exhaustive: never = answer;
       return _exhaustive;

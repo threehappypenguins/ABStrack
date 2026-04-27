@@ -141,7 +141,7 @@ describe('symptom-prompt-session-store', () => {
     expect(getSymptomPromptSession('ep-1')).toEqual(initial);
   });
 
-  it('setSymptomPromptSession omits video answers from storage', () => {
+  it('setSymptomPromptSession keeps video answers in runtime while omitting them from storage', () => {
     setSymptomPromptSession('ep-1', {
       activeIndex: 1,
       answers: {
@@ -156,11 +156,45 @@ describe('symptom-prompt-session-store', () => {
         },
       },
     });
-    expect(getSymptomPromptSession('ep-1')).toEqual({
+    expect(
+      JSON.parse(sessionStorage.getItem('abstrack.symptomPrompt.ep-1') ?? '{}'),
+    ).toEqual({
       activeIndex: 1,
       answers: {
         keep: { type: 'yes_no', value: true },
       },
     });
+    expect(getSymptomPromptSession('ep-1')).toEqual({
+      activeIndex: 1,
+      answers: {
+        keep: { type: 'yes_no', value: true },
+        drop: {
+          type: 'video',
+          value: {
+            localUri: 'blob:https://example.test/abc',
+            durationMs: 5000,
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        },
+      },
+    });
+  });
+
+  it('clearSymptomPromptSession clears runtime-only video answers', () => {
+    setSymptomPromptSession('ep-1', {
+      activeIndex: 0,
+      answers: {
+        drop: {
+          type: 'video',
+          value: {
+            localUri: 'blob:https://example.test/abc',
+            durationMs: 5000,
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        },
+      },
+    });
+    clearSymptomPromptSession('ep-1');
+    expect(getSymptomPromptSession('ep-1')).toEqual(initial);
   });
 });

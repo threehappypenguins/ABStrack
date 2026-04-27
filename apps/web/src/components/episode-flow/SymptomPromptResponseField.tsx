@@ -372,6 +372,9 @@ function SymptomVideoCaptureField({
       setError(null);
       setStarting(true);
       try {
+        if (typeof navigator?.mediaDevices?.getUserMedia !== 'function') {
+          throw new Error('UNSUPPORTED_MEDIA_DEVICES');
+        }
         const stream = await navigator.mediaDevices.getUserMedia({
           video: true,
           audio: true,
@@ -385,11 +388,31 @@ function SymptomVideoCaptureField({
           previewRef.current.srcObject = stream;
         }
         setCameraReady(true);
-      } catch {
+      } catch (error: unknown) {
         if (!cancelled) {
-          setError(
-            'Camera or microphone access was denied. Please enable permissions and try again.',
-          );
+          const errorName =
+            typeof error === 'object' && error !== null && 'name' in error
+              ? String((error as { name?: unknown }).name ?? '')
+              : '';
+          if (
+            errorName === 'NotAllowedError' ||
+            errorName === 'PermissionDeniedError'
+          ) {
+            setError(
+              'Camera or microphone access was denied. Please enable permissions and try again.',
+            );
+          } else if (
+            errorName === 'NotFoundError' ||
+            errorName === 'DevicesNotFoundError'
+          ) {
+            setError(
+              'No camera or microphone was found on this device. Connect one and try again.',
+            );
+          } else {
+            setError(
+              'Camera and microphone are not supported in this browser or environment.',
+            );
+          }
           setRecorderOpen(false);
         }
       } finally {

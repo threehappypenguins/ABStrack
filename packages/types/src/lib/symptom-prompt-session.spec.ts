@@ -91,6 +91,29 @@ describe('symptom-prompt-session', () => {
         }),
       ).toBe(true);
     });
+
+    it('video is empty when localUri/capturedAt are invalid at runtime', () => {
+      expect(
+        symptomPromptAnswerHasValue({
+          type: 'video',
+          value: {
+            localUri: '   ',
+            durationMs: 7000,
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        }),
+      ).toBe(false);
+      expect(
+        symptomPromptAnswerHasValue({
+          type: 'video',
+          value: {
+            localUri: 'file:///tmp/capture.mp4',
+            durationMs: 7000,
+            capturedAt: 'not-a-date',
+          },
+        }),
+      ).toBe(false);
+    });
   });
 
   describe('hasSymptomSessionTraversalProgress', () => {
