@@ -29,4 +29,24 @@ describe('symptom-prompt-session-sanitize', () => {
       legit: { type: 'yes_no', value: false },
     });
   });
+
+  it('sanitizeSymptomPromptAnswerEntry accepts video local capture refs', () => {
+    expect(
+      sanitizeSymptomPromptAnswerEntry({
+        type: 'video',
+        value: {
+          localUri: 'blob:https://example.test/abc',
+          durationMs: 12000,
+          capturedAt: '2026-04-27T12:00:00.000Z',
+        },
+      }),
+    ).toEqual({
+      type: 'video',
+      value: {
+        localUri: 'blob:https://example.test/abc',
+        durationMs: 12000,
+        capturedAt: '2026-04-27T12:00:00.000Z',
+      },
+    });
+  });
 });

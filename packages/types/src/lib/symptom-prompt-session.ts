@@ -1,6 +1,18 @@
 import type { PresetSymptomRow, SymptomResponseType, Uuid } from './types.js';
 
 /**
+ * Temporary local reference to a captured symptom video (no upload key yet).
+ */
+export interface SymptomPromptVideoCaptureRef {
+  /** Device/browser-local URI or object URL. */
+  localUri: string;
+  /** Best-effort duration from capture API. */
+  durationMs: number | null;
+  /** ISO timestamp of when capture completed. */
+  capturedAt: string;
+}
+
+/**
  * One stored answer for a preset symptom line during the Week 5 traversal skeleton.
  * Values are JSON-serializable for session persistence (web `sessionStorage`).
  */
@@ -9,7 +21,7 @@ export type SymptomPromptAnswer =
   | { type: 'severity_scale'; value: number | null }
   | { type: 'free_text'; value: string }
   | { type: 'photo'; value: null }
-  | { type: 'video'; value: null };
+  | { type: 'video'; value: SymptomPromptVideoCaptureRef | null };
 
 /**
  * Answers keyed by `preset_symptoms.id`.
@@ -82,8 +94,9 @@ export function symptomPromptAnswerHasValue(
     case 'free_text':
       return answer.value.trim().length > 0;
     case 'photo':
-    case 'video':
       return false;
+    case 'video':
+      return answer.value !== null;
     default: {
       const _exhaustive: never = answer;
       return _exhaustive;

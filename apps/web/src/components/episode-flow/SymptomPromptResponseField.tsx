@@ -1,6 +1,12 @@
 'use client';
 
-import { useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from 'react';
 import type { PresetSymptomRow, SymptomPromptAnswer } from '@abstrack/types';
 import { createDefaultSymptomPromptAnswer } from '@abstrack/types';
 
@@ -16,6 +22,7 @@ export type SymptomPromptResponseFieldProps = {
 };
 
 type YesNoValue = boolean | null;
+const VIDEO_MAX_DURATION_MS = 15000;
 
 function SymptomYesNoRadiogroup({
   line,
@@ -264,6 +271,337 @@ function SymptomSeverityRadiogroup({
   );
 }
 
+function SymptomVideoCaptureField({
+  line,
+  answer,
+  onChange,
+  disabled,
+}: {
+  line: PresetSymptomRow;
+  answer: SymptomPromptAnswer;
+  onChange: (next: SymptomPromptAnswer) => void;
+  disabled: boolean;
+}) {
+  const streamRef = useRef<MediaStream | null>(null);
+  const previewRef = useRef<HTMLVideoElement | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const startMsRef = useRef(0);
+  const autoStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [recording, setRecording] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [recorderOpen, setRecorderOpen] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [previewAspectRatio, setPreviewAspectRatio] = useState<number>(16 / 9);
+  const [elapsedMs, setElapsedMs] = useState(0);
+
+  const captured = answer.type === 'video' ? answer.value : null;
+
+  const clearAutoStop = () => {
+    if (autoStopTimerRef.current !== null) {
+      clearTimeout(autoStopTimerRef.current);
+      autoStopTimerRef.current = null;
+    }
+  };
+
+  const stopAllTracks = () => {
+    const stream = streamRef.current;
+    if (!stream) {
+      return;
+    }
+    stream.getTracks().forEach((track) => {
+      track.stop();
+    });
+    streamRef.current = null;
+    setCameraReady(false);
+    if (previewRef.current) {
+      previewRef.current.srcObject = null;
+    }
+  };
+
+  const stopRecording = () => {
+    clearAutoStop();
+    const recorder = recorderRef.current;
+    if (!recorder) {
+      setRecording(false);
+      stopAllTracks();
+      return;
+    }
+    if (recorder.state !== 'inactive') {
+      recorder.stop();
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      stopRecording();
+      stopAllTracks();
+      recorderRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!recorderOpen) {
+      stopRecording();
+      stopAllTracks();
+      setElapsedMs(0);
+      return;
+    }
+    if (streamRef.current) {
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      setError(null);
+      setStarting(true);
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: true,
+        });
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        streamRef.current = stream;
+        if (previewRef.current) {
+          previewRef.current.srcObject = stream;
+        }
+        setCameraReady(true);
+      } catch {
+        if (!cancelled) {
+          setError(
+            'Camera or microphone access was denied. Please enable permissions and try again.',
+          );
+          setRecorderOpen(false);
+        }
+      } finally {
+        if (!cancelled) {
+          setStarting(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [recorderOpen]);
+
+  useEffect(() => {
+    if (!recording) {
+      return;
+    }
+    const interval = setInterval(() => {
+      setElapsedMs(Math.max(0, Date.now() - startMsRef.current));
+    }, 200);
+    return () => {
+      clearInterval(interval);
+    };
+  }, [recording]);
+
+  const beginRecording = () => {
+    const stream = streamRef.current;
+    if (!stream) {
+      setError('Camera preview is not ready yet. Try again in a moment.');
+      return;
+    }
+    setError(null);
+    const recorder = (() => {
+      try {
+        return new MediaRecorder(stream, {
+          mimeType: 'video/webm',
+        });
+      } catch {
+        return new MediaRecorder(stream);
+      }
+    })();
+    recorderRef.current = recorder;
+    chunksRef.current = [];
+    startMsRef.current = Date.now();
+    recorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        chunksRef.current.push(event.data);
+      }
+    };
+    recorder.onerror = () => {
+      setError('Video recording failed. Please try again.');
+      setRecording(false);
+      stopAllTracks();
+      setRecorderOpen(false);
+    };
+    recorder.onstop = () => {
+      clearAutoStop();
+      const durationMs = Math.max(0, Date.now() - startMsRef.current);
+      const blob = new Blob(chunksRef.current, {
+        type: recorder.mimeType || 'video/webm',
+      });
+      if (blob.size > 0) {
+        const localUri = URL.createObjectURL(blob);
+        onChange({
+          type: 'video',
+          value: {
+            localUri,
+            durationMs,
+            capturedAt: new Date().toISOString(),
+          },
+        });
+      }
+      setRecording(false);
+      stopAllTracks();
+      setRecorderOpen(false);
+    };
+    recorder.start();
+    setElapsedMs(0);
+    autoStopTimerRef.current = setTimeout(() => {
+      stopRecording();
+    }, VIDEO_MAX_DURATION_MS);
+    setRecording(true);
+  };
+
+  const elapsedSeconds = Math.floor(elapsedMs / 1000);
+  const elapsedDisplay = `${String(Math.floor(elapsedSeconds / 60)).padStart(
+    2,
+    '0',
+  )}:${String(elapsedSeconds % 60).padStart(2, '0')}`;
+
+  return (
+    <div className="space-y-3 rounded-xl border border-app-border/90 bg-app-surface p-4">
+      <div className="flex flex-col gap-3 sm:flex-row">
+        <button
+          type="button"
+          disabled={disabled}
+          aria-label={
+            captured
+              ? `Record ${line.symptom_name} video again`
+              : `Record ${line.symptom_name} video`
+          }
+          className={`inline-flex min-h-[56px] flex-1 items-center justify-center rounded-xl border-2 px-4 text-base font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg ${
+            disabled
+              ? 'cursor-not-allowed border-app-border bg-app-surface text-app-muted opacity-60'
+              : 'border-app-primary bg-app-primary/10 text-app-ink hover:border-app-primary/80'
+          }`}
+          onClick={() => {
+            setRecorderOpen(true);
+          }}
+        >
+          {captured ? 'Record again (max 15s)' : 'Record video (max 15s)'}
+        </button>
+      </div>
+      {recorderOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${line.symptom_name} video recorder`}
+            className="w-full max-w-2xl rounded-2xl border border-app-border bg-app-surface p-4 shadow-xl"
+          >
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-base font-semibold text-app-ink">
+                Record video (max 15s)
+              </h3>
+              <div
+                role="status"
+                aria-live="polite"
+                className={`rounded-md px-2 py-1 text-sm font-semibold tabular-nums ${
+                  recording
+                    ? 'bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-200'
+                    : 'bg-app-bg text-app-muted'
+                }`}
+                aria-label={`Elapsed recording time ${elapsedDisplay}`}
+              >
+                {elapsedDisplay}
+              </div>
+              <button
+                type="button"
+                aria-label="Close recorder"
+                className="inline-flex min-h-[44px] items-center justify-center rounded-lg border border-app-border px-3 text-sm font-medium text-app-ink"
+                onClick={() => {
+                  setRecorderOpen(false);
+                }}
+              >
+                Close
+              </button>
+            </div>
+            <div className="rounded-xl border border-app-border/90 bg-app-bg p-2">
+              <div
+                className="w-full overflow-hidden rounded-lg bg-black"
+                style={{ aspectRatio: previewAspectRatio }}
+              >
+                <video
+                  ref={previewRef}
+                  aria-label={`${line.symptom_name} live camera preview`}
+                  className="h-full w-full bg-black object-contain"
+                  autoPlay
+                  muted
+                  playsInline
+                  onLoadedMetadata={(event) => {
+                    const video = event.currentTarget;
+                    if (video.videoWidth > 0 && video.videoHeight > 0) {
+                      setPreviewAspectRatio(
+                        video.videoWidth / video.videoHeight,
+                      );
+                    }
+                  }}
+                />
+              </div>
+            </div>
+            <div className="mt-4 flex items-center justify-center gap-3">
+              {!recording ? (
+                <button
+                  type="button"
+                  aria-disabled={starting || !cameraReady}
+                  aria-label={`Start ${line.symptom_name} video recording`}
+                  className={`inline-flex min-h-[56px] min-w-[180px] items-center justify-center gap-3 rounded-full px-6 text-base font-semibold text-white ${
+                    starting || !cameraReady
+                      ? 'cursor-not-allowed bg-red-400'
+                      : 'bg-red-700 hover:bg-red-800'
+                  }`}
+                  disabled={starting || !cameraReady}
+                  onClick={beginRecording}
+                >
+                  <span
+                    aria-hidden="true"
+                    className="h-4 w-4 rounded-full bg-white"
+                  />
+                  {starting ? 'Starting camera…' : 'Start recording'}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  aria-label={`Stop ${line.symptom_name} video recording`}
+                  className="inline-flex min-h-[56px] min-w-[180px] items-center justify-center rounded-full bg-red-700 px-6 text-base font-semibold text-white hover:bg-red-800"
+                  onClick={stopRecording}
+                >
+                  Stop recording
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+      <p className="text-sm text-app-muted" role="status">
+        {recording
+          ? 'Recording in progress. It stops automatically at 15 seconds, or you can stop now.'
+          : captured
+            ? `Video captured. Duration ${
+                captured.durationMs !== null
+                  ? `${Math.round(captured.durationMs / 1000)}s`
+                  : 'unknown'
+              }.`
+            : 'Use camera capture for up to 15 seconds. Stop any time to finish early.'}
+      </p>
+      {error ? (
+        <p className="text-sm text-red-700 dark:text-red-300" role="alert">
+          {error}
+        </p>
+      ) : null}
+      <p className="text-xs text-app-muted">
+        Temporary local capture only. Upload is not part of this step.
+      </p>
+    </div>
+  );
+}
+
 /**
  * Renders the capture UI for one preset symptom line (Week 5 skeleton: no media pipeline).
  *
@@ -331,13 +669,12 @@ export function SymptomPromptResponseField({
       );
     case 'video':
       return (
-        <div
-          role="status"
-          className="rounded-xl border border-dashed border-app-border/90 bg-app-surface/80 p-6 text-center text-sm leading-relaxed text-app-ink"
-        >
-          Video symptom capture is coming in a later update. For now, use Next
-          or Skip symptom to continue this episode flow.
-        </div>
+        <SymptomVideoCaptureField
+          line={line}
+          answer={effective}
+          onChange={onChange}
+          disabled={disabled}
+        />
       );
     default: {
       const _exhaustive: never = line.response_type;

@@ -74,11 +74,34 @@ export function sanitizeSymptomPromptAnswerEntry(
         return { type: 'photo', value: null };
       }
       return null;
-    case 'video':
+    case 'video': {
       if (v === null) {
         return { type: 'video', value: null };
       }
-      return null;
+      if (typeof v !== 'object' || v === null || Array.isArray(v)) {
+        return null;
+      }
+      const videoRef = v as Record<string, unknown>;
+      if (
+        typeof videoRef.localUri !== 'string' ||
+        videoRef.localUri.trim().length === 0 ||
+        (videoRef.durationMs !== null &&
+          (typeof videoRef.durationMs !== 'number' ||
+            !Number.isFinite(videoRef.durationMs))) ||
+        typeof videoRef.capturedAt !== 'string' ||
+        videoRef.capturedAt.trim().length === 0
+      ) {
+        return null;
+      }
+      return {
+        type: 'video',
+        value: {
+          localUri: videoRef.localUri,
+          durationMs: videoRef.durationMs,
+          capturedAt: videoRef.capturedAt,
+        },
+      };
+    }
     default:
       return null;
   }
