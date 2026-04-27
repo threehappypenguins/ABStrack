@@ -502,13 +502,18 @@ export function SymptomPromptResponseField({
                           setVideoRecording(false);
                           stopVideoTimer();
                         }
+                        const activePausedMs =
+                          videoPausedStartedAtRef.current !== null
+                            ? Date.now() - videoPausedStartedAtRef.current
+                            : 0;
                         const durationMs =
                           videoStartMsRef.current !== null
                             ? Math.max(
                                 0,
                                 Date.now() -
                                   videoStartMsRef.current -
-                                  videoPausedTotalMsRef.current,
+                                  (videoPausedTotalMsRef.current +
+                                    activePausedMs),
                               )
                             : null;
                         videoStartMsRef.current = null;

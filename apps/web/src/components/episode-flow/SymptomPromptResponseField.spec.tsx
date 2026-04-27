@@ -328,4 +328,42 @@ describe('SymptomPromptResponseField video capture', () => {
       ).toBe(true);
     });
   });
+
+  it('shows a user-facing error when MediaRecorder is unavailable', async () => {
+    const onChange = jest.fn();
+    Object.defineProperty(globalThis, 'MediaRecorder', {
+      value: undefined,
+      configurable: true,
+      writable: true,
+    });
+    render(
+      <SymptomPromptResponseField
+        line={makeLine('Blurred vision')}
+        answer={undefined}
+        onChange={onChange}
+        disabled={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Record Blurred vision video'));
+    await waitFor(() => {
+      expect(
+        screen
+          .getByLabelText('Start Blurred vision video recording')
+          .hasAttribute('disabled'),
+      ).toBe(false);
+    });
+    fireEvent.click(
+      screen.getByLabelText('Start Blurred vision video recording'),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          'Video recording is not supported in this browser. Please try a different browser.',
+        ),
+      ).toBeTruthy();
+    });
+    expect(onChange).not.toHaveBeenCalled();
+  });
 });

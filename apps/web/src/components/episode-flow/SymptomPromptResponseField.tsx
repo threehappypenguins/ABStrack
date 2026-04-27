@@ -415,6 +415,12 @@ function SymptomVideoCaptureField({
       setError('Camera preview is not ready yet. Try again in a moment.');
       return;
     }
+    if (typeof MediaRecorder === 'undefined') {
+      setError(
+        'Video recording is not supported in this browser. Please try a different browser.',
+      );
+      return;
+    }
     setError(null);
     const recorder = (() => {
       try {
@@ -422,9 +428,19 @@ function SymptomVideoCaptureField({
           mimeType: 'video/webm',
         });
       } catch {
-        return new MediaRecorder(stream);
+        try {
+          return new MediaRecorder(stream);
+        } catch {
+          setError(
+            'Video recording is not supported in this browser. Please try a different browser.',
+          );
+          return null;
+        }
       }
     })();
+    if (!recorder) {
+      return;
+    }
     recorderRef.current = recorder;
     chunksRef.current = [];
     startMsRef.current = Date.now();
