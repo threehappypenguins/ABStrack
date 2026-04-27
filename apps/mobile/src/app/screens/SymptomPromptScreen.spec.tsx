@@ -25,6 +25,15 @@ import { lightAppColors } from '../theme/app-colors';
 import { SymptomPromptScreen } from './SymptomPromptScreen';
 import * as ImagePicker from 'expo-image-picker';
 
+const mockRecordAsync = jest.fn();
+const mockStopRecording = jest.fn();
+const mockToggleRecordingAsync = jest.fn();
+const mockGetSupportedFeatures = jest.fn(() => ({
+  toggleRecordingAsyncAvailable: true,
+}));
+const mockRequestCameraPermission = jest.fn();
+const mockRequestMicrophonePermission = jest.fn();
+
 jest.mock('@react-navigation/native', () => ({
   ...jest.requireActual('@react-navigation/native'),
   useRoute: jest.fn(),
@@ -77,6 +86,34 @@ jest.mock('expo-image-picker', () => ({
   requestCameraPermissionsAsync: jest.fn(),
   launchCameraAsync: jest.fn(),
 }));
+
+jest.mock('expo-camera', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  const CameraView = React.forwardRef((props: any, ref: any) => {
+    React.useImperativeHandle(ref, () => ({
+      recordAsync: mockRecordAsync,
+      stopRecording: mockStopRecording,
+      toggleRecordingAsync: mockToggleRecordingAsync,
+      getSupportedFeatures: mockGetSupportedFeatures,
+    }));
+    React.useEffect(() => {
+      props.onCameraReady?.();
+    }, [props]);
+    return <View accessibilityLabel="Mock camera view" />;
+  });
+  return {
+    CameraView,
+    useCameraPermissions: jest.fn(() => [
+      { granted: true },
+      mockRequestCameraPermission,
+    ]),
+    useMicrophonePermissions: jest.fn(() => [
+      { granted: true },
+      mockRequestMicrophonePermission,
+    ]),
+  };
+});
 
 const episodeId = 'episode-1';
 const symptomPresetId = 'preset-sym-1';
@@ -203,6 +240,11 @@ describe('SymptomPromptScreen', () => {
       canceled: true,
       assets: [],
     } as never);
+    mockRecordAsync.mockResolvedValue({ uri: 'file:///tmp/video.mp4' });
+    mockStopRecording.mockReset();
+    mockToggleRecordingAsync.mockReset();
+    mockRequestCameraPermission.mockResolvedValue({ granted: true });
+    mockRequestMicrophonePermission.mockResolvedValue({ granted: true });
   });
 
   test('non-free-text answer triggers insertEpisodeSymptomAnswer', async () => {
@@ -628,11 +670,6 @@ describe('SymptomPromptScreen', () => {
       ok: true,
       data: [lineVideoOnly],
     });
-    jest.mocked(ImagePicker.launchCameraAsync).mockResolvedValue({
-      canceled: false,
-      assets: [{ uri: 'file:///tmp/video.mp4', duration: 11000 }],
-    } as never);
-
     const screen = render(<SymptomPromptScreen />);
 
     await waitFor(() => {
@@ -649,7 +686,15 @@ describe('SymptomPromptScreen', () => {
     fireEvent.press(screen.getByLabelText('Record Dizziness video'));
 
     await waitFor(() => {
-      expect(ImagePicker.launchCameraAsync).toHaveBeenCalledTimes(1);
+      expect(
+        screen.getByLabelText('Start Dizziness video recording'),
+      ).toBeTruthy();
+    });
+
+    fireEvent.press(screen.getByLabelText('Start Dizziness video recording'));
+
+    await waitFor(() => {
+      expect(mockRecordAsync).toHaveBeenCalledTimes(1);
     });
 
     await waitFor(() => {
@@ -669,7 +714,7 @@ describe('SymptomPromptScreen', () => {
             type: 'video',
             value: {
               localUri: 'file:///tmp/video.mp4',
-              durationMs: 11000,
+              durationMs: expect.any(Number),
               capturedAt: expect.any(String),
             },
           },
