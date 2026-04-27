@@ -1,14 +1,12 @@
-import type {
-  SymptomPromptAnswer,
-  SymptomPromptAnswers,
+import {
+  SYMPTOM_PROMPT_VIDEO_MAX_DURATION_MS,
+  type SymptomPromptAnswer,
+  type SymptomPromptAnswers,
 } from './symptom-prompt-session.js';
 
 /** Matches severity UI (1–5 scale); integers only. */
 const SEVERITY_MIN = 1;
 const SEVERITY_MAX = 5;
-/** Current capture UX limit for local video clips (15s max). */
-const VIDEO_MAX_DURATION_MS = 15000;
-
 /**
  * Produces a safe non-negative step index from untrusted JSON (rejects non-finite numbers and non-numbers).
  *
@@ -91,7 +89,7 @@ export function sanitizeSymptomPromptAnswerEntry(
         typeof videoRef.durationMs === 'number' &&
         Number.isFinite(videoRef.durationMs) &&
         videoRef.durationMs >= 0 &&
-        videoRef.durationMs <= VIDEO_MAX_DURATION_MS
+        videoRef.durationMs <= SYMPTOM_PROMPT_VIDEO_MAX_DURATION_MS
       ) {
         durationMs = videoRef.durationMs;
       } else {

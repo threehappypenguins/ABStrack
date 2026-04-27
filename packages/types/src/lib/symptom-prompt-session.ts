@@ -1,5 +1,8 @@
 import type { PresetSymptomRow, SymptomResponseType, Uuid } from './types.js';
 
+/** Maximum local symptom video capture duration (15 seconds). */
+export const SYMPTOM_PROMPT_VIDEO_MAX_DURATION_MS = 15000;
+
 /**
  * Temporary local reference to a captured symptom video (no upload key yet).
  */

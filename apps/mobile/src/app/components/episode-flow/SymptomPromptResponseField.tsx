@@ -9,7 +9,10 @@ import {
   View,
 } from 'react-native';
 import type { PresetSymptomRow, SymptomPromptAnswer } from '@abstrack/types';
-import { createDefaultSymptomPromptAnswer } from '@abstrack/types';
+import {
+  SYMPTOM_PROMPT_VIDEO_MAX_DURATION_MS,
+  createDefaultSymptomPromptAnswer,
+} from '@abstrack/types';
 import { COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
 import * as ImagePicker from 'expo-image-picker';
 import {
@@ -27,8 +30,9 @@ export type SymptomPromptResponseFieldProps = {
   onChange: (next: SymptomPromptAnswer) => void;
   disabled: boolean;
 };
-
-const VIDEO_MAX_DURATION_MS = 15000;
+const VIDEO_MAX_DURATION_SECONDS = Math.floor(
+  SYMPTOM_PROMPT_VIDEO_MAX_DURATION_MS / 1000,
+);
 
 /**
  * Renders the capture UI for one preset symptom line (Week 5 skeleton: no media pipeline).
@@ -318,7 +322,7 @@ export function SymptomPromptResponseField({
                     legacy: true,
                     allowsEditing: false,
                     quality: 0.6,
-                    videoMaxDuration: 15,
+                    videoMaxDuration: VIDEO_MAX_DURATION_SECONDS,
                   });
                   if (result.canceled || result.assets.length === 0) {
                     return;
@@ -486,7 +490,7 @@ export function SymptomPromptResponseField({
                         let recordingTask: Promise<{ uri: string } | undefined>;
                         try {
                           recordingTask = cameraRef.current.recordAsync({
-                            maxDuration: 15,
+                            maxDuration: VIDEO_MAX_DURATION_SECONDS,
                           });
                         } catch {
                           setVideoRecording(false);
@@ -511,7 +515,7 @@ export function SymptomPromptResponseField({
                         const durationMs =
                           videoStartMsRef.current !== null
                             ? Math.min(
-                                VIDEO_MAX_DURATION_MS,
+                                SYMPTOM_PROMPT_VIDEO_MAX_DURATION_MS,
                                 Math.max(
                                   0,
                                   Date.now() -

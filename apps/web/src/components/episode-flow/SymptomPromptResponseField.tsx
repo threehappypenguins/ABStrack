@@ -8,7 +8,10 @@ import {
   type KeyboardEvent,
 } from 'react';
 import type { PresetSymptomRow, SymptomPromptAnswer } from '@abstrack/types';
-import { createDefaultSymptomPromptAnswer } from '@abstrack/types';
+import {
+  SYMPTOM_PROMPT_VIDEO_MAX_DURATION_MS,
+  createDefaultSymptomPromptAnswer,
+} from '@abstrack/types';
 
 /** Visible focus ring on keyboard-focused radio buttons (`button[role="radio"]`). */
 const radioLabelFocusVisibleClass =
@@ -22,7 +25,6 @@ export type SymptomPromptResponseFieldProps = {
 };
 
 type YesNoValue = boolean | null;
-const VIDEO_MAX_DURATION_MS = 15000;
 
 function SymptomYesNoRadiogroup({
   line,
@@ -470,7 +472,7 @@ function SymptomVideoCaptureField({
         return;
       }
       const durationMs = Math.min(
-        VIDEO_MAX_DURATION_MS,
+        SYMPTOM_PROMPT_VIDEO_MAX_DURATION_MS,
         Math.max(0, Date.now() - startMsRef.current),
       );
       const blob = new Blob(chunksRef.current, {
@@ -498,7 +500,7 @@ function SymptomVideoCaptureField({
       setElapsedMs(0);
       autoStopTimerRef.current = setTimeout(() => {
         stopRecording();
-      }, VIDEO_MAX_DURATION_MS);
+      }, SYMPTOM_PROMPT_VIDEO_MAX_DURATION_MS);
       setRecording(true);
     } catch {
       recorderRef.current = null;
@@ -552,14 +554,12 @@ function SymptomVideoCaptureField({
                 Record video (max 15s)
               </h3>
               <div
-                role="status"
-                aria-live="polite"
                 className={`rounded-md px-2 py-1 text-sm font-semibold tabular-nums ${
                   recording
                     ? 'bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-200'
                     : 'bg-app-bg text-app-muted'
                 }`}
-                aria-label={`Elapsed recording time ${elapsedDisplay}`}
+                aria-label="Elapsed recording time"
               >
                 {elapsedDisplay}
               </div>
