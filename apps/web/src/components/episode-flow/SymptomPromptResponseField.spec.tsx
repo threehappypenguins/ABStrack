@@ -566,4 +566,45 @@ describe('SymptomPromptResponseField photo capture', () => {
     unmount();
     expect(revokeObjectUrlMock).not.toHaveBeenCalled();
   });
+
+  it('renders capture failure errors inside the open photo dialog', async () => {
+    const onChange = jest.fn();
+    toBlobSpy.mockImplementationOnce((cb: BlobCallback) => {
+      cb(null);
+    });
+    render(
+      <SymptomPromptResponseField
+        line={makePhotoLine('Smile')}
+        answer={undefined}
+        onChange={onChange}
+        disabled={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Take Smile photo'));
+    await waitFor(() => {
+      expect(screen.getByLabelText('Smile photo camera')).toBeTruthy();
+    });
+    const video = document.querySelector('video');
+    expect(video).toBeTruthy();
+    Object.defineProperty(video!, 'videoWidth', {
+      configurable: true,
+      value: 640,
+    });
+    Object.defineProperty(video!, 'videoHeight', {
+      configurable: true,
+      value: 480,
+    });
+    fireEvent.loadedMetadata(video!);
+
+    fireEvent.click(screen.getByLabelText('Save Smile photo and return'));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Photo capture failed. Please try again.'),
+      ).toBeTruthy();
+    });
+    expect(screen.getByLabelText('Smile photo camera')).toBeTruthy();
+    expect(onChange).not.toHaveBeenCalled();
+  });
 });

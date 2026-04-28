@@ -141,11 +141,18 @@ describe('symptom-prompt-session-store', () => {
     expect(getSymptomPromptSession('ep-1')).toEqual(initial);
   });
 
-  it('setSymptomPromptSession keeps media answers in runtime while omitting them from storage', () => {
+  it('setSymptomPromptSession keeps non-durable media in runtime while persisting durable photo refs', () => {
     setSymptomPromptSession('ep-1', {
       activeIndex: 1,
       answers: {
         keep: { type: 'yes_no', value: true },
+        durablePhoto: {
+          type: 'photo',
+          value: {
+            localUri: 'https://cdn.example.test/photo.jpg',
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        },
         photo: {
           type: 'photo',
           value: {
@@ -169,12 +176,26 @@ describe('symptom-prompt-session-store', () => {
       activeIndex: 1,
       answers: {
         keep: { type: 'yes_no', value: true },
+        durablePhoto: {
+          type: 'photo',
+          value: {
+            localUri: 'https://cdn.example.test/photo.jpg',
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        },
       },
     });
     expect(getSymptomPromptSession('ep-1')).toEqual({
       activeIndex: 1,
       answers: {
         keep: { type: 'yes_no', value: true },
+        durablePhoto: {
+          type: 'photo',
+          value: {
+            localUri: 'https://cdn.example.test/photo.jpg',
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        },
         photo: {
           type: 'photo',
           value: {
@@ -268,7 +289,7 @@ describe('symptom-prompt-session-store', () => {
     expect(getSymptomPromptSession('ep-1')).toEqual(initial);
   });
 
-  it('getSymptomPromptSession drops durable photo blob answers after reload-like state', () => {
+  it('getSymptomPromptSession drops non-durable blob photo answers after reload-like state', () => {
     setStored('ep-1', {
       activeIndex: 0,
       answers: {
@@ -284,6 +305,33 @@ describe('symptom-prompt-session-store', () => {
     expect(getSymptomPromptSession('ep-1')).toEqual({
       activeIndex: 0,
       answers: {},
+    });
+  });
+
+  it('getSymptomPromptSession keeps durable photo answers after reload-like state', () => {
+    setStored('ep-1', {
+      activeIndex: 0,
+      answers: {
+        photo: {
+          type: 'photo',
+          value: {
+            localUri: 'https://cdn.example.test/photo.jpg',
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        },
+      },
+    });
+    expect(getSymptomPromptSession('ep-1')).toEqual({
+      activeIndex: 0,
+      answers: {
+        photo: {
+          type: 'photo',
+          value: {
+            localUri: 'https://cdn.example.test/photo.jpg',
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        },
+      },
     });
   });
 });

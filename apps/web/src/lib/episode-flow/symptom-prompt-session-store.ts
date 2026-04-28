@@ -18,14 +18,28 @@ function storageKey(episodeId: string): string {
 
 /**
  * Blob URLs are document-scoped and not durable across reload/navigation.
- * Keep media answers in runtime state only; omit them from `sessionStorage`.
+ * Keep only non-durable media answers in runtime state; omit them from `sessionStorage`.
  */
+function photoRefIsNonDurable(localUri: string): boolean {
+  return localUri.startsWith('blob:');
+}
+
+function answerIsNonDurable(answer: SymptomPromptAnswer): boolean {
+  if (answer.type === 'video') {
+    return true;
+  }
+  if (answer.type === 'photo' && answer.value !== null) {
+    return photoRefIsNonDurable(answer.value.localUri);
+  }
+  return false;
+}
+
 function stripNonDurableAnswers(
   state: SymptomPromptSessionState,
 ): SymptomPromptSessionState {
   const answers = Object.fromEntries(
     Object.entries(state.answers).filter(
-      ([, answer]) => answer.type !== 'video' && answer.type !== 'photo',
+      ([, answer]) => !answerIsNonDurable(answer),
     ),
   );
   return {
@@ -40,9 +54,14 @@ function extractRuntimeMediaAnswers(
 ): SymptomPromptAnswers {
   const out = Object.create(null) as SymptomPromptAnswers;
   for (const [key, answer] of Object.entries(state.answers)) {
+    if (answer.type === 'video' && answer.value !== null) {
+      out[key] = answer as SymptomPromptAnswer;
+      continue;
+    }
     if (
-      (answer.type === 'video' || answer.type === 'photo') &&
-      answer.value !== null
+      answer.type === 'photo' &&
+      answer.value !== null &&
+      photoRefIsNonDurable(answer.value.localUri)
     ) {
       out[key] = answer as SymptomPromptAnswer;
     }

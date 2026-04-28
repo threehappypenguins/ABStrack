@@ -301,6 +301,7 @@ function SymptomPhotoCaptureField({
   const [capturing, setCapturing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewAspectRatio, setPreviewAspectRatio] = useState<number>(16 / 9);
+  const modalErrorId = `symptom-photo-error-${line.id}`;
 
   const captured = answer.type === 'photo' ? answer.value : null;
 
@@ -470,6 +471,7 @@ function SymptomPhotoCaptureField({
             role="dialog"
             aria-modal="true"
             aria-label={`${line.symptom_name} photo camera`}
+            aria-describedby={error ? modalErrorId : undefined}
             className="w-full max-w-2xl rounded-2xl border border-app-border bg-app-surface p-4 shadow-xl"
           >
             <div className="mb-3 flex items-center justify-between gap-2">
@@ -541,6 +543,15 @@ function SymptomPhotoCaptureField({
                     : 'Save photo'}
               </button>
             </div>
+            {error ? (
+              <p
+                id={modalErrorId}
+                className="mt-3 text-sm text-red-700 dark:text-red-300"
+                role="alert"
+              >
+                {error}
+              </p>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -549,7 +560,7 @@ function SymptomPhotoCaptureField({
           ? 'Photo saved on this device for this step. You can go to the next symptom when you are ready.'
           : 'Opens your camera so you can take one photo for this symptom. Large buttons are for easier tapping.'}
       </p>
-      {error ? (
+      {!pickerOpen && error ? (
         <p className="text-sm text-red-700 dark:text-red-300" role="alert">
           {error}
         </p>
