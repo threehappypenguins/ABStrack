@@ -38,6 +38,7 @@ describe('symptom-prompt-session-store', () => {
       configurable: true,
       writable: true,
     });
+    clearSymptomPromptSession('ep-1');
   });
 
   afterEach(() => {
@@ -354,6 +355,38 @@ describe('symptom-prompt-session-store', () => {
     expect(revokeMock).toHaveBeenCalledWith(
       'blob:https://example.test/video-old',
     );
+  });
+
+  it('setSymptomPromptSession does not revoke unchanged runtime media blob URLs', () => {
+    const stateWithMedia = {
+      activeIndex: 0,
+      answers: {
+        photo: {
+          type: 'photo' as const,
+          value: {
+            localUri: 'blob:https://example.test/photo-stable',
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        },
+        video: {
+          type: 'video' as const,
+          value: {
+            localUri: 'blob:https://example.test/video-stable',
+            durationMs: 5000,
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        },
+      },
+    };
+    setSymptomPromptSession('ep-1', stateWithMedia);
+    revokeMock.mockClear();
+
+    setSymptomPromptSession('ep-1', {
+      ...stateWithMedia,
+      activeIndex: 1,
+    });
+
+    expect(revokeMock).not.toHaveBeenCalled();
   });
 
   it('getSymptomPromptSession drops non-durable blob photo answers after reload-like state', () => {

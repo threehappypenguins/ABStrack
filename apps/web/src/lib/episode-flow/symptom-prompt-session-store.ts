@@ -85,6 +85,24 @@ function revokeBlobUris(answers: SymptomPromptAnswers): void {
   }
 }
 
+function runtimeMediaBlobUris(answers: SymptomPromptAnswers): Set<string> {
+  const out = new Set<string>();
+  for (const answer of Object.values(answers)) {
+    if (answer.type === 'video' && answer.value !== null) {
+      out.add(answer.value.localUri);
+      continue;
+    }
+    if (
+      answer.type === 'photo' &&
+      answer.value !== null &&
+      photoRefIsNonDurable(answer.value.localUri)
+    ) {
+      out.add(answer.value.localUri);
+    }
+  }
+  return out;
+}
+
 /**
  * Reads traversal state from `sessionStorage` for the current browser session.
  *
@@ -149,7 +167,13 @@ export function setSymptomPromptSession(
   const runtimeMediaAnswers = extractRuntimeMediaAnswers(state);
   const previousRuntimeMedia = runtimeMediaAnswersByEpisode.get(episodeId);
   if (previousRuntimeMedia) {
-    revokeBlobUris(previousRuntimeMedia);
+    const previousUris = runtimeMediaBlobUris(previousRuntimeMedia);
+    const nextUris = runtimeMediaBlobUris(runtimeMediaAnswers);
+    for (const uri of previousUris) {
+      if (!nextUris.has(uri)) {
+        URL.revokeObjectURL(uri);
+      }
+    }
   }
   if (Object.keys(runtimeMediaAnswers).length === 0) {
     runtimeMediaAnswersByEpisode.delete(episodeId);
