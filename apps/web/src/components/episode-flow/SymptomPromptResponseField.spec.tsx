@@ -264,7 +264,7 @@ describe('SymptomPromptResponseField video capture', () => {
     }
   });
 
-  it('revokes prior object URL when recording again', async () => {
+  it('keeps confirmed video object URLs when recording and confirming again', async () => {
     createObjectUrlMock
       .mockReturnValueOnce('blob:first-video')
       .mockReturnValueOnce('blob:second-video');

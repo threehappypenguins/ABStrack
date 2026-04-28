@@ -331,7 +331,7 @@ function SymptomPhotoCaptureField({
     }
   };
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     previewingCaptureRef.current = previewingCapture;
   }, [previewingCapture]);
 
@@ -701,7 +701,7 @@ function SymptomVideoCaptureField({
     }
   };
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     previewingCaptureRef.current = previewingCapture;
   }, [previewingCapture]);
 
