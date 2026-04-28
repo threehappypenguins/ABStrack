@@ -334,7 +334,6 @@ function SymptomPhotoCaptureField({
     return () => {
       isUnmountedRef.current = true;
       stopAllTracks();
-      revokeCreatedObjectUrl();
     };
   }, []);
 

@@ -510,4 +510,40 @@ describe('SymptomPromptResponseField photo capture', () => {
     expect(toBlobSpy).toHaveBeenCalled();
     expect(stopTrackMock).toHaveBeenCalled();
   });
+
+  it('does not revoke the active photo object URL on unmount', async () => {
+    const onChange = jest.fn();
+    const { unmount } = render(
+      <SymptomPromptResponseField
+        line={makePhotoLine('Ptosis')}
+        answer={undefined}
+        onChange={onChange}
+        disabled={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Take Ptosis photo'));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Ptosis photo camera')).toBeTruthy();
+    });
+    const video = document.querySelector('video');
+    expect(video).toBeTruthy();
+    Object.defineProperty(video!, 'videoWidth', {
+      configurable: true,
+      value: 640,
+    });
+    Object.defineProperty(video!, 'videoHeight', {
+      configurable: true,
+      value: 480,
+    });
+
+    fireEvent.click(screen.getByLabelText('Save Ptosis photo and return'));
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalledTimes(1);
+    });
+
+    unmount();
+    expect(revokeObjectUrlMock).not.toHaveBeenCalled();
+  });
 });
