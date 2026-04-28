@@ -29,4 +29,80 @@ describe('symptom-prompt-session-sanitize', () => {
       legit: { type: 'yes_no', value: false },
     });
   });
+
+  it('sanitizeSymptomPromptAnswerEntry accepts video local capture refs', () => {
+    expect(
+      sanitizeSymptomPromptAnswerEntry({
+        type: 'video',
+        value: {
+          localUri: 'blob:https://example.test/abc',
+          durationMs: 12000,
+          capturedAt: '2026-04-27T12:00:00.000Z',
+        },
+      }),
+    ).toEqual({
+      type: 'video',
+      value: {
+        localUri: 'blob:https://example.test/abc',
+        durationMs: 12000,
+        capturedAt: '2026-04-27T12:00:00.000Z',
+      },
+    });
+  });
+
+  it('sanitizeSymptomPromptAnswerEntry trims video localUri and capturedAt', () => {
+    expect(
+      sanitizeSymptomPromptAnswerEntry({
+        type: 'video',
+        value: {
+          localUri: '  blob:https://example.test/abc  ',
+          durationMs: 12000,
+          capturedAt: '  2026-04-27T12:00:00.000Z  ',
+        },
+      }),
+    ).toEqual({
+      type: 'video',
+      value: {
+        localUri: 'blob:https://example.test/abc',
+        durationMs: 12000,
+        capturedAt: '2026-04-27T12:00:00.000Z',
+      },
+    });
+  });
+
+  it('sanitizeSymptomPromptAnswerEntry rejects video refs with invalid duration range', () => {
+    expect(
+      sanitizeSymptomPromptAnswerEntry({
+        type: 'video',
+        value: {
+          localUri: 'blob:https://example.test/abc',
+          durationMs: -1,
+          capturedAt: '2026-04-27T12:00:00.000Z',
+        },
+      }),
+    ).toBeNull();
+    expect(
+      sanitizeSymptomPromptAnswerEntry({
+        type: 'video',
+        value: {
+          localUri: 'blob:https://example.test/abc',
+          durationMs: 16000,
+          capturedAt: '2026-04-27T12:00:00.000Z',
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it('sanitizeSymptomPromptAnswerEntry rejects video refs with invalid capturedAt', () => {
+    expect(
+      sanitizeSymptomPromptAnswerEntry({
+        type: 'video',
+        value: {
+          localUri: 'blob:https://example.test/abc',
+          durationMs: 1000,
+          capturedAt: 'not-a-date',
+        },
+      }),
+    ).toBeNull();
+  });
 });

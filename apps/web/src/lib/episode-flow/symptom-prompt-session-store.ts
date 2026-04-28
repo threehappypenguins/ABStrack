@@ -1,4 +1,8 @@
-import type { SymptomPromptSessionState } from '@abstrack/types';
+import type {
+  SymptomPromptAnswer,
+  SymptomPromptAnswers,
+  SymptomPromptSessionState,
+} from '@abstrack/types';
 import {
   createInitialSymptomPromptSession,
   sanitizeSymptomPromptActiveIndex,
@@ -6,9 +10,41 @@ import {
 } from '@abstrack/types';
 
 const STORAGE_PREFIX = 'abstrack.symptomPrompt.';
+const runtimeVideoAnswersByEpisode = new Map<string, SymptomPromptAnswers>();
 
 function storageKey(episodeId: string): string {
   return `${STORAGE_PREFIX}${episodeId}`;
+}
+
+/**
+ * Blob URLs are document-scoped and not durable across reload/navigation.
+ * Keep video answers in runtime state only; omit them from `sessionStorage`.
+ */
+function stripNonDurableAnswers(
+  state: SymptomPromptSessionState,
+): SymptomPromptSessionState {
+  const answers = Object.fromEntries(
+    Object.entries(state.answers).filter(
+      ([, answer]) => answer.type !== 'video',
+    ),
+  );
+  return {
+    activeIndex: state.activeIndex,
+    answers,
+  };
+}
+
+/** Keeps only non-null video entries for runtime-only remount resilience. */
+function extractRuntimeVideoAnswers(
+  state: SymptomPromptSessionState,
+): SymptomPromptAnswers {
+  const out = Object.create(null) as SymptomPromptAnswers;
+  for (const [key, answer] of Object.entries(state.answers)) {
+    if (answer.type === 'video' && answer.value !== null) {
+      out[key] = answer as SymptomPromptAnswer;
+    }
+  }
+  return out;
 }
 
 /**
@@ -42,9 +78,17 @@ export function getSymptomPromptSession(
     if (activeIndex === null) {
       return createInitialSymptomPromptSession();
     }
-    return {
+    const durable = stripNonDurableAnswers({
       activeIndex,
       answers: sanitizeSymptomPromptAnswers(parsed.answers),
+    });
+    const runtimeVideoAnswers = runtimeVideoAnswersByEpisode.get(episodeId);
+    if (!runtimeVideoAnswers) {
+      return durable;
+    }
+    return {
+      activeIndex: durable.activeIndex,
+      answers: { ...durable.answers, ...runtimeVideoAnswers },
     };
   } catch {
     return createInitialSymptomPromptSession();
@@ -64,8 +108,17 @@ export function setSymptomPromptSession(
   if (typeof window === 'undefined') {
     return;
   }
+  const runtimeVideoAnswers = extractRuntimeVideoAnswers(state);
+  if (Object.keys(runtimeVideoAnswers).length === 0) {
+    runtimeVideoAnswersByEpisode.delete(episodeId);
+  } else {
+    runtimeVideoAnswersByEpisode.set(episodeId, runtimeVideoAnswers);
+  }
   try {
-    sessionStorage.setItem(storageKey(episodeId), JSON.stringify(state));
+    sessionStorage.setItem(
+      storageKey(episodeId),
+      JSON.stringify(stripNonDurableAnswers(state)),
+    );
   } catch {
     // Quota or private mode — ignore; in-flow state still works for the current mount.
   }
@@ -80,6 +133,7 @@ export function clearSymptomPromptSession(episodeId: string): void {
   if (typeof window === 'undefined') {
     return;
   }
+  runtimeVideoAnswersByEpisode.delete(episodeId);
   try {
     sessionStorage.removeItem(storageKey(episodeId));
   } catch {

@@ -344,6 +344,10 @@ export function SymptomPromptScreen() {
    */
   const schedulePersistToSupabase = useCallback(
     (line: PresetSymptomRow, answer: SymptomPromptAnswer) => {
+      if (answer.type === 'photo' || answer.type === 'video') {
+        // Media answers stay local for now; upload/persistence is handled in a later milestone.
+        return;
+      }
       if (!symptomPromptAnswerHasValue(answer)) {
         cancelPendingServerPersist();
         executeServerDelete(line);

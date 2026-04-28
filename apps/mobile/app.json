@@ -34,6 +34,14 @@
           "backgroundColor": "#ffffff"
         }
       ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow ABStrack to access your camera",
+          "microphonePermission": "Allow ABStrack to access your microphone for video recording",
+          "recordAudioAndroid": true
+        }
+      ],
       "@react-native-community/datetimepicker"
     ]
   }

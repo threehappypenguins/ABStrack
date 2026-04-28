@@ -1,12 +1,12 @@
-import type {
-  SymptomPromptAnswer,
-  SymptomPromptAnswers,
+import {
+  SYMPTOM_PROMPT_VIDEO_MAX_DURATION_MS,
+  type SymptomPromptAnswer,
+  type SymptomPromptAnswers,
 } from './symptom-prompt-session.js';
 
 /** Matches severity UI (1–5 scale); integers only. */
 const SEVERITY_MIN = 1;
 const SEVERITY_MAX = 5;
-
 /**
  * Produces a safe non-negative step index from untrusted JSON (rejects non-finite numbers and non-numbers).
  *
@@ -74,11 +74,50 @@ export function sanitizeSymptomPromptAnswerEntry(
         return { type: 'photo', value: null };
       }
       return null;
-    case 'video':
+    case 'video': {
       if (v === null) {
         return { type: 'video', value: null };
       }
-      return null;
+      if (typeof v !== 'object' || v === null || Array.isArray(v)) {
+        return null;
+      }
+      const videoRef = v as Record<string, unknown>;
+      let durationMs: number | null;
+      if (videoRef.durationMs === undefined || videoRef.durationMs === null) {
+        durationMs = null;
+      } else if (
+        typeof videoRef.durationMs === 'number' &&
+        Number.isFinite(videoRef.durationMs) &&
+        videoRef.durationMs >= 0 &&
+        videoRef.durationMs <= SYMPTOM_PROMPT_VIDEO_MAX_DURATION_MS
+      ) {
+        durationMs = videoRef.durationMs;
+      } else {
+        return null;
+      }
+      if (typeof videoRef.localUri !== 'string') {
+        return null;
+      }
+      const localUri = videoRef.localUri.trim();
+      if (localUri.length === 0) {
+        return null;
+      }
+      if (typeof videoRef.capturedAt !== 'string') {
+        return null;
+      }
+      const capturedAt = videoRef.capturedAt.trim();
+      if (capturedAt.length === 0 || !Number.isFinite(Date.parse(capturedAt))) {
+        return null;
+      }
+      return {
+        type: 'video',
+        value: {
+          localUri,
+          durationMs,
+          capturedAt,
+        },
+      };
+    }
     default:
       return null;
   }

@@ -73,13 +73,46 @@ describe('symptom-prompt-session', () => {
       ).toBe(true);
     });
 
-    it('photo and video never count as having a value (Week 6 placeholders)', () => {
+    it('photo stays empty and video counts when local capture exists', () => {
       expect(symptomPromptAnswerHasValue({ type: 'photo', value: null })).toBe(
         false,
       );
       expect(symptomPromptAnswerHasValue({ type: 'video', value: null })).toBe(
         false,
       );
+      expect(
+        symptomPromptAnswerHasValue({
+          type: 'video',
+          value: {
+            localUri: 'file:///tmp/capture.mp4',
+            durationMs: 7000,
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        }),
+      ).toBe(true);
+    });
+
+    it('video is empty when localUri/capturedAt are invalid at runtime', () => {
+      expect(
+        symptomPromptAnswerHasValue({
+          type: 'video',
+          value: {
+            localUri: '   ',
+            durationMs: 7000,
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        }),
+      ).toBe(false);
+      expect(
+        symptomPromptAnswerHasValue({
+          type: 'video',
+          value: {
+            localUri: 'file:///tmp/capture.mp4',
+            durationMs: 7000,
+            capturedAt: 'not-a-date',
+          },
+        }),
+      ).toBe(false);
     });
   });
 

@@ -23,6 +23,16 @@ import {
 import { useAppTheme } from '../theme/AppThemeContext';
 import { lightAppColors } from '../theme/app-colors';
 import { SymptomPromptScreen } from './SymptomPromptScreen';
+import * as ImagePicker from 'expo-image-picker';
+
+const mockRecordAsync = jest.fn();
+const mockStopRecording = jest.fn();
+const mockToggleRecordingAsync = jest.fn();
+const mockGetSupportedFeatures = jest.fn(() => ({
+  toggleRecordingAsyncAvailable: true,
+}));
+const mockRequestCameraPermission = jest.fn();
+const mockRequestMicrophonePermission = jest.fn();
 
 jest.mock('@react-navigation/native', () => ({
   ...jest.requireActual('@react-navigation/native'),
@@ -68,6 +78,43 @@ jest.mock('@abstrack/ui/native', () => {
   };
 });
 
+jest.mock('expo-image-picker', () => ({
+  CameraType: {
+    front: 'front',
+    back: 'back',
+  },
+  requestCameraPermissionsAsync: jest.fn(),
+  launchCameraAsync: jest.fn(),
+}));
+
+jest.mock('expo-camera', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  const CameraView = React.forwardRef((props: any, ref: any) => {
+    React.useImperativeHandle(ref, () => ({
+      recordAsync: mockRecordAsync,
+      stopRecording: mockStopRecording,
+      toggleRecordingAsync: mockToggleRecordingAsync,
+      getSupportedFeatures: mockGetSupportedFeatures,
+    }));
+    React.useEffect(() => {
+      props.onCameraReady?.();
+    }, [props]);
+    return <View accessibilityLabel="Mock camera view" />;
+  });
+  return {
+    CameraView,
+    useCameraPermissions: jest.fn(() => [
+      { granted: true },
+      mockRequestCameraPermission,
+    ]),
+    useMicrophonePermissions: jest.fn(() => [
+      { granted: true },
+      mockRequestMicrophonePermission,
+    ]),
+  };
+});
+
 const episodeId = 'episode-1';
 const symptomPresetId = 'preset-sym-1';
 const symptomPresetIdB = 'preset-sym-2';
@@ -100,6 +147,7 @@ describe('SymptomPromptScreen', () => {
   const lineA = makeLine('line-a', 0, 'Nausea', 'yes_no');
   const lineB = makeLine('line-b', 1, 'Headache', 'severity_scale');
   const lineSeverityOnly = makeLine('line-sev', 0, 'Pain', 'severity_scale');
+  const lineVideoOnly = makeLine('line-video', 0, 'Dizziness', 'video');
 
   /** Single free-text line for debounce / flush tests. */
   const lineFreeOnly = makeLine('line-ft', 0, 'Notes', 'free_text');
@@ -185,6 +233,18 @@ describe('SymptomPromptScreen', () => {
       ok: true,
       data: { didCancel: true },
     });
+    jest.mocked(ImagePicker.requestCameraPermissionsAsync).mockResolvedValue({
+      granted: true,
+    } as never);
+    jest.mocked(ImagePicker.launchCameraAsync).mockResolvedValue({
+      canceled: true,
+      assets: [],
+    } as never);
+    mockRecordAsync.mockResolvedValue({ uri: 'file:///tmp/video.mp4' });
+    mockStopRecording.mockReset();
+    mockToggleRecordingAsync.mockReset();
+    mockRequestCameraPermission.mockResolvedValue({ granted: true });
+    mockRequestMicrophonePermission.mockResolvedValue({ granted: true });
   });
 
   test('non-free-text answer triggers insertEpisodeSymptomAnswer', async () => {
@@ -601,6 +661,64 @@ describe('SymptomPromptScreen', () => {
         episodeId,
         presetSymptomId: lineFreeOnly.id,
         lastPostMarkerStepCompletedAt: null,
+      }),
+    );
+  });
+
+  test('video capture stores local answer and does not upsert to Supabase yet', async () => {
+    jest.mocked(listPresetSymptomsForPreset).mockResolvedValue({
+      ok: true,
+      data: [lineVideoOnly],
+    });
+    const screen = render(<SymptomPromptScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Step 1 of 1')).toBeTruthy();
+    });
+
+    expect(
+      screen.getByLabelText('Next symptom').props.accessibilityState,
+    ).toEqual({
+      disabled: true,
+    });
+
+    jest.mocked(insertEpisodeSymptomAnswer).mockClear();
+    fireEvent.press(screen.getByLabelText('Record Dizziness video'));
+
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText('Start Dizziness video recording'),
+      ).toBeTruthy();
+    });
+
+    fireEvent.press(screen.getByLabelText('Start Dizziness video recording'));
+
+    await waitFor(() => {
+      expect(mockRecordAsync).toHaveBeenCalledTimes(1);
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText('Next symptom').props.accessibilityState,
+      ).toEqual({
+        disabled: false,
+      });
+    });
+
+    expect(insertEpisodeSymptomAnswer).not.toHaveBeenCalled();
+    expect(setSymptomPromptSession).toHaveBeenLastCalledWith(
+      episodeId,
+      expect.objectContaining({
+        answers: expect.objectContaining({
+          [lineVideoOnly.id]: {
+            type: 'video',
+            value: {
+              localUri: 'file:///tmp/video.mp4',
+              durationMs: expect.any(Number),
+              capturedAt: expect.any(String),
+            },
+          },
+        }),
       }),
     );
   });
