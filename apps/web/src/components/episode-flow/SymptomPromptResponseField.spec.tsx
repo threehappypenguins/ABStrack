@@ -387,6 +387,27 @@ describe('SymptomPromptResponseField photo capture', () => {
   >;
   let toBlobSpy: jest.SpiedFunction<typeof HTMLCanvasElement.prototype.toBlob>;
 
+  beforeAll(() => {
+    if (!originalNavigatorDescriptor) {
+      originalNavigatorDescriptor = Object.getOwnPropertyDescriptor(
+        globalThis,
+        'navigator',
+      );
+    }
+    if (!originalCreateObjectUrlDescriptor) {
+      originalCreateObjectUrlDescriptor = Object.getOwnPropertyDescriptor(
+        globalThis.URL,
+        'createObjectURL',
+      );
+    }
+    if (!originalRevokeObjectUrlDescriptor) {
+      originalRevokeObjectUrlDescriptor = Object.getOwnPropertyDescriptor(
+        globalThis.URL,
+        'revokeObjectURL',
+      );
+    }
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     getUserMediaMock.mockResolvedValue(mockStream);
