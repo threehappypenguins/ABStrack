@@ -627,7 +627,7 @@ export function HealthMarkerPromptScreen() {
       symptomPresetId: presetId,
       resume: true,
     });
-  }, [announce, episodeId, episodeRow?.symptom_preset_id, navigation]);
+  }, [episodeId, episodeRow?.symptom_preset_id, navigation]);
 
   const onBackToSymptomsFromHealthMarkers = useCallback(async () => {
     const symptomPresetId = episodeRow?.symptom_preset_id;
@@ -987,8 +987,7 @@ export function HealthMarkerPromptScreen() {
             onCancelEpisodePress={onCancelEpisodePress}
           />
         ) : phase === 'postMarkers' ? (
-          <>
-            <ScrollView
+          <ScrollView
               className="flex-1"
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator
@@ -1185,10 +1184,8 @@ export function HealthMarkerPromptScreen() {
                 </Pressable>
               </EpisodeFlowSecondaryActionsSection>
             </ScrollView>
-          </>
         ) : (
-          <>
-            <AsyncScreenContainer
+          <AsyncScreenContainer
               status={status}
               loadingAccessibilityLabel="Loading health marker list"
               errorTitle="Could not load health markers"
@@ -1415,7 +1412,6 @@ export function HealthMarkerPromptScreen() {
                 </EpisodeFlowSecondaryActionsSection>
               </ScrollView>
             </AsyncScreenContainer>
-          </>
         )}
       </View>
     </ScreenShell>

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   type GestureResponderEvent,
+  Image,
   Modal,
   Platform,
   Pressable,
@@ -51,6 +52,10 @@ export function SymptomPromptResponseField({
   const [photoModalOpen, setPhotoModalOpen] = useState(false);
   const [photoCameraReady, setPhotoCameraReady] = useState(false);
   const [photoCapturing, setPhotoCapturing] = useState(false);
+  const [pendingPhotoReview, setPendingPhotoReview] = useState<{
+    localUri: string;
+    capturedAt: string;
+  } | null>(null);
   const [videoBusy, setVideoBusy] = useState(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [microphonePermission, requestMicrophonePermission] =
@@ -283,6 +288,7 @@ export function SymptomPromptResponseField({
               void (async () => {
                 setPhotoBusy(true);
                 try {
+                  setPendingPhotoReview(null);
                   if (Platform.OS === 'android' || Platform.OS === 'ios') {
                     if (!cameraPermission?.granted) {
                       const granted = await requestCameraPermission();
@@ -349,9 +355,62 @@ export function SymptomPromptResponseField({
             maxFontSizeMultiplier={2}
           >
             {capturedPhoto
-              ? 'Photo saved on this device for this step. Continue when you are ready.'
-              : 'Use a large button to open the camera, take one photo, then return here.'}
+              ? 'Photo selected for this step. Continue when you are ready.'
+              : pendingPhotoReview
+                ? 'Review your photo, then choose Use photo or Take again.'
+                : 'Use a large button to open the camera, take one photo, then return here.'}
           </Text>
+          {pendingPhotoReview ? (
+            <View className="gap-3 rounded-xl border border-app-border bg-white p-3 dark:border-app-border-dark dark:bg-app-bg-dark">
+              <Image
+                source={{ uri: pendingPhotoReview.localUri }}
+                accessibilityLabel={`${line.symptom_name} photo preview`}
+                accessibilityIgnoresInvertColors
+                style={{
+                  width: '100%',
+                  aspectRatio: 3 / 4,
+                  borderRadius: 12,
+                }}
+                resizeMode="contain"
+              />
+              <View className="flex-row gap-3">
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Use ${line.symptom_name} photo`}
+                  onPress={() => {
+                    onChange({
+                      type: 'photo',
+                      value: pendingPhotoReview,
+                    });
+                    setPendingPhotoReview(null);
+                  }}
+                  style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                  className="flex-1 items-center justify-center rounded-xl bg-app-primary px-4 py-3 active:opacity-90"
+                >
+                  <Text className="text-[17px] font-semibold text-white">
+                    Use photo
+                  </Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Take ${line.symptom_name} photo again`}
+                  onPress={() => {
+                    setPendingPhotoReview(null);
+                    setCameraFacing('front');
+                    setCameraZoom(0);
+                    setPhotoCameraReady(false);
+                    setPhotoModalOpen(true);
+                  }}
+                  style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                  className="flex-1 items-center justify-center rounded-xl border border-app-border px-4 py-3 active:opacity-90 dark:border-app-border-dark"
+                >
+                  <Text className={`text-[17px] font-semibold ${nw.textInk}`}>
+                    Take again
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
           <Modal
             visible={photoModalOpen}
             animationType="slide"
@@ -456,12 +515,9 @@ export function SymptomPromptResponseField({
                         }
                         setPhotoModalOpen(false);
                         setPhotoCameraReady(false);
-                        onChange({
-                          type: 'photo',
-                          value: {
-                            localUri: result.uri,
-                            capturedAt: new Date().toISOString(),
-                          },
+                        setPendingPhotoReview({
+                          localUri: result.uri,
+                          capturedAt: new Date().toISOString(),
                         });
                       } finally {
                         setPhotoCapturing(false);

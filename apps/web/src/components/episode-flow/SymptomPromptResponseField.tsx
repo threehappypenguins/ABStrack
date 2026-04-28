@@ -29,6 +29,12 @@ export type SymptomPromptResponseFieldProps = {
 };
 
 type YesNoValue = boolean | null;
+type CapturedPhotoValue = NonNullable<
+  Extract<SymptomPromptAnswer, { type: 'photo' }>['value']
+>;
+type CapturedVideoValue = NonNullable<
+  Extract<SymptomPromptAnswer, { type: 'video' }>['value']
+>;
 
 function SymptomYesNoRadiogroup({
   line,
@@ -293,25 +299,20 @@ function SymptomPhotoCaptureField({
 }) {
   const streamRef = useRef<MediaStream | null>(null);
   const previewRef = useRef<HTMLVideoElement | null>(null);
-  const createdObjectUrlRef = useRef<string | null>(null);
   const isUnmountedRef = useRef(false);
+  const previewingCaptureRef = useRef<CapturedPhotoValue | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [starting, setStarting] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [capturing, setCapturing] = useState(false);
+  const [previewingCapture, setPreviewingCapture] =
+    useState<CapturedPhotoValue | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [previewAspectRatio, setPreviewAspectRatio] = useState<number>(16 / 9);
   const modalErrorId = `symptom-photo-error-${line.id}`;
 
   const captured = answer.type === 'photo' ? answer.value : null;
-
-  const revokeCreatedObjectUrl = () => {
-    if (!createdObjectUrlRef.current) {
-      return;
-    }
-    URL.revokeObjectURL(createdObjectUrlRef.current);
-    createdObjectUrlRef.current = null;
-  };
+  const previewing = previewingCapture !== null;
 
   const stopAllTracks = () => {
     const stream = streamRef.current;
@@ -331,15 +332,22 @@ function SymptomPhotoCaptureField({
   };
 
   useEffect(() => {
+    previewingCaptureRef.current = previewingCapture;
+  }, [previewingCapture]);
+
+  useEffect(() => {
     isUnmountedRef.current = false;
     return () => {
       isUnmountedRef.current = true;
+      if (previewingCaptureRef.current) {
+        URL.revokeObjectURL(previewingCaptureRef.current.localUri);
+      }
       stopAllTracks();
     };
   }, []);
 
   useEffect(() => {
-    if (!pickerOpen) {
+    if (!pickerOpen || previewing) {
       stopAllTracks();
       return;
     }
@@ -398,7 +406,15 @@ function SymptomPhotoCaptureField({
     return () => {
       cancelled = true;
     };
-  }, [pickerOpen]);
+  }, [pickerOpen, previewing]);
+
+  const discardPreviewCapture = () => {
+    if (!previewingCapture) {
+      return;
+    }
+    URL.revokeObjectURL(previewingCapture.localUri);
+    setPreviewingCapture(null);
+  };
 
   const takePhotoFromPreview = async () => {
     const video = previewRef.current;
@@ -425,18 +441,13 @@ function SymptomPhotoCaptureField({
         setError('Photo capture failed. Please try again.');
         return;
       }
-      revokeCreatedObjectUrl();
       const localUri = URL.createObjectURL(blob);
-      createdObjectUrlRef.current = localUri;
-      onChange({
-        type: 'photo',
-        value: {
-          localUri,
-          capturedAt: new Date().toISOString(),
-        },
+      discardPreviewCapture();
+      setPreviewingCapture({
+        localUri,
+        capturedAt: new Date().toISOString(),
       });
       stopAllTracks();
-      setPickerOpen(false);
     } finally {
       setCapturing(false);
     }
@@ -488,61 +499,108 @@ function SymptomPhotoCaptureField({
                   if (capturing) {
                     return;
                   }
+                  discardPreviewCapture();
                   setPickerOpen(false);
                 }}
               >
                 Close
               </button>
             </div>
-            <div className="rounded-xl border border-app-border/90 bg-app-bg p-2">
-              <div
-                className="w-full overflow-hidden rounded-lg bg-black"
-                style={{ aspectRatio: previewAspectRatio }}
-              >
-                <video
-                  ref={previewRef}
-                  aria-label={`${line.symptom_name} live camera preview`}
-                  className="h-full w-full bg-black object-contain"
-                  autoPlay
-                  muted
-                  playsInline
-                  onLoadedMetadata={(event) => {
-                    const v = event.currentTarget;
-                    if (v.videoWidth > 0 && v.videoHeight > 0) {
-                      setPreviewAspectRatio(v.videoWidth / v.videoHeight);
-                      setCameraReady(true);
-                    } else {
-                      setCameraReady(false);
-                    }
-                  }}
-                  onEmptied={() => {
-                    setCameraReady(false);
-                  }}
-                />
-              </div>
-            </div>
-            <div className="mt-4 flex items-center justify-center">
-              <button
-                type="button"
-                aria-disabled={starting || !cameraReady || capturing}
-                aria-label={`Save ${line.symptom_name} photo and return`}
-                className={`inline-flex min-h-[56px] min-w-[200px] items-center justify-center rounded-full px-6 text-base font-semibold text-white ${
-                  starting || !cameraReady || capturing
-                    ? 'cursor-not-allowed bg-slate-400 dark:bg-slate-600'
-                    : 'bg-app-primary hover:opacity-95'
-                }`}
-                disabled={starting || !cameraReady || capturing}
-                onClick={() => {
-                  void takePhotoFromPreview();
-                }}
-              >
-                {starting
-                  ? 'Starting camera…'
-                  : capturing
-                    ? 'Saving photo…'
-                    : 'Save photo'}
-              </button>
-            </div>
+            {!previewingCapture ? (
+              <>
+                <div className="rounded-xl border border-app-border/90 bg-app-bg p-2">
+                  <div
+                    className="w-full overflow-hidden rounded-lg bg-black"
+                    style={{ aspectRatio: previewAspectRatio }}
+                  >
+                    <video
+                      ref={previewRef}
+                      aria-label={`${line.symptom_name} live camera preview`}
+                      className="h-full w-full bg-black object-contain"
+                      autoPlay
+                      muted
+                      playsInline
+                      onLoadedMetadata={(event) => {
+                        const v = event.currentTarget;
+                        if (v.videoWidth > 0 && v.videoHeight > 0) {
+                          setPreviewAspectRatio(v.videoWidth / v.videoHeight);
+                          setCameraReady(true);
+                        } else {
+                          setCameraReady(false);
+                        }
+                      }}
+                      onEmptied={() => {
+                        setCameraReady(false);
+                      }}
+                    />
+                  </div>
+                </div>
+                <div className="mt-4 flex items-center justify-center">
+                  <button
+                    type="button"
+                    aria-disabled={starting || !cameraReady || capturing}
+                    aria-label={`Capture ${line.symptom_name} photo`}
+                    className={`inline-flex min-h-[56px] min-w-[200px] items-center justify-center rounded-full px-6 text-base font-semibold text-white ${
+                      starting || !cameraReady || capturing
+                        ? 'cursor-not-allowed bg-slate-400 dark:bg-slate-600'
+                        : 'bg-app-primary hover:opacity-95'
+                    }`}
+                    disabled={starting || !cameraReady || capturing}
+                    onClick={() => {
+                      void takePhotoFromPreview();
+                    }}
+                  >
+                    {starting
+                      ? 'Starting camera…'
+                      : capturing
+                        ? 'Capturing photo…'
+                        : 'Capture photo'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="rounded-xl border border-app-border/90 bg-app-bg p-2">
+                  <div
+                    className="w-full overflow-hidden rounded-lg bg-black"
+                    style={{ aspectRatio: previewAspectRatio }}
+                  >
+                    <img
+                      src={previewingCapture.localUri}
+                      alt={`${line.symptom_name} photo preview`}
+                      className="h-full w-full object-contain"
+                    />
+                  </div>
+                </div>
+                <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                  <button
+                    type="button"
+                    aria-label={`Use ${line.symptom_name} photo`}
+                    className="inline-flex min-h-[56px] flex-1 items-center justify-center rounded-xl bg-app-primary px-4 text-base font-semibold text-white hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+                    onClick={() => {
+                      onChange({
+                        type: 'photo',
+                        value: previewingCapture,
+                      });
+                      setPreviewingCapture(null);
+                      setPickerOpen(false);
+                    }}
+                  >
+                    Use photo
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Take ${line.symptom_name} photo again`}
+                    className="inline-flex min-h-[56px] flex-1 items-center justify-center rounded-xl border border-app-border bg-app-surface px-4 text-base font-semibold text-app-ink hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+                    onClick={() => {
+                      discardPreviewCapture();
+                    }}
+                  >
+                    Take again
+                  </button>
+                </div>
+              </>
+            )}
             {error ? (
               <p
                 id={modalErrorId}
@@ -557,7 +615,7 @@ function SymptomPhotoCaptureField({
       ) : null}
       <p className="text-sm text-app-muted" role="status">
         {captured
-          ? 'Photo saved on this device for this step. You can go to the next symptom when you are ready.'
+          ? 'Photo selected for this step. You can use Take photo again to replace it.'
           : 'Opens your camera so you can take one photo for this symptom. Large buttons are for easier tapping.'}
       </p>
       {!pickerOpen && error ? (
@@ -589,8 +647,8 @@ function SymptomVideoCaptureField({
   const chunksRef = useRef<Blob[]>([]);
   const startMsRef = useRef(0);
   const autoStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const createdObjectUrlRef = useRef<string | null>(null);
   const isUnmountedRef = useRef(false);
+  const previewingCaptureRef = useRef<CapturedVideoValue | null>(null);
   const [recording, setRecording] = useState(false);
   const [starting, setStarting] = useState(false);
   const [recorderOpen, setRecorderOpen] = useState(false);
@@ -598,22 +656,17 @@ function SymptomVideoCaptureField({
   const [error, setError] = useState<string | null>(null);
   const [previewAspectRatio, setPreviewAspectRatio] = useState<number>(16 / 9);
   const [elapsedMs, setElapsedMs] = useState(0);
+  const [previewingCapture, setPreviewingCapture] =
+    useState<CapturedVideoValue | null>(null);
 
   const captured = answer.type === 'video' ? answer.value : null;
+  const previewing = previewingCapture !== null;
 
   const clearAutoStop = () => {
     if (autoStopTimerRef.current !== null) {
       clearTimeout(autoStopTimerRef.current);
       autoStopTimerRef.current = null;
     }
-  };
-
-  const revokeCreatedObjectUrl = () => {
-    if (!createdObjectUrlRef.current) {
-      return;
-    }
-    URL.revokeObjectURL(createdObjectUrlRef.current);
-    createdObjectUrlRef.current = null;
   };
 
   const stopAllTracks = () => {
@@ -649,9 +702,16 @@ function SymptomVideoCaptureField({
   };
 
   useEffect(() => {
+    previewingCaptureRef.current = previewingCapture;
+  }, [previewingCapture]);
+
+  useEffect(() => {
     isUnmountedRef.current = false;
     return () => {
       isUnmountedRef.current = true;
+      if (previewingCaptureRef.current) {
+        URL.revokeObjectURL(previewingCaptureRef.current.localUri);
+      }
       stopRecording();
       stopAllTracks();
       recorderRef.current = null;
@@ -659,7 +719,7 @@ function SymptomVideoCaptureField({
   }, []);
 
   useEffect(() => {
-    if (!recorderOpen) {
+    if (!recorderOpen || previewing) {
       stopRecording();
       stopAllTracks();
       setElapsedMs(0);
@@ -725,7 +785,15 @@ function SymptomVideoCaptureField({
     return () => {
       cancelled = true;
     };
-  }, [recorderOpen]);
+  }, [previewing, recorderOpen]);
+
+  const discardPreviewCapture = () => {
+    if (!previewingCapture) {
+      return;
+    }
+    URL.revokeObjectURL(previewingCapture.localUri);
+    setPreviewingCapture(null);
+  };
 
   useEffect(() => {
     if (!recording) {
@@ -803,21 +871,16 @@ function SymptomVideoCaptureField({
         type: recorder.mimeType || 'video/webm',
       });
       if (blob.size > 0) {
-        revokeCreatedObjectUrl();
+        discardPreviewCapture();
         const localUri = URL.createObjectURL(blob);
-        createdObjectUrlRef.current = localUri;
-        onChange({
-          type: 'video',
-          value: {
-            localUri,
-            durationMs,
-            capturedAt: new Date().toISOString(),
-          },
+        setPreviewingCapture({
+          localUri,
+          durationMs,
+          capturedAt: new Date().toISOString(),
         });
       }
       setRecording(false);
       stopAllTracks();
-      setRecorderOpen(false);
     };
     try {
       recorder.start();
@@ -899,66 +962,114 @@ function SymptomVideoCaptureField({
                   if (recording) {
                     return;
                   }
+                  discardPreviewCapture();
                   setRecorderOpen(false);
                 }}
               >
                 Close
               </button>
             </div>
-            <div className="rounded-xl border border-app-border/90 bg-app-bg p-2">
-              <div
-                className="w-full overflow-hidden rounded-lg bg-black"
-                style={{ aspectRatio: previewAspectRatio }}
-              >
-                <video
-                  ref={previewRef}
-                  aria-label={`${line.symptom_name} live camera preview`}
-                  className="h-full w-full bg-black object-contain"
-                  autoPlay
-                  muted
-                  playsInline
-                  onLoadedMetadata={(event) => {
-                    const video = event.currentTarget;
-                    if (video.videoWidth > 0 && video.videoHeight > 0) {
-                      setPreviewAspectRatio(
-                        video.videoWidth / video.videoHeight,
-                      );
-                    }
-                  }}
-                />
-              </div>
-            </div>
-            <div className="mt-4 flex items-center justify-center gap-3">
-              {!recording ? (
-                <button
-                  type="button"
-                  aria-disabled={starting || !cameraReady}
-                  aria-label={`Start ${line.symptom_name} video recording`}
-                  className={`inline-flex min-h-[56px] min-w-[180px] items-center justify-center gap-3 rounded-full px-6 text-base font-semibold text-white ${
-                    starting || !cameraReady
-                      ? 'cursor-not-allowed bg-red-400'
-                      : 'bg-red-700 hover:bg-red-800'
-                  }`}
-                  disabled={starting || !cameraReady}
-                  onClick={beginRecording}
-                >
-                  <span
-                    aria-hidden="true"
-                    className="h-4 w-4 rounded-full bg-white"
-                  />
-                  {starting ? 'Starting camera…' : 'Start recording'}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  aria-label={`Stop ${line.symptom_name} video recording`}
-                  className="inline-flex min-h-[56px] min-w-[180px] items-center justify-center rounded-full bg-red-700 px-6 text-base font-semibold text-white hover:bg-red-800"
-                  onClick={stopRecording}
-                >
-                  Stop recording
-                </button>
-              )}
-            </div>
+            {!previewingCapture ? (
+              <>
+                <div className="rounded-xl border border-app-border/90 bg-app-bg p-2">
+                  <div
+                    className="w-full overflow-hidden rounded-lg bg-black"
+                    style={{ aspectRatio: previewAspectRatio }}
+                  >
+                    <video
+                      ref={previewRef}
+                      aria-label={`${line.symptom_name} live camera preview`}
+                      className="h-full w-full bg-black object-contain"
+                      autoPlay
+                      muted
+                      playsInline
+                      onLoadedMetadata={(event) => {
+                        const video = event.currentTarget;
+                        if (video.videoWidth > 0 && video.videoHeight > 0) {
+                          setPreviewAspectRatio(
+                            video.videoWidth / video.videoHeight,
+                          );
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
+                <div className="mt-4 flex items-center justify-center gap-3">
+                  {!recording ? (
+                    <button
+                      type="button"
+                      aria-disabled={starting || !cameraReady}
+                      aria-label={`Start ${line.symptom_name} video recording`}
+                      className={`inline-flex min-h-[56px] min-w-[180px] items-center justify-center gap-3 rounded-full px-6 text-base font-semibold text-white ${
+                        starting || !cameraReady
+                          ? 'cursor-not-allowed bg-red-400'
+                          : 'bg-red-700 hover:bg-red-800'
+                      }`}
+                      disabled={starting || !cameraReady}
+                      onClick={beginRecording}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="h-4 w-4 rounded-full bg-white"
+                      />
+                      {starting ? 'Starting camera…' : 'Start recording'}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      aria-label={`Stop ${line.symptom_name} video recording`}
+                      className="inline-flex min-h-[56px] min-w-[180px] items-center justify-center rounded-full bg-red-700 px-6 text-base font-semibold text-white hover:bg-red-800"
+                      onClick={stopRecording}
+                    >
+                      Stop recording
+                    </button>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="rounded-xl border border-app-border/90 bg-app-bg p-2">
+                  <div
+                    className="w-full overflow-hidden rounded-lg bg-black"
+                    style={{ aspectRatio: previewAspectRatio }}
+                  >
+                    <video
+                      aria-label={`${line.symptom_name} captured video preview`}
+                      className="h-full w-full bg-black object-contain"
+                      src={previewingCapture.localUri}
+                      controls
+                    />
+                  </div>
+                </div>
+                <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                  <button
+                    type="button"
+                    aria-label={`Use ${line.symptom_name} video`}
+                    className="inline-flex min-h-[56px] flex-1 items-center justify-center rounded-xl bg-app-primary px-4 text-base font-semibold text-white hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+                    onClick={() => {
+                      onChange({
+                        type: 'video',
+                        value: previewingCapture,
+                      });
+                      setPreviewingCapture(null);
+                      setRecorderOpen(false);
+                    }}
+                  >
+                    Use video
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Record ${line.symptom_name} video again`}
+                    className="inline-flex min-h-[56px] flex-1 items-center justify-center rounded-xl border border-app-border bg-app-surface px-4 text-base font-semibold text-app-ink hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+                    onClick={() => {
+                      discardPreviewCapture();
+                    }}
+                  >
+                    Record again
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       ) : null}
@@ -966,11 +1077,11 @@ function SymptomVideoCaptureField({
         {recording
           ? `Recording in progress. It stops automatically at ${SYMPTOM_PROMPT_VIDEO_MAX_SECONDS} seconds, or you can stop now.`
           : captured
-            ? `Video captured. Duration ${
+            ? `Video selected. Duration ${
                 captured.durationMs !== null
                   ? `${Math.round(captured.durationMs / 1000)}s`
                   : 'unknown'
-              }.`
+              }. Use Record again to replace it.`
             : `Use camera capture for up to ${SYMPTOM_PROMPT_VIDEO_MAX_SECONDS} seconds. Stop any time to finish early.`}
       </p>
       {error ? (

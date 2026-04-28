@@ -80,6 +80,8 @@ describe('SymptomPromptResponseField video capture', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    createObjectUrlMock.mockReset();
+    revokeObjectUrlMock.mockReset();
     getUserMediaMock.mockResolvedValue(mockStream);
     createObjectUrlMock.mockReturnValue('blob:local-video');
     Object.defineProperty(globalThis, 'navigator', {
@@ -179,6 +181,14 @@ describe('SymptomPromptResponseField video capture', () => {
     fireEvent.click(screen.getByLabelText('Stop Dizziness video recording'));
 
     await waitFor(() => {
+      expect(
+        screen.getByLabelText('Dizziness captured video preview'),
+      ).toBeTruthy();
+      expect(onChange).toHaveBeenCalledTimes(0);
+    });
+    fireEvent.click(screen.getByLabelText('Use Dizziness video'));
+
+    await waitFor(() => {
       expect(onChange).toHaveBeenCalledTimes(1);
     });
 
@@ -239,6 +249,14 @@ describe('SymptomPromptResponseField video capture', () => {
       });
 
       await waitFor(() => {
+        expect(
+          screen.getByLabelText('Nausea captured video preview'),
+        ).toBeTruthy();
+        expect(onChange).toHaveBeenCalledTimes(0);
+      });
+      fireEvent.click(screen.getByLabelText('Use Nausea video'));
+
+      await waitFor(() => {
         expect(onChange).toHaveBeenCalledTimes(1);
       });
     } finally {
@@ -276,6 +294,13 @@ describe('SymptomPromptResponseField video capture', () => {
     });
     fireEvent.click(screen.getByLabelText('Stop Headache video recording'));
     await waitFor(() => {
+      expect(
+        screen.getByLabelText('Headache captured video preview'),
+      ).toBeTruthy();
+      expect(onChange).toHaveBeenCalledTimes(0);
+    });
+    fireEvent.click(screen.getByLabelText('Use Headache video'));
+    await waitFor(() => {
       expect(onChange).toHaveBeenCalledTimes(1);
     });
     expect(revokeObjectUrlMock).not.toHaveBeenCalled();
@@ -295,11 +320,18 @@ describe('SymptomPromptResponseField video capture', () => {
       ).toBeTruthy();
     });
     fireEvent.click(screen.getByLabelText('Stop Headache video recording'));
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText('Headache captured video preview'),
+      ).toBeTruthy();
+      expect(onChange).toHaveBeenCalledTimes(1);
+    });
+    fireEvent.click(screen.getByLabelText('Use Headache video'));
 
     await waitFor(() => {
       expect(onChange).toHaveBeenCalledTimes(2);
     });
-    expect(revokeObjectUrlMock).toHaveBeenCalledWith('blob:first-video');
+    expect(revokeObjectUrlMock).not.toHaveBeenCalled();
   });
 
   it('disables close button while recording to avoid implicit save', async () => {
@@ -410,6 +442,8 @@ describe('SymptomPromptResponseField photo capture', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    createObjectUrlMock.mockReset();
+    revokeObjectUrlMock.mockReset();
     getUserMediaMock.mockResolvedValue(mockStream);
     createObjectUrlMock.mockReturnValue('blob:local-photo');
     Object.defineProperty(globalThis, 'navigator', {
@@ -505,14 +539,18 @@ describe('SymptomPromptResponseField photo capture', () => {
     await waitFor(() => {
       expect(
         screen
-          .getByLabelText('Save Facial droop photo and return')
+          .getByLabelText('Capture Facial droop photo')
           .hasAttribute('disabled'),
       ).toBe(false);
     });
 
-    fireEvent.click(
-      screen.getByLabelText('Save Facial droop photo and return'),
-    );
+    fireEvent.click(screen.getByLabelText('Capture Facial droop photo'));
+
+    await waitFor(() => {
+      expect(screen.getByAltText('Facial droop photo preview')).toBeTruthy();
+      expect(onChange).toHaveBeenCalledTimes(0);
+    });
+    fireEvent.click(screen.getByLabelText('Use Facial droop photo'));
 
     await waitFor(() => {
       expect(onChange).toHaveBeenCalledTimes(1);
@@ -558,13 +596,88 @@ describe('SymptomPromptResponseField photo capture', () => {
     });
     fireEvent.loadedMetadata(video!);
 
-    fireEvent.click(screen.getByLabelText('Save Ptosis photo and return'));
+    fireEvent.click(screen.getByLabelText('Capture Ptosis photo'));
+    await waitFor(() => {
+      expect(screen.getByAltText('Ptosis photo preview')).toBeTruthy();
+      expect(onChange).toHaveBeenCalledTimes(0);
+    });
+    fireEvent.click(screen.getByLabelText('Use Ptosis photo'));
     await waitFor(() => {
       expect(onChange).toHaveBeenCalledTimes(1);
     });
 
     unmount();
     expect(revokeObjectUrlMock).not.toHaveBeenCalled();
+  });
+
+  it('replaces preview photo when taking again before confirming', async () => {
+    createObjectUrlMock
+      .mockReturnValueOnce('blob:first-photo')
+      .mockReturnValueOnce('blob:second-photo');
+    const onChange = jest.fn();
+    render(
+      <SymptomPromptResponseField
+        line={makePhotoLine('Jaw')}
+        answer={undefined}
+        onChange={onChange}
+        disabled={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Take Jaw photo'));
+    await waitFor(() => {
+      expect(screen.getByLabelText('Jaw photo camera')).toBeTruthy();
+    });
+    const video = document.querySelector('video');
+    expect(video).toBeTruthy();
+    Object.defineProperty(video!, 'videoWidth', {
+      configurable: true,
+      value: 640,
+    });
+    Object.defineProperty(video!, 'videoHeight', {
+      configurable: true,
+      value: 480,
+    });
+    fireEvent.loadedMetadata(video!);
+
+    fireEvent.click(screen.getByLabelText('Capture Jaw photo'));
+    await waitFor(() => {
+      expect(screen.getByAltText('Jaw photo preview')).toBeTruthy();
+    });
+    fireEvent.click(screen.getByLabelText('Take Jaw photo again'));
+    expect(revokeObjectUrlMock).toHaveBeenCalledWith('blob:first-photo');
+    expect(onChange).not.toHaveBeenCalled();
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Capture Jaw photo')).toBeTruthy();
+    });
+    const videoAgain = document.querySelector('video');
+    expect(videoAgain).toBeTruthy();
+    Object.defineProperty(videoAgain!, 'videoWidth', {
+      configurable: true,
+      value: 640,
+    });
+    Object.defineProperty(videoAgain!, 'videoHeight', {
+      configurable: true,
+      value: 480,
+    });
+    fireEvent.loadedMetadata(videoAgain!);
+    fireEvent.click(screen.getByLabelText('Capture Jaw photo'));
+    await waitFor(() => {
+      expect(screen.getByAltText('Jaw photo preview')).toBeTruthy();
+    });
+    fireEvent.click(screen.getByLabelText('Use Jaw photo'));
+
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalledTimes(1);
+    });
+    expect(onChange).toHaveBeenCalledWith({
+      type: 'photo',
+      value: expect.objectContaining({
+        localUri: 'blob:second-photo',
+        capturedAt: expect.any(String),
+      }),
+    });
   });
 
   it('renders capture failure errors inside the open photo dialog', async () => {
@@ -597,7 +710,7 @@ describe('SymptomPromptResponseField photo capture', () => {
     });
     fireEvent.loadedMetadata(video!);
 
-    fireEvent.click(screen.getByLabelText('Save Smile photo and return'));
+    fireEvent.click(screen.getByLabelText('Capture Smile photo'));
 
     await waitFor(() => {
       expect(
