@@ -141,11 +141,18 @@ describe('symptom-prompt-session-store', () => {
     expect(getSymptomPromptSession('ep-1')).toEqual(initial);
   });
 
-  it('setSymptomPromptSession keeps video answers in runtime while omitting them from storage', () => {
+  it('setSymptomPromptSession keeps media answers in runtime while omitting them from storage', () => {
     setSymptomPromptSession('ep-1', {
       activeIndex: 1,
       answers: {
         keep: { type: 'yes_no', value: true },
+        photo: {
+          type: 'photo',
+          value: {
+            localUri: 'blob:https://example.test/photo',
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        },
         drop: {
           type: 'video',
           value: {
@@ -168,6 +175,13 @@ describe('symptom-prompt-session-store', () => {
       activeIndex: 1,
       answers: {
         keep: { type: 'yes_no', value: true },
+        photo: {
+          type: 'photo',
+          value: {
+            localUri: 'blob:https://example.test/photo',
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        },
         drop: {
           type: 'video',
           value: {
@@ -180,10 +194,17 @@ describe('symptom-prompt-session-store', () => {
     });
   });
 
-  it('setSymptomPromptSession clears runtime video cache when no video answers remain', () => {
+  it('setSymptomPromptSession clears runtime media cache when no media answers remain', () => {
     setSymptomPromptSession('ep-1', {
       activeIndex: 0,
       answers: {
+        photo: {
+          type: 'photo',
+          value: {
+            localUri: 'blob:https://example.test/photo',
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        },
         drop: {
           type: 'video',
           value: {
@@ -197,6 +218,13 @@ describe('symptom-prompt-session-store', () => {
     expect(getSymptomPromptSession('ep-1')).toEqual({
       activeIndex: 0,
       answers: {
+        photo: {
+          type: 'photo',
+          value: {
+            localUri: 'blob:https://example.test/photo',
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        },
         drop: {
           type: 'video',
           value: {
@@ -238,5 +266,24 @@ describe('symptom-prompt-session-store', () => {
     });
     clearSymptomPromptSession('ep-1');
     expect(getSymptomPromptSession('ep-1')).toEqual(initial);
+  });
+
+  it('getSymptomPromptSession drops durable photo blob answers after reload-like state', () => {
+    setStored('ep-1', {
+      activeIndex: 0,
+      answers: {
+        photo: {
+          type: 'photo',
+          value: {
+            localUri: 'blob:https://example.test/photo',
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        },
+      },
+    });
+    expect(getSymptomPromptSession('ep-1')).toEqual({
+      activeIndex: 0,
+      answers: {},
+    });
   });
 });

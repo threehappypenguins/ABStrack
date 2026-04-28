@@ -10,7 +10,7 @@ import {
 } from '@abstrack/types';
 
 const STORAGE_PREFIX = 'abstrack.symptomPrompt.';
-const runtimeVideoAnswersByEpisode = new Map<string, SymptomPromptAnswers>();
+const runtimeMediaAnswersByEpisode = new Map<string, SymptomPromptAnswers>();
 
 function storageKey(episodeId: string): string {
   return `${STORAGE_PREFIX}${episodeId}`;
@@ -18,14 +18,14 @@ function storageKey(episodeId: string): string {
 
 /**
  * Blob URLs are document-scoped and not durable across reload/navigation.
- * Keep video answers in runtime state only; omit them from `sessionStorage`.
+ * Keep media answers in runtime state only; omit them from `sessionStorage`.
  */
 function stripNonDurableAnswers(
   state: SymptomPromptSessionState,
 ): SymptomPromptSessionState {
   const answers = Object.fromEntries(
     Object.entries(state.answers).filter(
-      ([, answer]) => answer.type !== 'video',
+      ([, answer]) => answer.type !== 'video' && answer.type !== 'photo',
     ),
   );
   return {
@@ -34,13 +34,16 @@ function stripNonDurableAnswers(
   };
 }
 
-/** Keeps only non-null video entries for runtime-only remount resilience. */
-function extractRuntimeVideoAnswers(
+/** Keeps only non-null media entries for runtime-only remount resilience. */
+function extractRuntimeMediaAnswers(
   state: SymptomPromptSessionState,
 ): SymptomPromptAnswers {
   const out = Object.create(null) as SymptomPromptAnswers;
   for (const [key, answer] of Object.entries(state.answers)) {
-    if (answer.type === 'video' && answer.value !== null) {
+    if (
+      (answer.type === 'video' || answer.type === 'photo') &&
+      answer.value !== null
+    ) {
       out[key] = answer as SymptomPromptAnswer;
     }
   }
@@ -82,13 +85,13 @@ export function getSymptomPromptSession(
       activeIndex,
       answers: sanitizeSymptomPromptAnswers(parsed.answers),
     });
-    const runtimeVideoAnswers = runtimeVideoAnswersByEpisode.get(episodeId);
-    if (!runtimeVideoAnswers) {
+    const runtimeMediaAnswers = runtimeMediaAnswersByEpisode.get(episodeId);
+    if (!runtimeMediaAnswers) {
       return durable;
     }
     return {
       activeIndex: durable.activeIndex,
-      answers: { ...durable.answers, ...runtimeVideoAnswers },
+      answers: { ...durable.answers, ...runtimeMediaAnswers },
     };
   } catch {
     return createInitialSymptomPromptSession();
@@ -108,11 +111,11 @@ export function setSymptomPromptSession(
   if (typeof window === 'undefined') {
     return;
   }
-  const runtimeVideoAnswers = extractRuntimeVideoAnswers(state);
-  if (Object.keys(runtimeVideoAnswers).length === 0) {
-    runtimeVideoAnswersByEpisode.delete(episodeId);
+  const runtimeMediaAnswers = extractRuntimeMediaAnswers(state);
+  if (Object.keys(runtimeMediaAnswers).length === 0) {
+    runtimeMediaAnswersByEpisode.delete(episodeId);
   } else {
-    runtimeVideoAnswersByEpisode.set(episodeId, runtimeVideoAnswers);
+    runtimeMediaAnswersByEpisode.set(episodeId, runtimeMediaAnswers);
   }
   try {
     sessionStorage.setItem(
@@ -133,7 +136,7 @@ export function clearSymptomPromptSession(episodeId: string): void {
   if (typeof window === 'undefined') {
     return;
   }
-  runtimeVideoAnswersByEpisode.delete(episodeId);
+  runtimeMediaAnswersByEpisode.delete(episodeId);
   try {
     sessionStorage.removeItem(storageKey(episodeId));
   } catch {

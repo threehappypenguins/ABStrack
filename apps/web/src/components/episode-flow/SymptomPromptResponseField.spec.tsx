@@ -469,16 +469,6 @@ describe('SymptomPromptResponseField photo capture', () => {
         audio: false,
       });
     });
-    await waitFor(() => {
-      expect(
-        screen.getByLabelText('Save Facial droop photo and return'),
-      ).toBeTruthy();
-      expect(
-        screen
-          .getByLabelText('Save Facial droop photo and return')
-          .hasAttribute('disabled'),
-      ).toBe(false);
-    });
 
     const video = document.querySelector('video');
     expect(video).toBeTruthy();
@@ -489,6 +479,14 @@ describe('SymptomPromptResponseField photo capture', () => {
     Object.defineProperty(video!, 'videoHeight', {
       configurable: true,
       value: 480,
+    });
+    fireEvent.loadedMetadata(video!);
+    await waitFor(() => {
+      expect(
+        screen
+          .getByLabelText('Save Facial droop photo and return')
+          .hasAttribute('disabled'),
+      ).toBe(false);
     });
 
     fireEvent.click(
@@ -537,6 +535,7 @@ describe('SymptomPromptResponseField photo capture', () => {
       configurable: true,
       value: 480,
     });
+    fireEvent.loadedMetadata(video!);
 
     fireEvent.click(screen.getByLabelText('Save Ptosis photo and return'));
     await waitFor(() => {

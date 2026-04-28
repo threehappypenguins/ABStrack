@@ -365,7 +365,6 @@ function SymptomPhotoCaptureField({
         if (previewRef.current) {
           previewRef.current.srcObject = stream;
         }
-        setCameraReady(true);
       } catch (error: unknown) {
         if (!cancelled) {
           const errorName =
@@ -509,7 +508,13 @@ function SymptomPhotoCaptureField({
                     const v = event.currentTarget;
                     if (v.videoWidth > 0 && v.videoHeight > 0) {
                       setPreviewAspectRatio(v.videoWidth / v.videoHeight);
+                      setCameraReady(true);
+                    } else {
+                      setCameraReady(false);
                     }
+                  }}
+                  onEmptied={() => {
+                    setCameraReady(false);
                   }}
                 />
               </div>
