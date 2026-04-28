@@ -415,14 +415,27 @@ describe('cancelActiveEpisodeById', () => {
         maybeSingle,
       })),
     }));
+    const remove = vi.fn(async () => ({ data: [], error: null }));
     const client = {
-      from: vi.fn(() => ({
-        delete: vi.fn(() => ({
-          eq: vi.fn(() => ({
-            is,
+      storage: {
+        from: vi.fn(() => ({ remove })),
+      },
+      from: vi.fn((table: string) => {
+        if (table === 'episode_media') {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(async () => ({ data: [], error: null })),
+            })),
+          };
+        }
+        return {
+          delete: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              is,
+            })),
           })),
-        })),
-      })),
+        };
+      }),
     } as unknown as AbstrackSupabaseClient;
 
     const result = await cancelActiveEpisodeById(client, 'ep-1');
@@ -431,6 +444,7 @@ describe('cancelActiveEpisodeById', () => {
     if (result.ok) {
       expect(result.data.didCancel).toBe(true);
     }
+    expect(client.from).toHaveBeenCalledWith('episode_media');
     expect(client.from).toHaveBeenCalledWith('episodes');
     expect(is).toHaveBeenCalledWith('ended_at', null);
   });
@@ -442,14 +456,27 @@ describe('cancelActiveEpisodeById', () => {
         maybeSingle,
       })),
     }));
+    const remove = vi.fn(async () => ({ data: [], error: null }));
     const client = {
-      from: vi.fn(() => ({
-        delete: vi.fn(() => ({
-          eq: vi.fn(() => ({
-            is,
+      storage: {
+        from: vi.fn(() => ({ remove })),
+      },
+      from: vi.fn((table: string) => {
+        if (table === 'episode_media') {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(async () => ({ data: [], error: null })),
+            })),
+          };
+        }
+        return {
+          delete: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              is,
+            })),
           })),
-        })),
-      })),
+        };
+      }),
     } as unknown as AbstrackSupabaseClient;
 
     const result = await cancelActiveEpisodeById(client, 'ep-1');
@@ -460,6 +487,57 @@ describe('cancelActiveEpisodeById', () => {
     }
     expect(is).toHaveBeenCalledWith('ended_at', null);
   });
+
+  it('does not delete the episode when Storage remove fails', async () => {
+    const maybeSingle = vi.fn(async () => ({
+      data: { id: 'ep-1' },
+      error: null,
+    }));
+    const deleteSpy = vi.fn(() => ({
+      eq: vi.fn(() => ({
+        is: vi.fn(() => ({
+          select: vi.fn(() => ({
+            maybeSingle,
+          })),
+        })),
+      })),
+    }));
+    const remove = vi.fn(async () => ({
+      data: null,
+      error: { message: 'storage failed' },
+    }));
+    const client = {
+      storage: {
+        from: vi.fn(() => ({ remove })),
+      },
+      from: vi.fn((table: string) => {
+        if (table === 'episode_media') {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(async () => ({
+                data: [
+                  {
+                    storage_object_key: 'u/ep/blob.jpg',
+                    thumbnail_storage_key: null,
+                  },
+                ],
+                error: null,
+              })),
+            })),
+          };
+        }
+        return {
+          delete: deleteSpy,
+        };
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await cancelActiveEpisodeById(client, 'ep-1');
+
+    expect(result.ok).toBe(false);
+    expect(remove).toHaveBeenCalledWith(['u/ep/blob.jpg']);
+    expect(deleteSpy).not.toHaveBeenCalled();
+  });
 });
 
 describe('deleteEpisodeById', () => {
@@ -468,16 +546,29 @@ describe('deleteEpisodeById', () => {
       data: { id: 'ep-2' },
       error: null,
     }));
+    const remove = vi.fn(async () => ({ data: [], error: null }));
     const client = {
-      from: vi.fn(() => ({
-        delete: vi.fn(() => ({
-          eq: vi.fn(() => ({
+      storage: {
+        from: vi.fn(() => ({ remove })),
+      },
+      from: vi.fn((table: string) => {
+        if (table === 'episode_media') {
+          return {
             select: vi.fn(() => ({
-              maybeSingle,
+              eq: vi.fn(async () => ({ data: [], error: null })),
+            })),
+          };
+        }
+        return {
+          delete: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              select: vi.fn(() => ({
+                maybeSingle,
+              })),
             })),
           })),
-        })),
-      })),
+        };
+      }),
     } as unknown as AbstrackSupabaseClient;
 
     const result = await deleteEpisodeById(client, 'ep-2');
@@ -486,21 +577,35 @@ describe('deleteEpisodeById', () => {
     if (result.ok) {
       expect(result.data.didDelete).toBe(true);
     }
+    expect(client.from).toHaveBeenCalledWith('episode_media');
     expect(client.from).toHaveBeenCalledWith('episodes');
   });
 
   it('returns didDelete false when no row is visible/matched', async () => {
     const maybeSingle = vi.fn(async () => ({ data: null, error: null }));
+    const remove = vi.fn(async () => ({ data: [], error: null }));
     const client = {
-      from: vi.fn(() => ({
-        delete: vi.fn(() => ({
-          eq: vi.fn(() => ({
+      storage: {
+        from: vi.fn(() => ({ remove })),
+      },
+      from: vi.fn((table: string) => {
+        if (table === 'episode_media') {
+          return {
             select: vi.fn(() => ({
-              maybeSingle,
+              eq: vi.fn(async () => ({ data: [], error: null })),
+            })),
+          };
+        }
+        return {
+          delete: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              select: vi.fn(() => ({
+                maybeSingle,
+              })),
             })),
           })),
-        })),
-      })),
+        };
+      }),
     } as unknown as AbstrackSupabaseClient;
 
     const result = await deleteEpisodeById(client, 'ep-missing');
@@ -509,6 +614,50 @@ describe('deleteEpisodeById', () => {
     if (result.ok) {
       expect(result.data.didDelete).toBe(false);
     }
+  });
+
+  it('removes primary and thumbnail keys from Storage before deleting the episode', async () => {
+    const maybeSingle = vi.fn(async () => ({
+      data: { id: 'ep-2' },
+      error: null,
+    }));
+    const remove = vi.fn(async () => ({ data: [], error: null }));
+    const client = {
+      storage: {
+        from: vi.fn(() => ({ remove })),
+      },
+      from: vi.fn((table: string) => {
+        if (table === 'episode_media') {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(async () => ({
+                data: [
+                  {
+                    storage_object_key: 'a/vid.mp4',
+                    thumbnail_storage_key: 'a/thumb.jpg',
+                  },
+                ],
+                error: null,
+              })),
+            })),
+          };
+        }
+        return {
+          delete: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              select: vi.fn(() => ({
+                maybeSingle,
+              })),
+            })),
+          })),
+        };
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await deleteEpisodeById(client, 'ep-2');
+
+    expect(result.ok).toBe(true);
+    expect(remove).toHaveBeenCalledWith(['a/vid.mp4', 'a/thumb.jpg']);
   });
 });
 

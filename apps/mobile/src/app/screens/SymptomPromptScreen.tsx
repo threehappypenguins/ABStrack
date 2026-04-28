@@ -6,6 +6,7 @@ import React, {
   useState,
 } from 'react';
 import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
+import { File as ExpoFile } from 'expo-file-system';
 import type { RouteProp } from '@react-navigation/native';
 import {
   CommonActions,
@@ -18,7 +19,9 @@ import type {
   EpisodeSymptomRow,
   PresetSymptomRow,
   SymptomPromptAnswer,
+  SymptomPromptPhotoCaptureRef,
   SymptomPromptAnswers,
+  SymptomPromptVideoCaptureRef,
 } from '@abstrack/types';
 import {
   compareEpisodeSymptomRowsForHistory,
@@ -35,8 +38,10 @@ import {
   endEpisodeIfStillActive,
   getEpisodeById,
   insertEpisodeSymptomAnswer,
+  listEpisodeMediaForEpisode,
   listEpisodeSymptomsForEpisode,
   listPresetSymptomsForPreset,
+  uploadConfirmedEpisodeMedia,
 } from '@abstrack/supabase';
 import { announce } from '@abstrack/ui/native';
 import { COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
@@ -81,6 +86,87 @@ function formatSymptomHistoryInstant(isoLike: string): string {
     return isoLike;
   }
   return new Date(ms).toLocaleString();
+}
+
+function contentTypeGuessFromLocalUri(
+  mediaType: 'photo' | 'video',
+  uri: string,
+): string {
+  const pathOnly = uri.split('?')[0] ?? uri;
+  const lower = pathOnly.toLowerCase();
+  if (mediaType === 'photo') {
+    if (lower.endsWith('.png')) {
+      return 'image/png';
+    }
+    if (lower.endsWith('.webp')) {
+      return 'image/webp';
+    }
+    return 'image/jpeg';
+  }
+  if (lower.endsWith('.mov')) {
+    return 'video/quicktime';
+  }
+  if (lower.endsWith('.webm')) {
+    return 'video/webm';
+  }
+  return 'video/mp4';
+}
+
+function mediaExtensionFromContentType(contentType: string): string {
+  const ct = contentType.trim().toLowerCase();
+  if (ct === 'image/jpeg') {
+    return 'jpg';
+  }
+  if (ct === 'image/png') {
+    return 'png';
+  }
+  if (ct === 'video/mp4') {
+    return 'mp4';
+  }
+  if (ct === 'video/quicktime') {
+    return 'mov';
+  }
+  if (ct === 'video/webm') {
+    return 'webm';
+  }
+  return 'bin';
+}
+
+async function getMobileMediaUploadData(answer: SymptomPromptAnswer): Promise<{
+  body: ArrayBuffer;
+  contentType: string;
+  extension: string;
+  durationSeconds: number | null;
+}> {
+  if (answer.type !== 'photo' && answer.type !== 'video') {
+    throw new Error('Media upload requires a photo/video answer.');
+  }
+  if (!answer.value?.localUri?.trim()) {
+    throw new Error('No captured media is available to upload.');
+  }
+  const uri = answer.value.localUri.trim();
+
+  /**
+   * Supabase Storage + React Native: `Blob`/`fetch(localUri)` uploads often fail at the transport
+   * layer (`Network request failed`). Official guidance is to upload an `ArrayBuffer` built from
+   * file bytes. Use Expo’s `File` class (`expo-file-system`) and `arrayBuffer()` — not legacy
+   * `readAsStringAsync` + base64 — so uploads avoid extra decoding and match the current API.
+   *
+   * @see https://supabase.com/docs/guides/storage/uploads (React Native notes)
+   */
+  const body = await new ExpoFile(uri).arrayBuffer();
+
+  const contentType = contentTypeGuessFromLocalUri(answer.type, uri);
+  const durationSeconds =
+    answer.type === 'video' && answer.value.durationMs != null
+      ? Math.max(1, Math.min(15, Math.round(answer.value.durationMs / 1000)))
+      : null;
+  return {
+    body,
+    contentType,
+    extension: mediaExtensionFromContentType(contentType),
+    durationSeconds,
+  };
 }
 
 /**
@@ -222,6 +308,46 @@ export function SymptomPromptScreen() {
             line,
             answer,
           });
+          if (r.ok && (answer.type === 'photo' || answer.type === 'video')) {
+            try {
+              const upload = await getMobileMediaUploadData(answer);
+              const mediaPersist = await uploadConfirmedEpisodeMedia(supabase, {
+                userId: uid,
+                episodeId: targetEpisodeId,
+                episodeSymptomId: r.data.id,
+                mediaType: answer.type,
+                body: upload.body,
+                contentType: upload.contentType,
+                extension: upload.extension,
+                durationSeconds: upload.durationSeconds,
+              });
+              if (!mediaPersist.ok) {
+                if (
+                  isMountedRef.current &&
+                  episodeIdRef.current === enqueueEpisodeId &&
+                  enqueueEpoch === serverPersistEpochRef.current &&
+                  attemptId === persistUiAttemptRef.current
+                ) {
+                  setPersistError(mediaPersist.error.message);
+                }
+                return;
+              }
+            } catch (caught) {
+              if (
+                isMountedRef.current &&
+                episodeIdRef.current === enqueueEpisodeId &&
+                enqueueEpoch === serverPersistEpochRef.current &&
+                attemptId === persistUiAttemptRef.current
+              ) {
+                setPersistError(
+                  caught instanceof Error
+                    ? caught.message
+                    : 'Could not upload captured media.',
+                );
+              }
+              return;
+            }
+          }
           if (enqueueEpoch !== serverPersistEpochRef.current) {
             return;
           }
@@ -344,10 +470,6 @@ export function SymptomPromptScreen() {
    */
   const schedulePersistToSupabase = useCallback(
     (line: PresetSymptomRow, answer: SymptomPromptAnswer) => {
-      if (answer.type === 'photo' || answer.type === 'video') {
-        // Media answers stay local for now; upload/persistence is handled in a later milestone.
-        return;
-      }
       if (!symptomPromptAnswerHasValue(answer)) {
         cancelPendingServerPersist();
         executeServerDelete(line);
@@ -450,6 +572,45 @@ export function SymptomPromptScreen() {
             passBoundary,
           )
         : {};
+      const mediaRows = await listEpisodeMediaForEpisode(supabase, episodeId);
+      if (stale()) {
+        return;
+      }
+      if (fromServer.ok && mediaRows.ok) {
+        const mediaBySymptomId = new Map(
+          mediaRows.data
+            .filter((row) => row.episode_symptom_id && row.upload_completed_at)
+            .map((row) => [row.episode_symptom_id as string, row]),
+        );
+        for (const row of fromServer.data) {
+          if (!row.preset_symptom_id) {
+            continue;
+          }
+          const media = mediaBySymptomId.get(row.id);
+          if (!media) {
+            continue;
+          }
+          if (row.response_type === 'photo') {
+            const value: SymptomPromptPhotoCaptureRef = {
+              localUri: `storage:${media.storage_object_key}`,
+              capturedAt: media.upload_completed_at ?? row.created_at,
+            };
+            serverAnswers[row.preset_symptom_id] = { type: 'photo', value };
+            continue;
+          }
+          if (row.response_type === 'video') {
+            const value: SymptomPromptVideoCaptureRef = {
+              localUri: `storage:${media.storage_object_key}`,
+              durationMs:
+                media.duration_seconds != null
+                  ? media.duration_seconds * 1000
+                  : null,
+              capturedAt: media.upload_completed_at ?? row.created_at,
+            };
+            serverAnswers[row.preset_symptom_id] = { type: 'video', value };
+          }
+        }
+      }
       if (fromServer.ok) {
         setSymptomHistory(
           fromServer.data.slice().sort(compareEpisodeSymptomRowsForHistory),
@@ -487,6 +648,8 @@ export function SymptomPromptScreen() {
       });
       if (!fromServer.ok) {
         setPersistError(fromServer.error.message);
+      } else if (!mediaRows.ok) {
+        setPersistError(mediaRows.error.message);
       }
       setStatus('ready');
     } catch (caught: unknown) {

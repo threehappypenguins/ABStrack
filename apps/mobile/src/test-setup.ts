@@ -50,6 +50,16 @@ jest.mock('react-native-safe-area-context', () => {
   };
 });
 
+jest.mock('expo-file-system', () => ({
+  __esModule: true,
+  /** Minimal stand-in for Expo SDK 54+ `File` so Jest never touches native file I/O. */
+  File: class MockExpoFile {
+    async arrayBuffer(): Promise<ArrayBuffer> {
+      return new Uint8Array([102, 97, 107, 101]).buffer;
+    }
+  },
+}));
+
 jest.mock('expo-video', () => {
   return {
     VideoView: (props: { accessibilityLabel?: string }) =>

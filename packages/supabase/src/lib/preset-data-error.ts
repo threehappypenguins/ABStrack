@@ -44,6 +44,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
+/** RN fetch often uses `Error`, not `TypeError`; Supabase-js may use plain `{ message }`. */
+function messageLooksLikeFetchTransportFailure(message: string): boolean {
+  const m = message.toLowerCase();
+  return (
+    m.includes('failed to fetch') ||
+    m.includes('networkerror when attempting') ||
+    m.includes('load failed') ||
+    m.includes('network request failed')
+  );
+}
+
 /**
  * Detects browser/React-Native fetch failures that are not PostgREST-shaped.
  * (e.g. `TypeError: Failed to fetch` has no `code` field.)
@@ -61,16 +72,18 @@ function isLikelyNetworkTransportError(error: unknown): boolean {
       return true;
     }
   }
-  if (error instanceof TypeError) {
-    const m = error.message.toLowerCase();
-    if (
-      m.includes('failed to fetch') ||
-      m.includes('networkerror when attempting') ||
-      m.includes('load failed') ||
-      m.includes('network request failed')
-    ) {
-      return true;
-    }
+  if (
+    error instanceof Error &&
+    messageLooksLikeFetchTransportFailure(error.message)
+  ) {
+    return true;
+  }
+  if (
+    isRecord(error) &&
+    typeof error.message === 'string' &&
+    messageLooksLikeFetchTransportFailure(error.message)
+  ) {
+    return true;
   }
   return false;
 }

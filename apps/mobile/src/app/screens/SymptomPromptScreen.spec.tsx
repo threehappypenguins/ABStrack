@@ -7,9 +7,11 @@ import {
   cancelActiveEpisodeById,
   deleteCurrentPassEpisodeSymptomAnswer,
   getEpisodeById,
+  listEpisodeMediaForEpisode,
   listEpisodeSymptomsForEpisode,
   listPresetSymptomsForPreset,
   insertEpisodeSymptomAnswer,
+  uploadConfirmedEpisodeMedia,
 } from '@abstrack/supabase';
 import { createInitialSymptomPromptSession } from '@abstrack/types';
 import type { PresetSymptomRow } from '@abstrack/types';
@@ -45,9 +47,11 @@ jest.mock('@abstrack/supabase', () => ({
   cancelActiveEpisodeById: jest.fn(),
   getEpisodeById: jest.fn(),
   deleteCurrentPassEpisodeSymptomAnswer: jest.fn(),
+  listEpisodeMediaForEpisode: jest.fn(),
   listPresetSymptomsForPreset: jest.fn(),
   listEpisodeSymptomsForEpisode: jest.fn(),
   insertEpisodeSymptomAnswer: jest.fn(),
+  uploadConfirmedEpisodeMedia: jest.fn(),
 }));
 
 jest.mock('../../lib/supabase-wiring', () => ({
@@ -214,6 +218,10 @@ describe('SymptomPromptScreen', () => {
       ok: true,
       data: [],
     });
+    jest.mocked(listEpisodeMediaForEpisode).mockResolvedValue({
+      ok: true,
+      data: [],
+    });
     jest.mocked(insertEpisodeSymptomAnswer).mockResolvedValue({
       ok: true,
       data: {
@@ -234,6 +242,22 @@ describe('SymptomPromptScreen', () => {
     jest.mocked(deleteCurrentPassEpisodeSymptomAnswer).mockResolvedValue({
       ok: true,
       data: true,
+    });
+    jest.mocked(uploadConfirmedEpisodeMedia).mockResolvedValue({
+      ok: true,
+      data: {
+        id: 'em-1',
+        user_id: 'test-user-1',
+        episode_id: episodeId,
+        episode_symptom_id: 'es-1',
+        storage_object_key: 'test-user-1/episode-1/video-1.webm',
+        thumbnail_storage_key: null,
+        media_type: 'video',
+        duration_seconds: 3,
+        upload_completed_at: '2020-01-01T00:00:00Z',
+        created_at: '2020-01-01T00:00:00Z',
+        updated_at: '2020-01-01T00:00:00Z',
+      },
     });
     jest.mocked(cancelActiveEpisodeById).mockResolvedValue({
       ok: true,
@@ -672,7 +696,7 @@ describe('SymptomPromptScreen', () => {
     );
   });
 
-  test('video capture stores local answer and does not upsert to Supabase yet', async () => {
+  test('video capture stores local answer and inserts symptom row', async () => {
     jest.mocked(listPresetSymptomsForPreset).mockResolvedValue({
       ok: true,
       data: [lineVideoOnly],
@@ -722,7 +746,22 @@ describe('SymptomPromptScreen', () => {
       });
     });
 
-    expect(insertEpisodeSymptomAnswer).not.toHaveBeenCalled();
+    expect(insertEpisodeSymptomAnswer).toHaveBeenCalledWith(
+      expect.objectContaining({ mockClient: true }),
+      expect.objectContaining({
+        userId: 'test-user-1',
+        episodeId,
+        line: lineVideoOnly,
+        answer: {
+          type: 'video',
+          value: {
+            localUri: 'file:///tmp/video.mp4',
+            durationMs: expect.any(Number),
+            capturedAt: expect.any(String),
+          },
+        },
+      }),
+    );
     expect(setSymptomPromptSession).toHaveBeenLastCalledWith(
       episodeId,
       expect.objectContaining({
@@ -740,7 +779,7 @@ describe('SymptomPromptScreen', () => {
     );
   });
 
-  test('photo capture stores local answer and does not upsert to Supabase yet', async () => {
+  test('photo capture stores local answer and inserts symptom row', async () => {
     jest.mocked(listPresetSymptomsForPreset).mockResolvedValue({
       ok: true,
       data: [linePhotoOnly],
@@ -782,7 +821,21 @@ describe('SymptomPromptScreen', () => {
       }),
     );
 
-    expect(insertEpisodeSymptomAnswer).not.toHaveBeenCalled();
+    expect(insertEpisodeSymptomAnswer).toHaveBeenCalledWith(
+      expect.objectContaining({ mockClient: true }),
+      expect.objectContaining({
+        userId: 'test-user-1',
+        episodeId,
+        line: linePhotoOnly,
+        answer: {
+          type: 'photo',
+          value: {
+            localUri: 'file:///tmp/photo.jpg',
+            capturedAt: expect.any(String),
+          },
+        },
+      }),
+    );
     expect(setSymptomPromptSession).toHaveBeenLastCalledWith(
       episodeId,
       expect.objectContaining({

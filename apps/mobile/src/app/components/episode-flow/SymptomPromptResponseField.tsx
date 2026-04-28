@@ -57,7 +57,7 @@ const VIDEO_MAX_DURATION_SECONDS = Math.floor(
 );
 
 /**
- * Renders the capture UI for one preset symptom line (local media refs only until upload ships).
+ * Renders the capture UI for one preset symptom line.
  *
  * @param props - Line metadata, current answer, change handler, disabled flag.
  * @returns Response-type-specific controls.
@@ -160,8 +160,7 @@ export function SymptomPromptResponseField({
 
   const closeVideoModal = () => {
     if (videoRecording) {
-      didCancelRecordingRef.current = true;
-      void cameraRef.current?.stopRecording();
+      return;
     }
     setVideoRecording(false);
     setVideoPaused(false);
@@ -568,7 +567,8 @@ export function SymptomPromptResponseField({
             className={`text-xs leading-relaxed ${nw.textMuted}`}
             maxFontSizeMultiplier={2}
           >
-            Temporary local capture only. Upload is not part of this step.
+            Media uploads to private episode storage after you confirm this
+            capture.
           </Text>
         </View>
       );
@@ -685,13 +685,18 @@ export function SymptomPromptResponseField({
             className={`text-xs leading-relaxed ${nw.textMuted}`}
             maxFontSizeMultiplier={2}
           >
-            Temporary local capture only. Upload is not part of this step.
+            Media uploads to private episode storage after you confirm this
+            capture.
           </Text>
           <Modal
             visible={videoModalOpen}
             animationType="slide"
             presentationStyle="fullScreen"
-            onRequestClose={closeVideoModal}
+            onRequestClose={() => {
+              if (!videoRecording) {
+                closeVideoModal();
+              }
+            }}
           >
             <View className="flex-1 bg-black">
               {!pendingVideoReview ? (
@@ -763,16 +768,27 @@ export function SymptomPromptResponseField({
                 </Text>
                 <View className="flex-row items-center gap-2">
                   {!pendingVideoReview ? (
+                    // expo-camera: changing `facing` during `recordAsync` ends the recording (SDK behavior).
                     <Pressable
                       accessibilityRole="button"
                       accessibilityLabel="Switch camera"
+                      accessibilityHint={
+                        videoRecording
+                          ? 'Stop recording before switching between front and rear camera.'
+                          : 'Toggle between front and rear camera.'
+                      }
+                      accessibilityState={{ disabled: videoRecording }}
+                      disabled={videoRecording}
                       onPress={() => {
+                        if (videoRecording) {
+                          return;
+                        }
                         setCameraFacing((v) =>
                           v === 'front' ? 'back' : 'front',
                         );
                       }}
                       style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
-                      className="items-center justify-center rounded-md bg-black/70 px-3 py-2"
+                      className={`items-center justify-center rounded-md bg-black/70 px-3 py-2 ${videoRecording ? 'opacity-40' : ''}`}
                     >
                       <Ionicons
                         name="camera-reverse-outline"
@@ -788,9 +804,21 @@ export function SymptomPromptResponseField({
                         ? 'Close video preview'
                         : 'Close recorder'
                     }
-                    onPress={closeVideoModal}
+                    accessibilityHint={
+                      videoRecording
+                        ? 'Stop recording before closing to avoid losing your clip.'
+                        : undefined
+                    }
+                    accessibilityState={{ disabled: videoRecording }}
+                    disabled={videoRecording}
+                    onPress={() => {
+                      if (videoRecording) {
+                        return;
+                      }
+                      closeVideoModal();
+                    }}
                     style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
-                    className="items-center justify-center rounded-md bg-black/70 px-4 py-2"
+                    className={`items-center justify-center rounded-md bg-black/70 px-4 py-2 ${videoRecording ? 'opacity-40' : ''}`}
                   >
                     <Text className="text-base font-semibold text-white">
                       Close

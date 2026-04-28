@@ -40,7 +40,6 @@ export function RecentEpisodesList({
   const [deletingEpisodeId, setDeletingEpisodeId] = useState<string | null>(
     null,
   );
-
   const pendingEpisode =
     episodes.find((ep) => ep.id === pendingDeleteEpisodeId) ?? null;
   const isDeletingEpisode = deletingEpisodeId !== null;

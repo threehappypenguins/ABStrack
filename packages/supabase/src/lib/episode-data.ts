@@ -5,6 +5,7 @@ import type {
   Uuid,
 } from '@abstrack/types';
 import type { Database } from './database.types.js';
+import { removeEpisodeMediaObjectsFromStorage } from './episode-media-data.js';
 import { PresetDataError, toPresetDataError } from './preset-data-error.js';
 import type { PresetDataResult } from './preset-data.js';
 import { wrap } from './preset-data.js';
@@ -22,6 +23,32 @@ type EpisodePostMarkerStepKeys =
 type EpisodePostMarkerStepWriteBase = {
   [K in EpisodePostMarkerStepKeys]: Exclude<EpisodesTableUpdate[K], undefined>;
 };
+
+/** Result shape for {@link cancelActiveEpisodeById}. */
+export type CancelActiveEpisodeByIdResult =
+  | {
+      ok: true;
+      data: {
+        didCancel: boolean;
+      };
+    }
+  | {
+      ok: false;
+      error: PresetDataError;
+    };
+
+/** Result shape for {@link deleteEpisodeById}. */
+export type DeleteEpisodeByIdResult =
+  | {
+      ok: true;
+      data: {
+        didDelete: boolean;
+      };
+    }
+  | {
+      ok: false;
+      error: PresetDataError;
+    };
 
 /**
  * Payload for {@link completeEpisodePostMarkerStep}: every listed column must be present, with
@@ -266,7 +293,9 @@ export async function completeEpisodePostMarkerStep(
  * Permanently removes an episode only when it is still active (`ended_at IS NULL`). Use this for
  * "cancel active episode" UX; completed rows can be removed with {@link deleteEpisodeById}.
  *
- * Uses the same RLS as other `episodes` deletes. Data impact is driven by schema foreign keys:
+ * Uses the same RLS as other `episodes` deletes. First removes objects in private `episode-media`
+ * Storage referenced by `episode_media` rows (bucket rows are not cascade-deleted by Postgres).
+ * Data impact is driven by schema foreign keys after delete:
  * - `episode_symptoms` rows for the episode are deleted (`ON DELETE CASCADE`).
  * - `health_markers` rows linked to the episode are deleted (`ON DELETE CASCADE`).
  * - `episode_media` metadata rows linked to the episode are deleted (`ON DELETE CASCADE`).
@@ -281,8 +310,18 @@ export async function completeEpisodePostMarkerStep(
 export async function cancelActiveEpisodeById(
   client: AbstrackSupabaseClient,
   episodeId: Uuid,
-): Promise<PresetDataResult<{ didCancel: boolean }>> {
+): Promise<CancelActiveEpisodeByIdResult> {
   try {
+    const removed = await removeEpisodeMediaObjectsFromStorage(
+      client,
+      episodeId,
+    );
+    if (!removed.ok) {
+      return {
+        ok: false,
+        error: removed.error,
+      };
+    }
     const { data, error } = await client
       .from('episodes')
       .delete()
@@ -293,7 +332,12 @@ export async function cancelActiveEpisodeById(
     if (error) {
       return { ok: false, error: toPresetDataError(error) };
     }
-    return { ok: true, data: { didCancel: data != null } };
+    return {
+      ok: true,
+      data: {
+        didCancel: data != null,
+      },
+    };
   } catch (caught) {
     return { ok: false, error: toPresetDataError(caught) };
   }
@@ -302,7 +346,9 @@ export async function cancelActiveEpisodeById(
 /**
  * Permanently removes an episode regardless of active/completed status when RLS allows.
  *
- * Data impact is driven by schema foreign keys:
+ * Uses the same RLS as other `episodes` deletes. First removes objects in private `episode-media`
+ * Storage referenced by `episode_media` rows (bucket rows are not cascade-deleted by Postgres).
+ * Data impact is driven by schema foreign keys after delete:
  * - `episode_symptoms` rows for the episode are deleted (`ON DELETE CASCADE`).
  * - `health_markers` rows linked to the episode are deleted (`ON DELETE CASCADE`).
  * - `episode_media` metadata rows linked to the episode are deleted (`ON DELETE CASCADE`).
@@ -316,8 +362,18 @@ export async function cancelActiveEpisodeById(
 export async function deleteEpisodeById(
   client: AbstrackSupabaseClient,
   episodeId: Uuid,
-): Promise<PresetDataResult<{ didDelete: boolean }>> {
+): Promise<DeleteEpisodeByIdResult> {
   try {
+    const removed = await removeEpisodeMediaObjectsFromStorage(
+      client,
+      episodeId,
+    );
+    if (!removed.ok) {
+      return {
+        ok: false,
+        error: removed.error,
+      };
+    }
     const { data, error } = await client
       .from('episodes')
       .delete()
@@ -327,7 +383,12 @@ export async function deleteEpisodeById(
     if (error) {
       return { ok: false, error: toPresetDataError(error) };
     }
-    return { ok: true, data: { didDelete: data != null } };
+    return {
+      ok: true,
+      data: {
+        didDelete: data != null,
+      },
+    };
   } catch (caught) {
     return { ok: false, error: toPresetDataError(caught) };
   }

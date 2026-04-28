@@ -13,7 +13,9 @@ import type {
   EpisodeSymptomRow,
   PresetSymptomRow,
   SymptomPromptAnswer,
+  SymptomPromptPhotoCaptureRef,
   SymptomPromptAnswers,
+  SymptomPromptVideoCaptureRef,
 } from '@abstrack/types';
 import type { EpisodeRow } from '@abstrack/types';
 import {
@@ -32,8 +34,10 @@ import {
   endEpisodeIfStillActive,
   getEpisodeById,
   insertEpisodeSymptomAnswer,
+  listEpisodeMediaForEpisode,
   listEpisodeSymptomsForEpisode,
   listPresetSymptomsForPreset,
+  uploadConfirmedEpisodeMedia,
 } from '@abstrack/supabase';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
@@ -87,6 +91,52 @@ function lineWriteQueueKey(episodeId: string, presetSymptomId: string): string {
  */
 const SYMPTOM_FLOW_LEAVE_GUARD_EXEMPT_FORM_ID =
   '__symptom_prompt_leave_guard_no_exempt__';
+
+function mediaExtensionFromContentType(contentType: string): string {
+  const ct = contentType.trim().toLowerCase();
+  if (ct === 'image/jpeg') {
+    return 'jpg';
+  }
+  if (ct === 'image/png') {
+    return 'png';
+  }
+  if (ct === 'video/webm') {
+    return 'webm';
+  }
+  if (ct === 'video/mp4') {
+    return 'mp4';
+  }
+  return 'bin';
+}
+
+async function getWebMediaUploadData(answer: SymptomPromptAnswer): Promise<{
+  body: Blob;
+  contentType: string;
+  extension: string;
+  durationSeconds: number | null;
+}> {
+  if (answer.type !== 'photo' && answer.type !== 'video') {
+    throw new Error('Media upload requires a photo/video answer.');
+  }
+  if (!answer.value?.localUri?.trim()) {
+    throw new Error('No captured media is available to upload.');
+  }
+  const response = await fetch(answer.value.localUri);
+  const blob = await response.blob();
+  const fallbackContentType =
+    answer.type === 'photo' ? 'image/jpeg' : 'video/webm';
+  const contentType = blob.type || fallbackContentType;
+  const durationSeconds =
+    answer.type === 'video' && answer.value.durationMs != null
+      ? Math.max(1, Math.min(15, Math.round(answer.value.durationMs / 1000)))
+      : null;
+  return {
+    body: blob,
+    contentType,
+    extension: mediaExtensionFromContentType(contentType),
+    durationSeconds,
+  };
+}
 
 /**
  * Linear symptom stepper for the active episode’s preset (Week 5 skeleton).
@@ -254,6 +304,46 @@ export function SymptomPromptFlow({
             line,
             answer,
           });
+          if (r.ok && (answer.type === 'photo' || answer.type === 'video')) {
+            try {
+              const upload = await getWebMediaUploadData(answer);
+              const mediaPersist = await uploadConfirmedEpisodeMedia(supabase, {
+                userId: uid,
+                episodeId: targetEpisodeId,
+                episodeSymptomId: r.data.id,
+                mediaType: answer.type,
+                body: upload.body,
+                contentType: upload.contentType,
+                extension: upload.extension,
+                durationSeconds: upload.durationSeconds,
+              });
+              if (!mediaPersist.ok) {
+                if (
+                  isMountedRef.current &&
+                  episodeIdRef.current === enqueueEpisodeId &&
+                  enqueueEpoch === serverPersistEpochRef.current &&
+                  attemptId === persistUiAttemptRef.current
+                ) {
+                  setPersistError(mediaPersist.error.message);
+                }
+                return;
+              }
+            } catch (caught) {
+              if (
+                isMountedRef.current &&
+                episodeIdRef.current === enqueueEpisodeId &&
+                enqueueEpoch === serverPersistEpochRef.current &&
+                attemptId === persistUiAttemptRef.current
+              ) {
+                setPersistError(
+                  caught instanceof Error
+                    ? caught.message
+                    : 'Could not upload captured media.',
+                );
+              }
+              return;
+            }
+          }
           // Epoch/mount/episode/attempt gate UI only — the insert above always ran for `targetEpisodeId`.
           if (
             isMountedRef.current &&
@@ -362,10 +452,6 @@ export function SymptomPromptFlow({
 
   const schedulePersistToSupabase = useCallback(
     (line: PresetSymptomRow, answer: SymptomPromptAnswer) => {
-      if (answer.type === 'photo' || answer.type === 'video') {
-        // Media answers stay local for now; upload/persistence is handled in a later milestone.
-        return;
-      }
       if (!symptomPromptAnswerHasValue(answer)) {
         cancelPendingServerPersist();
         executeServerDelete(line);
@@ -553,6 +639,45 @@ export function SymptomPromptFlow({
     const serverAnswers = fromServer.ok
       ? episodeSymptomRowsToAnswersMapForOpenPass(fromServer.data, passBoundary)
       : {};
+    const mediaRows = await listEpisodeMediaForEpisode(supabase, episodeId);
+    if (stale()) {
+      return;
+    }
+    if (fromServer.ok && mediaRows.ok) {
+      const mediaBySymptomId = new Map(
+        mediaRows.data
+          .filter((row) => row.episode_symptom_id && row.upload_completed_at)
+          .map((row) => [row.episode_symptom_id as string, row]),
+      );
+      for (const row of fromServer.data) {
+        if (!row.preset_symptom_id) {
+          continue;
+        }
+        const media = mediaBySymptomId.get(row.id);
+        if (!media) {
+          continue;
+        }
+        if (row.response_type === 'photo') {
+          const value: SymptomPromptPhotoCaptureRef = {
+            localUri: `storage:${media.storage_object_key}`,
+            capturedAt: media.upload_completed_at ?? row.created_at,
+          };
+          serverAnswers[row.preset_symptom_id] = { type: 'photo', value };
+          continue;
+        }
+        if (row.response_type === 'video') {
+          const value: SymptomPromptVideoCaptureRef = {
+            localUri: `storage:${media.storage_object_key}`,
+            durationMs:
+              media.duration_seconds != null
+                ? media.duration_seconds * 1000
+                : null,
+            capturedAt: media.upload_completed_at ?? row.created_at,
+          };
+          serverAnswers[row.preset_symptom_id] = { type: 'video', value };
+        }
+      }
+    }
     if (fromServer.ok) {
       setSymptomHistory(
         fromServer.data.slice().sort(compareEpisodeSymptomRowsForHistory),
@@ -593,6 +718,8 @@ export function SymptomPromptFlow({
     });
     if (!fromServer.ok) {
       setPersistError(fromServer.error.message);
+    } else if (!mediaRows.ok) {
+      setPersistError(mediaRows.error.message);
     }
     setStatus('ready');
   }, [episodeId, symptomPresetId, resolveSessionUserId, supabase]);

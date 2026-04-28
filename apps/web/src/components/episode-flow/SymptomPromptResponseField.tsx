@@ -284,7 +284,7 @@ function SymptomSeverityRadiogroup({
 }
 
 /**
- * In-flow still photo capture using live camera preview (local blob URL only; no upload).
+ * In-flow still photo capture using live camera preview before server upload.
  */
 function SymptomPhotoCaptureField({
   line,
@@ -624,7 +624,8 @@ function SymptomPhotoCaptureField({
         </p>
       ) : null}
       <p className="text-xs text-app-muted">
-        Temporary local capture only. Upload is not part of this step.
+        Media is uploaded to private episode storage after you confirm this
+        capture.
       </p>
     </div>
   );
@@ -1090,14 +1091,15 @@ function SymptomVideoCaptureField({
         </p>
       ) : null}
       <p className="text-xs text-app-muted">
-        Temporary local capture only. Upload is not part of this step.
+        Media is uploaded to private episode storage after you confirm this
+        capture.
       </p>
     </div>
   );
 }
 
 /**
- * Renders the capture UI for one preset symptom line (local media refs only until upload ships).
+ * Renders the capture UI for one preset symptom line.
  *
  * @param props - Line metadata, current answer, change handler, disabled flag.
  * @returns Response-type-specific controls.

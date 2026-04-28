@@ -119,6 +119,22 @@ describe('mapSupabaseErrorToPresetDataError', () => {
       expect(mapped?.message).toMatch(/connection/i);
     }
   });
+
+  it('maps React Native fetch Error (not TypeError) to network_error', () => {
+    const mapped = mapSupabaseErrorToPresetDataError(
+      new Error('Network request failed'),
+    );
+    expect(mapped?.code).toBe('network_error');
+    expect(mapped?.message).toMatch(/connection/i);
+  });
+
+  it('maps plain { message } transport failures to network_error', () => {
+    const mapped = mapSupabaseErrorToPresetDataError({
+      message: 'Network request failed',
+    });
+    expect(mapped?.code).toBe('network_error');
+    expect(mapped?.message).toMatch(/connection/i);
+  });
 });
 
 describe('toPresetDataError', () => {
