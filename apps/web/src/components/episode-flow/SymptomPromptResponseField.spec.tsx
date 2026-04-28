@@ -334,6 +334,54 @@ describe('SymptomPromptResponseField video capture', () => {
     expect(revokeObjectUrlMock).not.toHaveBeenCalled();
   });
 
+  it('record again from captured preview discards draft and returns recorder UI', async () => {
+    createObjectUrlMock.mockReturnValueOnce('blob:draft-video');
+    const onChange = jest.fn();
+    render(
+      <SymptomPromptResponseField
+        line={makeLine('Balance')}
+        answer={undefined}
+        onChange={onChange}
+        disabled={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Record Balance video'));
+    await waitFor(() => {
+      expect(
+        screen
+          .getByLabelText('Start Balance video recording')
+          .hasAttribute('disabled'),
+      ).toBe(false);
+    });
+    fireEvent.click(screen.getByLabelText('Start Balance video recording'));
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText('Stop Balance video recording'),
+      ).toBeTruthy();
+    });
+    fireEvent.click(screen.getByLabelText('Stop Balance video recording'));
+
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText('Balance captured video preview'),
+      ).toBeTruthy();
+      expect(onChange).toHaveBeenCalledTimes(0);
+    });
+    fireEvent.click(screen.getByLabelText('Record Balance video again'));
+
+    expect(onChange).toHaveBeenCalledTimes(0);
+    expect(revokeObjectUrlMock).toHaveBeenCalledWith('blob:draft-video');
+    await waitFor(() => {
+      expect(
+        screen.queryByLabelText('Balance captured video preview'),
+      ).toBeNull();
+      expect(
+        screen.getByLabelText('Start Balance video recording'),
+      ).toBeTruthy();
+    });
+  });
+
   it('disables close button while recording to avoid implicit save', async () => {
     const onChange = jest.fn();
     render(

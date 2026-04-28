@@ -88,6 +88,19 @@ jest.mock('expo-image-picker', () => ({
   launchCameraAsync: jest.fn(),
 }));
 
+jest.mock('expo-video', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  return {
+    VideoView: (props: { accessibilityLabel?: string }) => (
+      <View
+        accessibilityLabel={props.accessibilityLabel ?? 'Mock video view'}
+      />
+    ),
+    useVideoPlayer: jest.fn(() => ({})),
+  };
+});
+
 jest.mock('expo-camera', () => {
   const React = require('react');
   const { View } = require('react-native');
@@ -703,6 +716,16 @@ describe('SymptomPromptScreen', () => {
     await waitFor(() => {
       expect(mockRecordAsync).toHaveBeenCalledTimes(1);
     });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Use Dizziness video')).toBeTruthy();
+      expect(
+        screen.getByLabelText('Next symptom').props.accessibilityState,
+      ).toEqual({
+        disabled: true,
+      });
+    });
+    fireEvent.press(screen.getByLabelText('Use Dizziness video'));
 
     await waitFor(() => {
       expect(
