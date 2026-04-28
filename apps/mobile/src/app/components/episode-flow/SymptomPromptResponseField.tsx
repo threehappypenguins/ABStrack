@@ -33,11 +33,18 @@ export type SymptomPromptResponseFieldProps = {
   disabled: boolean;
 };
 
-function PendingVideoPreview({ uri }: { uri: string }) {
+function PendingVideoPreview({
+  uri,
+  accessibilityLabel,
+}: {
+  uri: string;
+  accessibilityLabel: string;
+}) {
   const player = useVideoPlayer(uri);
   return (
     <VideoView
       player={player}
+      accessibilityLabel={accessibilityLabel}
       nativeControls
       contentFit="contain"
       style={{ height: '100%', width: '100%' }}
@@ -735,7 +742,10 @@ export function SymptomPromptResponseField({
               ) : (
                 <View className="flex-1 items-center justify-center px-4">
                   <View className="h-[70%] w-full overflow-hidden rounded-2xl bg-black">
-                    <PendingVideoPreview uri={pendingVideoReview.localUri} />
+                    <PendingVideoPreview
+                      uri={pendingVideoReview.localUri}
+                      accessibilityLabel={`${line.symptom_name} captured video preview`}
+                    />
                   </View>
                 </View>
               )}

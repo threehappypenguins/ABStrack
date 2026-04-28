@@ -88,19 +88,6 @@ jest.mock('expo-image-picker', () => ({
   launchCameraAsync: jest.fn(),
 }));
 
-jest.mock('expo-video', () => {
-  const React = require('react');
-  const { View } = require('react-native');
-  return {
-    VideoView: (props: { accessibilityLabel?: string }) => (
-      <View
-        accessibilityLabel={props.accessibilityLabel ?? 'Mock video view'}
-      />
-    ),
-    useVideoPlayer: jest.fn(() => ({})),
-  };
-});
-
 jest.mock('expo-camera', () => {
   const React = require('react');
   const { View } = require('react-native');
