@@ -20,8 +20,36 @@ function setStoredRaw(episodeId: string, raw: string): void {
 }
 
 describe('symptom-prompt-session-store', () => {
+  let originalRevokeDescriptor: PropertyDescriptor | undefined;
+  let revokeMock: jest.Mock;
+
+  beforeAll(() => {
+    originalRevokeDescriptor = Object.getOwnPropertyDescriptor(
+      globalThis.URL,
+      'revokeObjectURL',
+    );
+  });
+
   beforeEach(() => {
     sessionStorage.clear();
+    revokeMock = jest.fn();
+    Object.defineProperty(globalThis.URL, 'revokeObjectURL', {
+      value: revokeMock,
+      configurable: true,
+      writable: true,
+    });
+  });
+
+  afterEach(() => {
+    if (originalRevokeDescriptor) {
+      Object.defineProperty(
+        globalThis.URL,
+        'revokeObjectURL',
+        originalRevokeDescriptor,
+      );
+      return;
+    }
+    delete (globalThis.URL as { revokeObjectURL?: unknown }).revokeObjectURL;
   });
 
   it('getSymptomPromptSession returns initial state when activeIndex is null (JSON.stringify maps NaN/Infinity to null)', () => {
@@ -286,7 +314,46 @@ describe('symptom-prompt-session-store', () => {
       },
     });
     clearSymptomPromptSession('ep-1');
+    expect(revokeMock).toHaveBeenCalledWith('blob:https://example.test/abc');
     expect(getSymptomPromptSession('ep-1')).toEqual(initial);
+  });
+
+  it('setSymptomPromptSession revokes previous runtime media blob URLs when replacing cache', () => {
+    setSymptomPromptSession('ep-1', {
+      activeIndex: 0,
+      answers: {
+        photo: {
+          type: 'photo',
+          value: {
+            localUri: 'blob:https://example.test/photo-old',
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        },
+        video: {
+          type: 'video',
+          value: {
+            localUri: 'blob:https://example.test/video-old',
+            durationMs: 5000,
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        },
+      },
+    });
+    revokeMock.mockClear();
+
+    setSymptomPromptSession('ep-1', {
+      activeIndex: 1,
+      answers: {
+        keep: { type: 'yes_no', value: true },
+      },
+    });
+
+    expect(revokeMock).toHaveBeenCalledWith(
+      'blob:https://example.test/photo-old',
+    );
+    expect(revokeMock).toHaveBeenCalledWith(
+      'blob:https://example.test/video-old',
+    );
   });
 
   it('getSymptomPromptSession drops non-durable blob photo answers after reload-like state', () => {

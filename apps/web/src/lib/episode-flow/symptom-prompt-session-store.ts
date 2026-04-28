@@ -69,6 +69,22 @@ function extractRuntimeMediaAnswers(
   return out;
 }
 
+function revokeBlobUris(answers: SymptomPromptAnswers): void {
+  for (const answer of Object.values(answers)) {
+    if (answer.type === 'video' && answer.value !== null) {
+      URL.revokeObjectURL(answer.value.localUri);
+      continue;
+    }
+    if (
+      answer.type === 'photo' &&
+      answer.value !== null &&
+      photoRefIsNonDurable(answer.value.localUri)
+    ) {
+      URL.revokeObjectURL(answer.value.localUri);
+    }
+  }
+}
+
 /**
  * Reads traversal state from `sessionStorage` for the current browser session.
  *
@@ -131,6 +147,10 @@ export function setSymptomPromptSession(
     return;
   }
   const runtimeMediaAnswers = extractRuntimeMediaAnswers(state);
+  const previousRuntimeMedia = runtimeMediaAnswersByEpisode.get(episodeId);
+  if (previousRuntimeMedia) {
+    revokeBlobUris(previousRuntimeMedia);
+  }
   if (Object.keys(runtimeMediaAnswers).length === 0) {
     runtimeMediaAnswersByEpisode.delete(episodeId);
   } else {
@@ -154,6 +174,10 @@ export function setSymptomPromptSession(
 export function clearSymptomPromptSession(episodeId: string): void {
   if (typeof window === 'undefined') {
     return;
+  }
+  const runtimeMediaAnswers = runtimeMediaAnswersByEpisode.get(episodeId);
+  if (runtimeMediaAnswers) {
+    revokeBlobUris(runtimeMediaAnswers);
   }
   runtimeMediaAnswersByEpisode.delete(episodeId);
   try {
