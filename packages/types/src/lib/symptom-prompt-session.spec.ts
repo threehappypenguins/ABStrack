@@ -73,13 +73,22 @@ describe('symptom-prompt-session', () => {
       ).toBe(true);
     });
 
-    it('photo stays empty and video counts when local capture exists', () => {
+    it('photo and video count when local capture refs are valid', () => {
       expect(symptomPromptAnswerHasValue({ type: 'photo', value: null })).toBe(
         false,
       );
       expect(symptomPromptAnswerHasValue({ type: 'video', value: null })).toBe(
         false,
       );
+      expect(
+        symptomPromptAnswerHasValue({
+          type: 'photo',
+          value: {
+            localUri: 'file:///tmp/capture.jpg',
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        }),
+      ).toBe(true);
       expect(
         symptomPromptAnswerHasValue({
           type: 'video',
@@ -90,6 +99,27 @@ describe('symptom-prompt-session', () => {
           },
         }),
       ).toBe(true);
+    });
+
+    it('photo is empty when localUri or capturedAt are invalid', () => {
+      expect(
+        symptomPromptAnswerHasValue({
+          type: 'photo',
+          value: {
+            localUri: '   ',
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        }),
+      ).toBe(false);
+      expect(
+        symptomPromptAnswerHasValue({
+          type: 'photo',
+          value: {
+            localUri: 'file:///tmp/capture.jpg',
+            capturedAt: 'not-a-date',
+          },
+        }),
+      ).toBe(false);
     });
 
     it('video is empty when localUri/capturedAt are invalid at runtime', () => {
@@ -177,6 +207,20 @@ describe('symptom-prompt-session', () => {
         [b.id]: { type: 'yes_no', value: false },
       });
       expect(placement).toEqual({ activeIndex: 1, phase: 'complete' });
+    });
+
+    it('treats a photo line as answered when a local capture ref is present', () => {
+      const p = line('p', 0, 'photo');
+      const placement = computeSymptomResumePlacement([p], {
+        [p.id]: {
+          type: 'photo',
+          value: {
+            localUri: 'file:///tmp/s.jpg',
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        },
+      });
+      expect(placement).toEqual({ activeIndex: 0, phase: 'complete' });
     });
 
     it('returns prompting step zero when no answers exist', () => {

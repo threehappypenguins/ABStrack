@@ -30,6 +30,54 @@ describe('symptom-prompt-session-sanitize', () => {
     });
   });
 
+  it('sanitizeSymptomPromptAnswerEntry accepts photo local capture refs', () => {
+    expect(
+      sanitizeSymptomPromptAnswerEntry({
+        type: 'photo',
+        value: {
+          localUri: 'file:///tmp/symptom.jpg',
+          capturedAt: '2026-04-27T12:00:00.000Z',
+        },
+      }),
+    ).toEqual({
+      type: 'photo',
+      value: {
+        localUri: 'file:///tmp/symptom.jpg',
+        capturedAt: '2026-04-27T12:00:00.000Z',
+      },
+    });
+  });
+
+  it('sanitizeSymptomPromptAnswerEntry trims photo localUri and capturedAt', () => {
+    expect(
+      sanitizeSymptomPromptAnswerEntry({
+        type: 'photo',
+        value: {
+          localUri: '  file:///tmp/symptom.jpg  ',
+          capturedAt: '  2026-04-27T12:00:00.000Z  ',
+        },
+      }),
+    ).toEqual({
+      type: 'photo',
+      value: {
+        localUri: 'file:///tmp/symptom.jpg',
+        capturedAt: '2026-04-27T12:00:00.000Z',
+      },
+    });
+  });
+
+  it('sanitizeSymptomPromptAnswerEntry rejects photo refs with invalid capturedAt', () => {
+    expect(
+      sanitizeSymptomPromptAnswerEntry({
+        type: 'photo',
+        value: {
+          localUri: 'file:///tmp/symptom.jpg',
+          capturedAt: 'not-a-date',
+        },
+      }),
+    ).toBeNull();
+  });
+
   it('sanitizeSymptomPromptAnswerEntry accepts video local capture refs', () => {
     expect(
       sanitizeSymptomPromptAnswerEntry({

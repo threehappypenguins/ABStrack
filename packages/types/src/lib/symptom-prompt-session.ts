@@ -4,6 +4,16 @@ import type { PresetSymptomRow, SymptomResponseType, Uuid } from './types.js';
 export const SYMPTOM_PROMPT_VIDEO_MAX_DURATION_MS = 15000;
 
 /**
+ * Temporary local reference to a captured symptom photo (no upload key yet).
+ */
+export interface SymptomPromptPhotoCaptureRef {
+  /** Device/browser-local URI or object URL. */
+  localUri: string;
+  /** ISO timestamp of when capture completed. */
+  capturedAt: string;
+}
+
+/**
  * Temporary local reference to a captured symptom video (no upload key yet).
  */
 export interface SymptomPromptVideoCaptureRef {
@@ -16,14 +26,15 @@ export interface SymptomPromptVideoCaptureRef {
 }
 
 /**
- * One stored answer for a preset symptom line during the Week 5 traversal skeleton.
+ * One stored answer for a preset symptom line during episode symptom traversal.
  * Values are JSON-serializable for session persistence (web `sessionStorage`).
+ * Photo/video may hold temporary local capture metadata until upload exists.
  */
 export type SymptomPromptAnswer =
   | { type: 'yes_no'; value: boolean | null }
   | { type: 'severity_scale'; value: number | null }
   | { type: 'free_text'; value: string }
-  | { type: 'photo'; value: null }
+  | { type: 'photo'; value: SymptomPromptPhotoCaptureRef | null }
   | { type: 'video'; value: SymptomPromptVideoCaptureRef | null };
 
 /**
@@ -97,7 +108,11 @@ export function symptomPromptAnswerHasValue(
     case 'free_text':
       return answer.value.trim().length > 0;
     case 'photo':
-      return false;
+      return (
+        answer.value !== null &&
+        answer.value.localUri.trim().length > 0 &&
+        Number.isFinite(Date.parse(answer.value.capturedAt))
+      );
     case 'video':
       return (
         answer.value !== null &&

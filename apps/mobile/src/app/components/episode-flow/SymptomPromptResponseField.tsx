@@ -35,7 +35,7 @@ const VIDEO_MAX_DURATION_SECONDS = Math.floor(
 );
 
 /**
- * Renders the capture UI for one preset symptom line (Week 5 skeleton: no media pipeline).
+ * Renders the capture UI for one preset symptom line (local media refs only until upload ships).
  *
  * @param props - Line metadata, current answer, change handler, disabled flag.
  * @returns Response-type-specific controls.
@@ -47,6 +47,10 @@ export function SymptomPromptResponseField({
   disabled,
 }: SymptomPromptResponseFieldProps) {
   const { colors } = useAppTheme();
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoModalOpen, setPhotoModalOpen] = useState(false);
+  const [photoCameraReady, setPhotoCameraReady] = useState(false);
+  const [photoCapturing, setPhotoCapturing] = useState(false);
   const [videoBusy, setVideoBusy] = useState(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [microphonePermission, requestMicrophonePermission] =
@@ -144,6 +148,13 @@ export function SymptomPromptResponseField({
     }
     didCancelRecordingRef.current = false;
     void cameraRef.current?.stopRecording();
+  };
+  const closePhotoModal = () => {
+    if (photoCapturing) {
+      return;
+    }
+    setPhotoCameraReady(false);
+    setPhotoModalOpen(false);
   };
   const effective =
     answer ?? createDefaultSymptomPromptAnswer(line.response_type);
@@ -254,21 +265,231 @@ export function SymptomPromptResponseField({
         />
       );
     }
-    case 'photo':
+    case 'photo': {
+      const capturedPhoto = effective.type === 'photo' ? effective.value : null;
       return (
-        <View
-          accessibilityRole="text"
-          className="rounded-xl border border-dashed border-app-border bg-app-bg p-6 dark:border-app-border-dark dark:bg-app-bg-dark"
-        >
+        <View className="gap-3 rounded-xl border border-app-border bg-app-bg p-4 dark:border-app-border-dark dark:bg-app-bg-dark">
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={
+              capturedPhoto
+                ? `Take ${line.symptom_name} photo again`
+                : `Take ${line.symptom_name} photo`
+            }
+            accessibilityHint="Opens your device camera to take one photo for this symptom."
+            accessibilityState={{ disabled: disabled || photoBusy }}
+            disabled={disabled || photoBusy}
+            onPress={() => {
+              void (async () => {
+                setPhotoBusy(true);
+                try {
+                  if (Platform.OS === 'android' || Platform.OS === 'ios') {
+                    if (!cameraPermission?.granted) {
+                      const granted = await requestCameraPermission();
+                      if (!granted.granted) {
+                        return;
+                      }
+                    }
+                    setCameraFacing('front');
+                    setCameraZoom(0);
+                    setPhotoCameraReady(false);
+                    setPhotoModalOpen(true);
+                    return;
+                  }
+                  const permission =
+                    await ImagePicker.requestCameraPermissionsAsync();
+                  if (!permission.granted) {
+                    return;
+                  }
+                  const result = await ImagePicker.launchCameraAsync({
+                    mediaTypes: ['images'],
+                    cameraType: ImagePicker.CameraType.front,
+                    allowsEditing: false,
+                    quality: 0.75,
+                    legacy: true,
+                  });
+                  if (result.canceled || result.assets.length === 0) {
+                    return;
+                  }
+                  const asset = result.assets[0];
+                  onChange({
+                    type: 'photo',
+                    value: {
+                      localUri: asset.uri,
+                      capturedAt: new Date().toISOString(),
+                    },
+                  });
+                } finally {
+                  setPhotoBusy(false);
+                }
+              })();
+            }}
+            style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+            className={`items-center justify-center rounded-xl border-2 px-4 py-4 ${
+              disabled || photoBusy
+                ? 'border-app-border bg-app-bg opacity-60 dark:border-app-border-dark dark:bg-app-bg-dark'
+                : 'border-app-primary bg-app-primary/15 active:opacity-90 dark:border-app-primary'
+            }`}
+          >
+            <Text
+              className={`text-[17px] font-semibold ${nw.textInk}`}
+              maxFontSizeMultiplier={2}
+            >
+              {photoBusy
+                ? 'Opening camera…'
+                : capturedPhoto
+                  ? 'Take photo again'
+                  : 'Take photo'}
+            </Text>
+          </Pressable>
           <Text
-            className={`text-center text-base leading-relaxed ${nw.textInk}`}
+            accessibilityRole="text"
+            accessibilityLiveRegion="polite"
+            className={`text-sm leading-relaxed ${nw.textMuted}`}
             maxFontSizeMultiplier={2}
           >
-            Photo symptom capture is coming in a later update. For now, use Next
-            or Skip to continue this episode flow.
+            {capturedPhoto
+              ? 'Photo saved on this device for this step. Continue when you are ready.'
+              : 'Use a large button to open the camera, take one photo, then return here.'}
+          </Text>
+          <Modal
+            visible={photoModalOpen}
+            animationType="slide"
+            presentationStyle="fullScreen"
+            onRequestClose={closePhotoModal}
+          >
+            <View className="flex-1 bg-black">
+              <View
+                className="flex-1"
+                onTouchStart={(event) => {
+                  const distance = pinchDistance(event);
+                  if (distance === null) {
+                    pinchStartDistanceRef.current = null;
+                    return;
+                  }
+                  pinchStartDistanceRef.current = distance;
+                  pinchStartZoomRef.current = cameraZoom;
+                }}
+                onTouchMove={(event) => {
+                  const startDistance = pinchStartDistanceRef.current;
+                  const distance = pinchDistance(event);
+                  if (startDistance === null || distance === null) {
+                    return;
+                  }
+                  const delta = (distance - startDistance) / 250;
+                  setCameraZoom(clampZoom(pinchStartZoomRef.current + delta));
+                }}
+                onTouchEnd={() => {
+                  pinchStartDistanceRef.current = null;
+                }}
+                onTouchCancel={() => {
+                  pinchStartDistanceRef.current = null;
+                }}
+              >
+                <CameraView
+                  ref={cameraRef}
+                  facing={cameraFacing}
+                  mode="picture"
+                  zoom={cameraZoom}
+                  style={{ flex: 1 }}
+                  onCameraReady={() => {
+                    setPhotoCameraReady(true);
+                  }}
+                />
+              </View>
+              <View className="absolute left-0 right-0 top-0 flex-row items-center justify-between px-4 pt-12">
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Switch camera"
+                  onPress={() => {
+                    setCameraFacing((v) => (v === 'front' ? 'back' : 'front'));
+                  }}
+                  style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                  className="items-center justify-center rounded-md bg-black/70 px-3 py-2"
+                >
+                  <Ionicons
+                    name="camera-reverse-outline"
+                    size={22}
+                    color="white"
+                  />
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Close camera"
+                  accessibilityState={{ disabled: photoCapturing }}
+                  disabled={photoCapturing}
+                  onPress={closePhotoModal}
+                  style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                  className="items-center justify-center rounded-md bg-black/70 px-4 py-2"
+                >
+                  <Text className="text-base font-semibold text-white">
+                    Close
+                  </Text>
+                </Pressable>
+              </View>
+              <View className="absolute bottom-12 left-0 right-0 items-center">
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Capture ${line.symptom_name} photo`}
+                  accessibilityState={{
+                    disabled: !photoCameraReady || photoCapturing,
+                  }}
+                  disabled={!photoCameraReady || photoCapturing}
+                  onPress={() => {
+                    void (async () => {
+                      if (
+                        !cameraRef.current ||
+                        !photoCameraReady ||
+                        photoCapturing
+                      ) {
+                        return;
+                      }
+                      setPhotoCapturing(true);
+                      try {
+                        const result = await cameraRef.current.takePictureAsync(
+                          {
+                            quality: 0.75,
+                          },
+                        );
+                        if (!result?.uri) {
+                          return;
+                        }
+                        setPhotoModalOpen(false);
+                        setPhotoCameraReady(false);
+                        onChange({
+                          type: 'photo',
+                          value: {
+                            localUri: result.uri,
+                            capturedAt: new Date().toISOString(),
+                          },
+                        });
+                      } finally {
+                        setPhotoCapturing(false);
+                      }
+                    })();
+                  }}
+                  style={{
+                    minHeight: COMFORTABLE_TOUCH_TARGET_DP,
+                    minWidth: COMFORTABLE_TOUCH_TARGET_DP,
+                  }}
+                  className={`items-center justify-center ${!photoCameraReady || photoCapturing ? 'opacity-50' : ''}`}
+                >
+                  <View className="h-20 w-20 items-center justify-center rounded-full border-4 border-white bg-transparent">
+                    <View className="h-12 w-12 rounded-full bg-white" />
+                  </View>
+                </Pressable>
+              </View>
+            </View>
+          </Modal>
+          <Text
+            className={`text-xs leading-relaxed ${nw.textMuted}`}
+            maxFontSizeMultiplier={2}
+          >
+            Temporary local capture only. Upload is not part of this step.
           </Text>
         </View>
       );
+    }
     case 'video': {
       const captured = effective.type === 'video' ? effective.value : null;
       const elapsedLabel = `${String(Math.floor(elapsedSeconds / 60)).padStart(

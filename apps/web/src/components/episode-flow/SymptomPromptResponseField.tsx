@@ -277,6 +277,286 @@ function SymptomSeverityRadiogroup({
   );
 }
 
+/**
+ * In-flow still photo capture using live camera preview (local blob URL only; no upload).
+ */
+function SymptomPhotoCaptureField({
+  line,
+  answer,
+  onChange,
+  disabled,
+}: {
+  line: PresetSymptomRow;
+  answer: SymptomPromptAnswer;
+  onChange: (next: SymptomPromptAnswer) => void;
+  disabled: boolean;
+}) {
+  const streamRef = useRef<MediaStream | null>(null);
+  const previewRef = useRef<HTMLVideoElement | null>(null);
+  const createdObjectUrlRef = useRef<string | null>(null);
+  const isUnmountedRef = useRef(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [capturing, setCapturing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [previewAspectRatio, setPreviewAspectRatio] = useState<number>(16 / 9);
+
+  const captured = answer.type === 'photo' ? answer.value : null;
+
+  const revokeCreatedObjectUrl = () => {
+    if (!createdObjectUrlRef.current) {
+      return;
+    }
+    URL.revokeObjectURL(createdObjectUrlRef.current);
+    createdObjectUrlRef.current = null;
+  };
+
+  const stopAllTracks = () => {
+    const stream = streamRef.current;
+    if (!stream) {
+      return;
+    }
+    stream.getTracks().forEach((track) => {
+      track.stop();
+    });
+    streamRef.current = null;
+    if (!isUnmountedRef.current) {
+      setCameraReady(false);
+    }
+    if (previewRef.current) {
+      previewRef.current.srcObject = null;
+    }
+  };
+
+  useEffect(() => {
+    isUnmountedRef.current = false;
+    return () => {
+      isUnmountedRef.current = true;
+      stopAllTracks();
+      revokeCreatedObjectUrl();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!pickerOpen) {
+      stopAllTracks();
+      return;
+    }
+    if (streamRef.current) {
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      setError(null);
+      setStarting(true);
+      try {
+        if (typeof navigator?.mediaDevices?.getUserMedia !== 'function') {
+          throw new Error('UNSUPPORTED_MEDIA_DEVICES');
+        }
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        streamRef.current = stream;
+        if (previewRef.current) {
+          previewRef.current.srcObject = stream;
+        }
+        setCameraReady(true);
+      } catch (error: unknown) {
+        if (!cancelled) {
+          const errorName =
+            typeof error === 'object' && error !== null && 'name' in error
+              ? String((error as { name?: unknown }).name ?? '')
+              : '';
+          if (
+            errorName === 'NotAllowedError' ||
+            errorName === 'PermissionDeniedError'
+          ) {
+            setError(
+              'Camera access was denied. Please enable permissions and try again.',
+            );
+          } else if (
+            errorName === 'NotFoundError' ||
+            errorName === 'DevicesNotFoundError'
+          ) {
+            setError('No camera was found. Connect one and try again.');
+          } else {
+            setError('Camera is not supported in this browser or environment.');
+          }
+          setPickerOpen(false);
+        }
+      } finally {
+        if (!cancelled) {
+          setStarting(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [pickerOpen]);
+
+  const takePhotoFromPreview = async () => {
+    const video = previewRef.current;
+    if (!video || video.videoWidth === 0 || video.videoHeight === 0) {
+      setError('Camera is not ready yet. Try again in a moment.');
+      return;
+    }
+    setError(null);
+    setCapturing(true);
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        setError('Could not capture this image in your browser.');
+        return;
+      }
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.88);
+      });
+      if (!blob || blob.size === 0) {
+        setError('Photo capture failed. Please try again.');
+        return;
+      }
+      revokeCreatedObjectUrl();
+      const localUri = URL.createObjectURL(blob);
+      createdObjectUrlRef.current = localUri;
+      onChange({
+        type: 'photo',
+        value: {
+          localUri,
+          capturedAt: new Date().toISOString(),
+        },
+      });
+      stopAllTracks();
+      setPickerOpen(false);
+    } finally {
+      setCapturing(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3 rounded-xl border border-app-border/90 bg-app-surface p-4">
+      <div className="flex flex-col gap-3 sm:flex-row">
+        <button
+          type="button"
+          disabled={disabled}
+          aria-label={
+            captured
+              ? `Take ${line.symptom_name} photo again`
+              : `Take ${line.symptom_name} photo`
+          }
+          className={`inline-flex min-h-[56px] flex-1 items-center justify-center rounded-xl border-2 px-4 text-base font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg ${
+            disabled
+              ? 'cursor-not-allowed border-app-border bg-app-surface text-app-muted opacity-60'
+              : 'border-app-primary bg-app-primary/10 text-app-ink hover:border-app-primary/80'
+          }`}
+          onClick={() => {
+            setPickerOpen(true);
+          }}
+        >
+          {captured ? 'Take photo again' : 'Take photo'}
+        </button>
+      </div>
+      {pickerOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${line.symptom_name} photo camera`}
+            className="w-full max-w-2xl rounded-2xl border border-app-border bg-app-surface p-4 shadow-xl"
+          >
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h3 className="text-base font-semibold text-app-ink">
+                Take a photo
+              </h3>
+              <button
+                type="button"
+                aria-label="Close camera"
+                aria-disabled={capturing}
+                className="inline-flex min-h-[44px] shrink-0 items-center justify-center rounded-lg border border-app-border px-3 text-sm font-medium text-app-ink"
+                disabled={capturing}
+                onClick={() => {
+                  if (capturing) {
+                    return;
+                  }
+                  setPickerOpen(false);
+                }}
+              >
+                Close
+              </button>
+            </div>
+            <div className="rounded-xl border border-app-border/90 bg-app-bg p-2">
+              <div
+                className="w-full overflow-hidden rounded-lg bg-black"
+                style={{ aspectRatio: previewAspectRatio }}
+              >
+                <video
+                  ref={previewRef}
+                  aria-label={`${line.symptom_name} live camera preview`}
+                  className="h-full w-full bg-black object-contain"
+                  autoPlay
+                  muted
+                  playsInline
+                  onLoadedMetadata={(event) => {
+                    const v = event.currentTarget;
+                    if (v.videoWidth > 0 && v.videoHeight > 0) {
+                      setPreviewAspectRatio(v.videoWidth / v.videoHeight);
+                    }
+                  }}
+                />
+              </div>
+            </div>
+            <div className="mt-4 flex items-center justify-center">
+              <button
+                type="button"
+                aria-disabled={starting || !cameraReady || capturing}
+                aria-label={`Save ${line.symptom_name} photo and return`}
+                className={`inline-flex min-h-[56px] min-w-[200px] items-center justify-center rounded-full px-6 text-base font-semibold text-white ${
+                  starting || !cameraReady || capturing
+                    ? 'cursor-not-allowed bg-slate-400 dark:bg-slate-600'
+                    : 'bg-app-primary hover:opacity-95'
+                }`}
+                disabled={starting || !cameraReady || capturing}
+                onClick={() => {
+                  void takePhotoFromPreview();
+                }}
+              >
+                {starting
+                  ? 'Starting camera…'
+                  : capturing
+                    ? 'Saving photo…'
+                    : 'Save photo'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      <p className="text-sm text-app-muted" role="status">
+        {captured
+          ? 'Photo saved on this device for this step. You can go to the next symptom when you are ready.'
+          : 'Opens your camera so you can take one photo for this symptom. Large buttons are for easier tapping.'}
+      </p>
+      {error ? (
+        <p className="text-sm text-red-700 dark:text-red-300" role="alert">
+          {error}
+        </p>
+      ) : null}
+      <p className="text-xs text-app-muted">
+        Temporary local capture only. Upload is not part of this step.
+      </p>
+    </div>
+  );
+}
+
 function SymptomVideoCaptureField({
   line,
   answer,
@@ -691,7 +971,7 @@ function SymptomVideoCaptureField({
 }
 
 /**
- * Renders the capture UI for one preset symptom line (Week 5 skeleton: no media pipeline).
+ * Renders the capture UI for one preset symptom line (local media refs only until upload ships).
  *
  * @param props - Line metadata, current answer, change handler, disabled flag.
  * @returns Response-type-specific controls.
@@ -747,13 +1027,12 @@ export function SymptomPromptResponseField({
     }
     case 'photo':
       return (
-        <div
-          role="status"
-          className="rounded-xl border border-dashed border-app-border/90 bg-app-surface/80 p-6 text-center text-sm leading-relaxed text-app-ink"
-        >
-          Photo symptom capture is coming in a later update. For now, use Next
-          or Skip symptom to continue this episode flow.
-        </div>
+        <SymptomPhotoCaptureField
+          line={line}
+          answer={effective}
+          onChange={onChange}
+          disabled={disabled}
+        />
       );
     case 'video':
       return (
