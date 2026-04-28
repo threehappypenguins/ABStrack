@@ -367,3 +367,244 @@ describe('SymptomPromptResponseField video capture', () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 });
+
+function makePhotoLine(symptomName = 'Facial droop'): PresetSymptomRow {
+  return {
+    id: 'line-photo',
+    preset_id: 'preset-1',
+    sort_order: 0,
+    symptom_name: symptomName,
+    response_type: 'photo',
+    prompt_instruction: null,
+    created_at: '2026-01-01T00:00:00.000Z',
+    updated_at: '2026-01-01T00:00:00.000Z',
+  };
+}
+
+describe('SymptomPromptResponseField photo capture', () => {
+  let getContextSpy: jest.SpiedFunction<
+    typeof HTMLCanvasElement.prototype.getContext
+  >;
+  let toBlobSpy: jest.SpiedFunction<typeof HTMLCanvasElement.prototype.toBlob>;
+
+  beforeAll(() => {
+    if (!originalNavigatorDescriptor) {
+      originalNavigatorDescriptor = Object.getOwnPropertyDescriptor(
+        globalThis,
+        'navigator',
+      );
+    }
+    if (!originalCreateObjectUrlDescriptor) {
+      originalCreateObjectUrlDescriptor = Object.getOwnPropertyDescriptor(
+        globalThis.URL,
+        'createObjectURL',
+      );
+    }
+    if (!originalRevokeObjectUrlDescriptor) {
+      originalRevokeObjectUrlDescriptor = Object.getOwnPropertyDescriptor(
+        globalThis.URL,
+        'revokeObjectURL',
+      );
+    }
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    getUserMediaMock.mockResolvedValue(mockStream);
+    createObjectUrlMock.mockReturnValue('blob:local-photo');
+    Object.defineProperty(globalThis, 'navigator', {
+      value: {
+        mediaDevices: {
+          getUserMedia: getUserMediaMock,
+        },
+      },
+      configurable: true,
+    });
+    Object.defineProperty(globalThis.URL, 'createObjectURL', {
+      value: createObjectUrlMock,
+      configurable: true,
+      writable: true,
+    });
+    Object.defineProperty(globalThis.URL, 'revokeObjectURL', {
+      value: revokeObjectUrlMock,
+      configurable: true,
+      writable: true,
+    });
+    getContextSpy = jest
+      .spyOn(HTMLCanvasElement.prototype, 'getContext')
+      .mockReturnValue({
+        drawImage: jest.fn(),
+      } as unknown as CanvasRenderingContext2D);
+    toBlobSpy = jest
+      .spyOn(HTMLCanvasElement.prototype, 'toBlob')
+      .mockImplementation((cb: BlobCallback) => {
+        cb(new Blob(['jpeg-bytes'], { type: 'image/jpeg' }));
+      });
+  });
+
+  afterEach(() => {
+    getContextSpy.mockRestore();
+    toBlobSpy.mockRestore();
+    if (originalNavigatorDescriptor) {
+      Object.defineProperty(
+        globalThis,
+        'navigator',
+        originalNavigatorDescriptor,
+      );
+    }
+    if (originalCreateObjectUrlDescriptor) {
+      Object.defineProperty(
+        globalThis.URL,
+        'createObjectURL',
+        originalCreateObjectUrlDescriptor,
+      );
+    }
+    if (originalRevokeObjectUrlDescriptor) {
+      Object.defineProperty(
+        globalThis.URL,
+        'revokeObjectURL',
+        originalRevokeObjectUrlDescriptor,
+      );
+    }
+  });
+
+  it('captures a still photo and stores a local blob URL', async () => {
+    const onChange = jest.fn();
+    render(
+      <SymptomPromptResponseField
+        line={makePhotoLine()}
+        answer={undefined}
+        onChange={onChange}
+        disabled={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Take Facial droop photo'));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Facial droop photo camera')).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(getUserMediaMock).toHaveBeenCalledWith({
+        video: true,
+        audio: false,
+      });
+    });
+
+    const video = document.querySelector('video');
+    expect(video).toBeTruthy();
+    Object.defineProperty(video!, 'videoWidth', {
+      configurable: true,
+      value: 640,
+    });
+    Object.defineProperty(video!, 'videoHeight', {
+      configurable: true,
+      value: 480,
+    });
+    fireEvent.loadedMetadata(video!);
+    await waitFor(() => {
+      expect(
+        screen
+          .getByLabelText('Save Facial droop photo and return')
+          .hasAttribute('disabled'),
+      ).toBe(false);
+    });
+
+    fireEvent.click(
+      screen.getByLabelText('Save Facial droop photo and return'),
+    );
+
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalledTimes(1);
+    });
+
+    expect(onChange).toHaveBeenCalledWith({
+      type: 'photo',
+      value: expect.objectContaining({
+        localUri: 'blob:local-photo',
+        capturedAt: expect.any(String),
+      }),
+    });
+    expect(getContextSpy).toHaveBeenCalled();
+    expect(toBlobSpy).toHaveBeenCalled();
+    expect(stopTrackMock).toHaveBeenCalled();
+  });
+
+  it('does not revoke the active photo object URL on unmount', async () => {
+    const onChange = jest.fn();
+    const { unmount } = render(
+      <SymptomPromptResponseField
+        line={makePhotoLine('Ptosis')}
+        answer={undefined}
+        onChange={onChange}
+        disabled={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Take Ptosis photo'));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Ptosis photo camera')).toBeTruthy();
+    });
+    const video = document.querySelector('video');
+    expect(video).toBeTruthy();
+    Object.defineProperty(video!, 'videoWidth', {
+      configurable: true,
+      value: 640,
+    });
+    Object.defineProperty(video!, 'videoHeight', {
+      configurable: true,
+      value: 480,
+    });
+    fireEvent.loadedMetadata(video!);
+
+    fireEvent.click(screen.getByLabelText('Save Ptosis photo and return'));
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalledTimes(1);
+    });
+
+    unmount();
+    expect(revokeObjectUrlMock).not.toHaveBeenCalled();
+  });
+
+  it('renders capture failure errors inside the open photo dialog', async () => {
+    const onChange = jest.fn();
+    toBlobSpy.mockImplementationOnce((cb: BlobCallback) => {
+      cb(null);
+    });
+    render(
+      <SymptomPromptResponseField
+        line={makePhotoLine('Smile')}
+        answer={undefined}
+        onChange={onChange}
+        disabled={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Take Smile photo'));
+    await waitFor(() => {
+      expect(screen.getByLabelText('Smile photo camera')).toBeTruthy();
+    });
+    const video = document.querySelector('video');
+    expect(video).toBeTruthy();
+    Object.defineProperty(video!, 'videoWidth', {
+      configurable: true,
+      value: 640,
+    });
+    Object.defineProperty(video!, 'videoHeight', {
+      configurable: true,
+      value: 480,
+    });
+    fireEvent.loadedMetadata(video!);
+
+    fireEvent.click(screen.getByLabelText('Save Smile photo and return'));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Photo capture failed. Please try again.'),
+      ).toBeTruthy();
+    });
+    expect(screen.getByLabelText('Smile photo camera')).toBeTruthy();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+});

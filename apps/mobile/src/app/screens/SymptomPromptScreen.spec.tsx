@@ -28,6 +28,7 @@ import * as ImagePicker from 'expo-image-picker';
 const mockRecordAsync = jest.fn();
 const mockStopRecording = jest.fn();
 const mockToggleRecordingAsync = jest.fn();
+const mockTakePictureAsync = jest.fn();
 const mockGetSupportedFeatures = jest.fn(() => ({
   toggleRecordingAsyncAvailable: true,
 }));
@@ -95,6 +96,7 @@ jest.mock('expo-camera', () => {
       recordAsync: mockRecordAsync,
       stopRecording: mockStopRecording,
       toggleRecordingAsync: mockToggleRecordingAsync,
+      takePictureAsync: mockTakePictureAsync,
       getSupportedFeatures: mockGetSupportedFeatures,
     }));
     React.useEffect(() => {
@@ -148,6 +150,7 @@ describe('SymptomPromptScreen', () => {
   const lineB = makeLine('line-b', 1, 'Headache', 'severity_scale');
   const lineSeverityOnly = makeLine('line-sev', 0, 'Pain', 'severity_scale');
   const lineVideoOnly = makeLine('line-video', 0, 'Dizziness', 'video');
+  const linePhotoOnly = makeLine('line-photo', 0, 'Facial droop', 'photo');
 
   /** Single free-text line for debounce / flush tests. */
   const lineFreeOnly = makeLine('line-ft', 0, 'Notes', 'free_text');
@@ -241,6 +244,7 @@ describe('SymptomPromptScreen', () => {
       assets: [],
     } as never);
     mockRecordAsync.mockResolvedValue({ uri: 'file:///tmp/video.mp4' });
+    mockTakePictureAsync.mockResolvedValue({ uri: 'file:///tmp/photo.jpg' });
     mockStopRecording.mockReset();
     mockToggleRecordingAsync.mockReset();
     mockRequestCameraPermission.mockResolvedValue({ granted: true });
@@ -715,6 +719,61 @@ describe('SymptomPromptScreen', () => {
             value: {
               localUri: 'file:///tmp/video.mp4',
               durationMs: expect.any(Number),
+              capturedAt: expect.any(String),
+            },
+          },
+        }),
+      }),
+    );
+  });
+
+  test('photo capture stores local answer and does not upsert to Supabase yet', async () => {
+    jest.mocked(listPresetSymptomsForPreset).mockResolvedValue({
+      ok: true,
+      data: [linePhotoOnly],
+    });
+
+    const screen = render(<SymptomPromptScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Step 1 of 1')).toBeTruthy();
+    });
+
+    expect(
+      screen.getByLabelText('Next symptom').props.accessibilityState,
+    ).toEqual({
+      disabled: true,
+    });
+
+    jest.mocked(insertEpisodeSymptomAnswer).mockClear();
+    fireEvent.press(screen.getByLabelText('Take Facial droop photo'));
+    await waitFor(() => {
+      expect(screen.getByLabelText('Capture Facial droop photo')).toBeTruthy();
+    });
+    fireEvent.press(screen.getByLabelText('Capture Facial droop photo'));
+
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText('Next symptom').props.accessibilityState,
+      ).toEqual({
+        disabled: false,
+      });
+    });
+    expect(mockTakePictureAsync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        quality: 0.75,
+      }),
+    );
+
+    expect(insertEpisodeSymptomAnswer).not.toHaveBeenCalled();
+    expect(setSymptomPromptSession).toHaveBeenLastCalledWith(
+      episodeId,
+      expect.objectContaining({
+        answers: expect.objectContaining({
+          [linePhotoOnly.id]: {
+            type: 'photo',
+            value: {
+              localUri: 'file:///tmp/photo.jpg',
               capturedAt: expect.any(String),
             },
           },

@@ -20,8 +20,37 @@ function setStoredRaw(episodeId: string, raw: string): void {
 }
 
 describe('symptom-prompt-session-store', () => {
+  let originalRevokeDescriptor: PropertyDescriptor | undefined;
+  let revokeMock: jest.Mock;
+
+  beforeAll(() => {
+    originalRevokeDescriptor = Object.getOwnPropertyDescriptor(
+      globalThis.URL,
+      'revokeObjectURL',
+    );
+  });
+
   beforeEach(() => {
     sessionStorage.clear();
+    revokeMock = jest.fn();
+    Object.defineProperty(globalThis.URL, 'revokeObjectURL', {
+      value: revokeMock,
+      configurable: true,
+      writable: true,
+    });
+    clearSymptomPromptSession('ep-1');
+  });
+
+  afterEach(() => {
+    if (originalRevokeDescriptor) {
+      Object.defineProperty(
+        globalThis.URL,
+        'revokeObjectURL',
+        originalRevokeDescriptor,
+      );
+      return;
+    }
+    delete (globalThis.URL as { revokeObjectURL?: unknown }).revokeObjectURL;
   });
 
   it('getSymptomPromptSession returns initial state when activeIndex is null (JSON.stringify maps NaN/Infinity to null)', () => {
@@ -141,11 +170,25 @@ describe('symptom-prompt-session-store', () => {
     expect(getSymptomPromptSession('ep-1')).toEqual(initial);
   });
 
-  it('setSymptomPromptSession keeps video answers in runtime while omitting them from storage', () => {
+  it('setSymptomPromptSession keeps non-durable media in runtime while persisting durable photo refs', () => {
     setSymptomPromptSession('ep-1', {
       activeIndex: 1,
       answers: {
         keep: { type: 'yes_no', value: true },
+        durablePhoto: {
+          type: 'photo',
+          value: {
+            localUri: 'https://cdn.example.test/photo.jpg',
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        },
+        photo: {
+          type: 'photo',
+          value: {
+            localUri: 'blob:https://example.test/photo',
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        },
         drop: {
           type: 'video',
           value: {
@@ -162,12 +205,33 @@ describe('symptom-prompt-session-store', () => {
       activeIndex: 1,
       answers: {
         keep: { type: 'yes_no', value: true },
+        durablePhoto: {
+          type: 'photo',
+          value: {
+            localUri: 'https://cdn.example.test/photo.jpg',
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        },
       },
     });
     expect(getSymptomPromptSession('ep-1')).toEqual({
       activeIndex: 1,
       answers: {
         keep: { type: 'yes_no', value: true },
+        durablePhoto: {
+          type: 'photo',
+          value: {
+            localUri: 'https://cdn.example.test/photo.jpg',
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        },
+        photo: {
+          type: 'photo',
+          value: {
+            localUri: 'blob:https://example.test/photo',
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        },
         drop: {
           type: 'video',
           value: {
@@ -180,10 +244,17 @@ describe('symptom-prompt-session-store', () => {
     });
   });
 
-  it('setSymptomPromptSession clears runtime video cache when no video answers remain', () => {
+  it('setSymptomPromptSession clears runtime media cache when no media answers remain', () => {
     setSymptomPromptSession('ep-1', {
       activeIndex: 0,
       answers: {
+        photo: {
+          type: 'photo',
+          value: {
+            localUri: 'blob:https://example.test/photo',
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        },
         drop: {
           type: 'video',
           value: {
@@ -197,6 +268,13 @@ describe('symptom-prompt-session-store', () => {
     expect(getSymptomPromptSession('ep-1')).toEqual({
       activeIndex: 0,
       answers: {
+        photo: {
+          type: 'photo',
+          value: {
+            localUri: 'blob:https://example.test/photo',
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        },
         drop: {
           type: 'video',
           value: {
@@ -237,6 +315,123 @@ describe('symptom-prompt-session-store', () => {
       },
     });
     clearSymptomPromptSession('ep-1');
+    expect(revokeMock).toHaveBeenCalledWith('blob:https://example.test/abc');
     expect(getSymptomPromptSession('ep-1')).toEqual(initial);
+  });
+
+  it('setSymptomPromptSession revokes previous runtime media blob URLs when replacing cache', () => {
+    setSymptomPromptSession('ep-1', {
+      activeIndex: 0,
+      answers: {
+        photo: {
+          type: 'photo',
+          value: {
+            localUri: 'blob:https://example.test/photo-old',
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        },
+        video: {
+          type: 'video',
+          value: {
+            localUri: 'blob:https://example.test/video-old',
+            durationMs: 5000,
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        },
+      },
+    });
+    revokeMock.mockClear();
+
+    setSymptomPromptSession('ep-1', {
+      activeIndex: 1,
+      answers: {
+        keep: { type: 'yes_no', value: true },
+      },
+    });
+
+    expect(revokeMock).toHaveBeenCalledWith(
+      'blob:https://example.test/photo-old',
+    );
+    expect(revokeMock).toHaveBeenCalledWith(
+      'blob:https://example.test/video-old',
+    );
+  });
+
+  it('setSymptomPromptSession does not revoke unchanged runtime media blob URLs', () => {
+    const stateWithMedia = {
+      activeIndex: 0,
+      answers: {
+        photo: {
+          type: 'photo' as const,
+          value: {
+            localUri: 'blob:https://example.test/photo-stable',
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        },
+        video: {
+          type: 'video' as const,
+          value: {
+            localUri: 'blob:https://example.test/video-stable',
+            durationMs: 5000,
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        },
+      },
+    };
+    setSymptomPromptSession('ep-1', stateWithMedia);
+    revokeMock.mockClear();
+
+    setSymptomPromptSession('ep-1', {
+      ...stateWithMedia,
+      activeIndex: 1,
+    });
+
+    expect(revokeMock).not.toHaveBeenCalled();
+  });
+
+  it('getSymptomPromptSession drops non-durable blob photo answers after reload-like state', () => {
+    setStored('ep-1', {
+      activeIndex: 0,
+      answers: {
+        photo: {
+          type: 'photo',
+          value: {
+            localUri: 'blob:https://example.test/photo',
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        },
+      },
+    });
+    expect(getSymptomPromptSession('ep-1')).toEqual({
+      activeIndex: 0,
+      answers: {},
+    });
+  });
+
+  it('getSymptomPromptSession keeps durable photo answers after reload-like state', () => {
+    setStored('ep-1', {
+      activeIndex: 0,
+      answers: {
+        photo: {
+          type: 'photo',
+          value: {
+            localUri: 'https://cdn.example.test/photo.jpg',
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        },
+      },
+    });
+    expect(getSymptomPromptSession('ep-1')).toEqual({
+      activeIndex: 0,
+      answers: {
+        photo: {
+          type: 'photo',
+          value: {
+            localUri: 'https://cdn.example.test/photo.jpg',
+            capturedAt: '2026-04-27T12:00:00.000Z',
+          },
+        },
+      },
+    });
   });
 });
