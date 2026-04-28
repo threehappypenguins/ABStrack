@@ -50,6 +50,16 @@ jest.mock('react-native-safe-area-context', () => {
   };
 });
 
+jest.mock('expo-video', () => {
+  return {
+    VideoView: (props: { accessibilityLabel?: string }) =>
+      require('react').createElement(require('react-native').View, {
+        accessibilityLabel: props.accessibilityLabel ?? 'Mock video view',
+      }),
+    useVideoPlayer: jest.fn(() => ({})),
+  };
+});
+
 configure({ asyncUtilTimeout: 5000 });
 
 if (typeof global.structuredClone === 'undefined') {

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   type GestureResponderEvent,
+  Image,
   Modal,
   Platform,
   Pressable,
@@ -15,6 +16,7 @@ import {
 } from '@abstrack/types';
 import { COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
 import * as ImagePicker from 'expo-image-picker';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import {
   CameraView,
   useCameraPermissions,
@@ -30,6 +32,26 @@ export type SymptomPromptResponseFieldProps = {
   onChange: (next: SymptomPromptAnswer) => void;
   disabled: boolean;
 };
+
+function PendingVideoPreview({
+  uri,
+  accessibilityLabel,
+}: {
+  uri: string;
+  accessibilityLabel: string;
+}) {
+  const player = useVideoPlayer(uri);
+  return (
+    <VideoView
+      player={player}
+      accessibilityLabel={accessibilityLabel}
+      nativeControls
+      contentFit="contain"
+      style={{ height: '100%', width: '100%' }}
+    />
+  );
+}
+
 const VIDEO_MAX_DURATION_SECONDS = Math.floor(
   SYMPTOM_PROMPT_VIDEO_MAX_DURATION_MS / 1000,
 );
@@ -51,6 +73,10 @@ export function SymptomPromptResponseField({
   const [photoModalOpen, setPhotoModalOpen] = useState(false);
   const [photoCameraReady, setPhotoCameraReady] = useState(false);
   const [photoCapturing, setPhotoCapturing] = useState(false);
+  const [pendingPhotoReview, setPendingPhotoReview] = useState<{
+    localUri: string;
+    capturedAt: string;
+  } | null>(null);
   const [videoBusy, setVideoBusy] = useState(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [microphonePermission, requestMicrophonePermission] =
@@ -58,6 +84,11 @@ export function SymptomPromptResponseField({
   const [videoModalOpen, setVideoModalOpen] = useState(false);
   const [videoRecording, setVideoRecording] = useState(false);
   const [videoPaused, setVideoPaused] = useState(false);
+  const [pendingVideoReview, setPendingVideoReview] = useState<{
+    localUri: string;
+    durationMs: number | null;
+    capturedAt: string;
+  } | null>(null);
   const [cameraFacing, setCameraFacing] = useState<'front' | 'back'>('front');
   const [cameraZoom, setCameraZoom] = useState(0);
   const [canTogglePause, setCanTogglePause] = useState(false);
@@ -138,6 +169,7 @@ export function SymptomPromptResponseField({
     videoStartMsRef.current = null;
     videoPausedStartedAtRef.current = null;
     videoPausedTotalMsRef.current = 0;
+    setPendingVideoReview(null);
     setCameraReady(false);
     setVideoModalOpen(false);
   };
@@ -283,6 +315,7 @@ export function SymptomPromptResponseField({
               void (async () => {
                 setPhotoBusy(true);
                 try {
+                  setPendingPhotoReview(null);
                   if (Platform.OS === 'android' || Platform.OS === 'ios') {
                     if (!cameraPermission?.granted) {
                       const granted = await requestCameraPermission();
@@ -348,10 +381,63 @@ export function SymptomPromptResponseField({
             className={`text-sm leading-relaxed ${nw.textMuted}`}
             maxFontSizeMultiplier={2}
           >
-            {capturedPhoto
-              ? 'Photo saved on this device for this step. Continue when you are ready.'
-              : 'Use a large button to open the camera, take one photo, then return here.'}
+            {pendingPhotoReview
+              ? 'Review your photo, then choose Use photo or Take again.'
+              : capturedPhoto
+                ? 'Photo selected for this step. Continue when you are ready.'
+                : 'Use a large button to open the camera, take one photo, then return here.'}
           </Text>
+          {pendingPhotoReview ? (
+            <View className="gap-3 rounded-xl border border-app-border bg-white p-3 dark:border-app-border-dark dark:bg-app-bg-dark">
+              <Image
+                source={{ uri: pendingPhotoReview.localUri }}
+                accessibilityLabel={`${line.symptom_name} photo preview`}
+                accessibilityIgnoresInvertColors
+                style={{
+                  width: '100%',
+                  aspectRatio: 3 / 4,
+                  borderRadius: 12,
+                }}
+                resizeMode="contain"
+              />
+              <View className="flex-row gap-3">
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Use ${line.symptom_name} photo`}
+                  onPress={() => {
+                    onChange({
+                      type: 'photo',
+                      value: pendingPhotoReview,
+                    });
+                    setPendingPhotoReview(null);
+                  }}
+                  style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                  className="flex-1 items-center justify-center rounded-xl bg-app-primary px-4 py-3 active:opacity-90"
+                >
+                  <Text className="text-[17px] font-semibold text-white">
+                    Use photo
+                  </Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Take ${line.symptom_name} photo again`}
+                  onPress={() => {
+                    setPendingPhotoReview(null);
+                    setCameraFacing('front');
+                    setCameraZoom(0);
+                    setPhotoCameraReady(false);
+                    setPhotoModalOpen(true);
+                  }}
+                  style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                  className="flex-1 items-center justify-center rounded-xl border border-app-border px-4 py-3 active:opacity-90 dark:border-app-border-dark"
+                >
+                  <Text className={`text-[17px] font-semibold ${nw.textInk}`}>
+                    Take again
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
           <Modal
             visible={photoModalOpen}
             animationType="slide"
@@ -456,12 +542,9 @@ export function SymptomPromptResponseField({
                         }
                         setPhotoModalOpen(false);
                         setPhotoCameraReady(false);
-                        onChange({
-                          type: 'photo',
-                          value: {
-                            localUri: result.uri,
-                            capturedAt: new Date().toISOString(),
-                          },
+                        setPendingPhotoReview({
+                          localUri: result.uri,
+                          capturedAt: new Date().toISOString(),
                         });
                       } finally {
                         setPhotoCapturing(false);
@@ -512,6 +595,7 @@ export function SymptomPromptResponseField({
               void (async () => {
                 setVideoBusy(true);
                 try {
+                  setPendingVideoReview(null);
                   if (Platform.OS === 'android' || Platform.OS === 'ios') {
                     if (!cameraPermission?.granted) {
                       const granted = await requestCameraPermission();
@@ -549,16 +633,13 @@ export function SymptomPromptResponseField({
                     return;
                   }
                   const asset = result.assets[0];
-                  onChange({
-                    type: 'video',
-                    value: {
-                      localUri: asset.uri,
-                      durationMs:
-                        typeof asset.duration === 'number'
-                          ? Math.round(asset.duration)
-                          : null,
-                      capturedAt: new Date().toISOString(),
-                    },
+                  setPendingVideoReview({
+                    localUri: asset.uri,
+                    durationMs:
+                      typeof asset.duration === 'number'
+                        ? Math.round(asset.duration)
+                        : null,
+                    capturedAt: new Date().toISOString(),
                   });
                 } finally {
                   setVideoBusy(false);
@@ -586,13 +667,19 @@ export function SymptomPromptResponseField({
             className={`text-sm leading-relaxed ${nw.textMuted}`}
             maxFontSizeMultiplier={2}
           >
-            {captured
-              ? `Video captured. Duration ${
-                  captured.durationMs !== null
-                    ? `${Math.round(captured.durationMs / 1000)}s`
+            {pendingVideoReview
+              ? `Video ready to review. Duration ${
+                  pendingVideoReview.durationMs !== null
+                    ? `${Math.round(pendingVideoReview.durationMs / 1000)}s`
                     : 'unknown'
-                }.`
-              : `Stop early in the camera to save a shorter clip. Maximum is ${VIDEO_MAX_DURATION_SECONDS} seconds.`}
+                }. Choose Use video or Record again.`
+              : captured
+                ? `Video captured. Duration ${
+                    captured.durationMs !== null
+                      ? `${Math.round(captured.durationMs / 1000)}s`
+                      : 'unknown'
+                  }.`
+                : `Stop early in the camera to save a shorter clip. Maximum is ${VIDEO_MAX_DURATION_SECONDS} seconds.`}
           </Text>
           <Text
             className={`text-xs leading-relaxed ${nw.textMuted}`}
@@ -607,78 +694,100 @@ export function SymptomPromptResponseField({
             onRequestClose={closeVideoModal}
           >
             <View className="flex-1 bg-black">
-              <View
-                className="flex-1"
-                onTouchStart={(event) => {
-                  const distance = pinchDistance(event);
-                  if (distance === null) {
-                    pinchStartDistanceRef.current = null;
-                    return;
-                  }
-                  pinchStartDistanceRef.current = distance;
-                  pinchStartZoomRef.current = cameraZoom;
-                }}
-                onTouchMove={(event) => {
-                  const startDistance = pinchStartDistanceRef.current;
-                  const distance = pinchDistance(event);
-                  if (startDistance === null || distance === null) {
-                    return;
-                  }
-                  const delta = (distance - startDistance) / 250;
-                  setCameraZoom(clampZoom(pinchStartZoomRef.current + delta));
-                }}
-                onTouchEnd={() => {
-                  pinchStartDistanceRef.current = null;
-                }}
-                onTouchCancel={() => {
-                  pinchStartDistanceRef.current = null;
-                }}
-              >
-                <CameraView
-                  ref={cameraRef}
-                  facing={cameraFacing}
-                  mode="video"
-                  mute={false}
-                  zoom={cameraZoom}
-                  style={{ flex: 1 }}
-                  onCameraReady={() => {
-                    setCameraReady(true);
-                    const supported = cameraRef.current?.getSupportedFeatures();
-                    setCanTogglePause(
-                      Boolean(supported?.toggleRecordingAsyncAvailable),
-                    );
+              {!pendingVideoReview ? (
+                <View
+                  className="flex-1"
+                  onTouchStart={(event) => {
+                    const distance = pinchDistance(event);
+                    if (distance === null) {
+                      pinchStartDistanceRef.current = null;
+                      return;
+                    }
+                    pinchStartDistanceRef.current = distance;
+                    pinchStartZoomRef.current = cameraZoom;
                   }}
-                />
-              </View>
+                  onTouchMove={(event) => {
+                    const startDistance = pinchStartDistanceRef.current;
+                    const distance = pinchDistance(event);
+                    if (startDistance === null || distance === null) {
+                      return;
+                    }
+                    const delta = (distance - startDistance) / 250;
+                    setCameraZoom(clampZoom(pinchStartZoomRef.current + delta));
+                  }}
+                  onTouchEnd={() => {
+                    pinchStartDistanceRef.current = null;
+                  }}
+                  onTouchCancel={() => {
+                    pinchStartDistanceRef.current = null;
+                  }}
+                >
+                  <CameraView
+                    ref={cameraRef}
+                    facing={cameraFacing}
+                    mode="video"
+                    mute={false}
+                    zoom={cameraZoom}
+                    style={{ flex: 1 }}
+                    onCameraReady={() => {
+                      setCameraReady(true);
+                      const supported =
+                        cameraRef.current?.getSupportedFeatures();
+                      setCanTogglePause(
+                        Boolean(supported?.toggleRecordingAsyncAvailable),
+                      );
+                    }}
+                  />
+                </View>
+              ) : (
+                <View className="flex-1 items-center justify-center px-4">
+                  <View className="h-[70%] w-full overflow-hidden rounded-2xl bg-black">
+                    <PendingVideoPreview
+                      uri={pendingVideoReview.localUri}
+                      accessibilityLabel={`${line.symptom_name} captured video preview`}
+                    />
+                  </View>
+                </View>
+              )}
               <View className="absolute left-0 right-0 top-0 flex-row items-center justify-between px-4 pt-12">
                 <Text
                   accessibilityRole="text"
                   className="rounded-md bg-black/70 px-3 py-2 text-base font-semibold text-white"
                   maxFontSizeMultiplier={2}
                 >
-                  {videoRecording ? `REC ${elapsedLabel}` : 'Ready'}
+                  {pendingVideoReview
+                    ? 'Review'
+                    : videoRecording
+                      ? `REC ${elapsedLabel}`
+                      : 'Ready'}
                 </Text>
                 <View className="flex-row items-center gap-2">
+                  {!pendingVideoReview ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Switch camera"
+                      onPress={() => {
+                        setCameraFacing((v) =>
+                          v === 'front' ? 'back' : 'front',
+                        );
+                      }}
+                      style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                      className="items-center justify-center rounded-md bg-black/70 px-3 py-2"
+                    >
+                      <Ionicons
+                        name="camera-reverse-outline"
+                        size={22}
+                        color="white"
+                      />
+                    </Pressable>
+                  ) : null}
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel="Switch camera"
-                    onPress={() => {
-                      setCameraFacing((v) =>
-                        v === 'front' ? 'back' : 'front',
-                      );
-                    }}
-                    style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
-                    className="items-center justify-center rounded-md bg-black/70 px-3 py-2"
-                  >
-                    <Ionicons
-                      name="camera-reverse-outline"
-                      size={22}
-                      color="white"
-                    />
-                  </Pressable>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Close recorder"
+                    accessibilityLabel={
+                      pendingVideoReview
+                        ? 'Close video preview'
+                        : 'Close recorder'
+                    }
                     onPress={closeVideoModal}
                     style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
                     className="items-center justify-center rounded-md bg-black/70 px-4 py-2"
@@ -690,7 +799,46 @@ export function SymptomPromptResponseField({
                 </View>
               </View>
               <View className="absolute bottom-12 left-0 right-0 items-center">
-                {!videoRecording ? (
+                {pendingVideoReview ? (
+                  <View className="w-full flex-row items-center gap-4 px-6">
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Record ${line.symptom_name} video again`}
+                      onPress={() => {
+                        setPendingVideoReview(null);
+                        setElapsedSeconds(0);
+                        setVideoPaused(false);
+                        setCameraFacing('front');
+                        setCameraZoom(0);
+                        setCameraReady(false);
+                      }}
+                      style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                      className="flex-1 items-center justify-center rounded-xl bg-black/70 px-4 py-3"
+                    >
+                      <Text className="text-base font-semibold text-white">
+                        Record again
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Use ${line.symptom_name} video`}
+                      onPress={() => {
+                        onChange({
+                          type: 'video',
+                          value: pendingVideoReview,
+                        });
+                        setPendingVideoReview(null);
+                        setVideoModalOpen(false);
+                      }}
+                      style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                      className="flex-1 items-center justify-center rounded-xl bg-app-primary px-4 py-3"
+                    >
+                      <Text className="text-base font-semibold text-white">
+                        Use video
+                      </Text>
+                    </Pressable>
+                  </View>
+                ) : !videoRecording ? (
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel={`Start ${line.symptom_name} video recording`}
@@ -756,14 +904,10 @@ export function SymptomPromptResponseField({
                         if (!result?.uri) {
                           return;
                         }
-                        setVideoModalOpen(false);
-                        onChange({
-                          type: 'video',
-                          value: {
-                            localUri: result.uri,
-                            durationMs,
-                            capturedAt: new Date().toISOString(),
-                          },
+                        setPendingVideoReview({
+                          localUri: result.uri,
+                          durationMs,
+                          capturedAt: new Date().toISOString(),
                         });
                       })();
                     }}

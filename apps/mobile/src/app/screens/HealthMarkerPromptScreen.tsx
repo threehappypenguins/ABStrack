@@ -627,7 +627,7 @@ export function HealthMarkerPromptScreen() {
       symptomPresetId: presetId,
       resume: true,
     });
-  }, [announce, episodeId, episodeRow?.symptom_preset_id, navigation]);
+  }, [episodeId, episodeRow?.symptom_preset_id, navigation]);
 
   const onBackToSymptomsFromHealthMarkers = useCallback(async () => {
     const symptomPresetId = episodeRow?.symptom_preset_id;
@@ -987,7 +987,213 @@ export function HealthMarkerPromptScreen() {
             onCancelEpisodePress={onCancelEpisodePress}
           />
         ) : phase === 'postMarkers' ? (
-          <>
+          <ScrollView
+            className="flex-1"
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator
+            contentContainerStyle={{ paddingBottom: 24 }}
+          >
+            <Text
+              className={`mb-4 text-base leading-relaxed ${nw.textMuted}`}
+              maxFontSizeMultiplier={2}
+            >
+              After health markers and food diary, choose ABS or Other; other
+              fields are optional.
+            </Text>
+            <Text
+              accessibilityRole="header"
+              className={`mb-2 text-lg font-semibold ${nw.textInk}`}
+              maxFontSizeMultiplier={2}
+            >
+              Episode type
+            </Text>
+            <View
+              accessibilityRole="radiogroup"
+              accessibilityLabel="Episode type"
+              className="mb-4 gap-3"
+            >
+              <Pressable
+                accessibilityRole="radio"
+                accessibilityLabel="ABS episode type"
+                accessibilityState={{
+                  checked: postEpisodeKind === 'ABS',
+                  disabled: savingPost,
+                }}
+                onPress={() => {
+                  setPostEpisodeKind('ABS');
+                }}
+                disabled={savingPost}
+                style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                className={`w-full items-center justify-center rounded-xl border-2 px-3 py-4 dark:border-app-border-dark ${
+                  postEpisodeKind === 'ABS'
+                    ? 'border-red-700 bg-red-50 dark:border-red-500 dark:bg-red-950/40'
+                    : 'border-app-border bg-app-bg dark:bg-app-bg-dark'
+                }`}
+              >
+                <Text
+                  className={`text-center text-[17px] font-semibold ${nw.textInk}`}
+                  maxFontSizeMultiplier={2}
+                >
+                  ABS
+                </Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="radio"
+                accessibilityLabel="Other episode type"
+                accessibilityState={{
+                  checked: postEpisodeKind === 'Other',
+                  disabled: savingPost,
+                }}
+                onPress={() => {
+                  setPostEpisodeKind('Other');
+                }}
+                disabled={savingPost}
+                style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                className={`w-full items-center justify-center rounded-xl border-2 px-3 py-4 dark:border-app-border-dark ${
+                  postEpisodeKind === 'Other'
+                    ? 'border-red-700 bg-red-50 dark:border-red-500 dark:bg-red-950/40'
+                    : 'border-app-border bg-app-bg dark:bg-app-bg-dark'
+                }`}
+              >
+                <Text
+                  className={`text-center text-[17px] font-semibold ${nw.textInk}`}
+                  maxFontSizeMultiplier={2}
+                >
+                  Other
+                </Text>
+              </Pressable>
+            </View>
+            {bacSuggestAbs && postEpisodeKind === 'ABS' ? (
+              <Text
+                className={`mb-4 text-sm ${nw.textMuted}`}
+                accessibilityLiveRegion="polite"
+                maxFontSizeMultiplier={2}
+              >
+                Suggested as ABS because a BAC value above zero was logged. You
+                can change this.
+              </Text>
+            ) : null}
+            <Text
+              accessibilityRole="text"
+              className={`mb-1 text-base font-medium ${nw.textInk}`}
+              maxFontSizeMultiplier={2}
+            >
+              Custom label (optional)
+            </Text>
+            <TextInput
+              editable={!savingPost}
+              accessibilityLabel="Custom episode label"
+              value={postLabel}
+              onChangeText={setPostLabel}
+              placeholder="Label"
+              placeholderTextColor={colors.inputPlaceholder}
+              className={`mb-4 min-h-[52px] rounded-xl border border-app-border bg-white px-4 py-3 text-[17px] text-app-ink dark:border-app-border-dark dark:bg-app-bg-dark ${nw.textInk}`}
+              maxFontSizeMultiplier={2}
+            />
+            <Text
+              accessibilityRole="text"
+              className={`mb-1 text-base font-medium ${nw.textInk}`}
+              maxFontSizeMultiplier={2}
+            >
+              Additional symptoms or markers (optional)
+            </Text>
+            <TextInput
+              editable={!savingPost}
+              accessibilityLabel="Additional symptoms or markers"
+              multiline
+              value={postAdditional}
+              onChangeText={setPostAdditional}
+              placeholder="Not in your presets"
+              placeholderTextColor={colors.inputPlaceholder}
+              className={`mb-4 min-h-[120px] rounded-xl border border-app-border bg-white p-4 text-[17px] text-app-ink dark:border-app-border-dark dark:bg-app-bg-dark ${nw.textInk}`}
+              maxFontSizeMultiplier={2}
+            />
+            <Text
+              accessibilityRole="text"
+              className={`mb-1 text-base font-medium ${nw.textInk}`}
+              maxFontSizeMultiplier={2}
+            >
+              Episode note (optional)
+            </Text>
+            <TextInput
+              editable={!savingPost}
+              accessibilityLabel="Episode note"
+              multiline
+              value={postNote}
+              onChangeText={setPostNote}
+              placeholder="General note"
+              placeholderTextColor={colors.inputPlaceholder}
+              className={`mb-4 min-h-[120px] rounded-xl border border-app-border bg-white p-4 text-[17px] text-app-ink dark:border-app-border-dark dark:bg-app-bg-dark ${nw.textInk}`}
+              maxFontSizeMultiplier={2}
+            />
+            {postFeedback ? (
+              <Text
+                className="mb-2 text-sm text-red-700 dark:text-red-300"
+                accessibilityLiveRegion="assertive"
+                maxFontSizeMultiplier={2}
+              >
+                {postFeedback}
+              </Text>
+            ) : null}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Back"
+              accessibilityState={{ disabled: savingPost }}
+              disabled={savingPost}
+              onPress={() => {
+                void onBackToFoodDiaryFromPostMarkers();
+              }}
+              style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+              className="w-full items-center justify-center rounded-xl border-2 border-app-border bg-app-bg px-3 py-4 active:opacity-90 dark:border-app-border-dark dark:bg-app-bg-dark"
+            >
+              <Text
+                className={`text-center text-[17px] font-semibold ${nw.textInk}`}
+              >
+                Back
+              </Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Save episode details"
+              accessibilityState={{ disabled: savingPost }}
+              disabled={savingPost}
+              onPress={() => {
+                void onSubmitPostMarkers();
+              }}
+              style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+              className="w-full items-center justify-center rounded-xl bg-red-700 px-3 py-4 active:opacity-90 dark:bg-red-600"
+            >
+              <Text className="text-center text-[17px] font-semibold text-white">
+                {savingPost ? 'Saving…' : 'Save and continue'}
+              </Text>
+            </Pressable>
+            <EpisodeFlowSecondaryActionsSection>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Cancel episode"
+                onPress={onCancelEpisodePress}
+                style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                className="w-full items-center justify-center rounded-lg px-3 py-3 active:opacity-80"
+              >
+                <Text
+                  className="text-sm font-medium text-red-700 dark:text-red-300"
+                  maxFontSizeMultiplier={2}
+                >
+                  Cancel episode
+                </Text>
+              </Pressable>
+            </EpisodeFlowSecondaryActionsSection>
+          </ScrollView>
+        ) : (
+          <AsyncScreenContainer
+            status={status}
+            loadingAccessibilityLabel="Loading health marker list"
+            errorTitle="Could not load health markers"
+            errorMessage={errorMessage ?? undefined}
+            onRetry={() => {
+              void load();
+            }}
+          >
             <ScrollView
               className="flex-1"
               keyboardShouldPersistTaps="handled"
@@ -995,179 +1201,198 @@ export function HealthMarkerPromptScreen() {
               contentContainerStyle={{ paddingBottom: 24 }}
             >
               <Text
-                className={`mb-4 text-base leading-relaxed ${nw.textMuted}`}
+                accessibilityRole="text"
+                className={`mb-2 text-base font-medium ${nw.textMuted}`}
                 maxFontSizeMultiplier={2}
               >
-                After health markers and food diary, choose ABS or Other; other
-                fields are optional.
+                {lines.length === 0
+                  ? 'Next: episode details (after this screen)'
+                  : `Step ${activeIndex + 1} of ${lines.length}`}
               </Text>
-              <Text
-                accessibilityRole="header"
-                className={`mb-2 text-lg font-semibold ${nw.textInk}`}
-                maxFontSizeMultiplier={2}
-              >
-                Episode type
-              </Text>
-              <View
-                accessibilityRole="radiogroup"
-                accessibilityLabel="Episode type"
-                className="mb-4 gap-3"
-              >
+
+              {lines.length === 0 ? (
+                <Text
+                  className={`text-base leading-relaxed ${nw.textInk}`}
+                  maxFontSizeMultiplier={2}
+                >
+                  This preset has no health marker lines to log—that is normal
+                  for some templates. Use the button below to continue and add
+                  episode type, optional label, and notes.
+                </Text>
+              ) : currentLine ? (
+                <View className="gap-4">
+                  <Text
+                    accessibilityRole="header"
+                    className={`text-xl font-semibold ${nw.textInk}`}
+                    maxFontSizeMultiplier={2}
+                  >
+                    {markerLineTitle(currentLine)}
+                  </Text>
+                  {currentLine.custom_unit ? (
+                    <Text
+                      className={`text-base leading-relaxed ${nw.textMuted}`}
+                      maxFontSizeMultiplier={2}
+                    >
+                      Unit: {currentLine.custom_unit}
+                    </Text>
+                  ) : null}
+                  {currentLine.marker_kind === 'blood_pressure' ? (
+                    <View className="gap-3">
+                      <TextInput
+                        editable={!saving}
+                        accessibilityLabel="Systolic value"
+                        keyboardType="decimal-pad"
+                        value={currentDraft.systolic}
+                        onChangeText={(text) => {
+                          onUpdateDraft({ systolic: text });
+                        }}
+                        placeholder="Systolic"
+                        placeholderTextColor={colors.inputPlaceholder}
+                        className={`min-h-[52px] rounded-xl border border-app-border bg-white px-4 py-3 text-[17px] text-app-ink dark:border-app-border-dark dark:bg-app-bg-dark ${nw.textInk}`}
+                        maxFontSizeMultiplier={2}
+                      />
+                      <TextInput
+                        editable={!saving}
+                        accessibilityLabel="Diastolic value"
+                        keyboardType="decimal-pad"
+                        value={currentDraft.diastolic}
+                        onChangeText={(text) => {
+                          onUpdateDraft({ diastolic: text });
+                        }}
+                        placeholder="Diastolic"
+                        placeholderTextColor={colors.inputPlaceholder}
+                        className={`min-h-[52px] rounded-xl border border-app-border bg-white px-4 py-3 text-[17px] text-app-ink dark:border-app-border-dark dark:bg-app-bg-dark ${nw.textInk}`}
+                        maxFontSizeMultiplier={2}
+                      />
+                    </View>
+                  ) : (
+                    <TextInput
+                      editable={!saving}
+                      accessibilityLabel="Marker value"
+                      keyboardType="decimal-pad"
+                      value={currentDraft.value}
+                      onChangeText={(text) => {
+                        onUpdateDraft({ value: text });
+                      }}
+                      placeholder="Enter value"
+                      placeholderTextColor={colors.inputPlaceholder}
+                      className={`min-h-[52px] rounded-xl border border-app-border bg-white px-4 py-3 text-[17px] text-app-ink dark:border-app-border-dark dark:bg-app-bg-dark ${nw.textInk}`}
+                      maxFontSizeMultiplier={2}
+                    />
+                  )}
+                  <TextInput
+                    editable={!saving}
+                    accessibilityLabel="Marker notes"
+                    multiline
+                    value={currentDraft.notes}
+                    onChangeText={(text) => {
+                      onUpdateDraft({ notes: text });
+                    }}
+                    placeholder="Notes (optional)"
+                    placeholderTextColor={colors.inputPlaceholder}
+                    className={`min-h-[120px] rounded-xl border border-app-border bg-white p-4 text-[17px] text-app-ink dark:border-app-border-dark dark:bg-app-bg-dark ${nw.textInk}`}
+                    maxFontSizeMultiplier={2}
+                  />
+                </View>
+              ) : null}
+
+              <View className="mt-6 gap-3">
                 <Pressable
-                  accessibilityRole="radio"
-                  accessibilityLabel="ABS episode type"
-                  accessibilityState={{
-                    checked: postEpisodeKind === 'ABS',
-                    disabled: savingPost,
-                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Back"
                   onPress={() => {
-                    setPostEpisodeKind('ABS');
+                    if (activeIndex > 0) {
+                      goBackStep();
+                      return;
+                    }
+                    void onBackToSymptomsFromHealthMarkers();
                   }}
-                  disabled={savingPost}
+                  disabled={saving}
                   style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
-                  className={`w-full items-center justify-center rounded-xl border-2 px-3 py-4 dark:border-app-border-dark ${
-                    postEpisodeKind === 'ABS'
-                      ? 'border-red-700 bg-red-50 dark:border-red-500 dark:bg-red-950/40'
-                      : 'border-app-border bg-app-bg dark:bg-app-bg-dark'
-                  }`}
+                  className="w-full items-center justify-center rounded-xl border-2 border-app-border bg-app-bg px-3 py-4 active:opacity-90 dark:border-app-border-dark dark:bg-app-bg-dark"
                 >
                   <Text
                     className={`text-center text-[17px] font-semibold ${nw.textInk}`}
                     maxFontSizeMultiplier={2}
                   >
-                    ABS
+                    Back
                   </Text>
                 </Pressable>
-                <Pressable
-                  accessibilityRole="radio"
-                  accessibilityLabel="Other episode type"
-                  accessibilityState={{
-                    checked: postEpisodeKind === 'Other',
-                    disabled: savingPost,
-                  }}
-                  onPress={() => {
-                    setPostEpisodeKind('Other');
-                  }}
-                  disabled={savingPost}
-                  style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
-                  className={`w-full items-center justify-center rounded-xl border-2 px-3 py-4 dark:border-app-border-dark ${
-                    postEpisodeKind === 'Other'
-                      ? 'border-red-700 bg-red-50 dark:border-red-500 dark:bg-red-950/40'
-                      : 'border-app-border bg-app-bg dark:bg-app-bg-dark'
-                  }`}
-                >
-                  <Text
-                    className={`text-center text-[17px] font-semibold ${nw.textInk}`}
-                    maxFontSizeMultiplier={2}
+                {currentLine ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Skip this marker"
+                    accessibilityState={{ disabled: !canSkip || saving }}
+                    disabled={!canSkip || saving}
+                    onPress={() => {
+                      void skipCurrent();
+                    }}
+                    style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                    className={`w-full items-center justify-center rounded-xl border-2 border-app-border bg-app-bg px-3 py-4 dark:border-app-border-dark dark:bg-app-bg-dark ${
+                      skipPressable ? 'active:opacity-90' : 'opacity-50'
+                    }`}
                   >
-                    Other
+                    <Text
+                      className={`text-center text-[17px] font-semibold ${nw.textInk}`}
+                      maxFontSizeMultiplier={2}
+                    >
+                      Skip
+                    </Text>
+                  </Pressable>
+                ) : null}
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    continueToFoodDiary
+                      ? 'Continue to food diary'
+                      : 'Next health marker'
+                  }
+                  accessibilityState={{ disabled: saving }}
+                  disabled={saving}
+                  onPress={() => {
+                    void goNext();
+                  }}
+                  style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                  className="w-full items-center justify-center rounded-xl bg-red-700 px-3 py-4 active:opacity-90 dark:bg-red-600"
+                >
+                  <Text className="text-center text-[17px] font-semibold text-white">
+                    {saving
+                      ? 'Saving…'
+                      : continueToFoodDiary
+                        ? 'Continue to food diary'
+                        : 'Next'}
                   </Text>
                 </Pressable>
               </View>
-              {bacSuggestAbs && postEpisodeKind === 'ABS' ? (
-                <Text
-                  className={`mb-4 text-sm ${nw.textMuted}`}
-                  accessibilityLiveRegion="polite"
-                  maxFontSizeMultiplier={2}
+              {observationTimeline.length > 0 ? (
+                <View
+                  accessibilityLabel="Recent log entries in this episode, oldest first within this slice"
+                  className="mt-6 rounded-xl border border-app-border bg-app-surface p-4 dark:border-app-border-dark dark:bg-app-bg-dark"
                 >
-                  Suggested as ABS because a BAC value above zero was logged.
-                  You can change this.
-                </Text>
+                  <Text
+                    className={`text-sm font-semibold ${nw.textInk}`}
+                    maxFontSizeMultiplier={2}
+                  >
+                    Recent log entries in this episode
+                  </Text>
+                  <Text
+                    className={`mb-2 text-xs ${nw.textMuted}`}
+                    maxFontSizeMultiplier={2}
+                  >
+                    Showing recent entries only. Oldest first within this slice.
+                  </Text>
+                  {observationTimeline.map((row) => (
+                    <Text
+                      key={`${row.kind}-${row.id}`}
+                      className={`mb-2 text-sm ${nw.textInk}`}
+                      maxFontSizeMultiplier={2}
+                    >
+                      {formatTimelineInstant(row.sortAt)} — {row.label}:{' '}
+                      {row.detail}
+                    </Text>
+                  ))}
+                </View>
               ) : null}
-              <Text
-                accessibilityRole="text"
-                className={`mb-1 text-base font-medium ${nw.textInk}`}
-                maxFontSizeMultiplier={2}
-              >
-                Custom label (optional)
-              </Text>
-              <TextInput
-                editable={!savingPost}
-                accessibilityLabel="Custom episode label"
-                value={postLabel}
-                onChangeText={setPostLabel}
-                placeholder="Label"
-                placeholderTextColor={colors.inputPlaceholder}
-                className={`mb-4 min-h-[52px] rounded-xl border border-app-border bg-white px-4 py-3 text-[17px] text-app-ink dark:border-app-border-dark dark:bg-app-bg-dark ${nw.textInk}`}
-                maxFontSizeMultiplier={2}
-              />
-              <Text
-                accessibilityRole="text"
-                className={`mb-1 text-base font-medium ${nw.textInk}`}
-                maxFontSizeMultiplier={2}
-              >
-                Additional symptoms or markers (optional)
-              </Text>
-              <TextInput
-                editable={!savingPost}
-                accessibilityLabel="Additional symptoms or markers"
-                multiline
-                value={postAdditional}
-                onChangeText={setPostAdditional}
-                placeholder="Not in your presets"
-                placeholderTextColor={colors.inputPlaceholder}
-                className={`mb-4 min-h-[120px] rounded-xl border border-app-border bg-white p-4 text-[17px] text-app-ink dark:border-app-border-dark dark:bg-app-bg-dark ${nw.textInk}`}
-                maxFontSizeMultiplier={2}
-              />
-              <Text
-                accessibilityRole="text"
-                className={`mb-1 text-base font-medium ${nw.textInk}`}
-                maxFontSizeMultiplier={2}
-              >
-                Episode note (optional)
-              </Text>
-              <TextInput
-                editable={!savingPost}
-                accessibilityLabel="Episode note"
-                multiline
-                value={postNote}
-                onChangeText={setPostNote}
-                placeholder="General note"
-                placeholderTextColor={colors.inputPlaceholder}
-                className={`mb-4 min-h-[120px] rounded-xl border border-app-border bg-white p-4 text-[17px] text-app-ink dark:border-app-border-dark dark:bg-app-bg-dark ${nw.textInk}`}
-                maxFontSizeMultiplier={2}
-              />
-              {postFeedback ? (
-                <Text
-                  className="mb-2 text-sm text-red-700 dark:text-red-300"
-                  accessibilityLiveRegion="assertive"
-                  maxFontSizeMultiplier={2}
-                >
-                  {postFeedback}
-                </Text>
-              ) : null}
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Back"
-                accessibilityState={{ disabled: savingPost }}
-                disabled={savingPost}
-                onPress={() => {
-                  void onBackToFoodDiaryFromPostMarkers();
-                }}
-                style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
-                className="w-full items-center justify-center rounded-xl border-2 border-app-border bg-app-bg px-3 py-4 active:opacity-90 dark:border-app-border-dark dark:bg-app-bg-dark"
-              >
-                <Text
-                  className={`text-center text-[17px] font-semibold ${nw.textInk}`}
-                >
-                  Back
-                </Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Save episode details"
-                accessibilityState={{ disabled: savingPost }}
-                disabled={savingPost}
-                onPress={() => {
-                  void onSubmitPostMarkers();
-                }}
-                style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
-                className="w-full items-center justify-center rounded-xl bg-red-700 px-3 py-4 active:opacity-90 dark:bg-red-600"
-              >
-                <Text className="text-center text-[17px] font-semibold text-white">
-                  {savingPost ? 'Saving…' : 'Save and continue'}
-                </Text>
-              </Pressable>
               <EpisodeFlowSecondaryActionsSection>
                 <Pressable
                   accessibilityRole="button"
@@ -1185,237 +1410,7 @@ export function HealthMarkerPromptScreen() {
                 </Pressable>
               </EpisodeFlowSecondaryActionsSection>
             </ScrollView>
-          </>
-        ) : (
-          <>
-            <AsyncScreenContainer
-              status={status}
-              loadingAccessibilityLabel="Loading health marker list"
-              errorTitle="Could not load health markers"
-              errorMessage={errorMessage ?? undefined}
-              onRetry={() => {
-                void load();
-              }}
-            >
-              <ScrollView
-                className="flex-1"
-                keyboardShouldPersistTaps="handled"
-                showsVerticalScrollIndicator
-                contentContainerStyle={{ paddingBottom: 24 }}
-              >
-                <Text
-                  accessibilityRole="text"
-                  className={`mb-2 text-base font-medium ${nw.textMuted}`}
-                  maxFontSizeMultiplier={2}
-                >
-                  {lines.length === 0
-                    ? 'Next: episode details (after this screen)'
-                    : `Step ${activeIndex + 1} of ${lines.length}`}
-                </Text>
-
-                {lines.length === 0 ? (
-                  <Text
-                    className={`text-base leading-relaxed ${nw.textInk}`}
-                    maxFontSizeMultiplier={2}
-                  >
-                    This preset has no health marker lines to log—that is normal
-                    for some templates. Use the button below to continue and add
-                    episode type, optional label, and notes.
-                  </Text>
-                ) : currentLine ? (
-                  <View className="gap-4">
-                    <Text
-                      accessibilityRole="header"
-                      className={`text-xl font-semibold ${nw.textInk}`}
-                      maxFontSizeMultiplier={2}
-                    >
-                      {markerLineTitle(currentLine)}
-                    </Text>
-                    {currentLine.custom_unit ? (
-                      <Text
-                        className={`text-base leading-relaxed ${nw.textMuted}`}
-                        maxFontSizeMultiplier={2}
-                      >
-                        Unit: {currentLine.custom_unit}
-                      </Text>
-                    ) : null}
-                    {currentLine.marker_kind === 'blood_pressure' ? (
-                      <View className="gap-3">
-                        <TextInput
-                          editable={!saving}
-                          accessibilityLabel="Systolic value"
-                          keyboardType="decimal-pad"
-                          value={currentDraft.systolic}
-                          onChangeText={(text) => {
-                            onUpdateDraft({ systolic: text });
-                          }}
-                          placeholder="Systolic"
-                          placeholderTextColor={colors.inputPlaceholder}
-                          className={`min-h-[52px] rounded-xl border border-app-border bg-white px-4 py-3 text-[17px] text-app-ink dark:border-app-border-dark dark:bg-app-bg-dark ${nw.textInk}`}
-                          maxFontSizeMultiplier={2}
-                        />
-                        <TextInput
-                          editable={!saving}
-                          accessibilityLabel="Diastolic value"
-                          keyboardType="decimal-pad"
-                          value={currentDraft.diastolic}
-                          onChangeText={(text) => {
-                            onUpdateDraft({ diastolic: text });
-                          }}
-                          placeholder="Diastolic"
-                          placeholderTextColor={colors.inputPlaceholder}
-                          className={`min-h-[52px] rounded-xl border border-app-border bg-white px-4 py-3 text-[17px] text-app-ink dark:border-app-border-dark dark:bg-app-bg-dark ${nw.textInk}`}
-                          maxFontSizeMultiplier={2}
-                        />
-                      </View>
-                    ) : (
-                      <TextInput
-                        editable={!saving}
-                        accessibilityLabel="Marker value"
-                        keyboardType="decimal-pad"
-                        value={currentDraft.value}
-                        onChangeText={(text) => {
-                          onUpdateDraft({ value: text });
-                        }}
-                        placeholder="Enter value"
-                        placeholderTextColor={colors.inputPlaceholder}
-                        className={`min-h-[52px] rounded-xl border border-app-border bg-white px-4 py-3 text-[17px] text-app-ink dark:border-app-border-dark dark:bg-app-bg-dark ${nw.textInk}`}
-                        maxFontSizeMultiplier={2}
-                      />
-                    )}
-                    <TextInput
-                      editable={!saving}
-                      accessibilityLabel="Marker notes"
-                      multiline
-                      value={currentDraft.notes}
-                      onChangeText={(text) => {
-                        onUpdateDraft({ notes: text });
-                      }}
-                      placeholder="Notes (optional)"
-                      placeholderTextColor={colors.inputPlaceholder}
-                      className={`min-h-[120px] rounded-xl border border-app-border bg-white p-4 text-[17px] text-app-ink dark:border-app-border-dark dark:bg-app-bg-dark ${nw.textInk}`}
-                      maxFontSizeMultiplier={2}
-                    />
-                  </View>
-                ) : null}
-
-                <View className="mt-6 gap-3">
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Back"
-                    onPress={() => {
-                      if (activeIndex > 0) {
-                        goBackStep();
-                        return;
-                      }
-                      void onBackToSymptomsFromHealthMarkers();
-                    }}
-                    disabled={saving}
-                    style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
-                    className="w-full items-center justify-center rounded-xl border-2 border-app-border bg-app-bg px-3 py-4 active:opacity-90 dark:border-app-border-dark dark:bg-app-bg-dark"
-                  >
-                    <Text
-                      className={`text-center text-[17px] font-semibold ${nw.textInk}`}
-                      maxFontSizeMultiplier={2}
-                    >
-                      Back
-                    </Text>
-                  </Pressable>
-                  {currentLine ? (
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel="Skip this marker"
-                      accessibilityState={{ disabled: !canSkip || saving }}
-                      disabled={!canSkip || saving}
-                      onPress={() => {
-                        void skipCurrent();
-                      }}
-                      style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
-                      className={`w-full items-center justify-center rounded-xl border-2 border-app-border bg-app-bg px-3 py-4 dark:border-app-border-dark dark:bg-app-bg-dark ${
-                        skipPressable ? 'active:opacity-90' : 'opacity-50'
-                      }`}
-                    >
-                      <Text
-                        className={`text-center text-[17px] font-semibold ${nw.textInk}`}
-                        maxFontSizeMultiplier={2}
-                      >
-                        Skip
-                      </Text>
-                    </Pressable>
-                  ) : null}
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={
-                      continueToFoodDiary
-                        ? 'Continue to food diary'
-                        : 'Next health marker'
-                    }
-                    accessibilityState={{ disabled: saving }}
-                    disabled={saving}
-                    onPress={() => {
-                      void goNext();
-                    }}
-                    style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
-                    className="w-full items-center justify-center rounded-xl bg-red-700 px-3 py-4 active:opacity-90 dark:bg-red-600"
-                  >
-                    <Text className="text-center text-[17px] font-semibold text-white">
-                      {saving
-                        ? 'Saving…'
-                        : continueToFoodDiary
-                          ? 'Continue to food diary'
-                          : 'Next'}
-                    </Text>
-                  </Pressable>
-                </View>
-                {observationTimeline.length > 0 ? (
-                  <View
-                    accessibilityLabel="Recent log entries in this episode, oldest first within this slice"
-                    className="mt-6 rounded-xl border border-app-border bg-app-surface p-4 dark:border-app-border-dark dark:bg-app-bg-dark"
-                  >
-                    <Text
-                      className={`text-sm font-semibold ${nw.textInk}`}
-                      maxFontSizeMultiplier={2}
-                    >
-                      Recent log entries in this episode
-                    </Text>
-                    <Text
-                      className={`mb-2 text-xs ${nw.textMuted}`}
-                      maxFontSizeMultiplier={2}
-                    >
-                      Showing recent entries only. Oldest first within this
-                      slice.
-                    </Text>
-                    {observationTimeline.map((row) => (
-                      <Text
-                        key={`${row.kind}-${row.id}`}
-                        className={`mb-2 text-sm ${nw.textInk}`}
-                        maxFontSizeMultiplier={2}
-                      >
-                        {formatTimelineInstant(row.sortAt)} — {row.label}:{' '}
-                        {row.detail}
-                      </Text>
-                    ))}
-                  </View>
-                ) : null}
-                <EpisodeFlowSecondaryActionsSection>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Cancel episode"
-                    onPress={onCancelEpisodePress}
-                    style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
-                    className="w-full items-center justify-center rounded-lg px-3 py-3 active:opacity-80"
-                  >
-                    <Text
-                      className="text-sm font-medium text-red-700 dark:text-red-300"
-                      maxFontSizeMultiplier={2}
-                    >
-                      Cancel episode
-                    </Text>
-                  </Pressable>
-                </EpisodeFlowSecondaryActionsSection>
-              </ScrollView>
-            </AsyncScreenContainer>
-          </>
+          </AsyncScreenContainer>
         )}
       </View>
     </ScreenShell>

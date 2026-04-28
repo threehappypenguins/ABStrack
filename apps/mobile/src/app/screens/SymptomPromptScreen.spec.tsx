@@ -1,4 +1,4 @@
-import * as React from 'react';
+import type { ForwardedRef } from 'react';
 import { Alert } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { CommonActions, DefaultTheme } from '@react-navigation/native';
@@ -91,7 +91,10 @@ jest.mock('expo-image-picker', () => ({
 jest.mock('expo-camera', () => {
   const React = require('react');
   const { View } = require('react-native');
-  const CameraView = React.forwardRef((props: any, ref: any) => {
+  const CameraView = React.forwardRef(function MockCameraView(
+    props: { onCameraReady?: () => void },
+    ref: ForwardedRef<unknown>,
+  ) {
     React.useImperativeHandle(ref, () => ({
       recordAsync: mockRecordAsync,
       stopRecording: mockStopRecording,
@@ -702,6 +705,16 @@ describe('SymptomPromptScreen', () => {
     });
 
     await waitFor(() => {
+      expect(screen.getByLabelText('Use Dizziness video')).toBeTruthy();
+      expect(
+        screen.getByLabelText('Next symptom').props.accessibilityState,
+      ).toEqual({
+        disabled: true,
+      });
+    });
+    fireEvent.press(screen.getByLabelText('Use Dizziness video'));
+
+    await waitFor(() => {
       expect(
         screen.getByLabelText('Next symptom').props.accessibilityState,
       ).toEqual({
@@ -751,6 +764,10 @@ describe('SymptomPromptScreen', () => {
       expect(screen.getByLabelText('Capture Facial droop photo')).toBeTruthy();
     });
     fireEvent.press(screen.getByLabelText('Capture Facial droop photo'));
+    await waitFor(() => {
+      expect(screen.getByLabelText('Use Facial droop photo')).toBeTruthy();
+    });
+    fireEvent.press(screen.getByLabelText('Use Facial droop photo'));
 
     await waitFor(() => {
       expect(
