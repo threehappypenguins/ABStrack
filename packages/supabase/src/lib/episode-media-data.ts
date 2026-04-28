@@ -6,6 +6,39 @@ import type { AbstrackSupabaseClient } from './supabase-client-type.js';
 
 const EPISODE_MEDIA_BUCKET = 'episode-media';
 
+/**
+ * True when `key` is a bucket-relative object path suitable for Storage `remove` on `episode-media`
+ * (not a full URL, app `storage:` URI, leading `/`, or `episode-media/...` prefix — the bucket is
+ * already selected on the client).
+ */
+function isBucketRelativeObjectKeyForRemove(key: string): boolean {
+  const k = key.trim();
+  if (!k) {
+    return false;
+  }
+  if (k.includes('://')) {
+    return false;
+  }
+  const lower = k.toLowerCase();
+  if (lower.startsWith('http://') || lower.startsWith('https://')) {
+    return false;
+  }
+  if (lower.startsWith('storage:')) {
+    return false;
+  }
+  if (k.startsWith('/')) {
+    return false;
+  }
+  if (k.startsWith(`${EPISODE_MEDIA_BUCKET}/`)) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Expands mistaken persisted shapes (URLs, `storage:`, bucket prefix, leading slashes) into
+ * candidate object keys, then returns **only** values safe for `storage.from(bucket).remove(...)`.
+ */
 function normalizeStoragePath(path: string): string[] {
   const trimmed = path.trim();
   if (!trimmed) {
@@ -51,7 +84,10 @@ function normalizeStoragePath(path: string): string[] {
     }
   }
 
-  return [...candidateSet].map((v) => v.trim()).filter(Boolean);
+  return [...candidateSet]
+    .map((v) => v.trim())
+    .filter(Boolean)
+    .filter(isBucketRelativeObjectKeyForRemove);
 }
 
 /**
@@ -228,7 +264,8 @@ async function removeBucketObjectsBestEffort(
  *
  * @param client - Supabase client (RLS applies to Storage and table writes).
  * @param args - Upload payload + relational linkage identifiers.
- * @returns The created/updated `episode_media` row.
+ * @returns The created/updated `episode_media` row, or `{ ok: false }` on validation, Web Crypto,
+ *   Storage, or database errors (never throws for missing `crypto` — use `react-native-get-random-values` on RN).
  */
 export async function uploadConfirmedEpisodeMedia(
   client: AbstrackSupabaseClient,
@@ -253,12 +290,18 @@ export async function uploadConfirmedEpisodeMedia(
     };
   }
 
-  const objectKey = createEpisodeMediaObjectKey({
-    userId: args.userId,
-    episodeId: args.episodeId,
-    mediaType: args.mediaType,
-    extension: args.extension,
-  });
+  let objectKey: string;
+  try {
+    objectKey = createEpisodeMediaObjectKey({
+      userId: args.userId,
+      episodeId: args.episodeId,
+      mediaType: args.mediaType,
+      extension: args.extension,
+    });
+  } catch (caught) {
+    return { ok: false, error: toPresetDataError(caught) };
+  }
+
   const durationSeconds =
     args.mediaType === 'video' && args.durationSeconds != null
       ? Math.max(1, Math.min(15, Math.trunc(args.durationSeconds)))

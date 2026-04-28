@@ -80,6 +80,42 @@ describe('uploadConfirmedEpisodeMedia', () => {
     expect(remove).not.toHaveBeenCalled();
   });
 
+  it('returns ok: false without calling Storage when Web Crypto is unavailable', async () => {
+    vi.stubGlobal('crypto', undefined);
+    try {
+      const upload = vi.fn();
+      const client = {
+        storage: {
+          from: vi.fn(() => ({
+            upload,
+            remove: vi.fn(async () => ({ data: [], error: null })),
+          })),
+        },
+        from: vi.fn(() => {
+          throw new Error('unexpected DB');
+        }),
+      } as unknown as AbstrackSupabaseClient;
+
+      const result = await uploadConfirmedEpisodeMedia(client, {
+        userId: 'u1',
+        episodeId: 'ep1',
+        episodeSymptomId: 'sx1',
+        mediaType: 'photo',
+        body: 'blob',
+        contentType: 'image/jpeg',
+        extension: 'jpg',
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toMatch(/Secure randomness|Web Crypto/);
+      }
+      expect(upload).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('removes newly uploaded object from Storage when insert fails after upload', async () => {
     const upload = vi.fn(async () => ({ error: null }));
     const remove = vi.fn(async () => ({ data: [], error: null }));
@@ -495,12 +531,39 @@ describe('removeEpisodeMediaObjectsFromStorage', () => {
     const result = await removeEpisodeMediaObjectsFromStorage(client, 'ep-1');
 
     expect(result.ok).toBe(true);
-    expect(remove).toHaveBeenCalledWith(
-      expect.arrayContaining([
-        'episode-media/u/ep/clip.mp4',
-        'u/ep/clip.mp4',
-        'u/ep/thumb.jpg',
-      ]),
+    expect(remove).toHaveBeenCalledTimes(1);
+    const calls = remove.mock.calls as unknown as [string[]][];
+    const pathsUnknown = calls[0]?.[0] as unknown;
+    expect(Array.isArray(pathsUnknown)).toBe(true);
+    expect(new Set(pathsUnknown as string[])).toEqual(
+      new Set(['u/ep/clip.mp4', 'u/ep/thumb.jpg']),
     );
+  });
+
+  it('skips Storage remove when every persisted key normalizes to nothing usable', async () => {
+    const remove = vi.fn(async () => ({ data: [], error: null }));
+    const client = {
+      storage: {
+        from: vi.fn(() => ({ remove })),
+      },
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: vi.fn(async () => ({
+            data: [
+              {
+                storage_object_key: 'https://example.com/unrelated-page',
+                thumbnail_storage_key: null,
+              },
+            ],
+            error: null,
+          })),
+        })),
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await removeEpisodeMediaObjectsFromStorage(client, 'ep-1');
+
+    expect(result.ok).toBe(true);
+    expect(remove).not.toHaveBeenCalled();
   });
 });

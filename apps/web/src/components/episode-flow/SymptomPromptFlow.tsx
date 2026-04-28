@@ -122,7 +122,21 @@ async function getWebMediaUploadData(answer: SymptomPromptAnswer): Promise<{
     throw new Error('No captured media is available to upload.');
   }
   const response = await fetch(answer.value.localUri);
+  if (!response.ok) {
+    const statusText = response.statusText?.trim();
+    const httpDetail = `${response.status}${
+      statusText ? ` ${statusText}` : ''
+    }`;
+    throw new Error(
+      `Could not read captured media (${httpDetail}). The preview may have expired — capture again.`,
+    );
+  }
   const blob = await response.blob();
+  if (blob.size === 0) {
+    throw new Error(
+      'Captured media file is empty or unreadable. Capture again.',
+    );
+  }
   const fallbackContentType =
     answer.type === 'photo' ? 'image/jpeg' : 'video/webm';
   const contentType = blob.type || fallbackContentType;
