@@ -644,11 +644,21 @@ export function SymptomPromptFlow({
       return;
     }
     if (fromServer.ok && mediaRows.ok) {
-      const mediaBySymptomId = new Map(
-        mediaRows.data
-          .filter((row) => row.episode_symptom_id && row.upload_completed_at)
-          .map((row) => [row.episode_symptom_id as string, row]),
-      );
+      // Rows are newest-first; multiple `episode_media` rows per symptom can exist — keep only
+      // the first hit per `episode_symptom_id` so the newest completed upload wins.
+      const mediaBySymptomId = new Map<
+        string,
+        (typeof mediaRows.data)[number]
+      >();
+      for (const row of mediaRows.data) {
+        if (!row.episode_symptom_id || !row.upload_completed_at) {
+          continue;
+        }
+        const key = row.episode_symptom_id as string;
+        if (!mediaBySymptomId.has(key)) {
+          mediaBySymptomId.set(key, row);
+        }
+      }
       for (const row of fromServer.data) {
         if (!row.preset_symptom_id) {
           continue;

@@ -201,7 +201,27 @@ function mapEpisodeMediaStorageUploadError(error: unknown): PresetDataError {
 }
 
 /**
+ * Best-effort delete of Storage objects under `episode-media` (e.g. rollback new upload after DB
+ * failure, or delete superseded object after metadata update). Swallows Storage errors so primary
+ * errors still surface to callers.
+ */
+async function removeBucketObjectsBestEffort(
+  client: AbstrackSupabaseClient,
+  keys: string[],
+): Promise<void> {
+  const unique = [...new Set(keys.map((k) => k.trim()).filter(Boolean))];
+  if (unique.length === 0) {
+    return;
+  }
+  await client.storage.from(EPISODE_MEDIA_BUCKET).remove(unique);
+}
+
+/**
  * Uploads a confirmed media object to private Storage and persists/updates its `episode_media` row.
+ * Sets `upload_completed_at` only after the Storage upload succeeds (not before the HTTP upload).
+ * If the DB write fails after upload, removes the newly uploaded object from Storage. On update,
+ * removes the previous `storage_object_key` from Storage after the row update succeeds (when it
+ * differed from the new key).
  *
  * The row is linked to one `episode_symptoms` record so symptom history and media metadata stay in
  * sync. If a row already exists for this `episode_symptom_id`, it is updated in place.
@@ -239,7 +259,6 @@ export async function uploadConfirmedEpisodeMedia(
     mediaType: args.mediaType,
     extension: args.extension,
   });
-  const uploadCompletedAt = new Date().toISOString();
   const durationSeconds =
     args.mediaType === 'video' && args.durationSeconds != null
       ? Math.max(1, Math.min(15, Math.trunc(args.durationSeconds)))
@@ -258,16 +277,20 @@ export async function uploadConfirmedEpisodeMedia(
     };
   }
 
+  /** After Storage succeeds so ordering/UX reflect real completion, not queue start. */
+  const uploadCompletedAt = new Date().toISOString();
+
   return wrap(async () => {
     const existing = await client
       .from('episode_media')
-      .select('id')
+      .select('id, storage_object_key')
       .eq('episode_id', args.episodeId)
       .eq('episode_symptom_id', args.episodeSymptomId)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
     if (existing.error) {
+      await removeBucketObjectsBestEffort(client, [objectKey]);
       return {
         data: null,
         error: existing.error,
@@ -275,6 +298,9 @@ export async function uploadConfirmedEpisodeMedia(
     }
 
     if (existing.data?.id) {
+      const previousKeyRaw = existing.data.storage_object_key;
+      const previousKey =
+        typeof previousKeyRaw === 'string' ? previousKeyRaw.trim() : '';
       const updated = await client
         .from('episode_media')
         .update({
@@ -286,6 +312,16 @@ export async function uploadConfirmedEpisodeMedia(
         .eq('id', existing.data.id)
         .select('*')
         .single();
+      if (updated.error) {
+        await removeBucketObjectsBestEffort(client, [objectKey]);
+        return {
+          data: null,
+          error: updated.error,
+        };
+      }
+      if (previousKey !== '' && previousKey !== objectKey) {
+        await removeBucketObjectsBestEffort(client, [previousKey]);
+      }
       return {
         data: updated.data as EpisodeMediaRow | null,
         error: updated.error,
@@ -305,6 +341,13 @@ export async function uploadConfirmedEpisodeMedia(
       })
       .select('*')
       .single();
+    if (inserted.error) {
+      await removeBucketObjectsBestEffort(client, [objectKey]);
+      return {
+        data: null,
+        error: inserted.error,
+      };
+    }
     return {
       data: inserted.data as EpisodeMediaRow | null,
       error: inserted.error,

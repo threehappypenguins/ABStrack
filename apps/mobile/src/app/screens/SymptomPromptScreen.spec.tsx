@@ -714,6 +714,7 @@ describe('SymptomPromptScreen', () => {
     });
 
     jest.mocked(insertEpisodeSymptomAnswer).mockClear();
+    jest.mocked(uploadConfirmedEpisodeMedia).mockClear();
     fireEvent.press(screen.getByLabelText('Record Dizziness video'));
 
     await waitFor(() => {
@@ -762,6 +763,22 @@ describe('SymptomPromptScreen', () => {
         },
       }),
     );
+    await waitFor(() => {
+      expect(uploadConfirmedEpisodeMedia).toHaveBeenCalledTimes(1);
+    });
+    expect(uploadConfirmedEpisodeMedia).toHaveBeenCalledWith(
+      expect.objectContaining({ mockClient: true }),
+      expect.objectContaining({
+        userId: 'test-user-1',
+        episodeId,
+        episodeSymptomId: 'es-1',
+        mediaType: 'video',
+        body: expect.any(ArrayBuffer),
+        contentType: 'video/mp4',
+        extension: 'mp4',
+        durationSeconds: expect.anything(),
+      }),
+    );
     expect(setSymptomPromptSession).toHaveBeenLastCalledWith(
       episodeId,
       expect.objectContaining({
@@ -798,6 +815,7 @@ describe('SymptomPromptScreen', () => {
     });
 
     jest.mocked(insertEpisodeSymptomAnswer).mockClear();
+    jest.mocked(uploadConfirmedEpisodeMedia).mockClear();
     fireEvent.press(screen.getByLabelText('Take Facial droop photo'));
     await waitFor(() => {
       expect(screen.getByLabelText('Capture Facial droop photo')).toBeTruthy();
@@ -834,6 +852,22 @@ describe('SymptomPromptScreen', () => {
             capturedAt: expect.any(String),
           },
         },
+      }),
+    );
+    await waitFor(() => {
+      expect(uploadConfirmedEpisodeMedia).toHaveBeenCalledTimes(1);
+    });
+    expect(uploadConfirmedEpisodeMedia).toHaveBeenCalledWith(
+      expect.objectContaining({ mockClient: true }),
+      expect.objectContaining({
+        userId: 'test-user-1',
+        episodeId,
+        episodeSymptomId: 'es-1',
+        mediaType: 'photo',
+        body: expect.any(ArrayBuffer),
+        contentType: 'image/jpeg',
+        extension: 'jpg',
+        durationSeconds: null,
       }),
     );
     expect(setSymptomPromptSession).toHaveBeenLastCalledWith(
