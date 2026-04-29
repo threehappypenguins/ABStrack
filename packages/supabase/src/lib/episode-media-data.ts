@@ -1,10 +1,18 @@
-import type { EpisodeMediaRow, MediaType, Uuid } from '@abstrack/types';
+import {
+  SYMPTOM_PROMPT_VIDEO_MAX_DURATION_MS,
+  type EpisodeMediaRow,
+  type MediaType,
+  type Uuid,
+} from '@abstrack/types';
 import { PresetDataError, toPresetDataError } from './preset-data-error.js';
 import type { PresetDataResult } from './preset-data.js';
 import { wrap } from './preset-data.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
 
 const EPISODE_MEDIA_BUCKET = 'episode-media';
+const VIDEO_MAX_DURATION_SECONDS = Math.floor(
+  SYMPTOM_PROMPT_VIDEO_MAX_DURATION_MS / 1000,
+);
 
 /**
  * True when `key` is a bucket-relative object path suitable for Storage `remove` on `episode-media`
@@ -440,7 +448,13 @@ export async function uploadConfirmedEpisodeMedia(
 
   const durationSeconds =
     args.mediaType === 'video' && args.durationSeconds != null
-      ? Math.max(1, Math.min(15, Math.trunc(args.durationSeconds)))
+      ? Math.max(
+          1,
+          Math.min(
+            VIDEO_MAX_DURATION_SECONDS,
+            Math.trunc(args.durationSeconds),
+          ),
+        )
       : null;
 
   let uploaded;

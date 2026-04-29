@@ -31,6 +31,7 @@ import {
   episodeSymptomRowsToAnswersMapForOpenPass,
   formatEpisodeSymptomHistoryDetail,
   formatEpisodeDurationSimple,
+  SYMPTOM_PROMPT_VIDEO_MAX_DURATION_MS,
   symptomPromptAnswerHasValue,
 } from '@abstrack/types';
 import {
@@ -64,6 +65,9 @@ type SymptomPromptNav = NativeStackNavigationProp<
   MainStackParamList,
   'SymptomPrompt'
 >;
+const VIDEO_MAX_DURATION_SECONDS = Math.floor(
+  SYMPTOM_PROMPT_VIDEO_MAX_DURATION_MS / 1000,
+);
 
 function clampIndex(index: number, length: number): number {
   if (length <= 0) {
@@ -181,7 +185,13 @@ async function getMobileMediaUploadData(answer: SymptomPromptAnswer): Promise<{
   const contentType = contentTypeGuessFromLocalUri(answer.type, uri);
   const durationSeconds =
     answer.type === 'video' && answer.value.durationMs != null
-      ? Math.max(1, Math.min(15, Math.round(answer.value.durationMs / 1000)))
+      ? Math.max(
+          1,
+          Math.min(
+            VIDEO_MAX_DURATION_SECONDS,
+            Math.round(answer.value.durationMs / 1000),
+          ),
+        )
       : null;
   return {
     body,

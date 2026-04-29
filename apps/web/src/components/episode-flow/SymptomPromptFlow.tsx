@@ -27,6 +27,7 @@ import {
   episodeSymptomRowsToAnswersMapForOpenPass,
   formatEpisodeSymptomHistoryDetail,
   formatEpisodeDurationSimple,
+  SYMPTOM_PROMPT_VIDEO_MAX_DURATION_MS,
   symptomPromptAnswerHasValue,
 } from '@abstrack/types';
 import {
@@ -69,6 +70,9 @@ export type SymptomPromptFlowProps = {
 
 /** Delay before writing free-text drafts to `sessionStorage` (keystrokes stay snappy in React state). */
 const FREE_TEXT_PERSIST_DEBOUNCE_MS = 300;
+const VIDEO_MAX_DURATION_SECONDS = Math.floor(
+  SYMPTOM_PROMPT_VIDEO_MAX_DURATION_MS / 1000,
+);
 
 function clampIndex(index: number, length: number): number {
   if (length <= 0) {
@@ -172,7 +176,13 @@ async function getWebMediaUploadData(answer: SymptomPromptAnswer): Promise<{
   const contentType = blob.type || fallbackContentType;
   const durationSeconds =
     answer.type === 'video' && answer.value.durationMs != null
-      ? Math.max(1, Math.min(15, Math.round(answer.value.durationMs / 1000)))
+      ? Math.max(
+          1,
+          Math.min(
+            VIDEO_MAX_DURATION_SECONDS,
+            Math.round(answer.value.durationMs / 1000),
+          ),
+        )
       : null;
   return {
     body: blob,
