@@ -278,6 +278,86 @@ async function removeBucketObjectsBestEffort(
 }
 
 /**
+ * After a new symptom-linked `episode_media` insert, removes other `episode_symptoms` rows for the
+ * same preset line in the **current open pass** (same `created_at` filter as
+ * `deleteCurrentPassEpisodeSymptomAnswer`), best-effort deletes their Storage objects, then
+ * deletes those symptom rows (`episode_media` CASCADE). Keeps the canonical symptom row only.
+ *
+ * @param client - Supabase client (RLS applies).
+ * @param args - Episode, preset line, canonical symptom row id, and pass boundary (or null).
+ * @returns PostgREST-shaped `{ data, error }` for use inside `wrap`.
+ */
+async function deleteSupersededOpenPassEpisodeSymptomsAndTheirEpisodeMedia(
+  client: AbstrackSupabaseClient,
+  args: {
+    episodeId: Uuid;
+    presetSymptomId: Uuid;
+    keepEpisodeSymptomId: Uuid;
+    lastPostMarkerStepCompletedAt: string | null;
+  },
+): Promise<{ data: true | null; error: unknown }> {
+  let symptomQuery = client
+    .from('episode_symptoms')
+    .select('id')
+    .eq('episode_id', args.episodeId)
+    .eq('preset_symptom_id', args.presetSymptomId)
+    .neq('id', args.keepEpisodeSymptomId);
+
+  if (args.lastPostMarkerStepCompletedAt != null) {
+    symptomQuery = symptomQuery.gt(
+      'created_at',
+      args.lastPostMarkerStepCompletedAt,
+    );
+  }
+
+  const { data: obsolete, error: selErr } = await symptomQuery;
+  if (selErr) {
+    return { data: null, error: selErr };
+  }
+
+  const obsoleteIds = (obsolete ?? [])
+    .map((row: { id: string }) => row.id)
+    .filter(Boolean);
+  if (obsoleteIds.length === 0) {
+    return { data: true, error: null };
+  }
+
+  const { data: mediaRows, error: mediaErr } = await client
+    .from('episode_media')
+    .select('storage_object_key, thumbnail_storage_key')
+    .in('episode_symptom_id', obsoleteIds);
+
+  if (mediaErr) {
+    return { data: null, error: mediaErr };
+  }
+
+  const keysToRemove = new Set<string>();
+  for (const raw of mediaRows ?? []) {
+    const row = raw as {
+      storage_object_key: string;
+      thumbnail_storage_key: string | null;
+    };
+    for (const k of normalizeStoragePath(row.storage_object_key ?? '')) {
+      keysToRemove.add(k);
+    }
+    for (const k of normalizeStoragePath(row.thumbnail_storage_key ?? '')) {
+      keysToRemove.add(k);
+    }
+  }
+  await removeBucketObjectsBestEffort(client, [...keysToRemove]);
+
+  const { error: delErr } = await client
+    .from('episode_symptoms')
+    .delete()
+    .in('id', obsoleteIds);
+
+  if (delErr) {
+    return { data: null, error: delErr };
+  }
+  return { data: true, error: null };
+}
+
+/**
  * Uploads a confirmed media object to private Storage and persists/updates its `episode_media` row.
  * Sets `upload_completed_at` only after the Storage upload succeeds (not before the HTTP upload).
  * If the DB write fails after upload, removes the newly uploaded object from Storage. On update,
@@ -287,6 +367,11 @@ async function removeBucketObjectsBestEffort(
  *
  * The row is linked to one `episode_symptoms` record so symptom history and media metadata stay in
  * sync. If a row already exists for this `episode_symptom_id`, it is updated in place.
+ *
+ * When `supersedeOpenPassPresetSymptomAnswers` is set and this call **inserts** a new
+ * `episode_media` row (retake after “record again” / “take photo again”), older open-pass
+ * `episode_symptoms` rows for that preset line are removed and their Storage objects deleted so
+ * prior uploads are not orphaned.
  *
  * @param client - Supabase client (RLS applies to Storage and table writes).
  * @param args - Upload payload + relational linkage identifiers.
@@ -305,6 +390,15 @@ export async function uploadConfirmedEpisodeMedia(
     contentType: string;
     extension: string;
     durationSeconds?: number | null;
+    /**
+     * When present, after a successful **new** `episode_media` insert, deletes superseded open-pass
+     * symptom rows for this preset and their bucket objects.
+     */
+    supersedeOpenPassPresetSymptomAnswers?: {
+      presetSymptomId: Uuid;
+      /** Same semantics as skip/delete symptom: null = entire episode history for the line. */
+      lastPostMarkerStepCompletedAt: string | null;
+    };
   },
 ): Promise<PresetDataResult<EpisodeMediaRow>> {
   if (!args.contentType.trim()) {
@@ -429,6 +523,28 @@ export async function uploadConfirmedEpisodeMedia(
         error: inserted.error,
       };
     }
+
+    const supersede = args.supersedeOpenPassPresetSymptomAnswers;
+    if (supersede) {
+      const cleaned =
+        await deleteSupersededOpenPassEpisodeSymptomsAndTheirEpisodeMedia(
+          client,
+          {
+            episodeId: args.episodeId,
+            presetSymptomId: supersede.presetSymptomId,
+            keepEpisodeSymptomId: args.episodeSymptomId,
+            lastPostMarkerStepCompletedAt:
+              supersede.lastPostMarkerStepCompletedAt,
+          },
+        );
+      if (cleaned.error) {
+        return {
+          data: null,
+          error: cleaned.error,
+        };
+      }
+    }
+
     return {
       data: inserted.data as EpisodeMediaRow | null,
       error: inserted.error,

@@ -777,6 +777,10 @@ describe('SymptomPromptScreen', () => {
         contentType: 'video/mp4',
         extension: 'mp4',
         durationSeconds: expect.anything(),
+        supersedeOpenPassPresetSymptomAnswers: {
+          presetSymptomId: lineVideoOnly.id,
+          lastPostMarkerStepCompletedAt: null,
+        },
       }),
     );
     await waitFor(() => {
@@ -886,6 +890,10 @@ describe('SymptomPromptScreen', () => {
         contentType: 'image/jpeg',
         extension: 'jpg',
         durationSeconds: null,
+        supersedeOpenPassPresetSymptomAnswers: {
+          presetSymptomId: linePhotoOnly.id,
+          lastPostMarkerStepCompletedAt: null,
+        },
       }),
     );
     await waitFor(() => {

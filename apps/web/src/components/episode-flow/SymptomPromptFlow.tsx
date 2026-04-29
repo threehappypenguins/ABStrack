@@ -359,6 +359,11 @@ export function SymptomPromptFlow({
                 contentType: upload.contentType,
                 extension: upload.extension,
                 durationSeconds: upload.durationSeconds,
+                supersedeOpenPassPresetSymptomAnswers: {
+                  presetSymptomId: line.id,
+                  lastPostMarkerStepCompletedAt:
+                    lastPostMarkerStepCompletedAtRef.current,
+                },
               });
               if (!mediaPersist.ok) {
                 if (
