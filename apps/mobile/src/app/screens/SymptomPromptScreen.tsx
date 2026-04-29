@@ -109,6 +109,22 @@ function thumbnailResizeActionForLongEdge(
 }
 
 /**
+ * Removes a temporary file written under cache by imaging helpers (`manipulateAsync`,
+ * `getThumbnailAsync`). Best-effort only — ignores missing paths and delete failures so uploads are
+ * never blocked by cache hygiene.
+ */
+function deleteEpisodeMediaThumbnailTempFileBestEffort(uri: string): void {
+  try {
+    const file = new ExpoFile(uri);
+    if (file.exists) {
+      file.delete();
+    }
+  } catch {
+    // intentional no-op
+  }
+}
+
+/**
  * Builds reduced JPEG bytes for a lightweight thumbnail object (same bucket/prefix as primary).
  *
  * @param answer - Photo or video symptom answer with a readable `localUri`.
@@ -129,7 +145,11 @@ async function buildMobileEpisodeMediaThumbnail(
       compress: 0.82,
       format: SaveFormat.JPEG,
     });
-    return await new ExpoFile(result.uri).arrayBuffer();
+    try {
+      return await new ExpoFile(result.uri).arrayBuffer();
+    } finally {
+      deleteEpisodeMediaThumbnailTempFileBestEffort(result.uri);
+    }
   }
   if (answer.type === 'video') {
     const { uri: frameUri } = await VideoThumbnails.getThumbnailAsync(
@@ -138,16 +158,24 @@ async function buildMobileEpisodeMediaThumbnail(
         time: 500,
       },
     );
-    const size = await getImagePixelSize(frameUri);
-    const actions =
-      size !== null
-        ? thumbnailResizeActionForLongEdge(size.width, size.height, maxEdge)
-        : [{ resize: { width: maxEdge } }];
-    const result = await manipulateAsync(frameUri, actions, {
-      compress: 0.82,
-      format: SaveFormat.JPEG,
-    });
-    return await new ExpoFile(result.uri).arrayBuffer();
+    try {
+      const size = await getImagePixelSize(frameUri);
+      const actions =
+        size !== null
+          ? thumbnailResizeActionForLongEdge(size.width, size.height, maxEdge)
+          : [{ resize: { width: maxEdge } }];
+      const result = await manipulateAsync(frameUri, actions, {
+        compress: 0.82,
+        format: SaveFormat.JPEG,
+      });
+      try {
+        return await new ExpoFile(result.uri).arrayBuffer();
+      } finally {
+        deleteEpisodeMediaThumbnailTempFileBestEffort(result.uri);
+      }
+    } finally {
+      deleteEpisodeMediaThumbnailTempFileBestEffort(frameUri);
+    }
   }
   throw new Error('Thumbnail encoding requires a photo or video answer.');
 }

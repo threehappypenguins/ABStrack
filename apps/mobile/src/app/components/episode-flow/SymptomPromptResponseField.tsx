@@ -452,6 +452,10 @@ export function SymptomPromptResponseField({
     }
     case 'photo': {
       const capturedPhoto = effective.type === 'photo' ? effective.value : null;
+      const canRemovePersistedUploadedPhoto =
+        Boolean(onClearUploadedEpisodeMedia) &&
+        capturedPhoto !== null &&
+        isPersistedEpisodeMediaLocalUri(capturedPhoto.localUri);
       const showPhotoPreviewPanel =
         !pendingPhotoReview &&
         (confirmPhotoUseTapPending ||
@@ -696,7 +700,7 @@ export function SymptomPromptResponseField({
                   />
                 </View>
               )}
-              {committedMediaPreviewUrl && onClearUploadedEpisodeMedia ? (
+              {canRemovePersistedUploadedPhoto ? (
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={`Remove uploaded ${line.symptom_name} photo`}
@@ -711,7 +715,7 @@ export function SymptomPromptResponseField({
                         {
                           text: 'Remove',
                           style: 'destructive',
-                          onPress: () => onClearUploadedEpisodeMedia(),
+                          onPress: () => onClearUploadedEpisodeMedia?.(),
                         },
                       ],
                     );
@@ -868,6 +872,10 @@ export function SymptomPromptResponseField({
     }
     case 'video': {
       const captured = effective.type === 'video' ? effective.value : null;
+      const canRemovePersistedUploadedVideo =
+        Boolean(onClearUploadedEpisodeMedia) &&
+        captured !== null &&
+        isPersistedEpisodeMediaLocalUri(captured.localUri);
       const elapsedLabel = `${String(Math.floor(elapsedSeconds / 60)).padStart(
         2,
         '0',
@@ -1078,7 +1086,7 @@ export function SymptomPromptResponseField({
                   />
                 </View>
               )}
-              {committedMediaPreviewUrl && onClearUploadedEpisodeMedia ? (
+              {canRemovePersistedUploadedVideo ? (
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={`Remove uploaded ${line.symptom_name} video`}
@@ -1093,7 +1101,7 @@ export function SymptomPromptResponseField({
                         {
                           text: 'Remove',
                           style: 'destructive',
-                          onPress: () => onClearUploadedEpisodeMedia(),
+                          onPress: () => onClearUploadedEpisodeMedia?.(),
                         },
                       ],
                     );

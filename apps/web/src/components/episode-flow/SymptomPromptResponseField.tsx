@@ -629,6 +629,11 @@ function SymptomPhotoCaptureField({
     setPreviewingCapture(null);
   };
 
+  const canRemovePersistedUploadedPhoto =
+    Boolean(onClearUploadedEpisodeMedia) &&
+    captured != null &&
+    isPersistedEpisodeMediaRef(captured);
+
   const takePhotoFromPreview = async () => {
     const video = previewRef.current;
     if (!video || video.videoWidth === 0 || video.videoHeight === 0) {
@@ -724,7 +729,7 @@ function SymptomPhotoCaptureField({
               className="mx-auto block max-h-80 w-full object-contain"
             />
           )}
-          {photoReadyDisplaySrc && onClearUploadedEpisodeMedia ? (
+          {canRemovePersistedUploadedPhoto ? (
             <button
               type="button"
               disabled={disabled}
@@ -1290,6 +1295,11 @@ function SymptomVideoCaptureField({
     '0',
   )}:${String(elapsedSeconds % 60).padStart(2, '0')}`;
 
+  const canRemovePersistedUploadedVideo =
+    Boolean(onClearUploadedEpisodeMedia) &&
+    captured != null &&
+    isPersistedEpisodeMediaRef(captured);
+
   return (
     <div className="space-y-3 rounded-xl border border-app-border/90 bg-app-surface p-4">
       <div className="flex flex-col gap-3 sm:flex-row">
@@ -1347,7 +1357,7 @@ function SymptomVideoCaptureField({
               </div>
             </div>
           )}
-          {videoReadyDisplaySrc && onClearUploadedEpisodeMedia ? (
+          {canRemovePersistedUploadedVideo ? (
             <button
               type="button"
               disabled={disabled}
