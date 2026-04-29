@@ -787,6 +787,34 @@ describe('removeEpisodeMediaObjectsFromStorage', () => {
     );
   });
 
+  it('normalizes Supabase render/image URLs to bucket-relative keys', async () => {
+    const remove = vi.fn(async () => ({ data: [], error: null }));
+    const client = {
+      storage: {
+        from: vi.fn(() => ({ remove })),
+      },
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: vi.fn(async () => ({
+            data: [
+              {
+                storage_object_key:
+                  'https://xyz.supabase.co/storage/v1/render/image/public/episode-media/u/ep/thumb.jpg',
+                thumbnail_storage_key: null,
+              },
+            ],
+            error: null,
+          })),
+        })),
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await removeEpisodeMediaObjectsFromStorage(client, 'ep-1');
+
+    expect(result.ok).toBe(true);
+    expect(remove).toHaveBeenCalledWith(['u/ep/thumb.jpg']);
+  });
+
   it('skips Storage remove when every persisted key normalizes to nothing usable', async () => {
     const remove = vi.fn(async () => ({ data: [], error: null }));
     const client = {

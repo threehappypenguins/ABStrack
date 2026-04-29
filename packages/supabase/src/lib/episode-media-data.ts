@@ -75,9 +75,17 @@ function normalizeStoragePath(path: string): string[] {
       if (objectPathMatch?.[1]) {
         candidateSet.add(decodeURIComponent(objectPathMatch[1]));
       }
-      const renderPathMatch = pathname.match(/\/render\/image\/[^/]+\/(.+)$/);
+      // `/render/image/{public|authenticated|sign}/{bucket}/object-key-inside-bucket…`
+      // (not `/render/image/{visibility}/rest` — that wrongly kept `episode-media/…` in the capture).
+      const renderPathMatch = pathname.match(
+        /\/render\/image\/(?:public|authenticated|sign)\/[^/]+\/(.+)$/,
+      );
       if (renderPathMatch?.[1]) {
-        candidateSet.add(decodeURIComponent(renderPathMatch[1]));
+        let key = decodeURIComponent(renderPathMatch[1]);
+        if (key.startsWith(bucketPrefix)) {
+          key = key.slice(bucketPrefix.length);
+        }
+        candidateSet.add(key);
       }
     } catch {
       // Ignore malformed URL strings and keep best-effort candidates.
