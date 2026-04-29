@@ -40,6 +40,10 @@ function isBucketRelativeObjectKeyForRemove(key: string): boolean {
   if (k.startsWith(`${EPISODE_MEDIA_BUCKET}/`)) {
     return false;
   }
+  // Reject Storage API route paths (relative or accidentally stripped absolute paths).
+  if (/^storage\/v\d+\//i.test(k)) {
+    return false;
+  }
   return true;
 }
 
@@ -107,6 +111,33 @@ function normalizeStoragePath(path: string): string[] {
       }
     } catch {
       // Ignore malformed URL strings and keep best-effort candidates.
+    }
+  }
+  // Handle relative Storage API paths persisted by mistake, e.g.:
+  // - /storage/v1/object/public/episode-media/u/ep/a.jpg
+  // - storage/v1/render/image/public/episode-media/u/ep/a.jpg
+  if (normalized.startsWith('storage/v')) {
+    const objectPathMatch = normalized.match(
+      /^storage\/v\d+\/object\/(?:public|sign|authenticated)\/([^/]+)\/(.+)$/,
+    );
+    if (objectPathMatch?.[1] && objectPathMatch[2]) {
+      const urlBucket = decodeURIComponent(objectPathMatch[1]);
+      if (urlBucket === EPISODE_MEDIA_BUCKET) {
+        candidateSet.add(decodeURIComponent(objectPathMatch[2]));
+      }
+    }
+    const renderPathMatch = normalized.match(
+      /^storage\/v\d+\/render\/image\/(?:public|authenticated|sign)\/([^/]+)\/(.+)$/,
+    );
+    if (renderPathMatch?.[1] && renderPathMatch[2]) {
+      const urlBucket = decodeURIComponent(renderPathMatch[1]);
+      if (urlBucket === EPISODE_MEDIA_BUCKET) {
+        let key = decodeURIComponent(renderPathMatch[2]);
+        if (key.startsWith(bucketPrefix)) {
+          key = key.slice(bucketPrefix.length);
+        }
+        candidateSet.add(key);
+      }
     }
   }
 

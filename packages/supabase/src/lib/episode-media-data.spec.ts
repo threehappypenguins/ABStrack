@@ -1116,6 +1116,91 @@ describe('removeEpisodeMediaObjectsFromStorage', () => {
     expect(remove).toHaveBeenCalledWith(['u/ep/thumb.jpg']);
   });
 
+  it('normalizes relative /storage/v1/object paths to bucket-relative keys', async () => {
+    const remove = vi.fn(async () => ({ data: [], error: null }));
+    const client = {
+      storage: {
+        from: vi.fn(() => ({ remove })),
+      },
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: vi.fn(async () => ({
+            data: [
+              {
+                storage_object_key:
+                  '/storage/v1/object/public/episode-media/u/ep/a.jpg',
+                thumbnail_storage_key: null,
+              },
+            ],
+            error: null,
+          })),
+        })),
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await removeEpisodeMediaObjectsFromStorage(client, 'ep-1');
+
+    expect(result.ok).toBe(true);
+    expect(remove).toHaveBeenCalledWith(['u/ep/a.jpg']);
+  });
+
+  it('normalizes relative storage/v1/render paths to bucket-relative keys', async () => {
+    const remove = vi.fn(async () => ({ data: [], error: null }));
+    const client = {
+      storage: {
+        from: vi.fn(() => ({ remove })),
+      },
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: vi.fn(async () => ({
+            data: [
+              {
+                storage_object_key:
+                  'storage/v1/render/image/public/episode-media/u/ep/b.jpg',
+                thumbnail_storage_key: null,
+              },
+            ],
+            error: null,
+          })),
+        })),
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await removeEpisodeMediaObjectsFromStorage(client, 'ep-1');
+
+    expect(result.ok).toBe(true);
+    expect(remove).toHaveBeenCalledWith(['u/ep/b.jpg']);
+  });
+
+  it('ignores relative storage/v1 paths when bucket is not episode-media', async () => {
+    const remove = vi.fn(async () => ({ data: [], error: null }));
+    const client = {
+      storage: {
+        from: vi.fn(() => ({ remove })),
+      },
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: vi.fn(async () => ({
+            data: [
+              {
+                storage_object_key:
+                  '/storage/v1/object/public/avatars/u/ep/collision.jpg',
+                thumbnail_storage_key:
+                  'storage/v1/render/image/public/avatars/u/ep/collision-thumb.jpg',
+              },
+            ],
+            error: null,
+          })),
+        })),
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await removeEpisodeMediaObjectsFromStorage(client, 'ep-1');
+
+    expect(result.ok).toBe(true);
+    expect(remove).not.toHaveBeenCalled();
+  });
+
   it('skips Storage remove when every persisted key normalizes to nothing usable', async () => {
     const remove = vi.fn(async () => ({ data: [], error: null }));
     const client = {
