@@ -490,7 +490,7 @@ describe('cancelActiveEpisodeById', () => {
     expect(remove).not.toHaveBeenCalled();
   });
 
-  it('does not delete the episode when listing episode_media Storage paths fails', async () => {
+  it('still deletes the episode when listing episode_media Storage paths fails (skips blob cleanup)', async () => {
     const deleteSpy = vi.fn(() => ({
       eq: vi.fn(() => ({
         is: vi.fn(() => ({
@@ -530,8 +530,11 @@ describe('cancelActiveEpisodeById', () => {
 
     const result = await cancelActiveEpisodeById(client, 'ep-1');
 
-    expect(result.ok).toBe(false);
-    expect(deleteSpy).not.toHaveBeenCalled();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.didCancel).toBe(true);
+    }
+    expect(deleteSpy).toHaveBeenCalled();
     expect(remove).not.toHaveBeenCalled();
   });
 
@@ -664,6 +667,48 @@ describe('deleteEpisodeById', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.data.didDelete).toBe(false);
+    }
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('still deletes the episode when listing episode_media Storage paths fails (skips blob cleanup)', async () => {
+    const maybeSingle = vi.fn(async () => ({
+      data: { id: 'ep-2' },
+      error: null,
+    }));
+    const remove = vi.fn(async () => ({ data: [], error: null }));
+    const client = {
+      storage: {
+        from: vi.fn(() => ({ remove })),
+      },
+      from: vi.fn((table: string) => {
+        if (table === 'episode_media') {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(async () => ({
+                data: null,
+                error: { message: 'episode_media select failed' },
+              })),
+            })),
+          };
+        }
+        return {
+          delete: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              select: vi.fn(() => ({
+                maybeSingle,
+              })),
+            })),
+          })),
+        };
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await deleteEpisodeById(client, 'ep-2');
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.didDelete).toBe(true);
     }
     expect(remove).not.toHaveBeenCalled();
   });

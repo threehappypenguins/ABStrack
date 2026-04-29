@@ -296,9 +296,10 @@ export async function completeEpisodePostMarkerStep(
  * Permanently removes an episode only when it is still active (`ended_at IS NULL`). Use this for
  * "cancel active episode" UX; completed rows can be removed with {@link deleteEpisodeById}.
  *
- * Uses the same RLS as other `episodes` deletes. Lists `episode_media` Storage paths, deletes the
- * active `episodes` row, then best-effort removes those blobs so a failed DB delete does not leave
- * metadata without files (bucket rows are not cascade-deleted by Postgres).
+ * Uses the same RLS as other `episodes` deletes. Best-effort lists `episode_media` Storage paths
+ * before deleting the active `episodes` row. A failed list (transient error, or no `episode_media`
+ * read permission under RLS) does **not** return `{ ok: false }` or skip the episode delete—only
+ * Storage cleanup is skipped when paths could not be collected.
  * Data impact is driven by schema foreign keys after delete:
  * - `episode_symptoms` rows for the episode are deleted (`ON DELETE CASCADE`).
  * - `health_markers` rows linked to the episode are deleted (`ON DELETE CASCADE`).
@@ -320,10 +321,6 @@ export async function cancelActiveEpisodeById(
       client,
       episodeId,
     );
-    if (!listed.ok) {
-      return { ok: false, error: listed.error };
-    }
-    const paths = listed.data;
 
     const { data, error } = await client
       .from('episodes')
@@ -343,7 +340,9 @@ export async function cancelActiveEpisodeById(
       };
     }
 
-    await removeEpisodeMediaStorageObjectPathsBestEffort(client, paths);
+    if (listed.ok) {
+      await removeEpisodeMediaStorageObjectPathsBestEffort(client, listed.data);
+    }
     return {
       ok: true,
       data: { didCancel: true },
@@ -356,9 +355,10 @@ export async function cancelActiveEpisodeById(
 /**
  * Permanently removes an episode regardless of active/completed status when RLS allows.
  *
- * Uses the same RLS as other `episodes` deletes. Lists `episode_media` Storage paths, deletes the
- * `episodes` row, then best-effort removes those blobs so a failed DB delete does not wipe files
- * while metadata remains (bucket rows are not cascade-deleted by Postgres).
+ * Uses the same RLS as other `episodes` deletes. Best-effort lists `episode_media` Storage paths
+ * before deleting the `episodes` row. A failed list (transient error, or no `episode_media` read
+ * permission under RLS) does **not** return `{ ok: false }` or skip the episode delete—only Storage
+ * cleanup is skipped when paths could not be collected.
  * Data impact is driven by schema foreign keys after delete:
  * - `episode_symptoms` rows for the episode are deleted (`ON DELETE CASCADE`).
  * - `health_markers` rows linked to the episode are deleted (`ON DELETE CASCADE`).
@@ -379,10 +379,6 @@ export async function deleteEpisodeById(
       client,
       episodeId,
     );
-    if (!listed.ok) {
-      return { ok: false, error: listed.error };
-    }
-    const paths = listed.data;
 
     const { data, error } = await client
       .from('episodes')
@@ -401,7 +397,9 @@ export async function deleteEpisodeById(
       };
     }
 
-    await removeEpisodeMediaStorageObjectPathsBestEffort(client, paths);
+    if (listed.ok) {
+      await removeEpisodeMediaStorageObjectPathsBestEffort(client, listed.data);
+    }
     return {
       ok: true,
       data: { didDelete: true },

@@ -603,6 +603,37 @@ describe('uploadConfirmedEpisodeMedia', () => {
     }
   });
 
+  it('returns ok: false when Storage upload rejects instead of resolving with error', async () => {
+    const upload = vi.fn(async () => {
+      throw new Error('fetch exploded');
+    });
+    const client = {
+      storage: {
+        from: vi.fn(() => ({
+          upload,
+        })),
+      },
+      from: vi.fn(() => {
+        throw new Error('unexpected DB');
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await uploadConfirmedEpisodeMedia(client, {
+      userId: 'u1',
+      episodeId: 'ep1',
+      episodeSymptomId: 'sx1',
+      mediaType: 'photo',
+      body: 'blob',
+      contentType: 'image/jpeg',
+      extension: 'jpg',
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message.length).toBeGreaterThan(0);
+    }
+  });
+
   it('does not blame generic connectivity when RN reports transport failure on upload', async () => {
     const upload = vi.fn(async () => ({
       error: new Error('Network request failed'),

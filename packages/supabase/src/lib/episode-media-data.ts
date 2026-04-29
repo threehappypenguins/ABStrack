@@ -283,7 +283,8 @@ async function removeBucketObjectsBestEffort(
  * @param client - Supabase client (RLS applies to Storage and table writes).
  * @param args - Upload payload + relational linkage identifiers.
  * @returns The created/updated `episode_media` row, or `{ ok: false }` on validation, Web Crypto,
- *   Storage, or database errors (never throws for missing `crypto` — use `react-native-get-random-values` on RN).
+ *   Storage, or database errors. Does not throw: missing `crypto`, Storage `upload` rejections, or
+ *   thrown transport/SDK failures are returned as `{ ok: false }` (use `react-native-get-random-values` on RN).
  */
 export async function uploadConfirmedEpisodeMedia(
   client: AbstrackSupabaseClient,
@@ -325,12 +326,20 @@ export async function uploadConfirmedEpisodeMedia(
       ? Math.max(1, Math.min(15, Math.trunc(args.durationSeconds)))
       : null;
 
-  const uploaded = await client.storage
-    .from(EPISODE_MEDIA_BUCKET)
-    .upload(objectKey, args.body, {
-      contentType: args.contentType,
-      upsert: false,
-    });
+  let uploaded;
+  try {
+    uploaded = await client.storage
+      .from(EPISODE_MEDIA_BUCKET)
+      .upload(objectKey, args.body, {
+        contentType: args.contentType,
+        upsert: false,
+      });
+  } catch (caught) {
+    return {
+      ok: false,
+      error: mapEpisodeMediaStorageUploadError(caught),
+    };
+  }
   if (uploaded.error) {
     return {
       ok: false,
