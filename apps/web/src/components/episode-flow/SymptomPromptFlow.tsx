@@ -747,7 +747,19 @@ export function SymptomPromptFlow({
     const serverAnswers = fromServer.ok
       ? episodeSymptomRowsToAnswersMapForOpenPass(fromServer.data, passBoundary)
       : {};
-    const mediaRows = await listEpisodeMediaForEpisode(supabase, episodeId);
+    const canonicalSymptomRowsForHydrate = fromServer.ok
+      ? canonicalOpenPassEpisodeSymptomRowsByPresetLine(
+          fromServer.data,
+          passBoundary,
+        )
+      : {};
+    const mediaRows = fromServer.ok
+      ? await listEpisodeMediaForEpisode(supabase, episodeId, {
+          episodeSymptomIds: Object.values(canonicalSymptomRowsForHydrate).map(
+            (r) => r.id,
+          ),
+        })
+      : { ok: true as const, data: [] };
     if (stale()) {
       return;
     }
@@ -766,12 +778,7 @@ export function SymptomPromptFlow({
           mediaBySymptomId.set(key, row);
         }
       }
-      const canonicalSymptomRows =
-        canonicalOpenPassEpisodeSymptomRowsByPresetLine(
-          fromServer.data,
-          passBoundary,
-        );
-      for (const row of Object.values(canonicalSymptomRows)) {
+      for (const row of Object.values(canonicalSymptomRowsForHydrate)) {
         if (!row.preset_symptom_id) {
           continue;
         }

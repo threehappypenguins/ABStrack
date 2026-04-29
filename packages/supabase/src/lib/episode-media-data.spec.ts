@@ -929,7 +929,7 @@ describe('uploadConfirmedEpisodeMedia', () => {
 });
 
 describe('listEpisodeMediaForEpisode', () => {
-  it('orders by created_at desc then id desc', async () => {
+  it('selects hydration columns and orders by created_at desc then id desc', async () => {
     const orderCalls: { column: string; ascending: boolean }[] = [];
     const orderFn = vi.fn((column: string, opts?: { ascending?: boolean }) => {
       orderCalls.push({
@@ -941,23 +941,77 @@ describe('listEpisodeMediaForEpisode', () => {
       }
       return Promise.resolve({ data: [], error: null });
     });
+    const select = vi.fn(() => ({
+      eq: vi.fn(() => ({
+        order: orderFn,
+      })),
+    }));
     const client = {
       from: vi.fn(() => ({
-        select: vi.fn(() => ({
-          eq: vi.fn(() => ({
-            order: orderFn,
-          })),
-        })),
+        select,
       })),
     } as unknown as AbstrackSupabaseClient;
 
     const result = await listEpisodeMediaForEpisode(client, 'ep-1');
 
     expect(result.ok).toBe(true);
+    expect(select).toHaveBeenCalledWith(
+      'episode_symptom_id, storage_object_key, upload_completed_at, duration_seconds',
+    );
     expect(orderCalls).toEqual([
       { column: 'created_at', ascending: false },
       { column: 'id', ascending: false },
     ]);
+  });
+
+  it('filters by episode_symptom_id when episodeSymptomIds is non-empty', async () => {
+    const orderCalls: { column: string; ascending: boolean }[] = [];
+    const orderFn = vi.fn((column: string, opts?: { ascending?: boolean }) => {
+      orderCalls.push({
+        column,
+        ascending: opts?.ascending ?? true,
+      });
+      if (orderCalls.length < 2) {
+        return { order: orderFn };
+      }
+      return Promise.resolve({ data: [], error: null });
+    });
+    const inSpy = vi.fn(() => ({
+      order: orderFn,
+    }));
+    const select = vi.fn(() => ({
+      eq: vi.fn(() => ({
+        in: inSpy,
+      })),
+    }));
+    const client = {
+      from: vi.fn(() => ({
+        select,
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const sid = 'a1111111-1111-4111-8111-111111111111';
+    const result = await listEpisodeMediaForEpisode(client, 'ep-1', {
+      episodeSymptomIds: [sid],
+    });
+
+    expect(result.ok).toBe(true);
+    expect(inSpy).toHaveBeenCalledWith('episode_symptom_id', [sid]);
+  });
+
+  it('returns empty rows without querying when episodeSymptomIds is empty', async () => {
+    const from = vi.fn();
+    const client = { from } as unknown as AbstrackSupabaseClient;
+
+    const result = await listEpisodeMediaForEpisode(client, 'ep-1', {
+      episodeSymptomIds: [],
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toEqual([]);
+    }
+    expect(from).not.toHaveBeenCalled();
   });
 });
 

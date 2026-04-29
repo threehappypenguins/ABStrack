@@ -100,6 +100,7 @@ export {
   listEpisodeSymptomsForEpisode,
 } from './lib/episode-symptom-data.js';
 export type {
+  EpisodeMediaListRow,
   EpisodeMediaUploadBody,
   RemoveEpisodeMediaObjectsFromStorageResult,
 } from './lib/episode-media-data.js';

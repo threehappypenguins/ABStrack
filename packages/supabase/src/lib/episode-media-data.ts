@@ -618,25 +618,55 @@ export async function uploadConfirmedEpisodeMedia(
 }
 
 /**
- * Lists media rows for one episode, newest first.
+ * Columns returned by {@link listEpisodeMediaForEpisode} for symptom hydration (minimal payload vs
+ * `select('*')` on large histories).
+ */
+export type EpisodeMediaListRow = Pick<
+  EpisodeMediaRow,
+  | 'episode_symptom_id'
+  | 'storage_object_key'
+  | 'upload_completed_at'
+  | 'duration_seconds'
+>;
+
+/**
+ * Lists media rows for one episode, newest first (`created_at`, then `id`).
  *
  * @param client - Supabase client (RLS applies).
  * @param episodeId - `episodes.id`.
- * @returns Media rows visible to the caller.
+ * @param options - Optional `episodeSymptomIds` filter (canonical open-pass `episode_symptoms.id`
+ *   values) to avoid loading unrelated historical `episode_media` rows.
+ * @returns Narrow projection suitable for symptom prompt hydration.
  */
 export async function listEpisodeMediaForEpisode(
   client: AbstrackSupabaseClient,
   episodeId: Uuid,
-): Promise<PresetDataResult<EpisodeMediaRow[]>> {
+  options?: {
+    episodeSymptomIds?: Uuid[];
+  },
+): Promise<PresetDataResult<EpisodeMediaListRow[]>> {
   return wrap(async () => {
-    const r = await client
+    const ids = options?.episodeSymptomIds;
+    if (ids !== undefined && ids.length === 0) {
+      return { data: [], error: null };
+    }
+
+    let query = client
       .from('episode_media')
-      .select('*')
-      .eq('episode_id', episodeId)
+      .select(
+        'episode_symptom_id, storage_object_key, upload_completed_at, duration_seconds',
+      )
+      .eq('episode_id', episodeId);
+
+    if (ids !== undefined && ids.length > 0) {
+      query = query.in('episode_symptom_id', ids);
+    }
+
+    const r = await query
       .order('created_at', { ascending: false })
       .order('id', { ascending: false });
     return {
-      data: (r.data ?? []) as EpisodeMediaRow[],
+      data: (r.data ?? []) as EpisodeMediaListRow[],
       error: r.error,
     };
   });
