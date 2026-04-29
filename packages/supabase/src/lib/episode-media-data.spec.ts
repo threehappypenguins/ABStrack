@@ -173,6 +173,66 @@ describe('uploadConfirmedEpisodeMedia', () => {
     ]);
   });
 
+  it('still returns primary DB error when rollback Storage remove rejects after insert fails', async () => {
+    const upload = vi.fn(async () => ({ error: null }));
+    const remove = vi.fn(async () => {
+      throw new Error('storage transport failed');
+    });
+    const maybeSingle = vi.fn(async () => ({ data: null, error: null }));
+    const single = vi.fn(async () => ({
+      data: null,
+      error: { message: 'insert failed' },
+    }));
+    const client = {
+      storage: {
+        from: vi.fn(() => ({
+          upload,
+          remove,
+        })),
+      },
+      from: vi.fn((table: string) => {
+        if (table === 'episode_media') {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    limit: vi.fn(() => ({
+                      maybeSingle,
+                    })),
+                  })),
+                })),
+              })),
+            })),
+            insert: vi.fn(() => ({
+              select: vi.fn(() => ({
+                single,
+              })),
+            })),
+          };
+        }
+        throw new Error(`unexpected table ${table}`);
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await uploadConfirmedEpisodeMedia(client, {
+      userId: 'u1',
+      episodeId: 'ep1',
+      episodeSymptomId: 'sx1',
+      mediaType: 'photo',
+      body: 'blob',
+      contentType: 'image/jpeg',
+      extension: 'jpg',
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      // Primary failure is the DB insert; rollback must not surface the Storage throw.
+      expect(result.error.message).not.toMatch(/storage transport/i);
+    }
+    expect(remove).toHaveBeenCalled();
+  });
+
   it('removes newly uploaded object when existing-row lookup fails after upload', async () => {
     const upload = vi.fn(async () => ({ error: null }));
     const remove = vi.fn(async () => ({ data: [], error: null }));
@@ -296,6 +356,138 @@ describe('uploadConfirmedEpisodeMedia', () => {
       data: {
         id: 'em-existing',
         storage_object_key: 'u1/ep1/photo-old.jpg',
+      },
+      error: null,
+    }));
+    const single = vi.fn(async () => ({
+      data: {
+        id: 'em-existing',
+        storage_object_key: 'u1/ep1/photo-new.jpg',
+        media_type: 'photo',
+      },
+      error: null,
+    }));
+    const client = {
+      storage: {
+        from: vi.fn(() => ({
+          upload,
+          remove,
+        })),
+      },
+      from: vi.fn((table: string) => {
+        if (table === 'episode_media') {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    limit: vi.fn(() => ({
+                      maybeSingle,
+                    })),
+                  })),
+                })),
+              })),
+            })),
+            update: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                select: vi.fn(() => ({
+                  single,
+                })),
+              })),
+            })),
+          };
+        }
+        throw new Error(`unexpected table ${table}`);
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await uploadConfirmedEpisodeMedia(client, {
+      userId: 'u1',
+      episodeId: 'ep1',
+      episodeSymptomId: 'sx1',
+      mediaType: 'photo',
+      body: 'blob',
+      contentType: 'image/jpeg',
+      extension: 'jpg',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(remove).toHaveBeenCalledWith(['u1/ep1/photo-old.jpg']);
+  });
+
+  it('normalizes legacy previous storage_object_key before superseded-object remove', async () => {
+    const upload = vi.fn(async () => ({ error: null }));
+    const remove = vi.fn(async () => ({ data: [], error: null }));
+    const maybeSingle = vi.fn(async () => ({
+      data: {
+        id: 'em-existing',
+        storage_object_key: 'episode-media/u1/ep1/photo-old.jpg',
+      },
+      error: null,
+    }));
+    const single = vi.fn(async () => ({
+      data: {
+        id: 'em-existing',
+        storage_object_key: 'u1/ep1/photo-new.jpg',
+        media_type: 'photo',
+      },
+      error: null,
+    }));
+    const client = {
+      storage: {
+        from: vi.fn(() => ({
+          upload,
+          remove,
+        })),
+      },
+      from: vi.fn((table: string) => {
+        if (table === 'episode_media') {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    limit: vi.fn(() => ({
+                      maybeSingle,
+                    })),
+                  })),
+                })),
+              })),
+            })),
+            update: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                select: vi.fn(() => ({
+                  single,
+                })),
+              })),
+            })),
+          };
+        }
+        throw new Error(`unexpected table ${table}`);
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await uploadConfirmedEpisodeMedia(client, {
+      userId: 'u1',
+      episodeId: 'ep1',
+      episodeSymptomId: 'sx1',
+      mediaType: 'photo',
+      body: 'blob',
+      contentType: 'image/jpeg',
+      extension: 'jpg',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(remove).toHaveBeenCalledWith(['u1/ep1/photo-old.jpg']);
+  });
+
+  it('normalizes storage: previous key before superseded-object remove', async () => {
+    const upload = vi.fn(async () => ({ error: null }));
+    const remove = vi.fn(async () => ({ data: [], error: null }));
+    const maybeSingle = vi.fn(async () => ({
+      data: {
+        id: 'em-existing',
+        storage_object_key: 'storage:u1/ep1/photo-old.jpg',
       },
       error: null,
     }));

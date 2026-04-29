@@ -238,8 +238,9 @@ function mapEpisodeMediaStorageUploadError(error: unknown): PresetDataError {
 
 /**
  * Best-effort delete of Storage objects under `episode-media` (e.g. rollback new upload after DB
- * failure, or delete superseded object after metadata update). Swallows Storage errors so primary
- * errors still surface to callers.
+ * failure, or delete superseded object after metadata update). Never throws: rejects, thrown
+ * transport/SDK failures, and other surprises from `remove` are ignored so primary errors still
+ * surface to callers. Non-throwing Storage `error` responses are ignored as well.
  */
 async function removeBucketObjectsBestEffort(
   client: AbstrackSupabaseClient,
@@ -249,7 +250,14 @@ async function removeBucketObjectsBestEffort(
   if (unique.length === 0) {
     return;
   }
-  await client.storage.from(EPISODE_MEDIA_BUCKET).remove(unique);
+  try {
+    const { error } = await client.storage
+      .from(EPISODE_MEDIA_BUCKET)
+      .remove(unique);
+    void error;
+  } catch {
+    // Intentionally empty — rollback cleanup must not replace or mask the caller's primary outcome.
+  }
 }
 
 /**
@@ -257,7 +265,8 @@ async function removeBucketObjectsBestEffort(
  * Sets `upload_completed_at` only after the Storage upload succeeds (not before the HTTP upload).
  * If the DB write fails after upload, removes the newly uploaded object from Storage. On update,
  * removes the previous `storage_object_key` from Storage after the row update succeeds (when it
- * differed from the new key).
+ * differed from the new key), using {@link normalizeStoragePath} so legacy persisted shapes (URLs,
+ * `storage:`, bucket prefix) still resolve to bucket-relative paths for `remove`.
  *
  * The row is linked to one `episode_symptoms` record so symptom history and media metadata stay in
  * sync. If a row already exists for this `episode_symptom_id`, it is updated in place.
@@ -363,7 +372,10 @@ export async function uploadConfirmedEpisodeMedia(
         };
       }
       if (previousKey !== '' && previousKey !== objectKey) {
-        await removeBucketObjectsBestEffort(client, [previousKey]);
+        const keysToRemove = normalizeStoragePath(previousKey).filter(
+          (k) => k !== objectKey,
+        );
+        await removeBucketObjectsBestEffort(client, keysToRemove);
       }
       return {
         data: updated.data as EpisodeMediaRow | null,
@@ -423,22 +435,20 @@ export async function listEpisodeMediaForEpisode(
   });
 }
 
-export type RemoveEpisodeMediaObjectsFromStorageResult =
-  | { ok: true }
-  | { ok: false; error: PresetDataError };
-
 /**
- * Removes all objects referenced by `episode_media` rows for this episode from private Storage.
- * Call **before** deleting the `episodes` row so metadata keys are still available; Postgres
- * cascade alone does not delete bucket objects.
+ * Reads `episode_media` keys for an episode and returns deduped, bucket-relative Storage paths
+ * (same normalization as `removeEpisodeMediaObjectsFromStorage`). Call while the episode row still
+ * exists so metadata is available for listing.
  *
- * @param client - Supabase client (RLS applies to Storage DELETE).
+ * @param client - Supabase client (RLS applies).
  * @param episodeId - `episodes.id`.
+ * @returns Normalized object paths suitable for `episode-media` `remove`, or an error when the
+ *   metadata query fails.
  */
-export async function removeEpisodeMediaObjectsFromStorage(
+export async function listEpisodeMediaStorageObjectPathsForEpisode(
   client: AbstrackSupabaseClient,
   episodeId: Uuid,
-): Promise<RemoveEpisodeMediaObjectsFromStorageResult> {
+): Promise<PresetDataResult<string[]>> {
   try {
     const { data: rows, error } = await client
       .from('episode_media')
@@ -446,10 +456,7 @@ export async function removeEpisodeMediaObjectsFromStorage(
       .eq('episode_id', episodeId);
 
     if (error) {
-      return {
-        ok: false,
-        error: toPresetDataError(error),
-      };
+      return { ok: false, error: toPresetDataError(error) };
     }
 
     const keys = new Set<string>();
@@ -469,21 +476,65 @@ export async function removeEpisodeMediaObjectsFromStorage(
         keys.add(normalized);
       }
     }
-    const paths = [...keys];
-    if (paths.length === 0) {
-      return { ok: true };
-    }
+    return { ok: true, data: [...keys] };
+  } catch (caught) {
+    return { ok: false, error: toPresetDataError(caught) };
+  }
+}
 
+/**
+ * Best-effort Storage delete for paths previously listed for an episode (e.g. after the `episodes`
+ * row was removed). Never throws; failures are ignored so callers can treat the DB delete as
+ * authoritative.
+ *
+ * @param client - Supabase client (RLS applies to Storage DELETE).
+ * @param paths - Bucket-relative keys under `episode-media`.
+ */
+export async function removeEpisodeMediaStorageObjectPathsBestEffort(
+  client: AbstrackSupabaseClient,
+  paths: string[],
+): Promise<void> {
+  await removeBucketObjectsBestEffort(client, paths);
+}
+
+export type RemoveEpisodeMediaObjectsFromStorageResult =
+  | { ok: true }
+  | { ok: false; error: PresetDataError };
+
+/**
+ * Lists `episode_media` keys, then removes those objects from private Storage. Fails when listing
+ * or Storage `remove` returns an error (strict). For episode lifecycle deletes that must not drop
+ * blobs before Postgres commits, prefer `listEpisodeMediaStorageObjectPathsForEpisode` → delete
+ * episode → `removeEpisodeMediaStorageObjectPathsBestEffort` (as in `cancelActiveEpisodeById` /
+ * `deleteEpisodeById` in `episode-data.ts`).
+ *
+ * @param client - Supabase client (RLS applies to Storage DELETE).
+ * @param episodeId - `episodes.id`.
+ */
+export async function removeEpisodeMediaObjectsFromStorage(
+  client: AbstrackSupabaseClient,
+  episodeId: Uuid,
+): Promise<RemoveEpisodeMediaObjectsFromStorageResult> {
+  const listed = await listEpisodeMediaStorageObjectPathsForEpisode(
+    client,
+    episodeId,
+  );
+  if (!listed.ok) {
+    return { ok: false, error: listed.error };
+  }
+  if (listed.data.length === 0) {
+    return { ok: true };
+  }
+  try {
     const removed = await client.storage
       .from(EPISODE_MEDIA_BUCKET)
-      .remove(paths);
+      .remove(listed.data);
     if (removed.error) {
       return {
         ok: false,
         error: toPresetDataError(removed.error),
       };
     }
-
     return { ok: true };
   } catch (caught) {
     return {

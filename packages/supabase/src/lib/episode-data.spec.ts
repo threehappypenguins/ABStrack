@@ -447,6 +447,7 @@ describe('cancelActiveEpisodeById', () => {
     expect(client.from).toHaveBeenCalledWith('episode_media');
     expect(client.from).toHaveBeenCalledWith('episodes');
     expect(is).toHaveBeenCalledWith('ended_at', null);
+    expect(remove).not.toHaveBeenCalled();
   });
 
   it('returns didCancel false when the row was already ended (no row returned)', async () => {
@@ -486,10 +487,56 @@ describe('cancelActiveEpisodeById', () => {
       expect(result.data.didCancel).toBe(false);
     }
     expect(is).toHaveBeenCalledWith('ended_at', null);
+    expect(remove).not.toHaveBeenCalled();
   });
 
-  it('does not delete the episode when Storage remove fails', async () => {
-    const maybeSingle = vi.fn(async () => ({
+  it('does not delete the episode when listing episode_media Storage paths fails', async () => {
+    const deleteSpy = vi.fn(() => ({
+      eq: vi.fn(() => ({
+        is: vi.fn(() => ({
+          select: vi.fn(() => ({
+            maybeSingle: vi.fn(async () => ({
+              data: { id: 'ep-1' },
+              error: null,
+            })),
+          })),
+        })),
+      })),
+    }));
+    const remove = vi.fn(async () => ({
+      data: [],
+      error: null,
+    }));
+    const client = {
+      storage: {
+        from: vi.fn(() => ({ remove })),
+      },
+      from: vi.fn((table: string) => {
+        if (table === 'episode_media') {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(async () => ({
+                data: null,
+                error: { message: 'episode_media select failed' },
+              })),
+            })),
+          };
+        }
+        return {
+          delete: deleteSpy,
+        };
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await cancelActiveEpisodeById(client, 'ep-1');
+
+    expect(result.ok).toBe(false);
+    expect(deleteSpy).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('still cancels when post-delete Storage remove returns an error', async () => {
+    const deleteMaybeSingle = vi.fn(async () => ({
       data: { id: 'ep-1' },
       error: null,
     }));
@@ -497,7 +544,7 @@ describe('cancelActiveEpisodeById', () => {
       eq: vi.fn(() => ({
         is: vi.fn(() => ({
           select: vi.fn(() => ({
-            maybeSingle,
+            maybeSingle: deleteMaybeSingle,
           })),
         })),
       })),
@@ -534,9 +581,12 @@ describe('cancelActiveEpisodeById', () => {
 
     const result = await cancelActiveEpisodeById(client, 'ep-1');
 
-    expect(result.ok).toBe(false);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.didCancel).toBe(true);
+    }
+    expect(deleteSpy).toHaveBeenCalled();
     expect(remove).toHaveBeenCalledWith(['u/ep/blob.jpg']);
-    expect(deleteSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -579,6 +629,7 @@ describe('deleteEpisodeById', () => {
     }
     expect(client.from).toHaveBeenCalledWith('episode_media');
     expect(client.from).toHaveBeenCalledWith('episodes');
+    expect(remove).not.toHaveBeenCalled();
   });
 
   it('returns didDelete false when no row is visible/matched', async () => {
@@ -614,14 +665,15 @@ describe('deleteEpisodeById', () => {
     if (result.ok) {
       expect(result.data.didDelete).toBe(false);
     }
+    expect(remove).not.toHaveBeenCalled();
   });
 
-  it('removes primary and thumbnail keys from Storage before deleting the episode', async () => {
-    const maybeSingle = vi.fn(async () => ({
-      data: { id: 'ep-2' },
-      error: null,
-    }));
-    const remove = vi.fn(async () => ({ data: [], error: null }));
+  it('removes primary and thumbnail keys from Storage after deleting the episode', async () => {
+    let episodeDeleteResolved = false;
+    const remove = vi.fn(async () => {
+      expect(episodeDeleteResolved).toBe(true);
+      return { data: [], error: null };
+    });
     const client = {
       storage: {
         from: vi.fn(() => ({ remove })),
@@ -646,7 +698,10 @@ describe('deleteEpisodeById', () => {
           delete: vi.fn(() => ({
             eq: vi.fn(() => ({
               select: vi.fn(() => ({
-                maybeSingle,
+                maybeSingle: vi.fn(async () => {
+                  episodeDeleteResolved = true;
+                  return { data: { id: 'ep-2' }, error: null };
+                }),
               })),
             })),
           })),

@@ -101,6 +101,15 @@ function contentTypeGuessFromLocalUri(
     if (lower.endsWith('.webp')) {
       return 'image/webp';
     }
+    if (lower.endsWith('.gif')) {
+      return 'image/gif';
+    }
+    if (lower.endsWith('.heic')) {
+      return 'image/heic';
+    }
+    if (lower.endsWith('.heif')) {
+      return 'image/heif';
+    }
     return 'image/jpeg';
   }
   if (lower.endsWith('.mov')) {
@@ -119,6 +128,18 @@ function mediaExtensionFromContentType(contentType: string): string {
   }
   if (ct === 'image/png') {
     return 'png';
+  }
+  if (ct === 'image/webp') {
+    return 'webp';
+  }
+  if (ct === 'image/gif') {
+    return 'gif';
+  }
+  if (ct === 'image/heic') {
+    return 'heic';
+  }
+  if (ct === 'image/heif') {
+    return 'heif';
   }
   if (ct === 'video/mp4') {
     return 'mp4';

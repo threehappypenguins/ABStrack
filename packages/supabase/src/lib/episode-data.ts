@@ -5,7 +5,10 @@ import type {
   Uuid,
 } from '@abstrack/types';
 import type { Database } from './database.types.js';
-import { removeEpisodeMediaObjectsFromStorage } from './episode-media-data.js';
+import {
+  listEpisodeMediaStorageObjectPathsForEpisode,
+  removeEpisodeMediaStorageObjectPathsBestEffort,
+} from './episode-media-data.js';
 import { PresetDataError, toPresetDataError } from './preset-data-error.js';
 import type { PresetDataResult } from './preset-data.js';
 import { wrap } from './preset-data.js';
@@ -293,8 +296,9 @@ export async function completeEpisodePostMarkerStep(
  * Permanently removes an episode only when it is still active (`ended_at IS NULL`). Use this for
  * "cancel active episode" UX; completed rows can be removed with {@link deleteEpisodeById}.
  *
- * Uses the same RLS as other `episodes` deletes. First removes objects in private `episode-media`
- * Storage referenced by `episode_media` rows (bucket rows are not cascade-deleted by Postgres).
+ * Uses the same RLS as other `episodes` deletes. Lists `episode_media` Storage paths, deletes the
+ * active `episodes` row, then best-effort removes those blobs so a failed DB delete does not leave
+ * metadata without files (bucket rows are not cascade-deleted by Postgres).
  * Data impact is driven by schema foreign keys after delete:
  * - `episode_symptoms` rows for the episode are deleted (`ON DELETE CASCADE`).
  * - `health_markers` rows linked to the episode are deleted (`ON DELETE CASCADE`).
@@ -312,16 +316,15 @@ export async function cancelActiveEpisodeById(
   episodeId: Uuid,
 ): Promise<CancelActiveEpisodeByIdResult> {
   try {
-    const removed = await removeEpisodeMediaObjectsFromStorage(
+    const listed = await listEpisodeMediaStorageObjectPathsForEpisode(
       client,
       episodeId,
     );
-    if (!removed.ok) {
-      return {
-        ok: false,
-        error: removed.error,
-      };
+    if (!listed.ok) {
+      return { ok: false, error: listed.error };
     }
+    const paths = listed.data;
+
     const { data, error } = await client
       .from('episodes')
       .delete()
@@ -332,11 +335,18 @@ export async function cancelActiveEpisodeById(
     if (error) {
       return { ok: false, error: toPresetDataError(error) };
     }
+
+    if (data == null) {
+      return {
+        ok: true,
+        data: { didCancel: false },
+      };
+    }
+
+    await removeEpisodeMediaStorageObjectPathsBestEffort(client, paths);
     return {
       ok: true,
-      data: {
-        didCancel: data != null,
-      },
+      data: { didCancel: true },
     };
   } catch (caught) {
     return { ok: false, error: toPresetDataError(caught) };
@@ -346,8 +356,9 @@ export async function cancelActiveEpisodeById(
 /**
  * Permanently removes an episode regardless of active/completed status when RLS allows.
  *
- * Uses the same RLS as other `episodes` deletes. First removes objects in private `episode-media`
- * Storage referenced by `episode_media` rows (bucket rows are not cascade-deleted by Postgres).
+ * Uses the same RLS as other `episodes` deletes. Lists `episode_media` Storage paths, deletes the
+ * `episodes` row, then best-effort removes those blobs so a failed DB delete does not wipe files
+ * while metadata remains (bucket rows are not cascade-deleted by Postgres).
  * Data impact is driven by schema foreign keys after delete:
  * - `episode_symptoms` rows for the episode are deleted (`ON DELETE CASCADE`).
  * - `health_markers` rows linked to the episode are deleted (`ON DELETE CASCADE`).
@@ -364,16 +375,15 @@ export async function deleteEpisodeById(
   episodeId: Uuid,
 ): Promise<DeleteEpisodeByIdResult> {
   try {
-    const removed = await removeEpisodeMediaObjectsFromStorage(
+    const listed = await listEpisodeMediaStorageObjectPathsForEpisode(
       client,
       episodeId,
     );
-    if (!removed.ok) {
-      return {
-        ok: false,
-        error: removed.error,
-      };
+    if (!listed.ok) {
+      return { ok: false, error: listed.error };
     }
+    const paths = listed.data;
+
     const { data, error } = await client
       .from('episodes')
       .delete()
@@ -383,11 +393,18 @@ export async function deleteEpisodeById(
     if (error) {
       return { ok: false, error: toPresetDataError(error) };
     }
+
+    if (data == null) {
+      return {
+        ok: true,
+        data: { didDelete: false },
+      };
+    }
+
+    await removeEpisodeMediaStorageObjectPathsBestEffort(client, paths);
     return {
       ok: true,
-      data: {
-        didDelete: data != null,
-      },
+      data: { didDelete: true },
     };
   } catch (caught) {
     return { ok: false, error: toPresetDataError(caught) };

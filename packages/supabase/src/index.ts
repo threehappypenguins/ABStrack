@@ -106,7 +106,9 @@ export type {
 export {
   createEpisodeMediaObjectKey,
   listEpisodeMediaForEpisode,
+  listEpisodeMediaStorageObjectPathsForEpisode,
   removeEpisodeMediaObjectsFromStorage,
+  removeEpisodeMediaStorageObjectPathsBestEffort,
   uploadConfirmedEpisodeMedia,
 } from './lib/episode-media-data.js';
 export {
