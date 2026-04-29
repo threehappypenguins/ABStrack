@@ -38,6 +38,10 @@ function isBucketRelativeObjectKeyForRemove(key: string): boolean {
 /**
  * Expands mistaken persisted shapes (URLs, `storage:`, bucket prefix, leading slashes) into
  * candidate object keys, then returns **only** values safe for `storage.from(bucket).remove(...)`.
+ *
+ * For Supabase Storage URLs (`/object/...` and `/render/image/...`), the bucket segment in the URL
+ * must equal `episode-media`; otherwise URL-derived candidates are ignored so a mis-persisted link
+ * to another bucket cannot normalize to a key that would delete under `episode-media`.
  */
 function normalizeStoragePath(path: string): string[] {
   const trimmed = path.trim();
@@ -70,22 +74,28 @@ function normalizeStoragePath(path: string): string[] {
       const url = new URL(normalized);
       const pathname = url.pathname.replace(/^\/+/, '');
       const objectPathMatch = pathname.match(
-        /\/object\/(?:public|sign|authenticated)\/[^/]+\/(.+)$/,
+        /\/object\/(?:public|sign|authenticated)\/([^/]+)\/(.+)$/,
       );
-      if (objectPathMatch?.[1]) {
-        candidateSet.add(decodeURIComponent(objectPathMatch[1]));
+      if (objectPathMatch?.[1] && objectPathMatch[2]) {
+        const urlBucket = decodeURIComponent(objectPathMatch[1]);
+        if (urlBucket === EPISODE_MEDIA_BUCKET) {
+          candidateSet.add(decodeURIComponent(objectPathMatch[2]));
+        }
       }
       // `/render/image/{public|authenticated|sign}/{bucket}/object-key-inside-bucket…`
       // (not `/render/image/{visibility}/rest` — that wrongly kept `episode-media/…` in the capture).
       const renderPathMatch = pathname.match(
-        /\/render\/image\/(?:public|authenticated|sign)\/[^/]+\/(.+)$/,
+        /\/render\/image\/(?:public|authenticated|sign)\/([^/]+)\/(.+)$/,
       );
-      if (renderPathMatch?.[1]) {
-        let key = decodeURIComponent(renderPathMatch[1]);
-        if (key.startsWith(bucketPrefix)) {
-          key = key.slice(bucketPrefix.length);
+      if (renderPathMatch?.[1] && renderPathMatch[2]) {
+        const urlBucket = decodeURIComponent(renderPathMatch[1]);
+        if (urlBucket === EPISODE_MEDIA_BUCKET) {
+          let key = decodeURIComponent(renderPathMatch[2]);
+          if (key.startsWith(bucketPrefix)) {
+            key = key.slice(bucketPrefix.length);
+          }
+          candidateSet.add(key);
         }
-        candidateSet.add(key);
       }
     } catch {
       // Ignore malformed URL strings and keep best-effort candidates.

@@ -24,6 +24,7 @@ import type {
   SymptomPromptVideoCaptureRef,
 } from '@abstrack/types';
 import {
+  canonicalOpenPassEpisodeSymptomRowsByPresetLine,
   compareEpisodeSymptomRowsForHistory,
   computeSymptomResumePlacement,
   createDefaultSymptomPromptAnswer,
@@ -647,8 +648,7 @@ export function SymptomPromptScreen() {
         return;
       }
       if (fromServer.ok && mediaRows.ok) {
-        // Rows are newest-first; multiple `episode_media` rows per symptom can exist — keep only
-        // the first hit per `episode_symptom_id` so the newest completed upload wins.
+        // `listEpisodeMediaForEpisode` is newest-first; keep the first hit per `episode_symptom_id`.
         const mediaBySymptomId = new Map<
           string,
           (typeof mediaRows.data)[number]
@@ -662,7 +662,12 @@ export function SymptomPromptScreen() {
             mediaBySymptomId.set(key, row);
           }
         }
-        for (const row of fromServer.data) {
+        const canonicalSymptomRows =
+          canonicalOpenPassEpisodeSymptomRowsByPresetLine(
+            fromServer.data,
+            passBoundary,
+          );
+        for (const row of Object.values(canonicalSymptomRows)) {
           if (!row.preset_symptom_id) {
             continue;
           }

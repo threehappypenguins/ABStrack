@@ -1032,6 +1032,62 @@ describe('removeEpisodeMediaObjectsFromStorage', () => {
     );
   });
 
+  it('does not derive remove keys from object URLs when the URL bucket is not episode-media', async () => {
+    const remove = vi.fn(async () => ({ data: [], error: null }));
+    const client = {
+      storage: {
+        from: vi.fn(() => ({ remove })),
+      },
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: vi.fn(async () => ({
+            data: [
+              {
+                storage_object_key:
+                  'https://xyz.supabase.co/storage/v1/object/public/avatars/u/ep/collision.jpg',
+                thumbnail_storage_key: null,
+              },
+            ],
+            error: null,
+          })),
+        })),
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await removeEpisodeMediaObjectsFromStorage(client, 'ep-1');
+
+    expect(result.ok).toBe(true);
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('does not derive remove keys from render URLs when the URL bucket is not episode-media', async () => {
+    const remove = vi.fn(async () => ({ data: [], error: null }));
+    const client = {
+      storage: {
+        from: vi.fn(() => ({ remove })),
+      },
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: vi.fn(async () => ({
+            data: [
+              {
+                storage_object_key:
+                  'https://xyz.supabase.co/storage/v1/render/image/public/avatars/u/ep/thumb.jpg',
+                thumbnail_storage_key: null,
+              },
+            ],
+            error: null,
+          })),
+        })),
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await removeEpisodeMediaObjectsFromStorage(client, 'ep-1');
+
+    expect(result.ok).toBe(true);
+    expect(remove).not.toHaveBeenCalled();
+  });
+
   it('normalizes Supabase render/image URLs to bucket-relative keys', async () => {
     const remove = vi.fn(async () => ({ data: [], error: null }));
     const client = {

@@ -97,16 +97,15 @@ function episodeSymptomRowIsCanonicalOver(
 }
 
 /**
- * Builds {@link SymptomPromptAnswers} from persisted episode symptom rows (keyed by `preset_symptoms.id`).
+ * Picks the canonical `episode_symptoms` row per `preset_symptom_id` (newest `created_at`, then
+ * `id` DESC) from an already filtered list — same rule as {@link episodeSymptomRowsToAnswersMap}.
  *
- * If multiple rows share a `preset_symptom_id` (legacy duplicates), keeps the same canonical row as
- * server upsert / the unique-index migration: newest `created_at`, then `id` DESC.
- *
- * @param rows - Rows for one episode (same owner as the episode under RLS).
+ * @param rows - Symptom rows to dedupe (e.g. open-pass only).
+ * @returns Map keyed by `preset_symptoms.id` to the winning row.
  */
-export function episodeSymptomRowsToAnswersMap(
+function pickCanonicalEpisodeSymptomRowsByPresetLine(
   rows: EpisodeSymptomRow[],
-): SymptomPromptAnswers {
+): Record<string, EpisodeSymptomRow> {
   const canonicalByPreset: Record<string, EpisodeSymptomRow> = {};
   for (const row of rows) {
     if (!row.preset_symptom_id) {
@@ -118,12 +117,44 @@ export function episodeSymptomRowsToAnswersMap(
       canonicalByPreset[key] = row;
     }
   }
+  return canonicalByPreset;
+}
 
+/**
+ * Builds {@link SymptomPromptAnswers} from persisted episode symptom rows (keyed by `preset_symptoms.id`).
+ *
+ * If multiple rows share a `preset_symptom_id` (legacy duplicates), keeps the same canonical row as
+ * server upsert / the unique-index migration: newest `created_at`, then `id` DESC.
+ *
+ * @param rows - Rows for one episode (same owner as the episode under RLS).
+ */
+export function episodeSymptomRowsToAnswersMap(
+  rows: EpisodeSymptomRow[],
+): SymptomPromptAnswers {
+  const canonicalByPreset = pickCanonicalEpisodeSymptomRowsByPresetLine(rows);
   const out: SymptomPromptAnswers = {};
   for (const [presetId, row] of Object.entries(canonicalByPreset)) {
     out[presetId] = episodeSymptomRowToPromptAnswer(row);
   }
   return out;
+}
+
+/**
+ * Canonical `episode_symptoms` row per preset line within the **current open pass** (same filter as
+ * {@link episodeSymptomRowsToAnswersMapForOpenPass}). Use when joining to `episode_media` by
+ * `episode_symptom_id` so hydration never applies Storage from a superseded row.
+ *
+ * @param rows - All `episode_symptoms` rows for the episode.
+ * @param lastPostMarkerStepCompletedAt - `episodes.post_marker_step_completed_at` (ISO), or null.
+ * @returns Map keyed by `preset_symptoms.id` to the canonical row for that line in the pass.
+ */
+export function canonicalOpenPassEpisodeSymptomRowsByPresetLine(
+  rows: EpisodeSymptomRow[],
+  lastPostMarkerStepCompletedAt: string | null,
+): Record<string, EpisodeSymptomRow> {
+  return pickCanonicalEpisodeSymptomRowsByPresetLine(
+    filterEpisodeSymptomRowsForOpenPass(rows, lastPostMarkerStepCompletedAt),
+  );
 }
 
 /**
@@ -137,7 +168,13 @@ export function episodeSymptomRowsToAnswersMapForOpenPass(
   rows: EpisodeSymptomRow[],
   lastPostMarkerStepCompletedAt: string | null,
 ): SymptomPromptAnswers {
-  return episodeSymptomRowsToAnswersMap(
-    filterEpisodeSymptomRowsForOpenPass(rows, lastPostMarkerStepCompletedAt),
+  const canonicalByPreset = canonicalOpenPassEpisodeSymptomRowsByPresetLine(
+    rows,
+    lastPostMarkerStepCompletedAt,
   );
+  const out: SymptomPromptAnswers = {};
+  for (const [presetId, row] of Object.entries(canonicalByPreset)) {
+    out[presetId] = episodeSymptomRowToPromptAnswer(row);
+  }
+  return out;
 }

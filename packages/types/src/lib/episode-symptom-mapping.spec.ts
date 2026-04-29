@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { EpisodeSymptomRow } from './types.js';
 import {
+  canonicalOpenPassEpisodeSymptomRowsByPresetLine,
   episodeSymptomRowToPromptAnswer,
   episodeSymptomRowsToAnswersMap,
   symptomPromptAnswerToResponseColumns,
@@ -144,5 +145,82 @@ describe('episode-symptom mapping', () => {
         value: true,
       },
     );
+  });
+
+  it('canonicalOpenPassEpisodeSymptomRowsByPresetLine picks newest row per preset in pass', () => {
+    const boundary = '2026-04-17T00:00:00.000Z';
+    const olderInPass = {
+      ...baseRow,
+      id: '00000000-0000-4000-8000-000000000001',
+      preset_symptom_id: 'ps-1',
+      created_at: '2026-04-18T10:00:00.000Z',
+      response_type: 'photo' as const,
+      response_boolean: null,
+      response_severity: null,
+      response_text: null,
+    } as EpisodeSymptomRow;
+    const newerInPass = {
+      ...baseRow,
+      id: '00000000-0000-4000-8000-000000000002',
+      preset_symptom_id: 'ps-1',
+      created_at: '2026-04-18T11:00:00.000Z',
+      response_type: 'photo' as const,
+      response_boolean: null,
+      response_severity: null,
+      response_text: null,
+    } as EpisodeSymptomRow;
+    const beforeBoundary = {
+      ...baseRow,
+      id: '00000000-0000-4000-8000-000000000099',
+      preset_symptom_id: 'ps-1',
+      created_at: '2026-04-16T12:00:00.000Z',
+      response_type: 'photo' as const,
+      response_boolean: null,
+      response_severity: null,
+      response_text: null,
+    } as EpisodeSymptomRow;
+
+    const canonical = canonicalOpenPassEpisodeSymptomRowsByPresetLine(
+      [olderInPass, newerInPass, beforeBoundary],
+      boundary,
+    );
+    expect(canonical['ps-1']?.id).toBe(newerInPass.id);
+  });
+
+  it('canonicalOpenPassEpisodeSymptomRowsByPresetLine order of input does not change canonical id', () => {
+    const boundary = '2026-04-17T00:00:00.000Z';
+    const olderInPass = {
+      ...baseRow,
+      id: '00000000-0000-4000-8000-000000000001',
+      preset_symptom_id: 'ps-1',
+      created_at: '2026-04-18T10:00:00.000Z',
+      response_type: 'video' as const,
+      response_boolean: null,
+      response_severity: null,
+      response_text: null,
+    } as EpisodeSymptomRow;
+    const newerInPass = {
+      ...baseRow,
+      id: '00000000-0000-4000-8000-000000000002',
+      preset_symptom_id: 'ps-1',
+      created_at: '2026-04-18T11:00:00.000Z',
+      response_type: 'video' as const,
+      response_boolean: null,
+      response_severity: null,
+      response_text: null,
+    } as EpisodeSymptomRow;
+
+    expect(
+      canonicalOpenPassEpisodeSymptomRowsByPresetLine(
+        [newerInPass, olderInPass],
+        boundary,
+      )['ps-1']?.id,
+    ).toBe(newerInPass.id);
+    expect(
+      canonicalOpenPassEpisodeSymptomRowsByPresetLine(
+        [olderInPass, newerInPass],
+        boundary,
+      )['ps-1']?.id,
+    ).toBe(newerInPass.id);
   });
 });
