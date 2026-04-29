@@ -29,6 +29,37 @@ export function episodeSymptomRowToPromptAnswer(
 }
 
 /**
+ * Collects primary and thumbnail `storage:…` strings from a committed photo/video answer for Storage
+ * cleanup when deleting the symptom row (passed through to Supabase helpers).
+ *
+ * @param answer - Current prompt answer (ignored unless type is `photo` or `video` with a value).
+ * @returns Non-empty URI strings only (trimmed).
+ */
+export function episodeMediaStoragePathHintsFromPromptAnswer(
+  answer: SymptomPromptAnswer | undefined,
+): string[] {
+  if (
+    answer == null ||
+    (answer.type !== 'photo' && answer.type !== 'video') ||
+    answer.value == null
+  ) {
+    return [];
+  }
+  const v = answer.value;
+  const out: string[] = [];
+  if (typeof v.localUri === 'string' && v.localUri.trim()) {
+    out.push(v.localUri.trim());
+  }
+  if (
+    typeof v.thumbnailStorageUri === 'string' &&
+    v.thumbnailStorageUri.trim()
+  ) {
+    out.push(v.thumbnailStorageUri.trim());
+  }
+  return out;
+}
+
+/**
  * Converts a prompt answer into `episode_symptoms` response columns (CHECK-aligned).
  *
  * @param answer - Current draft from the prompt UI.

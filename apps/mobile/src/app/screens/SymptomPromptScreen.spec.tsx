@@ -92,6 +92,15 @@ jest.mock('expo-image-picker', () => ({
   launchCameraAsync: jest.fn(),
 }));
 
+jest.mock('expo-image-manipulator', () => ({
+  SaveFormat: { JPEG: 'jpeg', PNG: 'png' },
+  manipulateAsync: jest.fn(async (uri: string) => ({ uri })),
+}));
+
+jest.mock('expo-video-thumbnails', () => ({
+  getThumbnailAsync: jest.fn(async (uri: string) => ({ uri })),
+}));
+
 jest.mock('expo-camera', () => {
   const React = require('react');
   const { View } = require('react-native');
@@ -251,7 +260,7 @@ describe('SymptomPromptScreen', () => {
         episode_id: episodeId,
         episode_symptom_id: 'es-1',
         storage_object_key: 'test-user-1/episode-1/video-1.webm',
-        thumbnail_storage_key: null,
+        thumbnail_storage_key: 'test-user-1/episode-1/thumb-v.jpg',
         media_type: 'video',
         duration_seconds: 3,
         upload_completed_at: '2020-01-01T00:00:00Z',
@@ -777,6 +786,11 @@ describe('SymptomPromptScreen', () => {
         contentType: 'video/mp4',
         extension: 'mp4',
         durationSeconds: expect.anything(),
+        thumbnail: {
+          body: expect.any(ArrayBuffer),
+          contentType: 'image/jpeg',
+          extension: 'jpg',
+        },
         supersedeOpenPassPresetSymptomAnswers: {
           presetSymptomId: lineVideoOnly.id,
           lastPostMarkerStepCompletedAt: null,
@@ -792,6 +806,8 @@ describe('SymptomPromptScreen', () => {
               type: 'video',
               value: {
                 localUri: 'storage:test-user-1/episode-1/video-1.webm',
+                thumbnailStorageUri:
+                  'storage:test-user-1/episode-1/thumb-v.jpg',
                 durationMs: 3000,
                 capturedAt: '2020-01-01T00:00:00Z',
               },
@@ -830,7 +846,7 @@ describe('SymptomPromptScreen', () => {
         episode_id: episodeId,
         episode_symptom_id: 'es-1',
         storage_object_key: 'test-user-1/episode-1/photo-xyz.jpg',
-        thumbnail_storage_key: null,
+        thumbnail_storage_key: 'test-user-1/episode-1/thumb-p.jpg',
         media_type: 'photo',
         duration_seconds: null,
         upload_completed_at: '2020-01-01T00:00:00Z',
@@ -890,6 +906,11 @@ describe('SymptomPromptScreen', () => {
         contentType: 'image/jpeg',
         extension: 'jpg',
         durationSeconds: null,
+        thumbnail: {
+          body: expect.any(ArrayBuffer),
+          contentType: 'image/jpeg',
+          extension: 'jpg',
+        },
         supersedeOpenPassPresetSymptomAnswers: {
           presetSymptomId: linePhotoOnly.id,
           lastPostMarkerStepCompletedAt: null,
@@ -905,6 +926,8 @@ describe('SymptomPromptScreen', () => {
               type: 'photo',
               value: {
                 localUri: 'storage:test-user-1/episode-1/photo-xyz.jpg',
+                thumbnailStorageUri:
+                  'storage:test-user-1/episode-1/thumb-p.jpg',
                 capturedAt: '2020-01-01T00:00:00Z',
               },
             },

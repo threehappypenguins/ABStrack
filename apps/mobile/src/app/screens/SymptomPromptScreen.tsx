@@ -7,6 +7,8 @@ import React, {
 } from 'react';
 import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { File as ExpoFile } from 'expo-file-system';
+import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
+import * as VideoThumbnails from 'expo-video-thumbnails';
 import type { RouteProp } from '@react-navigation/native';
 import {
   CommonActions,
@@ -28,6 +30,7 @@ import {
   compareEpisodeSymptomRowsForHistory,
   computeSymptomResumePlacement,
   createDefaultSymptomPromptAnswer,
+  episodeMediaStoragePathHintsFromPromptAnswer,
   episodeSymptomRowsToAnswersMapForOpenPass,
   formatEpisodeSymptomHistoryDetail,
   formatEpisodeDurationSimple,
@@ -68,6 +71,44 @@ type SymptomPromptNav = NativeStackNavigationProp<
 const VIDEO_MAX_DURATION_SECONDS = Math.floor(
   SYMPTOM_PROMPT_VIDEO_MAX_DURATION_MS / 1000,
 );
+
+/** Long edge for JPEG thumbnails stored beside primary objects in `episode-media`. */
+const SYMPTOM_MEDIA_THUMB_MAX_EDGE_PX = 480;
+
+/**
+ * Builds reduced JPEG bytes for a lightweight thumbnail object (same bucket/prefix as primary).
+ *
+ * @param answer - Photo or video symptom answer with a readable `localUri`.
+ * @param mediaUri - Trimmed capture URI passed to native imaging APIs.
+ */
+async function buildMobileEpisodeMediaThumbnail(
+  answer: SymptomPromptAnswer,
+  mediaUri: string,
+): Promise<ArrayBuffer> {
+  if (answer.type === 'photo') {
+    const result = await manipulateAsync(
+      mediaUri,
+      [{ resize: { width: SYMPTOM_MEDIA_THUMB_MAX_EDGE_PX } }],
+      { compress: 0.82, format: SaveFormat.JPEG },
+    );
+    return await new ExpoFile(result.uri).arrayBuffer();
+  }
+  if (answer.type === 'video') {
+    const { uri: frameUri } = await VideoThumbnails.getThumbnailAsync(
+      mediaUri,
+      {
+        time: 500,
+      },
+    );
+    const result = await manipulateAsync(
+      frameUri,
+      [{ resize: { width: SYMPTOM_MEDIA_THUMB_MAX_EDGE_PX } }],
+      { compress: 0.82, format: SaveFormat.JPEG },
+    );
+    return await new ExpoFile(result.uri).arrayBuffer();
+  }
+  throw new Error('Thumbnail encoding requires a photo or video answer.');
+}
 
 function clampIndex(index: number, length: number): number {
   if (length <= 0) {
@@ -163,6 +204,11 @@ async function getMobileMediaUploadData(answer: SymptomPromptAnswer): Promise<{
   contentType: string;
   extension: string;
   durationSeconds: number | null;
+  thumbnail: {
+    body: ArrayBuffer;
+    contentType: string;
+    extension: string;
+  };
 }> {
   if (answer.type !== 'photo' && answer.type !== 'video') {
     throw new Error('Media upload requires a photo/video answer.');
@@ -193,11 +239,19 @@ async function getMobileMediaUploadData(answer: SymptomPromptAnswer): Promise<{
           ),
         )
       : null;
+
+  const thumbBody = await buildMobileEpisodeMediaThumbnail(answer, uri);
+
   return {
     body,
     contentType,
     extension: mediaExtensionFromContentType(contentType),
     durationSeconds,
+    thumbnail: {
+      body: thumbBody,
+      contentType: 'image/jpeg',
+      extension: 'jpg',
+    },
   };
 }
 
@@ -352,6 +406,7 @@ export function SymptomPromptScreen() {
                 contentType: upload.contentType,
                 extension: upload.extension,
                 durationSeconds: upload.durationSeconds,
+                thumbnail: upload.thumbnail,
                 supersedeOpenPassPresetSymptomAnswers: {
                   presetSymptomId: line.id,
                   lastPostMarkerStepCompletedAt:
@@ -377,6 +432,9 @@ export function SymptomPromptScreen() {
               ) {
                 const row = mediaPersist.data;
                 const storageUri = `storage:${row.storage_object_key}`;
+                const thumbnailStorageUri = row.thumbnail_storage_key
+                  ? `storage:${row.thumbnail_storage_key}`
+                  : null;
                 const capturedAt =
                   row.upload_completed_at ??
                   (answer.type === 'photo' || answer.type === 'video'
@@ -389,6 +447,7 @@ export function SymptomPromptScreen() {
                         type: 'photo',
                         value: {
                           localUri: storageUri,
+                          thumbnailStorageUri,
                           capturedAt,
                         },
                       }
@@ -396,6 +455,7 @@ export function SymptomPromptScreen() {
                         type: 'video',
                         value: {
                           localUri: storageUri,
+                          thumbnailStorageUri,
                           durationMs:
                             row.duration_seconds != null
                               ? row.duration_seconds * 1000
@@ -458,7 +518,10 @@ export function SymptomPromptScreen() {
   );
 
   const executeServerDelete = useCallback(
-    (line: PresetSymptomRow) => {
+    (
+      line: PresetSymptomRow,
+      options?: { episodeMediaPathHints?: (string | null | undefined)[] },
+    ) => {
       const enqueueEpisodeId = episodeIdRef.current;
       const enqueueEpoch = serverPersistEpochRef.current;
       persistUiAttemptRef.current += 1;
@@ -493,6 +556,7 @@ export function SymptomPromptScreen() {
             presetSymptomId: line.id,
             lastPostMarkerStepCompletedAt:
               lastPostMarkerStepCompletedAtRef.current,
+            episodeMediaPathHints: options?.episodeMediaPathHints,
           });
           if (enqueueEpoch !== serverPersistEpochRef.current) {
             return;
@@ -695,6 +759,9 @@ export function SymptomPromptScreen() {
           if (row.response_type === 'photo') {
             const value: SymptomPromptPhotoCaptureRef = {
               localUri: `storage:${media.storage_object_key}`,
+              thumbnailStorageUri: media.thumbnail_storage_key
+                ? `storage:${media.thumbnail_storage_key}`
+                : null,
               capturedAt: media.upload_completed_at ?? row.created_at,
             };
             serverAnswers[row.preset_symptom_id] = { type: 'photo', value };
@@ -703,6 +770,9 @@ export function SymptomPromptScreen() {
           if (row.response_type === 'video') {
             const value: SymptomPromptVideoCaptureRef = {
               localUri: `storage:${media.storage_object_key}`,
+              thumbnailStorageUri: media.thumbnail_storage_key
+                ? `storage:${media.thumbnail_storage_key}`
+                : null,
               durationMs:
                 media.duration_seconds != null
                   ? media.duration_seconds * 1000
@@ -818,6 +888,55 @@ export function SymptomPromptScreen() {
     persist(activeIndexRef.current, merged);
     schedulePersistToSupabase(currentLine, next);
   };
+
+  const resolveEpisodeMediaPreviewUrl = useCallback(
+    async (storageUri: string): Promise<string | null> => {
+      const raw = storageUri.trim();
+      const key = raw.startsWith('storage:')
+        ? raw.slice('storage:'.length).trim()
+        : raw;
+      if (!key) {
+        return null;
+      }
+      const supabase = getMobileSupabaseClient();
+      if (!supabase.storage?.from) {
+        return null;
+      }
+      const { data, error } = await supabase.storage
+        .from('episode-media')
+        .createSignedUrl(key, 180);
+      if (error || !data?.signedUrl) {
+        return null;
+      }
+      return data.signedUrl;
+    },
+    [],
+  );
+
+  const handleClearUploadedEpisodeMedia = useCallback(() => {
+    if (!currentLine) {
+      return;
+    }
+    if (
+      currentLine.response_type !== 'photo' &&
+      currentLine.response_type !== 'video'
+    ) {
+      return;
+    }
+    const priorAnswer = answersRef.current[currentLine.id];
+    const episodeMediaPathHints =
+      episodeMediaStoragePathHintsFromPromptAnswer(priorAnswer);
+    cancelPendingServerPersist();
+    const cleared = createDefaultSymptomPromptAnswer(currentLine.response_type);
+    const merged: SymptomPromptAnswers = {
+      ...answersRef.current,
+      [currentLine.id]: cleared,
+    };
+    answersRef.current = merged;
+    setAnswers(merged);
+    persist(activeIndexRef.current, merged);
+    executeServerDelete(currentLine, { episodeMediaPathHints });
+  }, [cancelPendingServerPersist, currentLine, executeServerDelete, persist]);
 
   const goBackStep = () => {
     flushPendingServerPersist();
@@ -1040,6 +1159,9 @@ export function SymptomPromptScreen() {
     if (!currentLine) {
       return;
     }
+    const priorAnswer = answersRef.current[currentLine.id];
+    const episodeMediaPathHints =
+      episodeMediaStoragePathHintsFromPromptAnswer(priorAnswer);
     cancelPendingServerPersist();
     const skippedAnswer = createDefaultSymptomPromptAnswer(
       currentLine.response_type,
@@ -1051,7 +1173,7 @@ export function SymptomPromptScreen() {
     answersRef.current = merged;
     setAnswers(merged);
     persist(activeIndexRef.current, merged);
-    executeServerDelete(currentLine);
+    executeServerDelete(currentLine, { episodeMediaPathHints });
     announce(`Skipped ${currentLine.symptom_name}.`);
     advanceToNextStep();
   };
@@ -1129,6 +1251,8 @@ export function SymptomPromptScreen() {
                   answer={answers[currentLine.id]}
                   onChange={onChangeAnswer}
                   disabled={status !== 'ready'}
+                  resolveEpisodeMediaPreviewUrl={resolveEpisodeMediaPreviewUrl}
+                  onClearUploadedEpisodeMedia={handleClearUploadedEpisodeMedia}
                 />
               </View>
             ) : null}

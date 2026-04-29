@@ -129,10 +129,21 @@ describe('deleteCurrentPassEpisodeSymptomAnswer', () => {
     const del = vi.fn(() => ({
       eq: eqEpisode,
     }));
+    const selEqPreset = vi.fn(async () => ({
+      data: [],
+      error: null,
+    }));
+    const selEqEpisode = vi.fn(() => ({
+      eq: selEqPreset,
+    }));
+    const select = vi.fn(() => ({
+      eq: selEqEpisode,
+    }));
     const client = {
       from: vi.fn((table: string) => {
         expect(table).toBe('episode_symptoms');
         return {
+          select,
           delete: del,
         };
       }),
@@ -161,10 +172,24 @@ describe('deleteCurrentPassEpisodeSymptomAnswer', () => {
     const del = vi.fn(() => ({
       eq: eqEpisode,
     }));
+    const selGt = vi.fn(async () => ({
+      data: [],
+      error: null,
+    }));
+    const selEqPreset = vi.fn(() => ({
+      gt: selGt,
+    }));
+    const selEqEpisode = vi.fn(() => ({
+      eq: selEqPreset,
+    }));
+    const select = vi.fn(() => ({
+      eq: selEqEpisode,
+    }));
     const client = {
       from: vi.fn((table: string) => {
         expect(table).toBe('episode_symptoms');
         return {
+          select,
           delete: del,
         };
       }),

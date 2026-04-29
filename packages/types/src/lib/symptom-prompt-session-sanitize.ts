@@ -91,11 +91,23 @@ export function sanitizeSymptomPromptAnswerEntry(
       if (capturedAt.length === 0 || !Number.isFinite(Date.parse(capturedAt))) {
         return null;
       }
+      const thumbRaw = photoRef.thumbnailStorageUri;
+      let thumbnailStorageUri: string | undefined;
+      if (thumbRaw !== undefined && thumbRaw !== null) {
+        if (typeof thumbRaw !== 'string') {
+          return null;
+        }
+        const t = thumbRaw.trim();
+        if (t.length > 0) {
+          thumbnailStorageUri = t;
+        }
+      }
       return {
         type: 'photo',
         value: {
           localUri,
           capturedAt,
+          ...(thumbnailStorageUri !== undefined ? { thumbnailStorageUri } : {}),
         },
       };
     }
@@ -134,12 +146,24 @@ export function sanitizeSymptomPromptAnswerEntry(
       if (capturedAt.length === 0 || !Number.isFinite(Date.parse(capturedAt))) {
         return null;
       }
+      const thumbRaw = videoRef.thumbnailStorageUri;
+      let thumbnailStorageUri: string | undefined;
+      if (thumbRaw !== undefined && thumbRaw !== null) {
+        if (typeof thumbRaw !== 'string') {
+          return null;
+        }
+        const t = thumbRaw.trim();
+        if (t.length > 0) {
+          thumbnailStorageUri = t;
+        }
+      }
       return {
         type: 'video',
         value: {
           localUri,
           durationMs,
           capturedAt,
+          ...(thumbnailStorageUri !== undefined ? { thumbnailStorageUri } : {}),
         },
       };
     }

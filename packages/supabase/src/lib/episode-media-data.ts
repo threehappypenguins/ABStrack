@@ -148,6 +148,32 @@ function normalizeStoragePath(path: string): string[] {
 }
 
 /**
+ * Normalizes optional `storage:…` / DB-shaped strings into deduped bucket-relative keys suitable for
+ * {@link removeEpisodeMediaStorageObjectPathsBestEffort} (same rules as listing from `episode_media`).
+ *
+ * @param rawCandidates - Primary and thumbnail refs from UI state or elsewhere.
+ * @returns Deduped paths safe for `episode-media` `remove`.
+ */
+export function normalizedEpisodeMediaBucketKeysFromHints(
+  rawCandidates: (string | null | undefined)[],
+): string[] {
+  const keys = new Set<string>();
+  for (const raw of rawCandidates) {
+    if (raw == null) {
+      continue;
+    }
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      continue;
+    }
+    for (const normalized of normalizeStoragePath(trimmed)) {
+      keys.add(normalized);
+    }
+  }
+  return [...keys];
+}
+
+/**
  * RFC 4122 UUID v4 for Storage object keys via Web Crypto `getRandomValues` (cryptographically
  * secure once engines/polyfills expose it — browsers and Node provide `crypto`; React Native needs
  * `react-native-get-random-values` imported first at app startup).
@@ -232,6 +258,21 @@ export function createEpisodeMediaObjectKey(args: {
     normalized && FILENAME_EXTENSION_SAFE.test(normalized) ? normalized : 'bin';
   const typePrefix = args.mediaType === 'photo' ? 'photo' : 'video';
   return `${args.userId}/${args.episodeId}/${typePrefix}-${randomUuidV4ForObjectKey()}.${ext}`;
+}
+
+/**
+ * Builds a private Storage object key for a JPEG thumbnail under `{user_id}/{episode_id}/…`.
+ * Thumbnails live in the same bucket and path-prefix model as primary media so Storage RLS applies
+ * uniformly.
+ *
+ * @param args - User and episode identifiers (must match the primary object’s prefix).
+ * @returns Object key for the `episode-media` bucket (always `.jpg`).
+ */
+export function createEpisodeMediaThumbnailObjectKey(args: {
+  userId: Uuid;
+  episodeId: Uuid;
+}): string {
+  return `${args.userId}/${args.episodeId}/thumb-${randomUuidV4ForObjectKey()}.jpg`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -450,6 +491,11 @@ async function deleteSupersededOpenPassEpisodeSymptomsAndTheirEpisodeMedia(
  *
  * @param client - Supabase client (RLS applies to Storage and table writes).
  * @param args - Upload payload + relational linkage identifiers.
+ * @param args.thumbnail - Optional second object (typically a JPEG) uploaded next to the primary
+ *   asset; when provided, {@link createEpisodeMediaThumbnailObjectKey} assigns the Storage path and
+ *   `episode_media.thumbnail_storage_key` is set. Omit only in tests or transitional callers —
+ *   production clients should supply a thumbnail for photo/video so grids can load small previews
+ *   with the same authorization boundary as the primary object.
  * @returns The created/updated `episode_media` row, or `{ ok: false }` on validation, Web Crypto,
  *   Storage, or database errors. Does not throw: missing `crypto`, Storage `upload` rejections, or
  *   thrown transport/SDK failures are returned as `{ ok: false }` (use `react-native-get-random-values` on RN).
@@ -465,6 +511,17 @@ export async function uploadConfirmedEpisodeMedia(
     contentType: string;
     extension: string;
     durationSeconds?: number | null;
+    /**
+     * JPEG or other preview bytes uploaded under {@link createEpisodeMediaThumbnailObjectKey}.
+     */
+    thumbnail?: {
+      body: EpisodeMediaUploadBody;
+      contentType: string;
+      /**
+       * Filename extension for MIME alignment (thumbnails are usually `jpg` / `image/jpeg`).
+       */
+      extension?: string;
+    };
     /**
      * When present, after a successful **new** `episode_media` insert, runs best-effort cleanup of
      * superseded open-pass symptom rows for this preset and their bucket objects (cleanup failures
@@ -487,6 +544,16 @@ export async function uploadConfirmedEpisodeMedia(
     };
   }
 
+  if (args.thumbnail != null && !args.thumbnail.contentType.trim()) {
+    return {
+      ok: false,
+      error: new PresetDataError(
+        'validation_error',
+        'Thumbnail content type is required.',
+      ),
+    };
+  }
+
   let objectKey: string;
   try {
     objectKey = createEpisodeMediaObjectKey({
@@ -497,6 +564,18 @@ export async function uploadConfirmedEpisodeMedia(
     });
   } catch (caught) {
     return { ok: false, error: toPresetDataError(caught) };
+  }
+
+  let thumbnailKey: string | null = null;
+  if (args.thumbnail != null) {
+    try {
+      thumbnailKey = createEpisodeMediaThumbnailObjectKey({
+        userId: args.userId,
+        episodeId: args.episodeId,
+      });
+    } catch (caught) {
+      return { ok: false, error: toPresetDataError(caught) };
+    }
   }
 
   const durationSeconds =
@@ -531,20 +610,51 @@ export async function uploadConfirmedEpisodeMedia(
     };
   }
 
+  if (args.thumbnail != null && thumbnailKey != null) {
+    const thumbContentType = args.thumbnail.contentType.trim();
+    let thumbUploaded;
+    try {
+      thumbUploaded = await client.storage
+        .from(EPISODE_MEDIA_BUCKET)
+        .upload(thumbnailKey, args.thumbnail.body, {
+          contentType: thumbContentType,
+          upsert: false,
+        });
+    } catch (caught) {
+      await removeBucketObjectsBestEffort(client, [objectKey]);
+      return {
+        ok: false,
+        error: mapEpisodeMediaStorageUploadError(caught),
+      };
+    }
+    if (thumbUploaded.error) {
+      await removeBucketObjectsBestEffort(client, [objectKey]);
+      return {
+        ok: false,
+        error: mapEpisodeMediaStorageUploadError(thumbUploaded.error),
+      };
+    }
+  }
+
   /** After Storage succeeds so ordering/UX reflect real completion, not queue start. */
   const uploadCompletedAt = new Date().toISOString();
+
+  const freshBlobKeys = [
+    objectKey,
+    ...(thumbnailKey != null ? [thumbnailKey] : []),
+  ];
 
   return wrap(async () => {
     const existing = await client
       .from('episode_media')
-      .select('id, storage_object_key')
+      .select('id, storage_object_key, thumbnail_storage_key')
       .eq('episode_id', args.episodeId)
       .eq('episode_symptom_id', args.episodeSymptomId)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
     if (existing.error) {
-      await removeBucketObjectsBestEffort(client, [objectKey]);
+      await removeBucketObjectsBestEffort(client, freshBlobKeys);
       return {
         data: null,
         error: existing.error,
@@ -555,10 +665,14 @@ export async function uploadConfirmedEpisodeMedia(
       const previousKeyRaw = existing.data.storage_object_key;
       const previousKey =
         typeof previousKeyRaw === 'string' ? previousKeyRaw.trim() : '';
+      const previousThumbRaw = existing.data.thumbnail_storage_key;
+      const previousThumb =
+        typeof previousThumbRaw === 'string' ? previousThumbRaw.trim() : '';
       const updated = await client
         .from('episode_media')
         .update({
           storage_object_key: objectKey,
+          thumbnail_storage_key: thumbnailKey,
           media_type: args.mediaType,
           duration_seconds: durationSeconds,
           upload_completed_at: uploadCompletedAt,
@@ -567,7 +681,7 @@ export async function uploadConfirmedEpisodeMedia(
         .select('*')
         .single();
       if (updated.error) {
-        await removeBucketObjectsBestEffort(client, [objectKey]);
+        await removeBucketObjectsBestEffort(client, freshBlobKeys);
         return {
           data: null,
           error: updated.error,
@@ -576,6 +690,13 @@ export async function uploadConfirmedEpisodeMedia(
       if (previousKey !== '' && previousKey !== objectKey) {
         const keysToRemove = normalizeStoragePath(previousKey).filter(
           (k) => k !== objectKey,
+        );
+        await removeBucketObjectsBestEffort(client, keysToRemove);
+      }
+      const nextThumb = thumbnailKey ?? '';
+      if (previousThumb !== '' && previousThumb !== nextThumb) {
+        const keysToRemove = normalizeStoragePath(previousThumb).filter(
+          (k) => k !== nextThumb,
         );
         await removeBucketObjectsBestEffort(client, keysToRemove);
       }
@@ -592,6 +713,7 @@ export async function uploadConfirmedEpisodeMedia(
         episode_id: args.episodeId,
         episode_symptom_id: args.episodeSymptomId,
         storage_object_key: objectKey,
+        thumbnail_storage_key: thumbnailKey,
         media_type: args.mediaType,
         duration_seconds: durationSeconds,
         upload_completed_at: uploadCompletedAt,
@@ -599,7 +721,7 @@ export async function uploadConfirmedEpisodeMedia(
       .select('*')
       .single();
     if (inserted.error) {
-      await removeBucketObjectsBestEffort(client, [objectKey]);
+      await removeBucketObjectsBestEffort(client, freshBlobKeys);
       return {
         data: null,
         error: inserted.error,
@@ -635,6 +757,7 @@ export type EpisodeMediaListRow = Pick<
   EpisodeMediaRow,
   | 'episode_symptom_id'
   | 'storage_object_key'
+  | 'thumbnail_storage_key'
   | 'upload_completed_at'
   | 'duration_seconds'
 >;
@@ -664,7 +787,7 @@ export async function listEpisodeMediaForEpisode(
     let query = client
       .from('episode_media')
       .select(
-        'episode_symptom_id, storage_object_key, upload_completed_at, duration_seconds',
+        'episode_symptom_id, storage_object_key, thumbnail_storage_key, upload_completed_at, duration_seconds',
       )
       .eq('episode_id', episodeId);
 
@@ -692,6 +815,57 @@ export async function listEpisodeMediaForEpisode(
  * @returns Normalized object paths suitable for `episode-media` `remove`, or an error when the
  *   metadata query fails.
  */
+/**
+ * Lists normalized bucket-relative paths for `episode_media` rows tied to specific symptom-step
+ * rows (primary + thumbnail keys). Used before deleting those symptom rows so Storage objects can be
+ * removed after Postgres CASCADE clears metadata.
+ *
+ * @param client - Supabase client (RLS applies).
+ * @param episodeId - `episodes.id`.
+ * @param episodeSymptomIds - `episode_symptoms.id` values whose media should be listed.
+ */
+export async function listEpisodeMediaBucketPathsForEpisodeSymptomIds(
+  client: AbstrackSupabaseClient,
+  episodeId: Uuid,
+  episodeSymptomIds: Uuid[],
+): Promise<PresetDataResult<string[]>> {
+  try {
+    if (episodeSymptomIds.length === 0) {
+      return { ok: true, data: [] };
+    }
+    const { data: rows, error } = await client
+      .from('episode_media')
+      .select('storage_object_key, thumbnail_storage_key')
+      .eq('episode_id', episodeId)
+      .in('episode_symptom_id', episodeSymptomIds);
+
+    if (error) {
+      return { ok: false, error: toPresetDataError(error) };
+    }
+
+    const keys = new Set<string>();
+    for (const raw of rows ?? []) {
+      const row = raw as {
+        storage_object_key: string;
+        thumbnail_storage_key: string | null;
+      };
+      for (const normalized of normalizeStoragePath(
+        row.storage_object_key ?? '',
+      )) {
+        keys.add(normalized);
+      }
+      for (const normalized of normalizeStoragePath(
+        row.thumbnail_storage_key ?? '',
+      )) {
+        keys.add(normalized);
+      }
+    }
+    return { ok: true, data: [...keys] };
+  } catch (caught) {
+    return { ok: false, error: toPresetDataError(caught) };
+  }
+}
+
 export async function listEpisodeMediaStorageObjectPathsForEpisode(
   client: AbstrackSupabaseClient,
   episodeId: Uuid,

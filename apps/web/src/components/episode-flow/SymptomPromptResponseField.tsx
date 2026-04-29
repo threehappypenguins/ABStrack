@@ -12,6 +12,8 @@ import {
   SYMPTOM_PROMPT_VIDEO_MAX_DURATION_MS,
   createDefaultSymptomPromptAnswer,
 } from '@abstrack/types';
+import { flushSync } from 'react-dom';
+import { ConfirmDialog } from '../symptom-presets/ConfirmDialog';
 
 const SYMPTOM_PROMPT_VIDEO_MAX_SECONDS = Math.round(
   SYMPTOM_PROMPT_VIDEO_MAX_DURATION_MS / 1000,
@@ -26,6 +28,18 @@ export type SymptomPromptResponseFieldProps = {
   answer: SymptomPromptAnswer | undefined;
   onChange: (next: SymptomPromptAnswer) => void;
   disabled: boolean;
+  /**
+   * Resolves `storage:…` refs to a short-lived HTTPS URL (private bucket): thumbnail or primary for
+   * photo preview, primary video for playback. Omit when not needed.
+   */
+  resolveEpisodeMediaPreviewUrl?: (
+    storageUri: string,
+  ) => Promise<string | null>;
+  /**
+   * Clears uploaded episode media for this step after the user confirms removal (deletes symptom
+   * row + Storage objects server-side).
+   */
+  onClearUploadedEpisodeMedia?: () => void;
 };
 
 type YesNoValue = boolean | null;
@@ -35,6 +49,70 @@ type CapturedPhotoValue = NonNullable<
 type CapturedVideoValue = NonNullable<
   Extract<SymptomPromptAnswer, { type: 'video' }>['value']
 >;
+
+function isPersistedEpisodeMediaRef(
+  value: {
+    localUri?: string | null;
+  } | null,
+): boolean {
+  const u = value?.localUri?.trim() ?? '';
+  return u.startsWith('storage:');
+}
+
+function preferredEpisodeMediaPreviewStorageUri(args: {
+  localUri: string;
+  thumbnailStorageUri?: string | null;
+}): string {
+  const thumb = args.thumbnailStorageUri?.trim();
+  if (thumb) {
+    return thumb;
+  }
+  return args.localUri.trim();
+}
+
+function hasEpisodePhotoMediaAnswer(answer: SymptomPromptAnswer): boolean {
+  if (answer.type !== 'photo') {
+    return false;
+  }
+  const v = answer.value;
+  return (
+    v !== null && typeof v.localUri === 'string' && v.localUri.trim().length > 0
+  );
+}
+
+function hasEpisodeVideoMediaAnswer(answer: SymptomPromptAnswer): boolean {
+  if (answer.type !== 'video') {
+    return false;
+  }
+  const v = answer.value;
+  return (
+    v !== null && typeof v.localUri === 'string' && v.localUri.trim().length > 0
+  );
+}
+
+/**
+ * Spinner and copy while a capture is uploading or a signed preview URL is loading.
+ *
+ * @param embedded - When true, omit outer border (caller provides the framed preview region).
+ */
+function SymptomEpisodeMediaPreviewLoadingPlaceholder({
+  embedded = false,
+}: {
+  embedded?: boolean;
+}) {
+  const outer = embedded
+    ? 'flex min-h-[280px] w-full flex-col items-center justify-center gap-3 px-4 py-8'
+    : 'flex min-h-[220px] w-full flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-app-border/90 bg-app-surface/60 p-8 dark:bg-black/20';
+  return (
+    <div className={outer} role="status" aria-live="polite" aria-busy="true">
+      <span
+        className="inline-block h-9 w-9 shrink-0 animate-spin rounded-full border-2 border-app-border border-t-app-primary"
+        aria-hidden="true"
+      />
+      <p className="text-center text-sm text-app-ink">Loading Preview…</p>
+    </div>
+  );
+}
 
 function SymptomYesNoRadiogroup({
   line,
@@ -291,11 +369,17 @@ function SymptomPhotoCaptureField({
   answer,
   onChange,
   disabled,
+  resolveEpisodeMediaPreviewUrl,
+  onClearUploadedEpisodeMedia,
 }: {
   line: PresetSymptomRow;
   answer: SymptomPromptAnswer;
   onChange: (next: SymptomPromptAnswer) => void;
   disabled: boolean;
+  resolveEpisodeMediaPreviewUrl?: (
+    storageUri: string,
+  ) => Promise<string | null>;
+  onClearUploadedEpisodeMedia?: () => void;
 }) {
   const streamRef = useRef<MediaStream | null>(null);
   const previewRef = useRef<HTMLVideoElement | null>(null);
@@ -313,6 +397,108 @@ function SymptomPhotoCaptureField({
 
   const captured = answer.type === 'photo' ? answer.value : null;
   const previewing = previewingCapture !== null;
+
+  const [committedPreviewUrl, setCommittedPreviewUrl] = useState<string | null>(
+    null,
+  );
+  const [committedPreviewError, setCommittedPreviewError] = useState<
+    string | null
+  >(null);
+  const [confirmRemoveCommittedOpen, setConfirmRemoveCommittedOpen] =
+    useState(false);
+  /**
+   * True on “Use photo” until parent `answer` includes the photo (covers the gap before React
+   * state reaches this component).
+   */
+  const [confirmUseTapPending, setConfirmUseTapPending] = useState(false);
+  /**
+   * Object URL of fetched preview bytes. Never assign the raw signed HTTPS URL to `<img src>`
+   * (second decode pass can flash a broken icon before paint).
+   */
+  const [photoReadyDisplaySrc, setPhotoReadyDisplaySrc] = useState<
+    string | null
+  >(null);
+
+  useLayoutEffect(() => {
+    if (confirmUseTapPending && hasEpisodePhotoMediaAnswer(answer)) {
+      setConfirmUseTapPending(false);
+    }
+  }, [answer, confirmUseTapPending]);
+
+  useEffect(() => {
+    if (!committedPreviewUrl) {
+      setPhotoReadyDisplaySrc(null);
+      return;
+    }
+    let cancelled = false;
+    const displayBlobUrlRef = { current: null as string | null };
+    void (async () => {
+      try {
+        const res = await fetch(committedPreviewUrl);
+        if (!res.ok) {
+          throw new Error('fetch failed');
+        }
+        const blob = await res.blob();
+        if (cancelled) {
+          return;
+        }
+        const u = URL.createObjectURL(blob);
+        if (cancelled) {
+          URL.revokeObjectURL(u);
+          return;
+        }
+        displayBlobUrlRef.current = u;
+        setPhotoReadyDisplaySrc(u);
+      } catch {
+        if (!cancelled) {
+          setCommittedPreviewUrl(null);
+          setCommittedPreviewError('Could not load preview. Try again.');
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (displayBlobUrlRef.current) {
+        URL.revokeObjectURL(displayBlobUrlRef.current);
+        displayBlobUrlRef.current = null;
+      }
+      setPhotoReadyDisplaySrc(null);
+    };
+  }, [committedPreviewUrl]);
+
+  useEffect(() => {
+    if (
+      !resolveEpisodeMediaPreviewUrl ||
+      !isPersistedEpisodeMediaRef(captured) ||
+      !captured?.localUri?.trim()
+    ) {
+      setCommittedPreviewUrl(null);
+      setCommittedPreviewError(null);
+      return;
+    }
+    const uri = preferredEpisodeMediaPreviewStorageUri({
+      localUri: captured.localUri,
+      thumbnailStorageUri: captured.thumbnailStorageUri,
+    });
+    let cancelled = false;
+    setCommittedPreviewError(null);
+    setCommittedPreviewUrl(null);
+    void resolveEpisodeMediaPreviewUrl(uri).then((url) => {
+      if (!cancelled) {
+        if (url) {
+          setCommittedPreviewUrl(url);
+        } else {
+          setCommittedPreviewError('Could not load preview. Try again.');
+        }
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [captured, resolveEpisodeMediaPreviewUrl]);
+
+  const showPhotoPreviewPanel =
+    confirmUseTapPending || hasEpisodePhotoMediaAnswer(answer);
 
   const stopAllTracks = () => {
     const stream = streamRef.current;
@@ -476,6 +662,55 @@ function SymptomPhotoCaptureField({
           {captured ? 'Take photo again' : 'Take photo'}
         </button>
       </div>
+      {showPhotoPreviewPanel ? (
+        <div className="relative min-h-[280px] w-full overflow-hidden rounded-xl border-2 border-dashed border-app-border/90 bg-black/5 dark:bg-black/20">
+          {!captured || !isPersistedEpisodeMediaRef(captured) ? (
+            <SymptomEpisodeMediaPreviewLoadingPlaceholder embedded />
+          ) : !resolveEpisodeMediaPreviewUrl ? (
+            <SymptomEpisodeMediaPreviewLoadingPlaceholder embedded />
+          ) : committedPreviewError ? (
+            <p
+              className="p-4 text-sm text-red-700 dark:text-red-300"
+              role="alert"
+            >
+              {committedPreviewError}
+            </p>
+          ) : !committedPreviewUrl ? (
+            <SymptomEpisodeMediaPreviewLoadingPlaceholder embedded />
+          ) : !photoReadyDisplaySrc ? (
+            <SymptomEpisodeMediaPreviewLoadingPlaceholder embedded />
+          ) : (
+            <img
+              src={photoReadyDisplaySrc}
+              alt={`${line.symptom_name} uploaded preview`}
+              className="mx-auto block max-h-80 w-full object-contain"
+            />
+          )}
+          {photoReadyDisplaySrc && onClearUploadedEpisodeMedia ? (
+            <button
+              type="button"
+              disabled={disabled}
+              aria-label={`Remove uploaded ${line.symptom_name} photo`}
+              className="absolute right-2 top-2 inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full border border-white/30 bg-black/65 text-2xl font-light leading-none text-white shadow-md backdrop-blur-sm hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring disabled:opacity-50"
+              onClick={() => setConfirmRemoveCommittedOpen(true)}
+            >
+              <span aria-hidden="true">×</span>
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      <ConfirmDialog
+        open={confirmRemoveCommittedOpen}
+        title="Remove uploaded photo?"
+        description="This deletes the saved photo and its thumbnail from this episode. You cannot undo this."
+        confirmLabel="Remove"
+        cancelLabel="Keep photo"
+        onClose={() => setConfirmRemoveCommittedOpen(false)}
+        onConfirm={() => {
+          onClearUploadedEpisodeMedia?.();
+          setConfirmRemoveCommittedOpen(false);
+        }}
+      />
       {pickerOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
           <div
@@ -578,6 +813,9 @@ function SymptomPhotoCaptureField({
                     aria-label={`Use ${line.symptom_name} photo`}
                     className="inline-flex min-h-[56px] flex-1 items-center justify-center rounded-xl bg-app-primary px-4 text-base font-semibold text-white hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
                     onClick={() => {
+                      flushSync(() => {
+                        setConfirmUseTapPending(true);
+                      });
                       onChange({
                         type: 'photo',
                         value: previewingCapture,
@@ -636,11 +874,17 @@ function SymptomVideoCaptureField({
   answer,
   onChange,
   disabled,
+  resolveEpisodeMediaPreviewUrl,
+  onClearUploadedEpisodeMedia,
 }: {
   line: PresetSymptomRow;
   answer: SymptomPromptAnswer;
   onChange: (next: SymptomPromptAnswer) => void;
   disabled: boolean;
+  resolveEpisodeMediaPreviewUrl?: (
+    storageUri: string,
+  ) => Promise<string | null>;
+  onClearUploadedEpisodeMedia?: () => void;
 }) {
   const streamRef = useRef<MediaStream | null>(null);
   const previewRef = useRef<HTMLVideoElement | null>(null);
@@ -662,6 +906,106 @@ function SymptomVideoCaptureField({
 
   const captured = answer.type === 'video' ? answer.value : null;
   const previewing = previewingCapture !== null;
+
+  const [committedPreviewUrl, setCommittedPreviewUrl] = useState<string | null>(
+    null,
+  );
+  const [committedPreviewError, setCommittedPreviewError] = useState<
+    string | null
+  >(null);
+  const [confirmRemoveCommittedOpen, setConfirmRemoveCommittedOpen] =
+    useState(false);
+  /**
+   * True on “Use video” until parent `answer` includes the video (covers the gap before React
+   * state reaches this component).
+   */
+  const [confirmVideoUseTapPending, setConfirmVideoUseTapPending] =
+    useState(false);
+  /**
+   * Object URL of fetched video bytes — same rationale as photo: avoid mounting the signed HTTPS
+   * URL on `<video src>` (can briefly show a broken control strip before decode).
+   */
+  const [videoReadyDisplaySrc, setVideoReadyDisplaySrc] = useState<
+    string | null
+  >(null);
+
+  useLayoutEffect(() => {
+    if (confirmVideoUseTapPending && hasEpisodeVideoMediaAnswer(answer)) {
+      setConfirmVideoUseTapPending(false);
+    }
+  }, [answer, confirmVideoUseTapPending]);
+
+  useEffect(() => {
+    if (!committedPreviewUrl) {
+      setVideoReadyDisplaySrc(null);
+      return;
+    }
+    let cancelled = false;
+    const displayBlobUrlRef = { current: null as string | null };
+    void (async () => {
+      try {
+        const res = await fetch(committedPreviewUrl);
+        if (!res.ok) {
+          throw new Error('fetch failed');
+        }
+        const blob = await res.blob();
+        if (cancelled) {
+          return;
+        }
+        const u = URL.createObjectURL(blob);
+        if (cancelled) {
+          URL.revokeObjectURL(u);
+          return;
+        }
+        displayBlobUrlRef.current = u;
+        setVideoReadyDisplaySrc(u);
+      } catch {
+        if (!cancelled) {
+          setCommittedPreviewUrl(null);
+          setCommittedPreviewError('Could not load video. Try again.');
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (displayBlobUrlRef.current) {
+        URL.revokeObjectURL(displayBlobUrlRef.current);
+        displayBlobUrlRef.current = null;
+      }
+      setVideoReadyDisplaySrc(null);
+    };
+  }, [committedPreviewUrl]);
+
+  useEffect(() => {
+    if (
+      !resolveEpisodeMediaPreviewUrl ||
+      !isPersistedEpisodeMediaRef(captured) ||
+      !captured?.localUri?.trim()
+    ) {
+      setCommittedPreviewUrl(null);
+      setCommittedPreviewError(null);
+      return;
+    }
+    const uri = captured.localUri.trim();
+    let cancelled = false;
+    setCommittedPreviewError(null);
+    setCommittedPreviewUrl(null);
+    void resolveEpisodeMediaPreviewUrl(uri).then((url) => {
+      if (!cancelled) {
+        if (url) {
+          setCommittedPreviewUrl(url);
+        } else {
+          setCommittedPreviewError('Could not load video. Try again.');
+        }
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [captured, resolveEpisodeMediaPreviewUrl]);
+
+  const showVideoPreviewPanel =
+    confirmVideoUseTapPending || hasEpisodeVideoMediaAnswer(answer);
 
   const clearAutoStop = () => {
     if (autoStopTimerRef.current !== null) {
@@ -931,6 +1275,63 @@ function SymptomVideoCaptureField({
             : `Record video (max ${SYMPTOM_PROMPT_VIDEO_MAX_SECONDS}s)`}
         </button>
       </div>
+      {showVideoPreviewPanel ? (
+        <div className="relative min-h-[280px] w-full overflow-hidden rounded-xl border-2 border-dashed border-app-border/90 bg-black/5 dark:bg-black/20">
+          {!captured || !isPersistedEpisodeMediaRef(captured) ? (
+            <SymptomEpisodeMediaPreviewLoadingPlaceholder embedded />
+          ) : !resolveEpisodeMediaPreviewUrl ? (
+            <SymptomEpisodeMediaPreviewLoadingPlaceholder embedded />
+          ) : committedPreviewError ? (
+            <p
+              className="p-4 text-sm text-red-700 dark:text-red-300"
+              role="alert"
+            >
+              {committedPreviewError}
+            </p>
+          ) : !committedPreviewUrl ? (
+            <SymptomEpisodeMediaPreviewLoadingPlaceholder embedded />
+          ) : !videoReadyDisplaySrc ? (
+            <SymptomEpisodeMediaPreviewLoadingPlaceholder embedded />
+          ) : (
+            <div className="rounded-lg bg-black p-2">
+              <div
+                className="w-full overflow-hidden rounded-lg bg-black"
+                style={{ aspectRatio: previewAspectRatio }}
+              >
+                <video
+                  aria-label={`${line.symptom_name} uploaded video`}
+                  className="h-full w-full bg-black object-contain"
+                  src={videoReadyDisplaySrc}
+                  controls
+                />
+              </div>
+            </div>
+          )}
+          {videoReadyDisplaySrc && onClearUploadedEpisodeMedia ? (
+            <button
+              type="button"
+              disabled={disabled}
+              aria-label={`Remove uploaded ${line.symptom_name} video`}
+              className="absolute right-2 top-2 inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full border border-white/30 bg-black/65 text-2xl font-light leading-none text-white shadow-md backdrop-blur-sm hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring disabled:opacity-50"
+              onClick={() => setConfirmRemoveCommittedOpen(true)}
+            >
+              <span aria-hidden="true">×</span>
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      <ConfirmDialog
+        open={confirmRemoveCommittedOpen}
+        title="Remove uploaded video?"
+        description="This deletes the saved video and its thumbnail from this episode. You cannot undo this."
+        confirmLabel="Remove"
+        cancelLabel="Keep video"
+        onClose={() => setConfirmRemoveCommittedOpen(false)}
+        onConfirm={() => {
+          onClearUploadedEpisodeMedia?.();
+          setConfirmRemoveCommittedOpen(false);
+        }}
+      />
       {recorderOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
           <div
@@ -1048,6 +1449,9 @@ function SymptomVideoCaptureField({
                     aria-label={`Use ${line.symptom_name} video`}
                     className="inline-flex min-h-[56px] flex-1 items-center justify-center rounded-xl bg-app-primary px-4 text-base font-semibold text-white hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
                     onClick={() => {
+                      flushSync(() => {
+                        setConfirmVideoUseTapPending(true);
+                      });
                       onChange({
                         type: 'video',
                         value: previewingCapture,
@@ -1109,6 +1513,8 @@ export function SymptomPromptResponseField({
   answer,
   onChange,
   disabled,
+  resolveEpisodeMediaPreviewUrl,
+  onClearUploadedEpisodeMedia,
 }: SymptomPromptResponseFieldProps) {
   const effective =
     answer ?? createDefaultSymptomPromptAnswer(line.response_type);
@@ -1160,6 +1566,8 @@ export function SymptomPromptResponseField({
           answer={effective}
           onChange={onChange}
           disabled={disabled}
+          resolveEpisodeMediaPreviewUrl={resolveEpisodeMediaPreviewUrl}
+          onClearUploadedEpisodeMedia={onClearUploadedEpisodeMedia}
         />
       );
     case 'video':
@@ -1169,6 +1577,8 @@ export function SymptomPromptResponseField({
           answer={effective}
           onChange={onChange}
           disabled={disabled}
+          resolveEpisodeMediaPreviewUrl={resolveEpisodeMediaPreviewUrl}
+          onClearUploadedEpisodeMedia={onClearUploadedEpisodeMedia}
         />
       );
     default: {

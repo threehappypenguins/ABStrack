@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { EpisodeSymptomRow } from './types.js';
 import {
   canonicalOpenPassEpisodeSymptomRowsByPresetLine,
+  episodeMediaStoragePathHintsFromPromptAnswer,
   episodeSymptomRowToPromptAnswer,
   episodeSymptomRowsToAnswersMap,
   symptomPromptAnswerToResponseColumns,
@@ -19,6 +20,21 @@ const baseRow = {
 } satisfies Partial<EpisodeSymptomRow>;
 
 describe('episode-symptom mapping', () => {
+  it('episodeMediaStoragePathHintsFromPromptAnswer collects primary and thumbnail storage refs', () => {
+    expect(
+      episodeMediaStoragePathHintsFromPromptAnswer({
+        type: 'video',
+        value: {
+          localUri: 'storage:a/b/video.webm',
+          thumbnailStorageUri: 'storage:a/b/thumb.jpg',
+          durationMs: 3000,
+          capturedAt: '2026-04-18T12:00:00.000Z',
+        },
+      }),
+    ).toEqual(['storage:a/b/video.webm', 'storage:a/b/thumb.jpg']);
+    expect(episodeMediaStoragePathHintsFromPromptAnswer(undefined)).toEqual([]);
+  });
+
   it('episodeSymptomRowToPromptAnswer maps yes_no / severity / free_text', () => {
     expect(
       episodeSymptomRowToPromptAnswer({
