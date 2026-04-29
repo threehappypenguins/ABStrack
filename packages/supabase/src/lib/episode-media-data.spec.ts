@@ -225,6 +225,130 @@ describe('uploadConfirmedEpisodeMedia', () => {
     expect(symptomDelete.in).toHaveBeenCalledWith('id', ['sx-old']);
   });
 
+  it('still returns ok: true with inserted row when supersede cleanup fails', async () => {
+    const upload = vi.fn(async () => ({ error: null }));
+    const remove = vi.fn(async () => ({ data: [], error: null }));
+    const maybeSingle = vi.fn(async () => ({ data: null, error: null }));
+    const insertedRow = {
+      id: 'em-new',
+      user_id: 'u1',
+      episode_id: 'ep1',
+      episode_symptom_id: 'sx-new',
+      storage_object_key: 'u1/ep1/photo-abc.jpg',
+      thumbnail_storage_key: null,
+      media_type: 'photo',
+      duration_seconds: null,
+      upload_completed_at: '2020-01-01T00:00:00Z',
+      created_at: '2020-01-01T00:00:00Z',
+      updated_at: '2020-01-01T00:00:00Z',
+    };
+    const single = vi.fn(async () => ({
+      data: insertedRow,
+      error: null,
+    }));
+
+    const symptomQuery = {
+      eq: vi.fn(function (this: typeof symptomQuery) {
+        return this;
+      }),
+      neq: vi.fn(function (this: typeof symptomQuery) {
+        return this;
+      }),
+      gt: vi.fn(function (this: typeof symptomQuery) {
+        return this;
+      }),
+      then: (
+        onFulfilled: (v: { data: unknown; error: unknown }) => unknown,
+        onRejected?: (e: unknown) => unknown,
+      ) =>
+        Promise.resolve({
+          data: [{ id: 'sx-old' }],
+          error: null,
+        }).then(onFulfilled, onRejected),
+    };
+
+    const mediaSelectForObsolete = {
+      in: vi.fn(async () => ({
+        data: [
+          {
+            storage_object_key: 'u1/ep1/photo-old.jpg',
+            thumbnail_storage_key: null,
+          },
+        ],
+        error: null,
+      })),
+    };
+
+    const symptomDelete = {
+      in: vi.fn(async () => ({
+        error: { message: 'delete superseded failed' },
+      })),
+    };
+
+    const client = {
+      storage: {
+        from: vi.fn(() => ({
+          upload,
+          remove,
+        })),
+      },
+      from: vi.fn((table: string) => {
+        if (table === 'episode_media') {
+          return {
+            select: vi.fn((cols: string) => {
+              if (cols === 'storage_object_key, thumbnail_storage_key') {
+                return mediaSelectForObsolete;
+              }
+              return {
+                eq: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    order: vi.fn(() => ({
+                      limit: vi.fn(() => ({
+                        maybeSingle,
+                      })),
+                    })),
+                  })),
+                })),
+              };
+            }),
+            insert: vi.fn(() => ({
+              select: vi.fn(() => ({
+                single,
+              })),
+            })),
+          };
+        }
+        if (table === 'episode_symptoms') {
+          return {
+            select: vi.fn(() => symptomQuery),
+            delete: vi.fn(() => symptomDelete),
+          };
+        }
+        throw new Error(`unexpected table ${table}`);
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await uploadConfirmedEpisodeMedia(client, {
+      userId: 'u1',
+      episodeId: 'ep1',
+      episodeSymptomId: 'sx-new',
+      mediaType: 'photo',
+      body: 'blob',
+      contentType: 'image/jpeg',
+      extension: 'jpg',
+      supersedeOpenPassPresetSymptomAnswers: {
+        presetSymptomId: 'preset-line-1',
+        lastPostMarkerStepCompletedAt: '2019-12-01T00:00:00Z',
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toEqual(insertedRow);
+    }
+    expect(symptomDelete.in).toHaveBeenCalled();
+  });
+
   it('returns ok: false without calling Storage when Web Crypto is unavailable', async () => {
     vi.stubGlobal('crypto', undefined);
     try {

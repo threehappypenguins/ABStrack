@@ -285,7 +285,9 @@ async function removeBucketObjectsBestEffort(
  *
  * @param client - Supabase client (RLS applies).
  * @param args - Episode, preset line, canonical symptom row id, and pass boundary (or null).
- * @returns PostgREST-shaped `{ data, error }` for use inside `wrap`.
+ * @returns PostgREST-shaped `{ data, error }` for use inside `wrap`. When called from
+ * `uploadConfirmedEpisodeMedia`, failures are treated as best-effort (not returned to the caller as
+ * upload failure).
  */
 async function deleteSupersededOpenPassEpisodeSymptomsAndTheirEpisodeMedia(
   client: AbstrackSupabaseClient,
@@ -369,9 +371,11 @@ async function deleteSupersededOpenPassEpisodeSymptomsAndTheirEpisodeMedia(
  * sync. If a row already exists for this `episode_symptom_id`, it is updated in place.
  *
  * When `supersedeOpenPassPresetSymptomAnswers` is set and this call **inserts** a new
- * `episode_media` row (retake after “record again” / “take photo again”), older open-pass
- * `episode_symptoms` rows for that preset line are removed and their Storage objects deleted so
- * prior uploads are not orphaned.
+ * `episode_media` row (retake after “record again” / “take photo again”), a **best-effort** pass
+ * removes older open-pass `episode_symptoms` rows for that preset line and deletes their Storage
+ * objects so prior uploads are less likely to orphan. Cleanup errors are **not** surfaced as
+ * `{ ok: false }` once the new row exists: the primary outcome remains success so callers still
+ * patch UI to `storage:...` and avoid duplicate retries that would add more blobs/rows.
  *
  * @param client - Supabase client (RLS applies to Storage and table writes).
  * @param args - Upload payload + relational linkage identifiers.
@@ -391,8 +395,9 @@ export async function uploadConfirmedEpisodeMedia(
     extension: string;
     durationSeconds?: number | null;
     /**
-     * When present, after a successful **new** `episode_media` insert, deletes superseded open-pass
-     * symptom rows for this preset and their bucket objects.
+     * When present, after a successful **new** `episode_media` insert, runs best-effort cleanup of
+     * superseded open-pass symptom rows for this preset and their bucket objects (cleanup failures
+     * do not fail the upload result).
      */
     supersedeOpenPassPresetSymptomAnswers?: {
       presetSymptomId: Uuid;
@@ -526,23 +531,16 @@ export async function uploadConfirmedEpisodeMedia(
 
     const supersede = args.supersedeOpenPassPresetSymptomAnswers;
     if (supersede) {
-      const cleaned =
-        await deleteSupersededOpenPassEpisodeSymptomsAndTheirEpisodeMedia(
-          client,
-          {
-            episodeId: args.episodeId,
-            presetSymptomId: supersede.presetSymptomId,
-            keepEpisodeSymptomId: args.episodeSymptomId,
-            lastPostMarkerStepCompletedAt:
-              supersede.lastPostMarkerStepCompletedAt,
-          },
-        );
-      if (cleaned.error) {
-        return {
-          data: null,
-          error: cleaned.error,
-        };
-      }
+      await deleteSupersededOpenPassEpisodeSymptomsAndTheirEpisodeMedia(
+        client,
+        {
+          episodeId: args.episodeId,
+          presetSymptomId: supersede.presetSymptomId,
+          keepEpisodeSymptomId: args.episodeSymptomId,
+          lastPostMarkerStepCompletedAt:
+            supersede.lastPostMarkerStepCompletedAt,
+        },
+      );
     }
 
     return {
