@@ -404,6 +404,12 @@ function SymptomPhotoCaptureField({
   const [committedPreviewError, setCommittedPreviewError] = useState<
     string | null
   >(null);
+  /**
+   * Bumped when the user retries preview load so resolve/fetch effects rerun even if `captured` and
+   * the signed URL string are unchanged.
+   */
+  const [photoPreviewRetryGeneration, setPhotoPreviewRetryGeneration] =
+    useState(0);
   const [confirmRemoveCommittedOpen, setConfirmRemoveCommittedOpen] =
     useState(false);
   /**
@@ -430,41 +436,56 @@ function SymptomPhotoCaptureField({
       setPhotoReadyDisplaySrc(null);
       return;
     }
-    let cancelled = false;
+    const ac = new AbortController();
+    const { signal } = ac;
     const displayBlobUrlRef = { current: null as string | null };
     void (async () => {
       try {
-        const res = await fetch(committedPreviewUrl);
+        const res = await fetch(committedPreviewUrl, { signal });
         if (!res.ok) {
           throw new Error('fetch failed');
         }
         const blob = await res.blob();
-        if (cancelled) {
+        if (signal.aborted) {
           return;
         }
         const u = URL.createObjectURL(blob);
-        if (cancelled) {
+        if (signal.aborted) {
           URL.revokeObjectURL(u);
           return;
         }
         displayBlobUrlRef.current = u;
-        setPhotoReadyDisplaySrc(u);
-      } catch {
-        if (!cancelled) {
-          setCommittedPreviewUrl(null);
-          setCommittedPreviewError('Could not load preview. Try again.');
+        if (!signal.aborted) {
+          setCommittedPreviewError(null);
+          setPhotoReadyDisplaySrc(u);
+        } else {
+          URL.revokeObjectURL(u);
+          displayBlobUrlRef.current = null;
         }
+      } catch (caught: unknown) {
+        if (signal.aborted) {
+          return;
+        }
+        const isAbortError =
+          (typeof DOMException !== 'undefined' &&
+            caught instanceof DOMException &&
+            caught.name === 'AbortError') ||
+          (caught instanceof Error && caught.name === 'AbortError');
+        if (isAbortError) {
+          return;
+        }
+        setCommittedPreviewError('Could not load preview. Try again.');
       }
     })();
     return () => {
-      cancelled = true;
+      ac.abort();
       if (displayBlobUrlRef.current) {
         URL.revokeObjectURL(displayBlobUrlRef.current);
         displayBlobUrlRef.current = null;
       }
       setPhotoReadyDisplaySrc(null);
     };
-  }, [committedPreviewUrl]);
+  }, [committedPreviewUrl, photoPreviewRetryGeneration]);
 
   useEffect(() => {
     if (
@@ -501,7 +522,7 @@ function SymptomPhotoCaptureField({
     return () => {
       cancelled = true;
     };
-  }, [captured, resolveEpisodeMediaPreviewUrl]);
+  }, [captured, resolveEpisodeMediaPreviewUrl, photoPreviewRetryGeneration]);
 
   const showPhotoPreviewPanel =
     confirmUseTapPending || hasEpisodePhotoMediaAnswer(answer);
@@ -675,12 +696,23 @@ function SymptomPhotoCaptureField({
           ) : !resolveEpisodeMediaPreviewUrl ? (
             <SymptomEpisodeMediaPreviewLoadingPlaceholder embedded />
           ) : committedPreviewError ? (
-            <p
-              className="p-4 text-sm text-red-700 dark:text-red-300"
-              role="alert"
-            >
-              {committedPreviewError}
-            </p>
+            <div className="flex flex-col gap-3 p-4" role="alert">
+              <p className="text-sm text-red-700 dark:text-red-300">
+                {committedPreviewError}
+              </p>
+              <button
+                type="button"
+                disabled={disabled}
+                aria-label={`Retry loading ${line.symptom_name} photo preview`}
+                className="inline-flex min-h-[44px] max-w-xs items-center justify-center self-start rounded-lg border border-app-border bg-app-surface px-4 text-sm font-semibold text-app-ink hover:bg-app-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={() => {
+                  setCommittedPreviewError(null);
+                  setPhotoPreviewRetryGeneration((g) => g + 1);
+                }}
+              >
+                Try again
+              </button>
+            </div>
           ) : !committedPreviewUrl ? (
             <SymptomEpisodeMediaPreviewLoadingPlaceholder embedded />
           ) : !photoReadyDisplaySrc ? (

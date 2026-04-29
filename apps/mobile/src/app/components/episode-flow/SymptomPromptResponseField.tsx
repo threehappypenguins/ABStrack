@@ -192,6 +192,14 @@ export function SymptomPromptResponseField({
     string | null
   >(null);
   /**
+   * Incremented when the user retries preview resolution so the signed-URL effect reruns without
+   * changing `effective` (e.g. after network or resolver errors).
+   */
+  const [
+    committedMediaPreviewRetryGeneration,
+    setCommittedMediaPreviewRetryGeneration,
+  ] = useState(0);
+  /**
    * True on “Use photo” / “Use video” until parent `answer` includes the capture (covers the gap
    * before React state reaches this component).
    */
@@ -317,7 +325,12 @@ export function SymptomPromptResponseField({
     return () => {
       cancelled = true;
     };
-  }, [effective, line.response_type, resolveEpisodeMediaPreviewUrl]);
+  }, [
+    effective,
+    line.response_type,
+    resolveEpisodeMediaPreviewUrl,
+    committedMediaPreviewRetryGeneration,
+  ]);
 
   useLayoutEffect(() => {
     if (confirmPhotoUseTapPending && hasEpisodePhotoMediaAnswer(effective)) {
@@ -620,13 +633,34 @@ export function SymptomPromptResponseField({
                   </Text>
                 </View>
               ) : committedMediaPreviewError ? (
-                <Text
-                  accessibilityRole="alert"
-                  className="p-4 text-sm text-red-700 dark:text-red-300"
-                  maxFontSizeMultiplier={2}
+                <View
+                  className="gap-3 px-4 py-4"
+                  style={{ minHeight: EPISODE_MEDIA_PREVIEW_SLOT_HEIGHT_DP }}
                 >
-                  {committedMediaPreviewError}
-                </Text>
+                  <Text
+                    accessibilityRole="alert"
+                    className="text-sm text-red-700 dark:text-red-300"
+                    maxFontSizeMultiplier={2}
+                  >
+                    {committedMediaPreviewError}
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Retry loading ${line.symptom_name} photo preview`}
+                    accessibilityState={{ disabled }}
+                    disabled={disabled}
+                    onPress={() => {
+                      setCommittedMediaPreviewError(null);
+                      setCommittedMediaPreviewRetryGeneration((g) => g + 1);
+                    }}
+                    style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                    className="max-w-[220px] items-center justify-center self-start rounded-xl border border-app-border px-4 py-3 active:opacity-90 dark:border-app-border-dark"
+                  >
+                    <Text className={`text-[17px] font-semibold ${nw.textInk}`}>
+                      Try again
+                    </Text>
+                  </Pressable>
+                </View>
               ) : !committedMediaPreviewUrl ? (
                 <View
                   accessibilityLabel="Loading preview"
@@ -988,13 +1022,34 @@ export function SymptomPromptResponseField({
                   </Text>
                 </View>
               ) : committedMediaPreviewError ? (
-                <Text
-                  accessibilityRole="alert"
-                  className="p-4 text-sm text-red-700 dark:text-red-300"
-                  maxFontSizeMultiplier={2}
+                <View
+                  className="gap-3 px-4 py-4"
+                  style={{ minHeight: EPISODE_MEDIA_PREVIEW_SLOT_HEIGHT_DP }}
                 >
-                  {committedMediaPreviewError}
-                </Text>
+                  <Text
+                    accessibilityRole="alert"
+                    className="text-sm text-red-700 dark:text-red-300"
+                    maxFontSizeMultiplier={2}
+                  >
+                    {committedMediaPreviewError}
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Retry loading ${line.symptom_name} video preview`}
+                    accessibilityState={{ disabled }}
+                    disabled={disabled}
+                    onPress={() => {
+                      setCommittedMediaPreviewError(null);
+                      setCommittedMediaPreviewRetryGeneration((g) => g + 1);
+                    }}
+                    style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                    className="max-w-[220px] items-center justify-center self-start rounded-xl border border-app-border px-4 py-3 active:opacity-90 dark:border-app-border-dark"
+                  >
+                    <Text className={`text-[17px] font-semibold ${nw.textInk}`}>
+                      Try again
+                    </Text>
+                  </Pressable>
+                </View>
               ) : !committedMediaPreviewUrl ? (
                 <View
                   accessibilityLabel="Loading video preview"

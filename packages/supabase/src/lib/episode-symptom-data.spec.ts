@@ -287,4 +287,56 @@ describe('deleteCurrentPassEpisodeSymptomAnswer', () => {
       'es-row-1',
     ]);
   });
+
+  it('still deletes episode_symptoms when episode_media listing errors', async () => {
+    const eqPreset = vi.fn(async () => ({ error: null }));
+    const eqEpisode = vi.fn(() => ({
+      eq: eqPreset,
+    }));
+    const del = vi.fn(() => ({
+      eq: eqEpisode,
+    }));
+    const selEqPreset = vi.fn(async () => ({
+      data: [{ id: 'es-row-1' }],
+      error: null,
+    }));
+    const selEqEpisode = vi.fn(() => ({
+      eq: selEqPreset,
+    }));
+    const select = vi.fn(() => ({
+      eq: selEqEpisode,
+    }));
+    const mediaIn = vi.fn(async () => ({
+      data: null,
+      error: { message: 'transient read error' },
+    }));
+    const mediaEqEpisode = vi.fn(() => ({
+      in: mediaIn,
+    }));
+    const mediaSelect = vi.fn(() => ({
+      eq: mediaEqEpisode,
+    }));
+    const client = {
+      from: vi.fn((table: string) => {
+        if (table === 'episode_media') {
+          return { select: mediaSelect };
+        }
+        expect(table).toBe('episode_symptoms');
+        return {
+          select,
+          delete: del,
+        };
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await deleteCurrentPassEpisodeSymptomAnswer(client, {
+      episodeId: 'ep-1',
+      presetSymptomId: 'ps-line-1',
+      lastPostMarkerStepCompletedAt: null,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(del).toHaveBeenCalledTimes(1);
+    expect(mediaIn).toHaveBeenCalledWith('episode_symptom_id', ['es-row-1']);
+  });
 });

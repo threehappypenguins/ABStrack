@@ -131,8 +131,9 @@ export async function listEpisodeSymptomsForEpisode(
  * @param args.lastPostMarkerStepCompletedAt - `episodes.post_marker_step_completed_at` (or null
  *   for the first pass before any “Save and continue” on episode details).
  * @param args.episodeMediaPathHints - Optional primary/thumbnail `storage:…` strings from the client;
- *   merged with keys listed from `episode_media` so Storage cleanup still runs when metadata listing
- *   misses rows (e.g. timing) or normalization differs by asset type.
+ *   merged with keys listed from `episode_media` when that read succeeds. Listing is best-effort for
+ *   Storage paths only: if `episode_media` read fails, symptom rows are still deleted and cleanup
+ *   uses hints only (or is skipped when there are no hints).
  */
 export async function deleteCurrentPassEpisodeSymptomAnswer(
   client: AbstrackSupabaseClient,
@@ -174,9 +175,7 @@ export async function deleteCurrentPassEpisodeSymptomAnswer(
       episodeId,
       symptomIds,
     );
-    if (!pathsListed.ok) {
-      return { data: null, error: pathsListed.error };
-    }
+    const pathsFromEpisodeMedia = pathsListed.ok ? pathsListed.data : [];
 
     let delQuery = client
       .from('episode_symptoms')
@@ -194,7 +193,7 @@ export async function deleteCurrentPassEpisodeSymptomAnswer(
       episodeMediaPathHints ?? [],
     );
     const mergedPaths = [
-      ...new Set<string>([...pathsListed.data, ...hintKeys]),
+      ...new Set<string>([...pathsFromEpisodeMedia, ...hintKeys]),
     ];
 
     if (!delError && mergedPaths.length > 0) {
