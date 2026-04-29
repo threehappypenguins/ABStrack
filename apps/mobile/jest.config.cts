@@ -24,6 +24,7 @@ module.exports = {
   setupFiles: [
     '<rootDir>/src/jest-expo-os-setup.js',
     ...(jestExpo.setupFiles ?? []),
+    '<rootDir>/src/jest-image-loader-turbo-mock.js',
   ],
   moduleFileExtensions: ['ts', 'js', 'html', 'tsx', 'jsx'],
   setupFilesAfterEnv: [

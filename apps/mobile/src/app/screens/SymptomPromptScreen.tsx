@@ -5,7 +5,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
+import { Alert, Image, Pressable, ScrollView, Text, View } from 'react-native';
 import { File as ExpoFile } from 'expo-file-system';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import * as VideoThumbnails from 'expo-video-thumbnails';
@@ -72,8 +72,41 @@ const VIDEO_MAX_DURATION_SECONDS = Math.floor(
   SYMPTOM_PROMPT_VIDEO_MAX_DURATION_MS / 1000,
 );
 
-/** Long edge for JPEG thumbnails stored beside primary objects in `episode-media`. */
+/** Long edge (px) for JPEG thumbnails stored beside primary objects in `episode-media`. */
 const SYMPTOM_MEDIA_THUMB_MAX_EDGE_PX = 480;
+
+/**
+ * Reads intrinsic pixel dimensions for a local image URI (used to cap the **longer** edge when
+ * resizing thumbnails). Uses the promise form of {@link Image.getSize} so tests/native mocks stay
+ * aligned with RN’s `NativeImageLoader*.getSize` contract.
+ *
+ * @param uri - `file://` or other URI accepted by {@link Image.getSize}.
+ * @returns `{ width, height }` when available, otherwise `null` (caller may fall back to width-only resize).
+ */
+async function getImagePixelSize(
+  uri: string,
+): Promise<{ width: number; height: number } | null> {
+  try {
+    const { width, height } = await Image.getSize(uri);
+    if (width > 0 && height > 0) {
+      return { width, height };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function thumbnailResizeActionForLongEdge(
+  width: number,
+  height: number,
+  maxEdgePx: number,
+): { resize: { width?: number; height?: number } }[] {
+  if (height > width) {
+    return [{ resize: { height: maxEdgePx } }];
+  }
+  return [{ resize: { width: maxEdgePx } }];
+}
 
 /**
  * Builds reduced JPEG bytes for a lightweight thumbnail object (same bucket/prefix as primary).
@@ -85,12 +118,17 @@ async function buildMobileEpisodeMediaThumbnail(
   answer: SymptomPromptAnswer,
   mediaUri: string,
 ): Promise<ArrayBuffer> {
+  const maxEdge = SYMPTOM_MEDIA_THUMB_MAX_EDGE_PX;
   if (answer.type === 'photo') {
-    const result = await manipulateAsync(
-      mediaUri,
-      [{ resize: { width: SYMPTOM_MEDIA_THUMB_MAX_EDGE_PX } }],
-      { compress: 0.82, format: SaveFormat.JPEG },
-    );
+    const size = await getImagePixelSize(mediaUri);
+    const actions =
+      size !== null
+        ? thumbnailResizeActionForLongEdge(size.width, size.height, maxEdge)
+        : [{ resize: { width: maxEdge } }];
+    const result = await manipulateAsync(mediaUri, actions, {
+      compress: 0.82,
+      format: SaveFormat.JPEG,
+    });
     return await new ExpoFile(result.uri).arrayBuffer();
   }
   if (answer.type === 'video') {
@@ -100,11 +138,15 @@ async function buildMobileEpisodeMediaThumbnail(
         time: 500,
       },
     );
-    const result = await manipulateAsync(
-      frameUri,
-      [{ resize: { width: SYMPTOM_MEDIA_THUMB_MAX_EDGE_PX } }],
-      { compress: 0.82, format: SaveFormat.JPEG },
-    );
+    const size = await getImagePixelSize(frameUri);
+    const actions =
+      size !== null
+        ? thumbnailResizeActionForLongEdge(size.width, size.height, maxEdge)
+        : [{ resize: { width: maxEdge } }];
+    const result = await manipulateAsync(frameUri, actions, {
+      compress: 0.82,
+      format: SaveFormat.JPEG,
+    });
     return await new ExpoFile(result.uri).arrayBuffer();
   }
   throw new Error('Thumbnail encoding requires a photo or video answer.');

@@ -291,19 +291,29 @@ export function SymptomPromptResponseField({
     let cancelled = false;
     setCommittedMediaPreviewError(null);
     setCommittedMediaPreviewUrl(null);
-    void resolveEpisodeMediaPreviewUrl(uri).then((url) => {
-      if (!cancelled) {
-        if (url) {
-          setCommittedMediaPreviewUrl(url);
-        } else {
+    void resolveEpisodeMediaPreviewUrl(uri)
+      .then((url) => {
+        if (!cancelled) {
+          if (url) {
+            setCommittedMediaPreviewUrl(url);
+          } else {
+            setCommittedMediaPreviewError(
+              effective.type === 'photo'
+                ? 'Could not load preview. Try again.'
+                : 'Could not load video. Try again.',
+            );
+          }
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
           setCommittedMediaPreviewError(
             effective.type === 'photo'
-              ? 'Could not load preview. Try again.'
-              : 'Could not load video. Try again.',
+              ? 'Could not load preview. Check your connection and try again.'
+              : 'Could not load video. Check your connection and try again.',
           );
         }
-      }
-    });
+      });
     return () => {
       cancelled = true;
     };

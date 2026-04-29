@@ -483,15 +483,21 @@ function SymptomPhotoCaptureField({
     let cancelled = false;
     setCommittedPreviewError(null);
     setCommittedPreviewUrl(null);
-    void resolveEpisodeMediaPreviewUrl(uri).then((url) => {
-      if (!cancelled) {
-        if (url) {
-          setCommittedPreviewUrl(url);
-        } else {
+    void resolveEpisodeMediaPreviewUrl(uri)
+      .then((url) => {
+        if (!cancelled) {
+          if (url) {
+            setCommittedPreviewUrl(url);
+          } else {
+            setCommittedPreviewError('Could not load preview. Try again.');
+          }
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
           setCommittedPreviewError('Could not load preview. Try again.');
         }
-      }
-    });
+      });
     return () => {
       cancelled = true;
     };
@@ -922,8 +928,9 @@ function SymptomVideoCaptureField({
   const [confirmVideoUseTapPending, setConfirmVideoUseTapPending] =
     useState(false);
   /**
-   * Object URL of fetched video bytes — same rationale as photo: avoid mounting the signed HTTPS
-   * URL on `<video src>` (can briefly show a broken control strip before decode).
+   * Signed HTTPS URL exposed on `<video src>` only after an off-DOM element reaches `loadeddata`,
+   * so the visible player never mounts a dead `src` and the browser can **stream** (no full
+   * `fetch`+`blob()` buffer like photo thumbnails).
    */
   const [videoReadyDisplaySrc, setVideoReadyDisplaySrc] = useState<
     string | null
@@ -941,37 +948,32 @@ function SymptomVideoCaptureField({
       return;
     }
     let cancelled = false;
-    const displayBlobUrlRef = { current: null as string | null };
-    void (async () => {
-      try {
-        const res = await fetch(committedPreviewUrl);
-        if (!res.ok) {
-          throw new Error('fetch failed');
-        }
-        const blob = await res.blob();
-        if (cancelled) {
-          return;
-        }
-        const u = URL.createObjectURL(blob);
-        if (cancelled) {
-          URL.revokeObjectURL(u);
-          return;
-        }
-        displayBlobUrlRef.current = u;
-        setVideoReadyDisplaySrc(u);
-      } catch {
-        if (!cancelled) {
-          setCommittedPreviewUrl(null);
-          setCommittedPreviewError('Could not load video. Try again.');
-        }
+    const video = document.createElement('video');
+    video.preload = 'auto';
+    video.playsInline = true;
+    video.muted = true;
+    const onReady = () => {
+      if (!cancelled) {
+        setVideoReadyDisplaySrc(committedPreviewUrl);
       }
-    })();
+    };
+    const onErr = () => {
+      if (!cancelled) {
+        setVideoReadyDisplaySrc(null);
+        setCommittedPreviewUrl(null);
+        setCommittedPreviewError('Could not load video. Try again.');
+      }
+    };
+    video.addEventListener('loadeddata', onReady);
+    video.addEventListener('error', onErr);
+    video.src = committedPreviewUrl;
+    video.load();
     return () => {
       cancelled = true;
-      if (displayBlobUrlRef.current) {
-        URL.revokeObjectURL(displayBlobUrlRef.current);
-        displayBlobUrlRef.current = null;
-      }
+      video.removeEventListener('loadeddata', onReady);
+      video.removeEventListener('error', onErr);
+      video.removeAttribute('src');
+      video.load();
       setVideoReadyDisplaySrc(null);
     };
   }, [committedPreviewUrl]);
@@ -990,15 +992,21 @@ function SymptomVideoCaptureField({
     let cancelled = false;
     setCommittedPreviewError(null);
     setCommittedPreviewUrl(null);
-    void resolveEpisodeMediaPreviewUrl(uri).then((url) => {
-      if (!cancelled) {
-        if (url) {
-          setCommittedPreviewUrl(url);
-        } else {
+    void resolveEpisodeMediaPreviewUrl(uri)
+      .then((url) => {
+        if (!cancelled) {
+          if (url) {
+            setCommittedPreviewUrl(url);
+          } else {
+            setCommittedPreviewError('Could not load video. Try again.');
+          }
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
           setCommittedPreviewError('Could not load video. Try again.');
         }
-      }
-    });
+      });
     return () => {
       cancelled = true;
     };

@@ -806,16 +806,6 @@ export async function listEpisodeMediaForEpisode(
 }
 
 /**
- * Reads `episode_media` keys for an episode and returns deduped, bucket-relative Storage paths
- * (same normalization as `removeEpisodeMediaObjectsFromStorage`). Call while the episode row still
- * exists so metadata is available for listing.
- *
- * @param client - Supabase client (RLS applies).
- * @param episodeId - `episodes.id`.
- * @returns Normalized object paths suitable for `episode-media` `remove`, or an error when the
- *   metadata query fails.
- */
-/**
  * Lists normalized bucket-relative paths for `episode_media` rows tied to specific symptom-step
  * rows (primary + thumbnail keys). Used before deleting those symptom rows so Storage objects can be
  * removed after Postgres CASCADE clears metadata.
@@ -866,6 +856,16 @@ export async function listEpisodeMediaBucketPathsForEpisodeSymptomIds(
   }
 }
 
+/**
+ * Reads `episode_media` keys for an episode and returns deduped, bucket-relative Storage paths
+ * (same normalization as `removeEpisodeMediaObjectsFromStorage`). Call while the episode row still
+ * exists so metadata is available for listing.
+ *
+ * @param client - Supabase client (RLS applies).
+ * @param episodeId - `episodes.id`.
+ * @returns Normalized object paths suitable for `episode-media` `remove`, or an error when the
+ *   metadata query fails.
+ */
 export async function listEpisodeMediaStorageObjectPathsForEpisode(
   client: AbstrackSupabaseClient,
   episodeId: Uuid,
