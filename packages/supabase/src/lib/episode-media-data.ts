@@ -346,10 +346,12 @@ async function removeBucketObjectsBestEffort(
 }
 
 /**
- * After a new symptom-linked `episode_media` insert, removes other `episode_symptoms` rows for the
+ * After a new symptom-linked `episode_media` insert, deletes other `episode_symptoms` rows for the
  * same preset line in the **current open pass** (same `created_at` filter as
- * `deleteCurrentPassEpisodeSymptomAnswer`), best-effort deletes their Storage objects, then
- * deletes those symptom rows (`episode_media` CASCADE). Keeps the canonical symptom row only.
+ * `deleteCurrentPassEpisodeSymptomAnswer`), then best-effort removes their Storage keys listed from
+ * `episode_media` **before** delete (`episode_media` CASCADE removes metadata). Keeps the canonical
+ * symptom row only. Deletes DB rows before Storage so failed deletes do not orphan metadata pointing
+ * at already-removed objects.
  *
  * @param client - Supabase client (RLS applies).
  * @param args - Episode, preset line, canonical symptom row id, and pass boundary (or null).
@@ -414,7 +416,6 @@ async function deleteSupersededOpenPassEpisodeSymptomsAndTheirEpisodeMedia(
       keysToRemove.add(k);
     }
   }
-  await removeBucketObjectsBestEffort(client, [...keysToRemove]);
 
   const { error: delErr } = await client
     .from('episode_symptoms')
@@ -424,6 +425,8 @@ async function deleteSupersededOpenPassEpisodeSymptomsAndTheirEpisodeMedia(
   if (delErr) {
     return { data: null, error: delErr };
   }
+
+  await removeBucketObjectsBestEffort(client, [...keysToRemove]);
   return { data: true, error: null };
 }
 

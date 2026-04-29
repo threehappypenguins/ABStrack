@@ -104,7 +104,7 @@ describe('uploadConfirmedEpisodeMedia', () => {
     expect(remove).not.toHaveBeenCalled();
   });
 
-  it('after insert, supersede removes Storage keys and deletes older open-pass episode_symptoms', async () => {
+  it('after insert, supersede deletes older open-pass episode_symptoms then removes Storage keys', async () => {
     const upload = vi.fn(async () => ({ error: null }));
     const remove = vi.fn(async () => ({ data: [], error: null }));
     const maybeSingle = vi.fn(async () => ({ data: null, error: null }));
@@ -347,6 +347,7 @@ describe('uploadConfirmedEpisodeMedia', () => {
       expect(result.data).toEqual(insertedRow);
     }
     expect(symptomDelete.in).toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
   });
 
   it('returns ok: false without calling Storage when Web Crypto is unavailable', async () => {
