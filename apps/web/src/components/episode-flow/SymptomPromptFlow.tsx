@@ -13,10 +13,13 @@ import type {
   EpisodeSymptomRow,
   PresetSymptomRow,
   SymptomPromptAnswer,
+  SymptomPromptPhotoCaptureRef,
   SymptomPromptAnswers,
+  SymptomPromptVideoCaptureRef,
 } from '@abstrack/types';
 import type { EpisodeRow } from '@abstrack/types';
 import {
+  canonicalOpenPassEpisodeSymptomRowsByPresetLine,
   compareEpisodeSymptomRowsForHistory,
   computeSymptomResumePlacement,
   createDefaultSymptomPromptAnswer,
@@ -24,6 +27,7 @@ import {
   episodeSymptomRowsToAnswersMapForOpenPass,
   formatEpisodeSymptomHistoryDetail,
   formatEpisodeDurationSimple,
+  SYMPTOM_PROMPT_VIDEO_MAX_DURATION_MS,
   symptomPromptAnswerHasValue,
 } from '@abstrack/types';
 import {
@@ -32,8 +36,10 @@ import {
   endEpisodeIfStillActive,
   getEpisodeById,
   insertEpisodeSymptomAnswer,
+  listEpisodeMediaForEpisode,
   listEpisodeSymptomsForEpisode,
   listPresetSymptomsForPreset,
+  uploadConfirmedEpisodeMedia,
 } from '@abstrack/supabase';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
@@ -64,6 +70,9 @@ export type SymptomPromptFlowProps = {
 
 /** Delay before writing free-text drafts to `sessionStorage` (keystrokes stay snappy in React state). */
 const FREE_TEXT_PERSIST_DEBOUNCE_MS = 300;
+const VIDEO_MAX_DURATION_SECONDS = Math.floor(
+  SYMPTOM_PROMPT_VIDEO_MAX_DURATION_MS / 1000,
+);
 
 function clampIndex(index: number, length: number): number {
   if (length <= 0) {
@@ -87,6 +96,101 @@ function lineWriteQueueKey(episodeId: string, presetSymptomId: string): string {
  */
 const SYMPTOM_FLOW_LEAVE_GUARD_EXEMPT_FORM_ID =
   '__symptom_prompt_leave_guard_no_exempt__';
+
+/**
+ * Releases a browser blob URL created for capture preview/upload after the bytes are in Storage.
+ */
+function revokeSymptomCaptureBlobUrlIfPresent(uri: string): void {
+  if (!uri || typeof URL === 'undefined') {
+    return;
+  }
+  if (uri.startsWith('blob:')) {
+    try {
+      URL.revokeObjectURL(uri);
+    } catch {
+      // Already revoked or invalid — ignore.
+    }
+  }
+}
+
+/**
+ * Maps a MIME type to a filename extension for Storage keys. Strips parameters (`;codecs=…`)
+ * because `Blob.type` / `MediaRecorder.mimeType` often include them.
+ */
+function mediaExtensionFromContentType(contentType: string): string {
+  const base = contentType.trim().split(';')[0]?.trim().toLowerCase() ?? '';
+  if (!base) {
+    return 'bin';
+  }
+  if (base === 'image/jpeg') {
+    return 'jpg';
+  }
+  if (base === 'image/png') {
+    return 'png';
+  }
+  if (base === 'image/webp') {
+    return 'webp';
+  }
+  if (base === 'video/webm') {
+    return 'webm';
+  }
+  if (base === 'video/mp4') {
+    return 'mp4';
+  }
+  if (base === 'video/quicktime') {
+    return 'mov';
+  }
+  return 'bin';
+}
+
+async function getWebMediaUploadData(answer: SymptomPromptAnswer): Promise<{
+  body: Blob;
+  contentType: string;
+  extension: string;
+  durationSeconds: number | null;
+}> {
+  if (answer.type !== 'photo' && answer.type !== 'video') {
+    throw new Error('Media upload requires a photo/video answer.');
+  }
+  if (!answer.value?.localUri?.trim()) {
+    throw new Error('No captured media is available to upload.');
+  }
+  const response = await fetch(answer.value.localUri);
+  if (!response.ok) {
+    const statusText = response.statusText?.trim();
+    const httpDetail = `${response.status}${
+      statusText ? ` ${statusText}` : ''
+    }`;
+    throw new Error(
+      `Could not read captured media (${httpDetail}). The preview may have expired — capture again.`,
+    );
+  }
+  const blob = await response.blob();
+  if (blob.size === 0) {
+    throw new Error(
+      'Captured media file is empty or unreadable. Capture again.',
+    );
+  }
+  const fallbackContentType =
+    answer.type === 'photo' ? 'image/jpeg' : 'video/webm';
+  const contentType = blob.type || fallbackContentType;
+  const durationSeconds =
+    answer.type === 'video' && answer.value.durationMs != null
+      ? Math.max(
+          1,
+          Math.min(
+            VIDEO_MAX_DURATION_SECONDS,
+            Math.round(answer.value.durationMs / 1000),
+          ),
+        )
+      : null;
+  return {
+    body: blob,
+    contentType,
+    extension: mediaExtensionFromContentType(contentType),
+    durationSeconds,
+  };
+}
 
 /**
  * Linear symptom stepper for the active episode’s preset (Week 5 skeleton).
@@ -254,6 +358,100 @@ export function SymptomPromptFlow({
             line,
             answer,
           });
+          if (r.ok && (answer.type === 'photo' || answer.type === 'video')) {
+            try {
+              const upload = await getWebMediaUploadData(answer);
+              const mediaPersist = await uploadConfirmedEpisodeMedia(supabase, {
+                userId: uid,
+                episodeId: targetEpisodeId,
+                episodeSymptomId: r.data.id,
+                mediaType: answer.type,
+                body: upload.body,
+                contentType: upload.contentType,
+                extension: upload.extension,
+                durationSeconds: upload.durationSeconds,
+                supersedeOpenPassPresetSymptomAnswers: {
+                  presetSymptomId: line.id,
+                  lastPostMarkerStepCompletedAt:
+                    lastPostMarkerStepCompletedAtRef.current,
+                },
+              });
+              if (!mediaPersist.ok) {
+                if (
+                  isMountedRef.current &&
+                  episodeIdRef.current === enqueueEpisodeId &&
+                  enqueueEpoch === serverPersistEpochRef.current &&
+                  attemptId === persistUiAttemptRef.current
+                ) {
+                  setPersistError(mediaPersist.error.message);
+                }
+                return;
+              }
+              if (
+                isMountedRef.current &&
+                episodeIdRef.current === enqueueEpisodeId &&
+                enqueueEpoch === serverPersistEpochRef.current &&
+                attemptId === persistUiAttemptRef.current
+              ) {
+                const row = mediaPersist.data;
+                const storageUri = `storage:${row.storage_object_key}`;
+                const capturedAt =
+                  row.upload_completed_at ??
+                  (answer.type === 'photo' || answer.type === 'video'
+                    ? answer.value?.capturedAt
+                    : undefined) ??
+                  new Date().toISOString();
+                const patched: SymptomPromptAnswer =
+                  answer.type === 'photo'
+                    ? {
+                        type: 'photo',
+                        value: {
+                          localUri: storageUri,
+                          capturedAt,
+                        },
+                      }
+                    : {
+                        type: 'video',
+                        value: {
+                          localUri: storageUri,
+                          durationMs:
+                            row.duration_seconds != null
+                              ? row.duration_seconds * 1000
+                              : (answer.value?.durationMs ?? null),
+                          capturedAt,
+                        },
+                      };
+                const priorCaptureUri =
+                  answer.type === 'photo' || answer.type === 'video'
+                    ? (answer.value?.localUri ?? '')
+                    : '';
+                setAnswers((prev) => {
+                  const next = { ...prev, [line.id]: patched };
+                  answersRef.current = next;
+                  setSymptomPromptSession(enqueueEpisodeId, {
+                    activeIndex: activeIndexRef.current,
+                    answers: next,
+                  });
+                  return next;
+                });
+                revokeSymptomCaptureBlobUrlIfPresent(priorCaptureUri);
+              }
+            } catch (caught) {
+              if (
+                isMountedRef.current &&
+                episodeIdRef.current === enqueueEpisodeId &&
+                enqueueEpoch === serverPersistEpochRef.current &&
+                attemptId === persistUiAttemptRef.current
+              ) {
+                setPersistError(
+                  caught instanceof Error
+                    ? caught.message
+                    : 'Could not upload captured media.',
+                );
+              }
+              return;
+            }
+          }
           // Epoch/mount/episode/attempt gate UI only — the insert above always ran for `targetEpisodeId`.
           if (
             isMountedRef.current &&
@@ -362,10 +560,6 @@ export function SymptomPromptFlow({
 
   const schedulePersistToSupabase = useCallback(
     (line: PresetSymptomRow, answer: SymptomPromptAnswer) => {
-      if (answer.type === 'photo' || answer.type === 'video') {
-        // Media answers stay local for now; upload/persistence is handled in a later milestone.
-        return;
-      }
       if (!symptomPromptAnswerHasValue(answer)) {
         cancelPendingServerPersist();
         executeServerDelete(line);
@@ -553,6 +747,66 @@ export function SymptomPromptFlow({
     const serverAnswers = fromServer.ok
       ? episodeSymptomRowsToAnswersMapForOpenPass(fromServer.data, passBoundary)
       : {};
+    const canonicalSymptomRowsForHydrate = fromServer.ok
+      ? canonicalOpenPassEpisodeSymptomRowsByPresetLine(
+          fromServer.data,
+          passBoundary,
+        )
+      : {};
+    const mediaRows = fromServer.ok
+      ? await listEpisodeMediaForEpisode(supabase, episodeId, {
+          episodeSymptomIds: Object.values(canonicalSymptomRowsForHydrate).map(
+            (r) => r.id,
+          ),
+        })
+      : { ok: true as const, data: [] };
+    if (stale()) {
+      return;
+    }
+    if (fromServer.ok && mediaRows.ok) {
+      // `listEpisodeMediaForEpisode` is newest-first; keep the first hit per `episode_symptom_id`.
+      const mediaBySymptomId = new Map<
+        string,
+        (typeof mediaRows.data)[number]
+      >();
+      for (const row of mediaRows.data) {
+        if (!row.episode_symptom_id || !row.upload_completed_at) {
+          continue;
+        }
+        const key = row.episode_symptom_id as string;
+        if (!mediaBySymptomId.has(key)) {
+          mediaBySymptomId.set(key, row);
+        }
+      }
+      for (const row of Object.values(canonicalSymptomRowsForHydrate)) {
+        if (!row.preset_symptom_id) {
+          continue;
+        }
+        const media = mediaBySymptomId.get(row.id);
+        if (!media) {
+          continue;
+        }
+        if (row.response_type === 'photo') {
+          const value: SymptomPromptPhotoCaptureRef = {
+            localUri: `storage:${media.storage_object_key}`,
+            capturedAt: media.upload_completed_at ?? row.created_at,
+          };
+          serverAnswers[row.preset_symptom_id] = { type: 'photo', value };
+          continue;
+        }
+        if (row.response_type === 'video') {
+          const value: SymptomPromptVideoCaptureRef = {
+            localUri: `storage:${media.storage_object_key}`,
+            durationMs:
+              media.duration_seconds != null
+                ? media.duration_seconds * 1000
+                : null,
+            capturedAt: media.upload_completed_at ?? row.created_at,
+          };
+          serverAnswers[row.preset_symptom_id] = { type: 'video', value };
+        }
+      }
+    }
     if (fromServer.ok) {
       setSymptomHistory(
         fromServer.data.slice().sort(compareEpisodeSymptomRowsForHistory),
@@ -593,6 +847,8 @@ export function SymptomPromptFlow({
     });
     if (!fromServer.ok) {
       setPersistError(fromServer.error.message);
+    } else if (!mediaRows.ok) {
+      setPersistError(mediaRows.error.message);
     }
     setStatus('ready');
   }, [episodeId, symptomPresetId, resolveSessionUserId, supabase]);

@@ -79,7 +79,11 @@ export {
   listEpisodeTemplates,
   updateEpisodeTemplate,
 } from './lib/episode-template-data.js';
-export type { EpisodePostMarkerStepWrite } from './lib/episode-data.js';
+export type {
+  CancelActiveEpisodeByIdResult,
+  DeleteEpisodeByIdResult,
+  EpisodePostMarkerStepWrite,
+} from './lib/episode-data.js';
 export {
   cancelActiveEpisodeById,
   completeEpisodePostMarkerStep,
@@ -95,6 +99,19 @@ export {
   insertEpisodeSymptomAnswer,
   listEpisodeSymptomsForEpisode,
 } from './lib/episode-symptom-data.js';
+export type {
+  EpisodeMediaListRow,
+  EpisodeMediaUploadBody,
+  RemoveEpisodeMediaObjectsFromStorageResult,
+} from './lib/episode-media-data.js';
+export {
+  createEpisodeMediaObjectKey,
+  listEpisodeMediaForEpisode,
+  listEpisodeMediaStorageObjectPathsForEpisode,
+  removeEpisodeMediaObjectsFromStorage,
+  removeEpisodeMediaStorageObjectPathsBestEffort,
+  uploadConfirmedEpisodeMedia,
+} from './lib/episode-media-data.js';
 export {
   createStandaloneHealthMarkerForLine,
   deleteHealthMarkerById,

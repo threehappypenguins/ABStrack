@@ -5,6 +5,10 @@ import type {
   Uuid,
 } from '@abstrack/types';
 import type { Database } from './database.types.js';
+import {
+  listEpisodeMediaStorageObjectPathsForEpisode,
+  removeEpisodeMediaStorageObjectPathsBestEffort,
+} from './episode-media-data.js';
 import { PresetDataError, toPresetDataError } from './preset-data-error.js';
 import type { PresetDataResult } from './preset-data.js';
 import { wrap } from './preset-data.js';
@@ -22,6 +26,32 @@ type EpisodePostMarkerStepKeys =
 type EpisodePostMarkerStepWriteBase = {
   [K in EpisodePostMarkerStepKeys]: Exclude<EpisodesTableUpdate[K], undefined>;
 };
+
+/** Result shape for {@link cancelActiveEpisodeById}. */
+export type CancelActiveEpisodeByIdResult =
+  | {
+      ok: true;
+      data: {
+        didCancel: boolean;
+      };
+    }
+  | {
+      ok: false;
+      error: PresetDataError;
+    };
+
+/** Result shape for {@link deleteEpisodeById}. */
+export type DeleteEpisodeByIdResult =
+  | {
+      ok: true;
+      data: {
+        didDelete: boolean;
+      };
+    }
+  | {
+      ok: false;
+      error: PresetDataError;
+    };
 
 /**
  * Payload for {@link completeEpisodePostMarkerStep}: every listed column must be present, with
@@ -266,7 +296,11 @@ export async function completeEpisodePostMarkerStep(
  * Permanently removes an episode only when it is still active (`ended_at IS NULL`). Use this for
  * "cancel active episode" UX; completed rows can be removed with {@link deleteEpisodeById}.
  *
- * Uses the same RLS as other `episodes` deletes. Data impact is driven by schema foreign keys:
+ * Uses the same RLS as other `episodes` deletes. Best-effort lists `episode_media` Storage paths
+ * before deleting the active `episodes` row. A failed list (transient error, or no `episode_media`
+ * read permission under RLS) does **not** return `{ ok: false }` or skip the episode delete—only
+ * Storage cleanup is skipped when paths could not be collected.
+ * Data impact is driven by schema foreign keys after delete:
  * - `episode_symptoms` rows for the episode are deleted (`ON DELETE CASCADE`).
  * - `health_markers` rows linked to the episode are deleted (`ON DELETE CASCADE`).
  * - `episode_media` metadata rows linked to the episode are deleted (`ON DELETE CASCADE`).
@@ -281,8 +315,13 @@ export async function completeEpisodePostMarkerStep(
 export async function cancelActiveEpisodeById(
   client: AbstrackSupabaseClient,
   episodeId: Uuid,
-): Promise<PresetDataResult<{ didCancel: boolean }>> {
+): Promise<CancelActiveEpisodeByIdResult> {
   try {
+    const listed = await listEpisodeMediaStorageObjectPathsForEpisode(
+      client,
+      episodeId,
+    );
+
     const { data, error } = await client
       .from('episodes')
       .delete()
@@ -293,7 +332,21 @@ export async function cancelActiveEpisodeById(
     if (error) {
       return { ok: false, error: toPresetDataError(error) };
     }
-    return { ok: true, data: { didCancel: data != null } };
+
+    if (data == null) {
+      return {
+        ok: true,
+        data: { didCancel: false },
+      };
+    }
+
+    if (listed.ok) {
+      await removeEpisodeMediaStorageObjectPathsBestEffort(client, listed.data);
+    }
+    return {
+      ok: true,
+      data: { didCancel: true },
+    };
   } catch (caught) {
     return { ok: false, error: toPresetDataError(caught) };
   }
@@ -302,7 +355,11 @@ export async function cancelActiveEpisodeById(
 /**
  * Permanently removes an episode regardless of active/completed status when RLS allows.
  *
- * Data impact is driven by schema foreign keys:
+ * Uses the same RLS as other `episodes` deletes. Best-effort lists `episode_media` Storage paths
+ * before deleting the `episodes` row. A failed list (transient error, or no `episode_media` read
+ * permission under RLS) does **not** return `{ ok: false }` or skip the episode delete—only Storage
+ * cleanup is skipped when paths could not be collected.
+ * Data impact is driven by schema foreign keys after delete:
  * - `episode_symptoms` rows for the episode are deleted (`ON DELETE CASCADE`).
  * - `health_markers` rows linked to the episode are deleted (`ON DELETE CASCADE`).
  * - `episode_media` metadata rows linked to the episode are deleted (`ON DELETE CASCADE`).
@@ -316,8 +373,13 @@ export async function cancelActiveEpisodeById(
 export async function deleteEpisodeById(
   client: AbstrackSupabaseClient,
   episodeId: Uuid,
-): Promise<PresetDataResult<{ didDelete: boolean }>> {
+): Promise<DeleteEpisodeByIdResult> {
   try {
+    const listed = await listEpisodeMediaStorageObjectPathsForEpisode(
+      client,
+      episodeId,
+    );
+
     const { data, error } = await client
       .from('episodes')
       .delete()
@@ -327,7 +389,21 @@ export async function deleteEpisodeById(
     if (error) {
       return { ok: false, error: toPresetDataError(error) };
     }
-    return { ok: true, data: { didDelete: data != null } };
+
+    if (data == null) {
+      return {
+        ok: true,
+        data: { didDelete: false },
+      };
+    }
+
+    if (listed.ok) {
+      await removeEpisodeMediaStorageObjectPathsBestEffort(client, listed.data);
+    }
+    return {
+      ok: true,
+      data: { didDelete: true },
+    };
   } catch (caught) {
     return { ok: false, error: toPresetDataError(caught) };
   }

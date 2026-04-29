@@ -1,3 +1,5 @@
+// Must run before shared packages use Web Crypto (`crypto.getRandomValues` / UUID keys for Storage).
+import 'react-native-get-random-values';
 import 'react-native-url-polyfill/auto';
 import './global.css';
 import { registerRootComponent } from 'expo';
