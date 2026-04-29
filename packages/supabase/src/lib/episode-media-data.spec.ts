@@ -860,6 +860,39 @@ describe('uploadConfirmedEpisodeMedia', () => {
     }
   });
 
+  it('maps Storage 507 to distinct copy from oversized uploads', async () => {
+    const upload = vi.fn(async () => ({
+      error: { statusCode: '507', message: 'Insufficient Storage' },
+    }));
+    const client = {
+      storage: {
+        from: vi.fn(() => ({
+          upload,
+        })),
+      },
+      from: vi.fn(() => {
+        throw new Error('unexpected DB during upload failure test');
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await uploadConfirmedEpisodeMedia(client, {
+      userId: 'u1',
+      episodeId: 'ep1',
+      episodeSymptomId: 'sx1',
+      mediaType: 'photo',
+      body: 'blob',
+      contentType: 'image/jpeg',
+      extension: 'jpg',
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('unknown');
+      expect(result.error.message).toMatch(/could not be saved/i);
+      expect(result.error.message).not.toMatch(/too large/i);
+    }
+  });
+
   it('returns ok: false when Storage upload rejects instead of resolving with error', async () => {
     const upload = vi.fn(async () => {
       throw new Error('fetch exploded');

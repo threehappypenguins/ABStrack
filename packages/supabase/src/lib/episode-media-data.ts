@@ -273,10 +273,17 @@ function mapEpisodeMediaStorageUploadError(error: unknown): PresetDataError {
       },
     );
   }
-  if (status === 413 || status === 507) {
+  if (status === 413) {
     return new PresetDataError(
       'validation_error',
       'That media file is too large to upload. Try a shorter clip or smaller photo.',
+      error,
+    );
+  }
+  if (status === 507) {
+    return new PresetDataError(
+      'unknown',
+      'Upload could not be saved — media storage may be full or temporarily unable to accept files. Try again later.',
       error,
     );
   }
