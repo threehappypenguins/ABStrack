@@ -377,7 +377,15 @@ describe('uploadConfirmedEpisodeMedia', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.message).toMatch(/Secure randomness|Web Crypto/);
+        expect(result.error.message).toMatch(
+          /Secure media upload is unavailable/,
+        );
+        const cause = (result.error as Error & { cause?: unknown }).cause as
+          | { debugHint?: string }
+          | undefined;
+        expect(cause?.debugHint).toMatch(
+          /react-native-get-random-values|Web Crypto/i,
+        );
       }
       expect(upload).not.toHaveBeenCalled();
     } finally {
@@ -844,7 +852,11 @@ describe('uploadConfirmedEpisodeMedia', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.code).toBe('permission_denied');
-      expect(result.error.message).toMatch(/Storage/i);
+      expect(result.error.message).toMatch(/do not have permission/i);
+      const cause = (result.error as Error & { cause?: unknown }).cause as
+        | { debugHint?: string }
+        | undefined;
+      expect(cause?.debugHint).toMatch(/episode-media bucket\/RLS policies/i);
     }
   });
 
@@ -907,9 +919,11 @@ describe('uploadConfirmedEpisodeMedia', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.code).toBe('network_error');
-      expect(result.error.message).toMatch(/media file/i);
-      expect(result.error.message).toMatch(/Storage/i);
-      expect(result.error.message).not.toMatch(/Check your connection/i);
+      expect(result.error.message).toMatch(/check your connection/i);
+      const cause = (result.error as Error & { cause?: unknown }).cause as
+        | { debugHint?: string }
+        | undefined;
+      expect(cause?.debugHint).toMatch(/episode-media bucket\/RLS rules/i);
     }
   });
 });

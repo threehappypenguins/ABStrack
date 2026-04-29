@@ -188,7 +188,11 @@ function randomUuidV4ForObjectKey(): string {
 
   throw new PresetDataError(
     'unknown',
-    'Secure randomness is unavailable (Web Crypto missing). On React Native import react-native-get-random-values at the very top of your entry file (e.g. index.js), before other imports.',
+    'Secure media upload is unavailable on this device right now. Please update or restart the app and try again.',
+    {
+      debugHint:
+        'Web Crypto is missing. On React Native, import react-native-get-random-values at the top of your entry file (e.g. index.js) before other imports.',
+    },
   );
 }
 
@@ -261,8 +265,12 @@ function mapEpisodeMediaStorageUploadError(error: unknown): PresetDataError {
   if (status === 401 || status === 403) {
     return new PresetDataError(
       'permission_denied',
-      'Media upload was refused (Storage). Check bucket policies for episode-media so your account can upload under your user path.',
-      error,
+      'You do not have permission to upload media for this episode.',
+      {
+        sourceError: error,
+        debugHint:
+          'Storage upload returned 401/403. Verify episode-media bucket/RLS policies allow uploads under the caller user path.',
+      },
     );
   }
   if (status === 413 || status === 507) {
@@ -295,8 +303,12 @@ function mapEpisodeMediaStorageUploadError(error: unknown): PresetDataError {
   if (mapped.code === 'network_error') {
     return new PresetDataError(
       'network_error',
-      'Upload failed while sending the media file to Storage. Saving answers uses the database only—this step is file upload. Retry or verify Storage rules for the episode-media bucket.',
-      error,
+      'We could not upload your media right now. Please check your connection and try again.',
+      {
+        sourceError: error,
+        debugHint:
+          'Storage upload hit a transport/network failure. If this persists, verify episode-media bucket/RLS rules and client network setup.',
+      },
     );
   }
   return mapped;
