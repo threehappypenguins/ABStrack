@@ -148,6 +148,12 @@ export type EpisodeMediaUploadBody =
   | string;
 
 /**
+ * Single filename extension segment safe for Storage object keys: letters and digits only (no path
+ * separators, URL/query junk, or multi-part extensions after normalization).
+ */
+const FILENAME_EXTENSION_SAFE = /^[a-z0-9]+$/;
+
+/**
  * Builds a private Storage object key under the required `{user_id}/...` prefix.
  *
  * @param args - Key parts used by storage/object RLS and episode media linkage.
@@ -159,7 +165,10 @@ export function createEpisodeMediaObjectKey(args: {
   mediaType: MediaType;
   extension: string;
 }): string {
-  const ext = args.extension.trim().replace(/^\.+/, '').toLowerCase() || 'bin';
+  const normalized =
+    args.extension.trim().replace(/^\.+/, '').toLowerCase() || '';
+  const ext =
+    normalized && FILENAME_EXTENSION_SAFE.test(normalized) ? normalized : 'bin';
   const typePrefix = args.mediaType === 'photo' ? 'photo' : 'video';
   return `${args.userId}/${args.episodeId}/${typePrefix}-${randomUuidV4ForObjectKey()}.${ext}`;
 }

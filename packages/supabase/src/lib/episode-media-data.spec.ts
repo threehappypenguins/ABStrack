@@ -22,6 +22,30 @@ describe('createEpisodeMediaObjectKey', () => {
     ).toBe(true);
     expect(key.endsWith('.jpg')).toBe(true);
   });
+
+  it('falls back to bin when extension contains path or URL-like characters', () => {
+    const mk = (extension: string) =>
+      createEpisodeMediaObjectKey({
+        userId: '6a111111-1111-4111-8111-111111111111',
+        episodeId: '7b222222-2222-4222-8222-222222222222',
+        mediaType: 'photo',
+        extension,
+      });
+    expect(mk('jpg/extra')).toMatch(/\.bin$/);
+    expect(mk('jpg?x=1')).toMatch(/\.bin$/);
+    expect(mk('jp:g')).toMatch(/\.bin$/);
+    expect(mk('tar.gz')).toMatch(/\.bin$/);
+  });
+
+  it('accepts alphanumeric extensions after normalization', () => {
+    const key = createEpisodeMediaObjectKey({
+      userId: '6a111111-1111-4111-8111-111111111111',
+      episodeId: '7b222222-2222-4222-8222-222222222222',
+      mediaType: 'photo',
+      extension: '.WEBP',
+    });
+    expect(key.endsWith('.webp')).toBe(true);
+  });
 });
 
 describe('uploadConfirmedEpisodeMedia', () => {

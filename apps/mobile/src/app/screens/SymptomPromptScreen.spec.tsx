@@ -779,21 +779,23 @@ describe('SymptomPromptScreen', () => {
         durationSeconds: expect.anything(),
       }),
     );
-    expect(setSymptomPromptSession).toHaveBeenLastCalledWith(
-      episodeId,
-      expect.objectContaining({
-        answers: expect.objectContaining({
-          [lineVideoOnly.id]: {
-            type: 'video',
-            value: {
-              localUri: 'file:///tmp/video.mp4',
-              durationMs: expect.any(Number),
-              capturedAt: expect.any(String),
+    await waitFor(() => {
+      expect(setSymptomPromptSession).toHaveBeenCalledWith(
+        episodeId,
+        expect.objectContaining({
+          answers: expect.objectContaining({
+            [lineVideoOnly.id]: {
+              type: 'video',
+              value: {
+                localUri: 'storage:test-user-1/episode-1/video-1.webm',
+                durationMs: 3000,
+                capturedAt: '2020-01-01T00:00:00Z',
+              },
             },
-          },
+          }),
         }),
-      }),
-    );
+      );
+    });
   });
 
   test('photo capture stores local answer and inserts symptom row', async () => {
@@ -816,6 +818,22 @@ describe('SymptomPromptScreen', () => {
 
     jest.mocked(insertEpisodeSymptomAnswer).mockClear();
     jest.mocked(uploadConfirmedEpisodeMedia).mockClear();
+    jest.mocked(uploadConfirmedEpisodeMedia).mockResolvedValue({
+      ok: true,
+      data: {
+        id: 'em-photo-1',
+        user_id: 'test-user-1',
+        episode_id: episodeId,
+        episode_symptom_id: 'es-1',
+        storage_object_key: 'test-user-1/episode-1/photo-xyz.jpg',
+        thumbnail_storage_key: null,
+        media_type: 'photo',
+        duration_seconds: null,
+        upload_completed_at: '2020-01-01T00:00:00Z',
+        created_at: '2020-01-01T00:00:00Z',
+        updated_at: '2020-01-01T00:00:00Z',
+      },
+    });
     fireEvent.press(screen.getByLabelText('Take Facial droop photo'));
     await waitFor(() => {
       expect(screen.getByLabelText('Capture Facial droop photo')).toBeTruthy();
@@ -870,20 +888,22 @@ describe('SymptomPromptScreen', () => {
         durationSeconds: null,
       }),
     );
-    expect(setSymptomPromptSession).toHaveBeenLastCalledWith(
-      episodeId,
-      expect.objectContaining({
-        answers: expect.objectContaining({
-          [linePhotoOnly.id]: {
-            type: 'photo',
-            value: {
-              localUri: 'file:///tmp/photo.jpg',
-              capturedAt: expect.any(String),
+    await waitFor(() => {
+      expect(setSymptomPromptSession).toHaveBeenCalledWith(
+        episodeId,
+        expect.objectContaining({
+          answers: expect.objectContaining({
+            [linePhotoOnly.id]: {
+              type: 'photo',
+              value: {
+                localUri: 'storage:test-user-1/episode-1/photo-xyz.jpg',
+                capturedAt: '2020-01-01T00:00:00Z',
+              },
             },
-          },
+          }),
         }),
-      }),
-    );
+      );
+    });
   });
 
   test('Exit symptom flow asks for confirmation before leaving', async () => {

@@ -92,19 +92,48 @@ function lineWriteQueueKey(episodeId: string, presetSymptomId: string): string {
 const SYMPTOM_FLOW_LEAVE_GUARD_EXEMPT_FORM_ID =
   '__symptom_prompt_leave_guard_no_exempt__';
 
+/**
+ * Releases a browser blob URL created for capture preview/upload after the bytes are in Storage.
+ */
+function revokeSymptomCaptureBlobUrlIfPresent(uri: string): void {
+  if (!uri || typeof URL === 'undefined') {
+    return;
+  }
+  if (uri.startsWith('blob:')) {
+    try {
+      URL.revokeObjectURL(uri);
+    } catch {
+      // Already revoked or invalid — ignore.
+    }
+  }
+}
+
+/**
+ * Maps a MIME type to a filename extension for Storage keys. Strips parameters (`;codecs=…`)
+ * because `Blob.type` / `MediaRecorder.mimeType` often include them.
+ */
 function mediaExtensionFromContentType(contentType: string): string {
-  const ct = contentType.trim().toLowerCase();
-  if (ct === 'image/jpeg') {
+  const base = contentType.trim().split(';')[0]?.trim().toLowerCase() ?? '';
+  if (!base) {
+    return 'bin';
+  }
+  if (base === 'image/jpeg') {
     return 'jpg';
   }
-  if (ct === 'image/png') {
+  if (base === 'image/png') {
     return 'png';
   }
-  if (ct === 'video/webm') {
+  if (base === 'image/webp') {
+    return 'webp';
+  }
+  if (base === 'video/webm') {
     return 'webm';
   }
-  if (ct === 'video/mp4') {
+  if (base === 'video/mp4') {
     return 'mp4';
+  }
+  if (base === 'video/quicktime') {
+    return 'mov';
   }
   return 'bin';
 }
@@ -341,6 +370,55 @@ export function SymptomPromptFlow({
                   setPersistError(mediaPersist.error.message);
                 }
                 return;
+              }
+              if (
+                isMountedRef.current &&
+                episodeIdRef.current === enqueueEpisodeId &&
+                enqueueEpoch === serverPersistEpochRef.current &&
+                attemptId === persistUiAttemptRef.current
+              ) {
+                const row = mediaPersist.data;
+                const storageUri = `storage:${row.storage_object_key}`;
+                const capturedAt =
+                  row.upload_completed_at ??
+                  (answer.type === 'photo' || answer.type === 'video'
+                    ? answer.value?.capturedAt
+                    : undefined) ??
+                  new Date().toISOString();
+                const patched: SymptomPromptAnswer =
+                  answer.type === 'photo'
+                    ? {
+                        type: 'photo',
+                        value: {
+                          localUri: storageUri,
+                          capturedAt,
+                        },
+                      }
+                    : {
+                        type: 'video',
+                        value: {
+                          localUri: storageUri,
+                          durationMs:
+                            row.duration_seconds != null
+                              ? row.duration_seconds * 1000
+                              : (answer.value?.durationMs ?? null),
+                          capturedAt,
+                        },
+                      };
+                const priorCaptureUri =
+                  answer.type === 'photo' || answer.type === 'video'
+                    ? (answer.value?.localUri ?? '')
+                    : '';
+                setAnswers((prev) => {
+                  const next = { ...prev, [line.id]: patched };
+                  answersRef.current = next;
+                  setSymptomPromptSession(enqueueEpisodeId, {
+                    activeIndex: activeIndexRef.current,
+                    answers: next,
+                  });
+                  return next;
+                });
+                revokeSymptomCaptureBlobUrlIfPresent(priorCaptureUri);
               }
             } catch (caught) {
               if (

@@ -353,6 +353,50 @@ export function SymptomPromptScreen() {
                 }
                 return;
               }
+              if (
+                isMountedRef.current &&
+                episodeIdRef.current === enqueueEpisodeId &&
+                enqueueEpoch === serverPersistEpochRef.current &&
+                attemptId === persistUiAttemptRef.current
+              ) {
+                const row = mediaPersist.data;
+                const storageUri = `storage:${row.storage_object_key}`;
+                const capturedAt =
+                  row.upload_completed_at ??
+                  (answer.type === 'photo' || answer.type === 'video'
+                    ? answer.value?.capturedAt
+                    : undefined) ??
+                  new Date().toISOString();
+                const patched: SymptomPromptAnswer =
+                  answer.type === 'photo'
+                    ? {
+                        type: 'photo',
+                        value: {
+                          localUri: storageUri,
+                          capturedAt,
+                        },
+                      }
+                    : {
+                        type: 'video',
+                        value: {
+                          localUri: storageUri,
+                          durationMs:
+                            row.duration_seconds != null
+                              ? row.duration_seconds * 1000
+                              : (answer.value?.durationMs ?? null),
+                          capturedAt,
+                        },
+                      };
+                setAnswers((prev) => {
+                  const next = { ...prev, [line.id]: patched };
+                  answersRef.current = next;
+                  setSymptomPromptSession(enqueueEpisodeId, {
+                    activeIndex: activeIndexRef.current,
+                    answers: next,
+                  });
+                  return next;
+                });
+              }
             } catch (caught) {
               if (
                 isMountedRef.current &&
