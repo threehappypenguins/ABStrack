@@ -238,9 +238,6 @@ importers:
 
   apps/mobile:
     dependencies:
-      '@abstrack/powersync':
-        specifier: workspace:*
-        version: link:../../packages/powersync
       '@abstrack/supabase':
         specifier: workspace:*
         version: link:../../packages/supabase
@@ -445,9 +442,6 @@ importers:
 
   packages/powersync:
     dependencies:
-      '@powersync/common':
-        specifier: 1.52.0
-        version: 1.52.0
       tslib:
         specifier: ^2.3.0
         version: 2.8.1

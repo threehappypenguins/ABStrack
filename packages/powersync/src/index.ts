@@ -1,8 +1,4 @@
 export {
-  abstrackPowerSyncSchema,
-  type AbstrackPowerSyncDatabase,
-} from './lib/abstrack-app-schema.js';
-export {
   type AppRole,
   type CaretakerGrantRow,
   type PractitionerGrantRow,

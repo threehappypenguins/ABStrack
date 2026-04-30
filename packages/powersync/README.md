@@ -1,25 +1,28 @@
 # @abstrack/powersync
 
-Shared **PowerSync client schema** and **sync rules** for ABStrack mobile offline replication against Supabase Postgres.
+Shared **PowerSync sync rules** (YAML), **sync-scope helpers**, and tests for ABStrack mobile offline replication against Supabase Postgres.
+
+The **client SQLite schema** (`abstrackPowerSyncSchema`) lives in **`apps/mobile/src/lib/powersync/abstrack-app-schema.ts`** so `Schema` / `Table` use the same `@powersync/react-native` entrypoint as `PowerSyncDatabase` (no unsafe casts).
 
 PowerSync connects with a replication role that bypasses RLS; **download scope is defined only by sync rules** (`sync-rules.yaml`), which intentionally mirror grant logic in `supabase/migrations/20260327130000_rls_policies.sql` and practitioner MFA (`aal2`) in `20260416120000_practitioner_mfa_assurance_rls.sql`.
 
 ## Contents
 
-| Artifact                          | Purpose                                                                                          |
-| --------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `sync-rules.yaml`                 | Deploy to your PowerSync Service — bucket definitions per patient / caretaker / practitioner.    |
-| `abstrackPowerSyncSchema`         | Client SQLite schema (`@powersync/common` `Schema`) matching replicated `public` tables.         |
-| `visiblePatientUserIdsForPhiSync` | Pure helper + Vitest smoke tests; keep in sync with PHI buckets in YAML when grant rules change. |
+| Artifact                          | Purpose                                                                                           |
+| --------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `sync-rules.yaml`                 | Deploy to your PowerSync Service — bucket definitions per patient / caretaker / practitioner.     |
+| Mobile `abstrack-app-schema.ts`   | Client SQLite schema (`Schema` from `@powersync/react-native`); must stay aligned with this YAML. |
+| `visiblePatientUserIdsForPhiSync` | Pure helper + Vitest smoke tests; keep in sync with PHI buckets in YAML when grant rules change.  |
 
 Path constant: `ABSTRACK_POWERSYNC_SYNC_RULES_PACKAGE_PATH` (`packages/powersync/sync-rules.yaml`).
 
 ## Mobile usage (SQLCipher)
 
-The Expo app wires encryption and connectors in `apps/mobile/src/lib/powersync/`:
+The Expo app wires schema, encryption, and connectors in `apps/mobile/src/lib/powersync/`:
 
-1. **`createEncryptedAbstrackPowerSyncDatabase`** — `@powersync/op-sqlite` `OPSqliteOpenFactory` + SQLCipher (`op-sqlite.sqlcipher` in `apps/mobile/package.json` and monorepo root `package.json`).
-2. **`createSupabaseJwtPowerSyncConnector`** — `fetchCredentials` uses `EXPO_PUBLIC_POWERSYNC_URL` and the Supabase session access token; configure PowerSync to trust Supabase JWTs.
+1. **`abstrackPowerSyncSchema`** — table definitions next to the SDK (see `abstrack-app-schema.ts`).
+2. **`createEncryptedAbstrackPowerSyncDatabase`** — `@powersync/op-sqlite` `OPSqliteOpenFactory` + SQLCipher (`op-sqlite.sqlcipher` in `apps/mobile/package.json` and monorepo root `package.json`).
+3. **`createSupabaseJwtPowerSyncConnector`** — `fetchCredentials` uses `EXPO_PUBLIC_POWERSYNC_URL` and the Supabase session access token; configure PowerSync to trust Supabase JWTs.
 
 Typical sequence: `await db.init()`, then `await db.connect(connector)`, then `await db.waitForFirstSync()`.
 

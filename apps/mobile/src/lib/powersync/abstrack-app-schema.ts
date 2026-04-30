@@ -1,4 +1,4 @@
-import { column, Schema, Table } from '@powersync/common';
+import { column, Schema, Table } from '@powersync/react-native';
 
 const profiles = new Table(
   {
@@ -239,6 +239,9 @@ const access_log = new Table(
 /**
  * Client-side PowerSync schema aligned with Supabase `public` PHI tables listed in
  * `packages/powersync/sync-rules.yaml`.
+ *
+ * Defined next to `PowerSyncDatabase` wiring so `Schema` / `Table` come from `@powersync/react-native`
+ * (same export surface as the SDK) — avoids nominal type clashes with a workspace-built schema.
  *
  * SQLite stores Postgres `uuid` and `timestamptz` fields as text; numeric columns as REAL;
  * booleans as INTEGER (0/1).

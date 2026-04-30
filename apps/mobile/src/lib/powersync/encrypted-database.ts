@@ -1,6 +1,7 @@
-import { abstrackPowerSyncSchema } from '@abstrack/powersync';
 import { OPSqliteOpenFactory } from '@powersync/op-sqlite';
-import { PowerSyncDatabase, type Schema } from '@powersync/react-native';
+import { PowerSyncDatabase } from '@powersync/react-native';
+
+import { abstrackPowerSyncSchema } from './abstrack-app-schema.js';
 
 /**
  * Opens the ABStrack PowerSync SQLite database using OP-SQLite with SQLCipher (see `op-sqlite`
@@ -22,8 +23,7 @@ export function createEncryptedAbstrackPowerSyncDatabase(options: {
   });
 
   return new PowerSyncDatabase({
-    // Nominal mismatch between workspace-built Schema and SDK Schema (`Table.options`). TS2352 rejects `as Schema` alone; `unknown` states intent. Runtime object matches PowerSyncDatabase.
-    schema: abstrackPowerSyncSchema as unknown as Schema,
+    schema: abstrackPowerSyncSchema,
     database: factory,
   });
 }
