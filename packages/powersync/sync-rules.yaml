@@ -1,0 +1,111 @@
+# ABStrack PowerSync sync rules — deploy to your PowerSync Service instance.
+#
+# Mirrors Supabase RLS grant intent from `supabase/migrations/20260327130000_rls_policies.sql`
+# and practitioner MFA (`aal2`) from `20260416120000_practitioner_mfa_assurance_rls.sql`.
+# Replication uses BYPASSRLS; these rules define download scope per user JWT.
+#
+# Parameter queries run against Postgres (Supabase). Table names are `public` defaults.
+
+bucket_definitions:
+  # Own profile row only (matches profiles SELECT policies).
+  me_profile:
+    parameters: SELECT request.user_id() AS uid
+    data:
+      - SELECT * FROM profiles WHERE id = bucket.uid
+
+  # Audit rows visible to the authenticated subject (matches access_log SELECT).
+  access_log_visible:
+    parameters: SELECT request.user_id() AS uid
+    data:
+      - SELECT * FROM access_log WHERE patient_user_id = bucket.uid OR actor_user_id = bucket.uid
+
+  grants_practitioner_access:
+    parameters: SELECT request.user_id() AS uid
+    data:
+      - SELECT * FROM practitioner_access WHERE patient_user_id = bucket.uid OR practitioner_user_id = bucket.uid
+
+  grants_caretaker_access:
+    parameters: SELECT request.user_id() AS uid
+    data:
+      - SELECT * FROM caretaker_access WHERE patient_user_id = bucket.uid OR caretaker_user_id = bucket.uid
+
+  # PHI buckets — three disjoint parameter streams (patient / caretaker / practitioner+MFA).
+
+  phi_patient_owned:
+    parameters: >-
+      SELECT request.user_id() AS patient_uid FROM profiles
+      WHERE id = request.user_id() AND app_role = 'patient'
+    data:
+      - SELECT * FROM symptom_presets WHERE user_id = bucket.patient_uid
+      - >-
+        SELECT * FROM preset_symptoms WHERE EXISTS (
+          SELECT 1 FROM symptom_presets sp
+          WHERE sp.id = preset_symptoms.preset_id AND sp.user_id = bucket.patient_uid
+        )
+      - SELECT * FROM health_marker_presets WHERE user_id = bucket.patient_uid
+      - >-
+        SELECT * FROM preset_health_markers WHERE EXISTS (
+          SELECT 1 FROM health_marker_presets hp
+          WHERE hp.id = preset_health_markers.preset_id AND hp.user_id = bucket.patient_uid
+        )
+      - SELECT * FROM episode_templates WHERE user_id = bucket.patient_uid
+      - SELECT * FROM episodes WHERE user_id = bucket.patient_uid
+      - SELECT * FROM episode_symptoms WHERE user_id = bucket.patient_uid
+      - SELECT * FROM health_markers WHERE user_id = bucket.patient_uid
+      - SELECT * FROM food_diary_entries WHERE user_id = bucket.patient_uid
+      - SELECT * FROM episode_media WHERE user_id = bucket.patient_uid
+
+  phi_caretaker_linked_patients:
+    parameters: >-
+      SELECT ca.patient_user_id AS patient_uid FROM caretaker_access ca
+      INNER JOIN profiles pr ON pr.id = request.user_id()
+      WHERE ca.caretaker_user_id = request.user_id()
+        AND ca.revoked_at IS NULL
+        AND pr.app_role = 'caretaker'
+    data:
+      - SELECT * FROM symptom_presets WHERE user_id = bucket.patient_uid
+      - >-
+        SELECT * FROM preset_symptoms WHERE EXISTS (
+          SELECT 1 FROM symptom_presets sp
+          WHERE sp.id = preset_symptoms.preset_id AND sp.user_id = bucket.patient_uid
+        )
+      - SELECT * FROM health_marker_presets WHERE user_id = bucket.patient_uid
+      - >-
+        SELECT * FROM preset_health_markers WHERE EXISTS (
+          SELECT 1 FROM health_marker_presets hp
+          WHERE hp.id = preset_health_markers.preset_id AND hp.user_id = bucket.patient_uid
+        )
+      - SELECT * FROM episode_templates WHERE user_id = bucket.patient_uid
+      - SELECT * FROM episodes WHERE user_id = bucket.patient_uid
+      - SELECT * FROM episode_symptoms WHERE user_id = bucket.patient_uid
+      - SELECT * FROM health_markers WHERE user_id = bucket.patient_uid
+      - SELECT * FROM food_diary_entries WHERE user_id = bucket.patient_uid
+      - SELECT * FROM episode_media WHERE user_id = bucket.patient_uid
+
+  phi_practitioner_linked_patients:
+    parameters: >-
+      SELECT pa.patient_user_id AS patient_uid FROM practitioner_access pa
+      INNER JOIN profiles pr ON pr.id = request.user_id()
+      WHERE pa.practitioner_user_id = request.user_id()
+        AND pa.revoked_at IS NULL
+        AND pr.app_role = 'practitioner'
+        AND (request.jwt() ->> 'aal') = 'aal2'
+    data:
+      - SELECT * FROM symptom_presets WHERE user_id = bucket.patient_uid
+      - >-
+        SELECT * FROM preset_symptoms WHERE EXISTS (
+          SELECT 1 FROM symptom_presets sp
+          WHERE sp.id = preset_symptoms.preset_id AND sp.user_id = bucket.patient_uid
+        )
+      - SELECT * FROM health_marker_presets WHERE user_id = bucket.patient_uid
+      - >-
+        SELECT * FROM preset_health_markers WHERE EXISTS (
+          SELECT 1 FROM health_marker_presets hp
+          WHERE hp.id = preset_health_markers.preset_id AND hp.user_id = bucket.patient_uid
+        )
+      - SELECT * FROM episode_templates WHERE user_id = bucket.patient_uid
+      - SELECT * FROM episodes WHERE user_id = bucket.patient_uid
+      - SELECT * FROM episode_symptoms WHERE user_id = bucket.patient_uid
+      - SELECT * FROM health_markers WHERE user_id = bucket.patient_uid
+      - SELECT * FROM food_diary_entries WHERE user_id = bucket.patient_uid
+      - SELECT * FROM episode_media WHERE user_id = bucket.patient_uid

@@ -237,6 +237,9 @@ importers:
 
   apps/mobile:
     dependencies:
+      '@abstrack/powersync':
+        specifier: workspace:*
+        version: link:../../packages/powersync
       '@abstrack/supabase':
         specifier: workspace:*
         version: link:../../packages/supabase
@@ -255,6 +258,15 @@ importers:
       '@expo/vector-icons':
         specifier: '*'
         version: 15.1.1(expo-font@14.0.11(expo@54.0.34)(react-native@0.81.5(@babel/core@7.29.0)(@react-native/metro-config@0.85.0(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.0)(@react-native/metro-config@0.85.0(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
+      '@op-engineering/op-sqlite':
+        specifier: ^15.2.12
+        version: 15.2.12(react-native@0.81.5(@babel/core@7.29.0)(@react-native/metro-config@0.85.0(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
+      '@powersync/op-sqlite':
+        specifier: 0.9.6
+        version: 0.9.6(@op-engineering/op-sqlite@15.2.12(react-native@0.81.5(@babel/core@7.29.0)(@react-native/metro-config@0.85.0(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(@powersync/common@1.52.0)(react-native@0.81.5(@babel/core@7.29.0)(@react-native/metro-config@0.85.0(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
+      '@powersync/react-native':
+        specifier: 1.34.0
+        version: 1.34.0(@powersync/common@1.52.0)(react-native@0.81.5(@babel/core@7.29.0)(@react-native/metro-config@0.85.0(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
       '@react-native-community/datetimepicker':
         specifier: 8.4.4
         version: 8.4.4(expo@54.0.34)(react-native@0.81.5(@babel/core@7.29.0)(@react-native/metro-config@0.85.0(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
@@ -429,6 +441,9 @@ importers:
 
   packages/powersync:
     dependencies:
+      '@powersync/common':
+        specifier: 1.52.0
+        version: 1.52.0
       tslib:
         specifier: ^2.3.0
         version: 2.8.1
@@ -3820,6 +3835,19 @@ packages:
         integrity: sha512-TZeuCDy+VN/5zqMYxHw15HKe2Ppcb9WBOebz4bmXE206c8Aop3S9QeLfys00Uobt9ZaYh9QUeN0iFsZm7TNv0w==,
       }
 
+  '@op-engineering/op-sqlite@15.2.12':
+    resolution:
+      {
+        integrity: sha512-QfOzk4NVG4OQ4tDKAByhXHfqIefF3zM6O5ASYp1gExJCuO1OeF+u1Qf/Hz+c9KSNT2LMrFgm0X7LQxWgvh7j2A==,
+      }
+    peerDependencies:
+      '@sqlite.org/sqlite-wasm': '*'
+      react: '*'
+      react-native: '*'
+    peerDependenciesMeta:
+      '@sqlite.org/sqlite-wasm':
+        optional: true
+
   '@oxc-resolver/binding-android-arm-eabi@11.19.1':
     resolution:
       {
@@ -4214,6 +4242,46 @@ packages:
       }
     engines: { node: '>=18' }
     hasBin: true
+
+  '@powersync/common@1.52.0':
+    resolution:
+      {
+        integrity: sha512-rs50iEPcUSjLdKjnQZ4VbtK3U5+MTaY/YVCruN0hGmDMIn6wlT+EDsNFosAUAh6waLDEDfuKbvtHRhPKdBQ/Qg==,
+      }
+
+  '@powersync/op-sqlite@0.9.6':
+    resolution:
+      {
+        integrity: sha512-ngX871rMVfR3VQvZCqiipROU7QgemNzuEKEgi4emkCIF5G3TLiGBcv0Du5yNCrTgQ2eCRB3TOAVwhaD1Tg30gg==,
+      }
+    peerDependencies:
+      '@op-engineering/op-sqlite': ^13.0.0 || ^14.0.0 || ^15.0.0
+      '@powersync/common': ^1.52.0
+      react: '*'
+      react-native: '*'
+
+  '@powersync/react-native@1.34.0':
+    resolution:
+      {
+        integrity: sha512-dmP3GuWXshOa7Tqe5YKSW7whV2EZYhlQaX3Xi63TjsLdCgT2BRPbC3zyzVerbAAtAhYE65DPIr1qIAgo38LViw==,
+      }
+    peerDependencies:
+      '@journeyapps/react-native-quick-sqlite': ^2.5.1
+      '@powersync/common': ^1.52.0
+      react: '*'
+      react-native: '*'
+    peerDependenciesMeta:
+      '@journeyapps/react-native-quick-sqlite':
+        optional: true
+
+  '@powersync/react@1.10.0':
+    resolution:
+      {
+        integrity: sha512-orM29qocbF8zYTBM27j9nPNztyplpbNVaw8djpqxl8N2wESqHTbHOKpatg+Fa5aofgjzmrkiGwevJvCbiWYYWQ==,
+      }
+    peerDependencies:
+      '@powersync/common': ^1.51.0
+      react: '*'
 
   '@react-native-community/datetimepicker@8.4.4':
     resolution:
@@ -8977,6 +9045,12 @@ packages:
         integrity: sha512-aIL5Fx7mawVa300al2BnEE4iNvo1qETxLrPI/o05L7z6go7fCw1J6EQmbK4FmJ2AS7kgVF/KEZWufBfdClMcPg==,
       }
     engines: { node: '>= 0.6' }
+
+  event-iterator@2.0.0:
+    resolution:
+      {
+        integrity: sha512-KGft0ldl31BZVV//jj+IAIGCxkvvUkkON+ScH6zfoX+l+omX6001ggyRSpI0Io2Hlro0ThXotswCtfzS8UkIiQ==,
+      }
 
   event-pubsub@4.3.0:
     resolution:
@@ -20275,6 +20349,11 @@ snapshots:
       - '@swc/core'
       - debug
 
+  '@op-engineering/op-sqlite@15.2.12(react-native@0.81.5(@babel/core@7.29.0)(@react-native/metro-config@0.85.0(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)':
+    dependencies:
+      react: 19.1.0
+      react-native: 0.81.5(@babel/core@7.29.0)(@react-native/metro-config@0.85.0(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0)
+
   '@oxc-resolver/binding-android-arm-eabi@11.19.1':
     optional: true
 
@@ -20502,6 +20581,29 @@ snapshots:
   '@playwright/test@1.58.2':
     dependencies:
       playwright: 1.58.2
+
+  '@powersync/common@1.52.0':
+    dependencies:
+      event-iterator: 2.0.0
+
+  '@powersync/op-sqlite@0.9.6(@op-engineering/op-sqlite@15.2.12(react-native@0.81.5(@babel/core@7.29.0)(@react-native/metro-config@0.85.0(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(@powersync/common@1.52.0)(react-native@0.81.5(@babel/core@7.29.0)(@react-native/metro-config@0.85.0(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)':
+    dependencies:
+      '@op-engineering/op-sqlite': 15.2.12(react-native@0.81.5(@babel/core@7.29.0)(@react-native/metro-config@0.85.0(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
+      '@powersync/common': 1.52.0
+      react: 19.1.0
+      react-native: 0.81.5(@babel/core@7.29.0)(@react-native/metro-config@0.85.0(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0)
+
+  '@powersync/react-native@1.34.0(@powersync/common@1.52.0)(react-native@0.81.5(@babel/core@7.29.0)(@react-native/metro-config@0.85.0(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)':
+    dependencies:
+      '@powersync/common': 1.52.0
+      '@powersync/react': 1.10.0(@powersync/common@1.52.0)(react@19.1.0)
+      react: 19.1.0
+      react-native: 0.81.5(@babel/core@7.29.0)(@react-native/metro-config@0.85.0(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0)
+
+  '@powersync/react@1.10.0(@powersync/common@1.52.0)(react@19.1.0)':
+    dependencies:
+      '@powersync/common': 1.52.0
+      react: 19.1.0
 
   '@react-native-community/datetimepicker@8.4.4(expo@54.0.34)(react-native@0.81.5(@babel/core@7.29.0)(@react-native/metro-config@0.85.0(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)':
     dependencies:
@@ -23853,6 +23955,8 @@ snapshots:
   esutils@2.0.3: {}
 
   etag@1.8.1: {}
+
+  event-iterator@2.0.0: {}
 
   event-pubsub@4.3.0:
     optional: true

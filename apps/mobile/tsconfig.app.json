@@ -52,6 +52,9 @@
     },
     {
       "path": "../../packages/ui/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/powersync/tsconfig.lib.json"
     }
   ]
 }
