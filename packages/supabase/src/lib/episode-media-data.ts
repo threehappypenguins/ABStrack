@@ -527,6 +527,8 @@ export async function uploadConfirmedEpisodeMedia(
     durationSeconds?: number | null;
     /**
      * JPEG preview bytes uploaded under {@link createEpisodeMediaThumbnailObjectKey} (always `.jpg`).
+     * When an `episode_media` row already exists, omitting `thumbnail` leaves `thumbnail_storage_key`
+     * unchanged (primary-only replace uploads).
      */
     thumbnail?: {
       body: EpisodeMediaUploadBody;
@@ -689,7 +691,9 @@ export async function uploadConfirmedEpisodeMedia(
         .from('episode_media')
         .update({
           storage_object_key: objectKey,
-          thumbnail_storage_key: thumbnailKey,
+          ...(thumbnailKey != null
+            ? { thumbnail_storage_key: thumbnailKey }
+            : {}),
           media_type: args.mediaType,
           duration_seconds: durationSeconds,
           upload_completed_at: uploadCompletedAt,
@@ -710,7 +714,7 @@ export async function uploadConfirmedEpisodeMedia(
         );
         await removeBucketObjectsBestEffort(client, keysToRemove);
       }
-      const nextThumb = thumbnailKey ?? '';
+      const nextThumb = thumbnailKey != null ? thumbnailKey : previousThumb;
       if (previousThumb !== '' && previousThumb !== nextThumb) {
         const keysToRemove = normalizeStoragePath(previousThumb).filter(
           (k) => k !== nextThumb,

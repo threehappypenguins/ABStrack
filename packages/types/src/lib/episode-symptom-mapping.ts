@@ -28,12 +28,17 @@ export function episodeSymptomRowToPromptAnswer(
   }
 }
 
+/** True when `uri` is a persisted `storage:…` ref (not `blob:`, `file:`, etc.). */
+function isEpisodeMediaStoragePathHint(uri: string): boolean {
+  return uri.trim().startsWith('storage:');
+}
+
 /**
  * Collects primary and thumbnail `storage:…` strings from a committed photo/video answer for Storage
  * cleanup when deleting the symptom row (passed through to Supabase helpers).
  *
  * @param answer - Current prompt answer (ignored unless type is `photo` or `video` with a value).
- * @returns Non-empty URI strings only (trimmed).
+ * @returns Trimmed `storage:…` strings only — transient capture URIs are excluded.
  */
 export function episodeMediaStoragePathHintsFromPromptAnswer(
   answer: SymptomPromptAnswer | undefined,
@@ -47,14 +52,17 @@ export function episodeMediaStoragePathHintsFromPromptAnswer(
   }
   const v = answer.value;
   const out: string[] = [];
-  if (typeof v.localUri === 'string' && v.localUri.trim()) {
-    out.push(v.localUri.trim());
+  if (typeof v.localUri === 'string') {
+    const local = v.localUri.trim();
+    if (local && isEpisodeMediaStoragePathHint(local)) {
+      out.push(local);
+    }
   }
-  if (
-    typeof v.thumbnailStorageUri === 'string' &&
-    v.thumbnailStorageUri.trim()
-  ) {
-    out.push(v.thumbnailStorageUri.trim());
+  if (typeof v.thumbnailStorageUri === 'string') {
+    const thumb = v.thumbnailStorageUri.trim();
+    if (thumb && isEpisodeMediaStoragePathHint(thumb)) {
+      out.push(thumb);
+    }
   }
   return out;
 }

@@ -35,6 +35,30 @@ describe('episode-symptom mapping', () => {
     expect(episodeMediaStoragePathHintsFromPromptAnswer(undefined)).toEqual([]);
   });
 
+  it('episodeMediaStoragePathHintsFromPromptAnswer ignores non-storage blob/file URIs', () => {
+    expect(
+      episodeMediaStoragePathHintsFromPromptAnswer({
+        type: 'photo',
+        value: {
+          localUri: 'blob:http://localhost/uuid',
+          thumbnailStorageUri: 'storage:a/b/thumb.jpg',
+          capturedAt: '2026-04-18T12:00:00.000Z',
+        },
+      }),
+    ).toEqual(['storage:a/b/thumb.jpg']);
+
+    expect(
+      episodeMediaStoragePathHintsFromPromptAnswer({
+        type: 'photo',
+        value: {
+          localUri: 'storage:a/b/photo.jpg',
+          thumbnailStorageUri: 'file:///tmp/x.jpg',
+          capturedAt: '2026-04-18T12:00:00.000Z',
+        },
+      }),
+    ).toEqual(['storage:a/b/photo.jpg']);
+  });
+
   it('episodeSymptomRowToPromptAnswer maps yes_no / severity / free_text', () => {
     expect(
       episodeSymptomRowToPromptAnswer({

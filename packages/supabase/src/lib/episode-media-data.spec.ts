@@ -724,6 +724,81 @@ describe('uploadConfirmedEpisodeMedia', () => {
     expect(remove).toHaveBeenCalledWith(['u1/ep1/photo-old.jpg']);
   });
 
+  it('does not clear thumbnail_storage_key or delete thumbnail blob on update when thumbnail omitted', async () => {
+    const upload = vi.fn(async () => ({ error: null }));
+    const remove = vi.fn(async () => ({ data: [], error: null }));
+    const update = vi.fn(() => ({
+      eq: vi.fn(() => ({
+        select: vi.fn(() => ({
+          single: vi.fn(async () => ({
+            data: {
+              id: 'em-existing',
+              storage_object_key: 'u1/ep1/photo-new.jpg',
+              thumbnail_storage_key: 'u1/ep1/thumb-old.jpg',
+              media_type: 'photo',
+            },
+            error: null,
+          })),
+        })),
+      })),
+    }));
+    const maybeSingle = vi.fn(async () => ({
+      data: {
+        id: 'em-existing',
+        storage_object_key: 'u1/ep1/photo-old.jpg',
+        thumbnail_storage_key: 'u1/ep1/thumb-old.jpg',
+      },
+      error: null,
+    }));
+    const client = {
+      storage: {
+        from: vi.fn(() => ({
+          upload,
+          remove,
+        })),
+      },
+      from: vi.fn((table: string) => {
+        if (table === 'episode_media') {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    limit: vi.fn(() => ({
+                      maybeSingle,
+                    })),
+                  })),
+                })),
+              })),
+            })),
+            update,
+          };
+        }
+        throw new Error(`unexpected table ${table}`);
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await uploadConfirmedEpisodeMedia(client, {
+      userId: 'u1',
+      episodeId: 'ep1',
+      episodeSymptomId: 'sx1',
+      mediaType: 'photo',
+      body: 'blob',
+      contentType: 'image/jpeg',
+      extension: 'jpg',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(update).toHaveBeenCalledTimes(1);
+    const patch = update.mock.calls[0] as unknown as
+      | [Record<string, unknown>]
+      | undefined;
+    expect(patch?.[0]).toBeDefined();
+    expect(patch?.[0]).not.toHaveProperty('thumbnail_storage_key');
+    expect(remove).toHaveBeenCalledWith(['u1/ep1/photo-old.jpg']);
+    expect(remove).not.toHaveBeenCalledWith(['u1/ep1/thumb-old.jpg']);
+  });
+
   it('normalizes legacy previous storage_object_key before superseded-object remove', async () => {
     const upload = vi.fn(async () => ({ error: null }));
     const remove = vi.fn(async () => ({ data: [], error: null }));
