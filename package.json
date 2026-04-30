@@ -119,7 +119,8 @@
   "pnpm": {
     "overrides": {
       "@types/react": "~19.1.0",
-      "@types/react-dom": "~19.1.0"
+      "@types/react-dom": "~19.1.0",
+      "@powersync/common": "1.52.0"
     }
   },
   "op-sqlite": {

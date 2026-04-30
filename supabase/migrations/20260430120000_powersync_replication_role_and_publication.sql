@@ -8,6 +8,9 @@
 -- When adding a replicated table: GRANT SELECT ... TO powersync_role;
 --   ALTER PUBLICATION powersync ADD TABLE public.<table>;
 -- See docs: https://docs.powersync.com/configuration/source-db/setup#postgres
+--
+-- Publication DDL is idempotent: if `powersync` already exists (manual bootstrap / repair),
+-- we only ALTER PUBLICATION ADD TABLE for tables missing from pg_publication_tables.
 
 DO $$
 BEGIN
@@ -48,19 +51,67 @@ public.health_markers,
 public.food_diary_entries,
 public.episode_media TO powersync_role;
 
-CREATE PUBLICATION powersync FOR TABLE public.profiles,
-public.access_log,
-public.practitioner_access,
-public.caretaker_access,
-public.symptom_presets,
-public.preset_symptoms,
-public.health_marker_presets,
-public.preset_health_markers,
-public.episode_templates,
-public.episodes,
-public.episode_symptoms,
-public.health_markers,
-public.food_diary_entries,
-public.episode_media;
+DO $$
+DECLARE
+  tbl text;
+  required_tables text[] := ARRAY[
+    'profiles',
+    'access_log',
+    'practitioner_access',
+    'caretaker_access',
+    'symptom_presets',
+    'preset_symptoms',
+    'health_marker_presets',
+    'preset_health_markers',
+    'episode_templates',
+    'episodes',
+    'episode_symptoms',
+    'health_markers',
+    'food_diary_entries',
+    'episode_media'
+  ];
+BEGIN
+  IF NOT EXISTS (
+    SELECT
+      1
+    FROM
+      pg_publication p
+    WHERE
+      p.pubname = 'powersync') THEN
+    EXECUTE $powersync_pub$
+    CREATE PUBLICATION powersync FOR TABLE public.profiles,
+    public.access_log,
+    public.practitioner_access,
+    public.caretaker_access,
+    public.symptom_presets,
+    public.preset_symptoms,
+    public.health_marker_presets,
+    public.preset_health_markers,
+    public.episode_templates,
+    public.episodes,
+    public.episode_symptoms,
+    public.health_markers,
+    public.food_diary_entries,
+    public.episode_media
+    $powersync_pub$;
+  ELSE
+    FOREACH tbl IN ARRAY required_tables
+    LOOP
+      IF NOT EXISTS (
+        SELECT
+          1
+        FROM
+          pg_publication_tables pt
+        WHERE
+          pt.pubname = 'powersync'
+          AND pt.schemaname = 'public'
+          AND pt.tablename = tbl
+      ) THEN
+        EXECUTE format('ALTER PUBLICATION powersync ADD TABLE public.%I', tbl);
+      END IF;
+    END LOOP;
+  END IF;
+END
+$$;
 
 COMMENT ON PUBLICATION powersync IS 'PowerSync: replicate ABStrack PHI tables listed in sync-rules.yaml only (not FOR ALL TABLES).';

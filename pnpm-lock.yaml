@@ -7,6 +7,7 @@ settings:
 overrides:
   '@types/react': ~19.1.0
   '@types/react-dom': ~19.1.0
+  '@powersync/common': 1.52.0
 
 importers:
   .:
@@ -261,6 +262,9 @@ importers:
       '@op-engineering/op-sqlite':
         specifier: ^15.2.12
         version: 15.2.12(react-native@0.81.5(@babel/core@7.29.0)(@react-native/metro-config@0.85.0(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
+      '@powersync/common':
+        specifier: 1.52.0
+        version: 1.52.0
       '@powersync/op-sqlite':
         specifier: 0.9.6
         version: 0.9.6(@op-engineering/op-sqlite@15.2.12(react-native@0.81.5(@babel/core@7.29.0)(@react-native/metro-config@0.85.0(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(@powersync/common@1.52.0)(react-native@0.81.5(@babel/core@7.29.0)(@react-native/metro-config@0.85.0(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
@@ -4256,7 +4260,7 @@ packages:
       }
     peerDependencies:
       '@op-engineering/op-sqlite': ^13.0.0 || ^14.0.0 || ^15.0.0
-      '@powersync/common': ^1.52.0
+      '@powersync/common': 1.52.0
       react: '*'
       react-native: '*'
 
@@ -4267,7 +4271,7 @@ packages:
       }
     peerDependencies:
       '@journeyapps/react-native-quick-sqlite': ^2.5.1
-      '@powersync/common': ^1.52.0
+      '@powersync/common': 1.52.0
       react: '*'
       react-native: '*'
     peerDependenciesMeta:
@@ -4280,7 +4284,7 @@ packages:
         integrity: sha512-orM29qocbF8zYTBM27j9nPNztyplpbNVaw8djpqxl8N2wESqHTbHOKpatg+Fa5aofgjzmrkiGwevJvCbiWYYWQ==,
       }
     peerDependencies:
-      '@powersync/common': ^1.51.0
+      '@powersync/common': 1.52.0
       react: '*'
 
   '@react-native-community/datetimepicker@8.4.4':

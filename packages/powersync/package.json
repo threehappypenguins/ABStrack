@@ -16,7 +16,9 @@
     }
   },
   "dependencies": {
-    "@powersync/common": "1.52.0",
     "tslib": "^2.3.0"
+  },
+  "peerDependencies": {
+    "@powersync/common": "^1.52.0"
   }
 }

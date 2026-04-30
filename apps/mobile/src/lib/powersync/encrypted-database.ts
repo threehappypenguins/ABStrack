@@ -22,7 +22,7 @@ export function createEncryptedAbstrackPowerSyncDatabase(options: {
   });
 
   return new PowerSyncDatabase({
-    // pnpm isolates `@powersync/common` per package; runtime schema is identical.
+    // Nominal mismatch between workspace-built Schema and SDK Schema (`Table.options`). TS2352 rejects `as Schema` alone; `unknown` states intent. Runtime object matches PowerSyncDatabase.
     schema: abstrackPowerSyncSchema as unknown as Schema,
     database: factory,
   });
