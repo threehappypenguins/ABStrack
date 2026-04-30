@@ -15,6 +15,18 @@ const VIDEO_MAX_DURATION_SECONDS = Math.floor(
 );
 
 /**
+ * Episode thumbnails are always stored with a `.jpg` object key; callers must upload JPEG bytes with
+ * this MIME type so extensions and `Content-Type` stay aligned.
+ */
+const EPISODE_MEDIA_THUMBNAIL_MIME_TYPE = 'image/jpeg';
+
+/** Lowercases and strips MIME parameters (e.g. `charset`) for comparisons. */
+function normalizedEpisodeMediaThumbnailMimeType(raw: string): string {
+  const base = raw.trim().split(';')[0]?.trim().toLowerCase() ?? '';
+  return base;
+}
+
+/**
  * True when `key` is a bucket-relative object path suitable for Storage `remove` on `episode-media`
  * (not a full URL, app `storage:` URI, leading `/`, or `episode-media/...` prefix — the bucket is
  * already selected on the client).
@@ -266,7 +278,8 @@ export function createEpisodeMediaObjectKey(args: {
  * uniformly.
  *
  * @param args - User and episode identifiers (must match the primary object’s prefix).
- * @returns Object key for the `episode-media` bucket (always `.jpg`).
+ * @returns Object key for the `episode-media` bucket (always `.jpg`). Thumbnail uploads must use
+ *   JPEG bytes with MIME type `image/jpeg` (see {@link uploadConfirmedEpisodeMedia} validation).
  */
 export function createEpisodeMediaThumbnailObjectKey(args: {
   userId: Uuid;
@@ -491,11 +504,12 @@ async function deleteSupersededOpenPassEpisodeSymptomsAndTheirEpisodeMedia(
  *
  * @param client - Supabase client (RLS applies to Storage and table writes).
  * @param args - Upload payload + relational linkage identifiers.
- * @param args.thumbnail - Optional second object (typically a JPEG) uploaded next to the primary
- *   asset; when provided, {@link createEpisodeMediaThumbnailObjectKey} assigns the Storage path and
- *   `episode_media.thumbnail_storage_key` is set. Omit only in tests or transitional callers —
- *   production clients should supply a thumbnail for photo/video so grids can load small previews
- *   with the same authorization boundary as the primary object.
+ * @param args.thumbnail - Optional JPEG preview uploaded next to the primary asset; when provided,
+ *   {@link createEpisodeMediaThumbnailObjectKey} assigns a `.jpg` Storage path and
+ *   `episode_media.thumbnail_storage_key` is set. `thumbnail.contentType` must be `image/jpeg`.
+ *   Omit only in tests or transitional callers — production clients should supply a thumbnail for
+ *   photo/video so grids can load small previews with the same authorization boundary as the primary
+ *   object.
  * @returns The created/updated `episode_media` row, or `{ ok: false }` on validation, Web Crypto,
  *   Storage, or database errors. Does not throw: missing `crypto`, Storage `upload` rejections, or
  *   thrown transport/SDK failures are returned as `{ ok: false }` (use `react-native-get-random-values` on RN).
@@ -512,15 +526,12 @@ export async function uploadConfirmedEpisodeMedia(
     extension: string;
     durationSeconds?: number | null;
     /**
-     * JPEG or other preview bytes uploaded under {@link createEpisodeMediaThumbnailObjectKey}.
+     * JPEG preview bytes uploaded under {@link createEpisodeMediaThumbnailObjectKey} (always `.jpg`).
      */
     thumbnail?: {
       body: EpisodeMediaUploadBody;
+      /** Must be `image/jpeg`; thumbnails use a fixed `.jpg` object key. */
       contentType: string;
-      /**
-       * Filename extension for MIME alignment (thumbnails are usually `jpg` / `image/jpeg`).
-       */
-      extension?: string;
     };
     /**
      * When present, after a successful **new** `episode_media` insert, runs best-effort cleanup of
@@ -544,14 +555,21 @@ export async function uploadConfirmedEpisodeMedia(
     };
   }
 
-  if (args.thumbnail != null && !args.thumbnail.contentType.trim()) {
-    return {
-      ok: false,
-      error: new PresetDataError(
-        'validation_error',
-        'Thumbnail content type is required.',
-      ),
-    };
+  if (args.thumbnail != null) {
+    const thumbMime = normalizedEpisodeMediaThumbnailMimeType(
+      args.thumbnail.contentType,
+    );
+    if (thumbMime !== EPISODE_MEDIA_THUMBNAIL_MIME_TYPE) {
+      return {
+        ok: false,
+        error: new PresetDataError(
+          'validation_error',
+          thumbMime === ''
+            ? 'Thumbnail content type is required.'
+            : `Thumbnail must be ${EPISODE_MEDIA_THUMBNAIL_MIME_TYPE} (JPEG) to match the .jpg object key; received ${thumbMime}.`,
+        ),
+      };
+    }
   }
 
   let objectKey: string;
@@ -611,13 +629,12 @@ export async function uploadConfirmedEpisodeMedia(
   }
 
   if (args.thumbnail != null && thumbnailKey != null) {
-    const thumbContentType = args.thumbnail.contentType.trim();
     let thumbUploaded;
     try {
       thumbUploaded = await client.storage
         .from(EPISODE_MEDIA_BUCKET)
         .upload(thumbnailKey, args.thumbnail.body, {
-          contentType: thumbContentType,
+          contentType: EPISODE_MEDIA_THUMBNAIL_MIME_TYPE,
           upsert: false,
         });
     } catch (caught) {

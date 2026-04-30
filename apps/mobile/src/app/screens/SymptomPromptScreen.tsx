@@ -277,7 +277,6 @@ async function getMobileMediaUploadData(answer: SymptomPromptAnswer): Promise<{
   thumbnail: {
     body: ArrayBuffer;
     contentType: string;
-    extension: string;
   };
 }> {
   if (answer.type !== 'photo' && answer.type !== 'video') {
@@ -320,7 +319,6 @@ async function getMobileMediaUploadData(answer: SymptomPromptAnswer): Promise<{
     thumbnail: {
       body: thumbBody,
       contentType: 'image/jpeg',
-      extension: 'jpg',
     },
   };
 }

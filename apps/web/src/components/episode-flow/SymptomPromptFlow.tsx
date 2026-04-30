@@ -259,7 +259,6 @@ async function getWebMediaUploadData(answer: SymptomPromptAnswer): Promise<{
   thumbnail: {
     body: Blob;
     contentType: string;
-    extension: string;
   };
 }> {
   if (answer.type !== 'photo' && answer.type !== 'video') {
@@ -306,7 +305,6 @@ async function getWebMediaUploadData(answer: SymptomPromptAnswer): Promise<{
     thumbnail: {
       body: thumbBody,
       contentType: 'image/jpeg',
-      extension: 'jpg',
     },
   };
 }

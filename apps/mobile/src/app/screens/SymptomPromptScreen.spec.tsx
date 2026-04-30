@@ -789,7 +789,6 @@ describe('SymptomPromptScreen', () => {
         thumbnail: {
           body: expect.any(ArrayBuffer),
           contentType: 'image/jpeg',
-          extension: 'jpg',
         },
         supersedeOpenPassPresetSymptomAnswers: {
           presetSymptomId: lineVideoOnly.id,
@@ -909,7 +908,6 @@ describe('SymptomPromptScreen', () => {
         thumbnail: {
           body: expect.any(ArrayBuffer),
           contentType: 'image/jpeg',
-          extension: 'jpg',
         },
         supersedeOpenPassPresetSymptomAnswers: {
           presetSymptomId: linePhotoOnly.id,

@@ -1019,7 +1019,6 @@ describe('uploadConfirmedEpisodeMedia', () => {
       thumbnail: {
         body: 'thumb-bytes',
         contentType: 'image/jpeg',
-        extension: 'jpg',
       },
     });
 
@@ -1108,6 +1107,42 @@ describe('uploadConfirmedEpisodeMedia', () => {
     if (!result.ok) {
       expect(result.error.code).toBe('validation_error');
       expect(result.error.message).toMatch(/Thumbnail content type/i);
+    }
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it('returns validation_error when thumbnail content type is not image/jpeg', async () => {
+    const upload = vi.fn();
+    const client = {
+      storage: {
+        from: vi.fn(() => ({
+          upload,
+          remove: vi.fn(async () => ({ data: [], error: null })),
+        })),
+      },
+      from: vi.fn(() => {
+        throw new Error('unexpected DB');
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await uploadConfirmedEpisodeMedia(client, {
+      userId: 'u1',
+      episodeId: 'ep1',
+      episodeSymptomId: 'sx1',
+      mediaType: 'photo',
+      body: 'blob',
+      contentType: 'image/jpeg',
+      extension: 'jpg',
+      thumbnail: {
+        body: 'thumb',
+        contentType: 'image/png',
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('validation_error');
+      expect(result.error.message).toMatch(/image\/jpeg/);
     }
     expect(upload).not.toHaveBeenCalled();
   });
