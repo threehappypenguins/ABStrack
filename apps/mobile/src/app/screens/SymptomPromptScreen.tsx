@@ -97,11 +97,22 @@ async function getImagePixelSize(
   }
 }
 
+/**
+ * Downscales so the long edge is at most `maxEdgePx`, consistent with web (`Math.min(1, …)` scaling).
+ * When the long edge is already ≤ `maxEdgePx`, returns no resize action so small frames are not upscaled.
+ */
 function thumbnailResizeActionForLongEdge(
   width: number,
   height: number,
   maxEdgePx: number,
 ): { resize: { width?: number; height?: number } }[] {
+  const longEdge = Math.max(width, height);
+  if (!Number.isFinite(longEdge) || longEdge <= 0) {
+    return [];
+  }
+  if (longEdge <= maxEdgePx) {
+    return [];
+  }
   if (height > width) {
     return [{ resize: { height: maxEdgePx } }];
   }
