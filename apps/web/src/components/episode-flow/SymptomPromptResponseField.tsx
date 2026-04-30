@@ -960,6 +960,9 @@ function SymptomVideoCaptureField({
   const [committedPreviewError, setCommittedPreviewError] = useState<
     string | null
   >(null);
+  /** Triggers signed URL re-resolution for persisted uploaded videos. */
+  const [videoPreviewRetryGeneration, setVideoPreviewRetryGeneration] =
+    useState(0);
   const [confirmRemoveCommittedOpen, setConfirmRemoveCommittedOpen] =
     useState(false);
   /**
@@ -1051,7 +1054,7 @@ function SymptomVideoCaptureField({
     return () => {
       cancelled = true;
     };
-  }, [captured, resolveEpisodeMediaPreviewUrl]);
+  }, [captured, resolveEpisodeMediaPreviewUrl, videoPreviewRetryGeneration]);
 
   const showVideoPreviewPanel =
     confirmVideoUseTapPending || hasEpisodeVideoMediaAnswer(answer);
@@ -1336,12 +1339,23 @@ function SymptomVideoCaptureField({
           ) : !resolveEpisodeMediaPreviewUrl ? (
             <SymptomEpisodeMediaPreviewLoadingPlaceholder embedded />
           ) : committedPreviewError ? (
-            <p
-              className="p-4 text-sm text-red-700 dark:text-red-300"
-              role="alert"
-            >
-              {committedPreviewError}
-            </p>
+            <div className="flex flex-col gap-3 p-4" role="alert">
+              <p className="text-sm text-red-700 dark:text-red-300">
+                {committedPreviewError}
+              </p>
+              <button
+                type="button"
+                disabled={disabled}
+                aria-label={`Retry loading ${line.symptom_name} video preview`}
+                className="inline-flex min-h-[44px] max-w-xs items-center justify-center self-start rounded-lg border border-app-border bg-app-surface px-4 text-sm font-semibold text-app-ink hover:bg-app-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={() => {
+                  setCommittedPreviewError(null);
+                  setVideoPreviewRetryGeneration((g) => g + 1);
+                }}
+              >
+                Try again
+              </button>
+            </div>
           ) : !committedPreviewUrl ? (
             <SymptomEpisodeMediaPreviewLoadingPlaceholder embedded />
           ) : !videoReadyDisplaySrc ? (

@@ -1,5 +1,13 @@
 import React, { useCallback, useRef, useState } from 'react';
-import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { formatEpisodeDurationSimple, type EpisodeRow } from '@abstrack/types';
@@ -8,8 +16,10 @@ import {
   cancelActiveEpisodeById,
   deleteEpisodeById,
   getActiveEpisodeForUser,
+  listEpisodeMediaForEpisode,
   listCompletedEpisodesForUser,
 } from '@abstrack/supabase';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import { clearSymptomPromptSession } from '../../lib/episodes/symptom-prompt-session-store';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { ScreenShell } from '../components/ScreenShell';
@@ -78,6 +88,20 @@ export function EpisodesManagementPanel({
   const [deletingEpisodeId, setDeletingEpisodeId] = useState<string | null>(
     null,
   );
+  const [mediaByEpisodeId, setMediaByEpisodeId] = useState<
+    Record<
+      string,
+      {
+        loading: boolean;
+        error: string | null;
+        items: Array<{
+          key: string;
+          signedUrl: string | null;
+          mediaType: 'video' | 'photo';
+        }>;
+      }
+    >
+  >({});
   const loadInitial = useCallback(
     async (cancel?: { cancelled: boolean }) => {
       const generation = ++loadGenRef.current;
@@ -231,19 +255,56 @@ export function EpisodesManagementPanel({
     });
   };
 
-  const onViewEpisodeDetails = useCallback((ep: EpisodeRow) => {
-    const body = [
-      `Type: ${ep.episode_type}`,
-      ep.episode_label?.trim() ? `Label: ${ep.episode_label.trim()}` : null,
-      `Started: ${formatInstant(ep.started_at)}`,
-      `Ended: ${ep.ended_at ? formatInstant(ep.ended_at) : '—'}`,
-      `Duration: ${
-        formatEpisodeDurationSimple(ep.started_at, ep.ended_at) ?? '—'
-      }`,
-    ]
-      .filter(Boolean)
-      .join('\n');
-    Alert.alert(episodeSummaryLine(ep), body);
+  const loadEpisodeMedia = useCallback(async (episodeId: string) => {
+    setMediaByEpisodeId((prev) => ({
+      ...prev,
+      [episodeId]: {
+        loading: true,
+        error: null,
+        items: prev[episodeId]?.items ?? [],
+      },
+    }));
+    try {
+      const client = getMobileSupabaseClient();
+      const listed = await listEpisodeMediaForEpisode(client, episodeId);
+      if (!listed.ok) {
+        setMediaByEpisodeId((prev) => ({
+          ...prev,
+          [episodeId]: {
+            loading: false,
+            error: listed.error.message,
+            items: [],
+          },
+        }));
+        return;
+      }
+      const items = await Promise.all(
+        listed.data.map(async (row) => {
+          const key = row.storage_object_key.trim();
+          const signed = await client.storage
+            .from('episode-media')
+            .createSignedUrl(key, 120);
+          const mediaType: 'video' | 'photo' =
+            typeof row.duration_seconds === 'number' && row.duration_seconds > 0
+              ? 'video'
+              : 'photo';
+          return { key, signedUrl: signed.data?.signedUrl ?? null, mediaType };
+        }),
+      );
+      setMediaByEpisodeId((prev) => ({
+        ...prev,
+        [episodeId]: { loading: false, error: null, items },
+      }));
+    } catch {
+      setMediaByEpisodeId((prev) => ({
+        ...prev,
+        [episodeId]: {
+          loading: false,
+          error: 'Unable to load media preview.',
+          items: [],
+        },
+      }));
+    }
   }, []);
 
   const onCancelEpisode = useCallback(() => {
@@ -525,16 +586,121 @@ export function EpisodesManagementPanel({
                   {formatEpisodeDurationSimple(ep.started_at, ep.ended_at) ??
                     '—'}
                 </Text>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`View details for ${episodeSummaryLine(ep)}`}
-                  onPress={() => onViewEpisodeDetails(ep)}
-                  className="mt-2 min-h-[44px] justify-center rounded-lg border border-app-border px-3 py-2 dark:border-app-border-dark"
-                >
-                  <Text className={`text-sm font-semibold ${nw.textPrimary}`}>
-                    View details
-                  </Text>
-                </Pressable>
+                <View className="mt-2 rounded-lg border border-app-border px-3 py-3 dark:border-app-border-dark">
+                  {(() => {
+                    const mediaState = mediaByEpisodeId[ep.id];
+                    return (
+                      <>
+                        <Text className={`text-sm font-semibold ${nw.textInk}`}>
+                          Details
+                        </Text>
+                        <Text className={`mt-1 text-xs ${nw.textMuted}`}>
+                          Type: {ep.episode_type}
+                        </Text>
+                        {ep.episode_label?.trim() ? (
+                          <Text className={`mt-0.5 text-xs ${nw.textMuted}`}>
+                            Label: {ep.episode_label.trim()}
+                          </Text>
+                        ) : null}
+                        <Text
+                          className={`mt-2 text-xs font-semibold ${nw.textInk}`}
+                        >
+                          Media
+                        </Text>
+                        {!mediaState ? (
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel="Load episode media"
+                            onPress={() => void loadEpisodeMedia(ep.id)}
+                            className="mt-2 min-h-[40px] self-start rounded-lg border border-app-border px-3 py-2 dark:border-app-border-dark"
+                          >
+                            <Text
+                              className={`text-xs font-semibold ${nw.textPrimary}`}
+                            >
+                              Load media
+                            </Text>
+                          </Pressable>
+                        ) : null}
+                        {mediaState?.loading ? (
+                          <View className="mt-2 flex-row items-center gap-2">
+                            <ActivityIndicator />
+                            <Text className={`text-xs ${nw.textMuted}`}>
+                              Loading media…
+                            </Text>
+                          </View>
+                        ) : null}
+                        {mediaState?.error ? (
+                          <View className="mt-2">
+                            <Text className={`text-xs ${nw.textError}`}>
+                              {mediaState.error}
+                            </Text>
+                            <Pressable
+                              accessibilityRole="button"
+                              accessibilityLabel="Retry loading media"
+                              onPress={() => void loadEpisodeMedia(ep.id)}
+                              className="mt-2 min-h-[40px] self-start rounded-lg border border-app-border px-3 py-2 dark:border-app-border-dark"
+                            >
+                              <Text
+                                className={`text-xs font-semibold ${nw.textPrimary}`}
+                              >
+                                Retry
+                              </Text>
+                            </Pressable>
+                          </View>
+                        ) : null}
+                        {!mediaState?.loading &&
+                        !mediaState?.error &&
+                        mediaState &&
+                        mediaState.items.length === 0 ? (
+                          <Text className={`mt-2 text-xs ${nw.textMuted}`}>
+                            No photo or video for this episode.
+                          </Text>
+                        ) : null}
+                        {mediaState?.items.length ? (
+                          <View className="mt-2 gap-2">
+                            {mediaState.items.map((item) => (
+                              <View
+                                key={item.key}
+                                className="overflow-hidden rounded-lg border border-app-border/80 bg-black/5 dark:border-app-border-dark/80 dark:bg-black/25"
+                                style={{ minHeight: 180 }}
+                              >
+                                {item.signedUrl ? (
+                                  item.mediaType === 'video' ? (
+                                    <EpisodeMediaVideo uri={item.signedUrl} />
+                                  ) : (
+                                    <Image
+                                      source={{ uri: item.signedUrl }}
+                                      accessibilityLabel="Episode media"
+                                      accessibilityIgnoresInvertColors
+                                      style={{ width: '100%', height: 220 }}
+                                      resizeMode="contain"
+                                    />
+                                  )
+                                ) : (
+                                  <Text className="p-3 text-xs text-red-700 dark:text-red-300">
+                                    Link expired or unavailable.
+                                  </Text>
+                                )}
+                              </View>
+                            ))}
+                            <Pressable
+                              accessibilityRole="button"
+                              accessibilityLabel="Refresh media links"
+                              onPress={() => void loadEpisodeMedia(ep.id)}
+                              className="min-h-[40px] self-start rounded-lg border border-app-border px-3 py-2 dark:border-app-border-dark"
+                            >
+                              <Text
+                                className={`text-xs font-semibold ${nw.textPrimary}`}
+                              >
+                                Refresh media links
+                              </Text>
+                            </Pressable>
+                          </View>
+                        ) : null}
+                      </>
+                    );
+                  })()}
+                </View>
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={`Delete ${episodeSummaryLine(ep)} episode`}
@@ -579,4 +745,17 @@ export function EpisodesManagementPanel({
   }
 
   return <ScreenShell contentAlign="stretch">{body}</ScreenShell>;
+}
+
+function EpisodeMediaVideo({ uri }: { uri: string }) {
+  const player = useVideoPlayer(uri);
+  return (
+    <VideoView
+      player={player}
+      accessibilityLabel="Episode media video"
+      nativeControls
+      contentFit="contain"
+      style={{ width: '100%', height: 220 }}
+    />
+  );
 }

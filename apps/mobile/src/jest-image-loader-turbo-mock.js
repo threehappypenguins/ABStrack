@@ -12,8 +12,6 @@
  *
  * Loaded from `setupFiles` immediately after `jest-expo` preset setup files.
  */
-'use strict';
-
 const mockNativeModules =
   require('react-native/Libraries/BatchedBridge/NativeModules').default;
 
