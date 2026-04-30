@@ -119,19 +119,51 @@ async function videoBlobToJpegThumbnailBlob(
     const video = document.createElement('video');
     video.muted = true;
     video.playsInline = true;
-    video.src = url;
     await new Promise<void>((resolve, reject) => {
-      video.onloadeddata = () => resolve();
-      video.onerror = () =>
+      const onLoadedData = () => {
+        cleanup();
+        resolve();
+      };
+      const onError = () => {
+        cleanup();
         reject(new Error('Could not read video data for a thumbnail preview.'));
+      };
+      const cleanup = () => {
+        video.removeEventListener('loadeddata', onLoadedData);
+        video.removeEventListener('error', onError);
+      };
+      video.addEventListener('loadeddata', onLoadedData, { once: true });
+      video.addEventListener('error', onError, { once: true });
+      video.src = url;
     });
     const dur = Number.isFinite(video.duration) ? video.duration : 0;
-    video.currentTime = dur > 0 ? Math.min(0.25, dur * 0.05) : 0;
-    await new Promise<void>((resolve, reject) => {
-      video.onseeked = () => resolve();
-      video.onerror = () =>
-        reject(new Error('Could not seek video for a thumbnail preview.'));
-    });
+    const seekTarget = dur > 0 ? Math.min(0.25, dur * 0.05) : 0;
+    /** Seconds — `seeked` may not fire when the assignment is a no-op. */
+    const seekEpsilon = 1e-3;
+    const currentBeforeSeek = video.currentTime;
+    const alreadyAtSeekTarget =
+      Number.isFinite(currentBeforeSeek) &&
+      Number.isFinite(seekTarget) &&
+      Math.abs(currentBeforeSeek - seekTarget) < seekEpsilon;
+    if (!alreadyAtSeekTarget) {
+      await new Promise<void>((resolve, reject) => {
+        const onSeeked = () => {
+          cleanup();
+          resolve();
+        };
+        const onError = () => {
+          cleanup();
+          reject(new Error('Could not seek video for a thumbnail preview.'));
+        };
+        const cleanup = () => {
+          video.removeEventListener('seeked', onSeeked);
+          video.removeEventListener('error', onError);
+        };
+        video.addEventListener('seeked', onSeeked, { once: true });
+        video.addEventListener('error', onError, { once: true });
+        video.currentTime = seekTarget;
+      });
+    }
     const vw = video.videoWidth;
     const vh = video.videoHeight;
     if (!vw || !vh) {

@@ -790,16 +790,18 @@ describe('SymptomPromptResponseField persisted photo preview', () => {
   let resolveEpisodeMediaPreviewUrl: jest.MockedFunction<
     (storageUri: string) => Promise<string | null>
   >;
+  let previousFetch: typeof globalThis.fetch;
 
   beforeEach(() => {
     jest.clearAllMocks();
     resolveEpisodeMediaPreviewUrl = jest.fn();
-    global.fetch = jest.fn(() =>
+    previousFetch = globalThis.fetch;
+    globalThis.fetch = jest.fn(() =>
       Promise.resolve({
         ok: true,
         blob: () => Promise.resolve(new Blob(['x'], { type: 'image/jpeg' })),
       }),
-    ) as unknown as typeof fetch;
+    ) as unknown as typeof globalThis.fetch;
     createObjectUrlMock.mockReset();
     createObjectUrlMock.mockReturnValue('blob:display-photo');
     Object.defineProperty(globalThis.URL, 'createObjectURL', {
@@ -812,6 +814,10 @@ describe('SymptomPromptResponseField persisted photo preview', () => {
       configurable: true,
       writable: true,
     });
+  });
+
+  afterEach(() => {
+    globalThis.fetch = previousFetch;
   });
 
   it('passes thumbnailStorageUri to the resolver when it is a storage: ref', async () => {
