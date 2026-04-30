@@ -78,6 +78,25 @@ describe('symptom-prompt-session-sanitize', () => {
     ).toBeNull();
   });
 
+  it('sanitizeSymptomPromptAnswerEntry ignores invalid optional thumbnailStorageUri on photo', () => {
+    expect(
+      sanitizeSymptomPromptAnswerEntry({
+        type: 'photo',
+        value: {
+          localUri: 'file:///tmp/symptom.jpg',
+          capturedAt: '2026-04-27T12:00:00.000Z',
+          thumbnailStorageUri: 123,
+        },
+      }),
+    ).toEqual({
+      type: 'photo',
+      value: {
+        localUri: 'file:///tmp/symptom.jpg',
+        capturedAt: '2026-04-27T12:00:00.000Z',
+      },
+    });
+  });
+
   it('sanitizeSymptomPromptAnswerEntry accepts video local capture refs', () => {
     expect(
       sanitizeSymptomPromptAnswerEntry({
@@ -152,5 +171,26 @@ describe('symptom-prompt-session-sanitize', () => {
         },
       }),
     ).toBeNull();
+  });
+
+  it('sanitizeSymptomPromptAnswerEntry ignores invalid optional thumbnailStorageUri on video', () => {
+    expect(
+      sanitizeSymptomPromptAnswerEntry({
+        type: 'video',
+        value: {
+          localUri: 'blob:https://example.test/abc',
+          durationMs: 12000,
+          capturedAt: '2026-04-27T12:00:00.000Z',
+          thumbnailStorageUri: { bad: true },
+        },
+      }),
+    ).toEqual({
+      type: 'video',
+      value: {
+        localUri: 'blob:https://example.test/abc',
+        durationMs: 12000,
+        capturedAt: '2026-04-27T12:00:00.000Z',
+      },
+    });
   });
 });

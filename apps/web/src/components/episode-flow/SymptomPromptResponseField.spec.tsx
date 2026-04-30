@@ -769,3 +769,199 @@ describe('SymptomPromptResponseField photo capture', () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 });
+
+function makePersistedPhotoAnswer(args: {
+  localUri: string;
+  thumbnailStorageUri?: string | null;
+}): SymptomPromptAnswer {
+  return {
+    type: 'photo',
+    value: {
+      localUri: args.localUri,
+      capturedAt: '2026-01-01T00:00:00.000Z',
+      ...(args.thumbnailStorageUri !== undefined
+        ? { thumbnailStorageUri: args.thumbnailStorageUri }
+        : {}),
+    },
+  };
+}
+
+describe('SymptomPromptResponseField persisted photo preview', () => {
+  let resolveEpisodeMediaPreviewUrl: jest.MockedFunction<
+    (storageUri: string) => Promise<string | null>
+  >;
+  let previousFetch: typeof globalThis.fetch;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resolveEpisodeMediaPreviewUrl = jest.fn();
+    previousFetch = globalThis.fetch;
+    globalThis.fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: true,
+        blob: () => Promise.resolve(new Blob(['x'], { type: 'image/jpeg' })),
+      }),
+    ) as unknown as typeof globalThis.fetch;
+    createObjectUrlMock.mockReset();
+    createObjectUrlMock.mockReturnValue('blob:display-photo');
+    Object.defineProperty(globalThis.URL, 'createObjectURL', {
+      value: createObjectUrlMock,
+      configurable: true,
+      writable: true,
+    });
+    Object.defineProperty(globalThis.URL, 'revokeObjectURL', {
+      value: revokeObjectUrlMock,
+      configurable: true,
+      writable: true,
+    });
+  });
+
+  afterEach(() => {
+    globalThis.fetch = previousFetch;
+  });
+
+  it('passes thumbnailStorageUri to the resolver when it is a storage: ref', async () => {
+    resolveEpisodeMediaPreviewUrl.mockResolvedValue(
+      'https://cdn.example/signed-thumb.jpg',
+    );
+    render(
+      <SymptomPromptResponseField
+        line={makePhotoLine('Persisted')}
+        answer={makePersistedPhotoAnswer({
+          localUri: 'storage:user-1/ep-1/primary.jpg',
+          thumbnailStorageUri: 'storage:user-1/ep-1/thumb.jpg',
+        })}
+        onChange={jest.fn()}
+        disabled={false}
+        resolveEpisodeMediaPreviewUrl={resolveEpisodeMediaPreviewUrl}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(resolveEpisodeMediaPreviewUrl).toHaveBeenCalledWith(
+        'storage:user-1/ep-1/thumb.jpg',
+      );
+    });
+  });
+
+  it('falls back to localUri when thumbnailStorageUri is missing', async () => {
+    resolveEpisodeMediaPreviewUrl.mockResolvedValue(
+      'https://cdn.example/signed-primary.jpg',
+    );
+    render(
+      <SymptomPromptResponseField
+        line={makePhotoLine('Persisted')}
+        answer={makePersistedPhotoAnswer({
+          localUri: 'storage:user-1/ep-1/primary.jpg',
+        })}
+        onChange={jest.fn()}
+        disabled={false}
+        resolveEpisodeMediaPreviewUrl={resolveEpisodeMediaPreviewUrl}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(resolveEpisodeMediaPreviewUrl).toHaveBeenCalledWith(
+        'storage:user-1/ep-1/primary.jpg',
+      );
+    });
+  });
+
+  it('falls back to localUri when thumbnailStorageUri is not a storage: ref', async () => {
+    resolveEpisodeMediaPreviewUrl.mockResolvedValue(
+      'https://cdn.example/signed-primary.jpg',
+    );
+    render(
+      <SymptomPromptResponseField
+        line={makePhotoLine('Persisted')}
+        answer={makePersistedPhotoAnswer({
+          localUri: 'storage:user-1/ep-1/primary.jpg',
+          thumbnailStorageUri: 'blob:stale-thumbnail',
+        })}
+        onChange={jest.fn()}
+        disabled={false}
+        resolveEpisodeMediaPreviewUrl={resolveEpisodeMediaPreviewUrl}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(resolveEpisodeMediaPreviewUrl).toHaveBeenCalledWith(
+        'storage:user-1/ep-1/primary.jpg',
+      );
+    });
+  });
+
+  it('shows preview error and retries when the resolver rejects, then loads on success', async () => {
+    resolveEpisodeMediaPreviewUrl
+      .mockRejectedValueOnce(new Error('network'))
+      .mockResolvedValueOnce('https://cdn.example/signed.jpg');
+
+    render(
+      <SymptomPromptResponseField
+        line={makePhotoLine('Persisted')}
+        answer={makePersistedPhotoAnswer({
+          localUri: 'storage:user-1/ep-1/primary.jpg',
+          thumbnailStorageUri: 'storage:user-1/ep-1/thumb.jpg',
+        })}
+        onChange={jest.fn()}
+        disabled={false}
+        resolveEpisodeMediaPreviewUrl={resolveEpisodeMediaPreviewUrl}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeTruthy();
+      expect(
+        screen.getByText('Could not load preview. Try again.'),
+      ).toBeTruthy();
+    });
+    expect(resolveEpisodeMediaPreviewUrl).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(
+      screen.getByLabelText('Retry loading Persisted photo preview'),
+    );
+
+    await waitFor(() => {
+      expect(resolveEpisodeMediaPreviewUrl).toHaveBeenCalledTimes(2);
+    });
+    await waitFor(() => {
+      expect(screen.getByAltText('Persisted uploaded preview')).toBeTruthy();
+    });
+  });
+
+  it('shows preview error and retries when the resolver returns null, then loads on success', async () => {
+    resolveEpisodeMediaPreviewUrl
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce('https://cdn.example/signed.jpg');
+
+    render(
+      <SymptomPromptResponseField
+        line={makePhotoLine('Persisted')}
+        answer={makePersistedPhotoAnswer({
+          localUri: 'storage:user-1/ep-1/primary.jpg',
+        })}
+        onChange={jest.fn()}
+        disabled={false}
+        resolveEpisodeMediaPreviewUrl={resolveEpisodeMediaPreviewUrl}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeTruthy();
+      expect(
+        screen.getByText('Could not load preview. Try again.'),
+      ).toBeTruthy();
+    });
+
+    fireEvent.click(
+      screen.getByLabelText('Retry loading Persisted photo preview'),
+    );
+
+    await waitFor(() => {
+      expect(resolveEpisodeMediaPreviewUrl).toHaveBeenCalledTimes(2);
+    });
+    await waitFor(() => {
+      expect(screen.getByAltText('Persisted uploaded preview')).toBeTruthy();
+    });
+  });
+});

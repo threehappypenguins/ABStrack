@@ -8,6 +8,11 @@ import { symptomPromptAnswerToResponseColumns } from '@abstrack/types';
 import { PresetDataError } from './preset-data-error.js';
 import type { PresetDataResult } from './preset-data.js';
 import { wrap } from './preset-data.js';
+import {
+  listEpisodeMediaBucketPathsForEpisodeSymptomIds,
+  normalizedEpisodeMediaBucketKeysFromHints,
+  removeEpisodeMediaStorageObjectPathsBestEffort,
+} from './episode-media-data.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
 
 /**
@@ -125,6 +130,10 @@ export async function listEpisodeSymptomsForEpisode(
  * @param args.presetSymptomId - `preset_symptoms.id` for the current prompt line.
  * @param args.lastPostMarkerStepCompletedAt - `episodes.post_marker_step_completed_at` (or null
  *   for the first pass before any “Save and continue” on episode details).
+ * @param args.episodeMediaPathHints - Optional primary/thumbnail `storage:…` strings from the client;
+ *   merged with keys listed from `episode_media` when that read succeeds. Listing is best-effort for
+ *   Storage paths only: if `episode_media` read fails, symptom rows are still deleted and cleanup
+ *   uses hints only (or is skipped when there are no hints).
  */
 export async function deleteCurrentPassEpisodeSymptomAnswer(
   client: AbstrackSupabaseClient,
@@ -132,10 +141,42 @@ export async function deleteCurrentPassEpisodeSymptomAnswer(
     episodeId: Uuid;
     presetSymptomId: Uuid;
     lastPostMarkerStepCompletedAt: string | null;
+    episodeMediaPathHints?: (string | null | undefined)[];
   },
 ): Promise<PresetDataResult<boolean>> {
-  const { episodeId, presetSymptomId, lastPostMarkerStepCompletedAt } = args;
+  const {
+    episodeId,
+    presetSymptomId,
+    lastPostMarkerStepCompletedAt,
+    episodeMediaPathHints,
+  } = args;
   return wrap(async () => {
+    let idQuery = client
+      .from('episode_symptoms')
+      .select('id')
+      .eq('episode_id', episodeId)
+      .eq('preset_symptom_id', presetSymptomId);
+
+    if (lastPostMarkerStepCompletedAt != null) {
+      idQuery = idQuery.gt('created_at', lastPostMarkerStepCompletedAt);
+    }
+
+    const { data: idRows, error: idErr } = await idQuery;
+    if (idErr) {
+      return { data: null, error: idErr };
+    }
+
+    const symptomIds = (idRows ?? [])
+      .map((r: { id: string }) => r.id)
+      .filter(Boolean) as Uuid[];
+
+    const pathsListed = await listEpisodeMediaBucketPathsForEpisodeSymptomIds(
+      client,
+      episodeId,
+      symptomIds,
+    );
+    const pathsFromEpisodeMedia = pathsListed.ok ? pathsListed.data : [];
+
     let delQuery = client
       .from('episode_symptoms')
       .delete()
@@ -147,6 +188,18 @@ export async function deleteCurrentPassEpisodeSymptomAnswer(
     }
 
     const { error: delError } = await delQuery;
+
+    const hintKeys = normalizedEpisodeMediaBucketKeysFromHints(
+      episodeMediaPathHints ?? [],
+    );
+    const mergedPaths = [
+      ...new Set<string>([...pathsFromEpisodeMedia, ...hintKeys]),
+    ];
+
+    if (!delError && mergedPaths.length > 0) {
+      await removeEpisodeMediaStorageObjectPathsBestEffort(client, mergedPaths);
+    }
+
     return {
       data: delError ? null : true,
       error: delError,

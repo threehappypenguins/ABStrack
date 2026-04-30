@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   createEpisodeMediaObjectKey,
+  createEpisodeMediaThumbnailObjectKey,
   listEpisodeMediaForEpisode,
+  normalizedEpisodeMediaBucketKeysFromHints,
   removeEpisodeMediaObjectsFromStorage,
   uploadConfirmedEpisodeMedia,
 } from './episode-media-data.js';
@@ -45,6 +47,35 @@ describe('createEpisodeMediaObjectKey', () => {
       extension: '.WEBP',
     });
     expect(key.endsWith('.webp')).toBe(true);
+  });
+});
+
+describe('createEpisodeMediaThumbnailObjectKey', () => {
+  it('prefixes path with user, episode, and thumb-', () => {
+    const key = createEpisodeMediaThumbnailObjectKey({
+      userId: '6a111111-1111-4111-8111-111111111111',
+      episodeId: '7b222222-2222-4222-8222-222222222222',
+    });
+    expect(
+      key.startsWith(
+        '6a111111-1111-4111-8111-111111111111/7b222222-2222-4222-8222-222222222222/thumb-',
+      ),
+    ).toBe(true);
+    expect(key.endsWith('.jpg')).toBe(true);
+  });
+});
+
+describe('normalizedEpisodeMediaBucketKeysFromHints', () => {
+  it('maps storage refs and bucket-relative keys into removable paths', () => {
+    expect(
+      normalizedEpisodeMediaBucketKeysFromHints([
+        'storage:11111111-1111-4111-8111-111111111111/ep/v.webm',
+        'storage:11111111-1111-4111-8111-111111111111/ep/th.jpg',
+      ]),
+    ).toEqual([
+      '11111111-1111-4111-8111-111111111111/ep/v.webm',
+      '11111111-1111-4111-8111-111111111111/ep/th.jpg',
+    ]);
   });
 });
 
@@ -693,6 +724,81 @@ describe('uploadConfirmedEpisodeMedia', () => {
     expect(remove).toHaveBeenCalledWith(['u1/ep1/photo-old.jpg']);
   });
 
+  it('does not clear thumbnail_storage_key or delete thumbnail blob on update when thumbnail omitted', async () => {
+    const upload = vi.fn(async () => ({ error: null }));
+    const remove = vi.fn(async () => ({ data: [], error: null }));
+    const update = vi.fn(() => ({
+      eq: vi.fn(() => ({
+        select: vi.fn(() => ({
+          single: vi.fn(async () => ({
+            data: {
+              id: 'em-existing',
+              storage_object_key: 'u1/ep1/photo-new.jpg',
+              thumbnail_storage_key: 'u1/ep1/thumb-old.jpg',
+              media_type: 'photo',
+            },
+            error: null,
+          })),
+        })),
+      })),
+    }));
+    const maybeSingle = vi.fn(async () => ({
+      data: {
+        id: 'em-existing',
+        storage_object_key: 'u1/ep1/photo-old.jpg',
+        thumbnail_storage_key: 'u1/ep1/thumb-old.jpg',
+      },
+      error: null,
+    }));
+    const client = {
+      storage: {
+        from: vi.fn(() => ({
+          upload,
+          remove,
+        })),
+      },
+      from: vi.fn((table: string) => {
+        if (table === 'episode_media') {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    limit: vi.fn(() => ({
+                      maybeSingle,
+                    })),
+                  })),
+                })),
+              })),
+            })),
+            update,
+          };
+        }
+        throw new Error(`unexpected table ${table}`);
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await uploadConfirmedEpisodeMedia(client, {
+      userId: 'u1',
+      episodeId: 'ep1',
+      episodeSymptomId: 'sx1',
+      mediaType: 'photo',
+      body: 'blob',
+      contentType: 'image/jpeg',
+      extension: 'jpg',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(update).toHaveBeenCalledTimes(1);
+    const patch = update.mock.calls[0] as unknown as
+      | [Record<string, unknown>]
+      | undefined;
+    expect(patch?.[0]).toBeDefined();
+    expect(patch?.[0]).not.toHaveProperty('thumbnail_storage_key');
+    expect(remove).toHaveBeenCalledWith(['u1/ep1/photo-old.jpg']);
+    expect(remove).not.toHaveBeenCalledWith(['u1/ep1/thumb-old.jpg']);
+  });
+
   it('normalizes legacy previous storage_object_key before superseded-object remove', async () => {
     const upload = vi.fn(async () => ({ error: null }));
     const remove = vi.fn(async () => ({ data: [], error: null }));
@@ -925,6 +1031,341 @@ describe('uploadConfirmedEpisodeMedia', () => {
     }
   });
 
+  it('stores thumbnail_storage_key when secondary thumbnail upload succeeds', async () => {
+    const upload = vi.fn(async () => ({ error: null }));
+    const remove = vi.fn(async () => ({ data: [], error: null }));
+    const maybeSingle = vi.fn(async () => ({ data: null, error: null }));
+    const single = vi.fn(async () => ({
+      data: {
+        id: 'em-1',
+        user_id: 'u1',
+        episode_id: 'ep1',
+        episode_symptom_id: 'sx1',
+        storage_object_key: 'u1/ep1/photo-x.jpg',
+        thumbnail_storage_key: 'u1/ep1/thumb-y.jpg',
+        media_type: 'photo',
+        duration_seconds: null,
+        upload_completed_at: '2020-01-01T00:00:00Z',
+        created_at: '2020-01-01T00:00:00Z',
+        updated_at: '2020-01-01T00:00:00Z',
+      },
+      error: null,
+    }));
+    const client = {
+      storage: {
+        from: vi.fn(() => ({
+          upload,
+          remove,
+        })),
+      },
+      from: vi.fn((table: string) => {
+        if (table === 'episode_media') {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    limit: vi.fn(() => ({
+                      maybeSingle,
+                    })),
+                  })),
+                })),
+              })),
+            })),
+            insert: vi.fn(() => ({
+              select: vi.fn(() => ({
+                single,
+              })),
+            })),
+          };
+        }
+        throw new Error(`unexpected table ${table}`);
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await uploadConfirmedEpisodeMedia(client, {
+      userId: 'u1',
+      episodeId: 'ep1',
+      episodeSymptomId: 'sx1',
+      mediaType: 'photo',
+      body: 'blob',
+      contentType: 'image/jpeg',
+      extension: 'jpg',
+      thumbnail: {
+        body: 'thumb-bytes',
+        contentType: 'image/jpeg',
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(upload).toHaveBeenCalledTimes(2);
+    const uploadPaths = upload.mock.calls.map(
+      (call) => (call as unknown[])[0],
+    ) as string[];
+    expect(uploadPaths[0]?.startsWith('u1/ep1/photo-')).toBe(true);
+    expect(uploadPaths[1]?.startsWith('u1/ep1/thumb-')).toBe(true);
+    if (result.ok && result.data) {
+      expect(result.data.thumbnail_storage_key).toBe('u1/ep1/thumb-y.jpg');
+    }
+  });
+
+  it('rolls back primary upload when thumbnail upload fails', async () => {
+    const upload = vi.fn(async () => {
+      if (upload.mock.calls.length === 1) {
+        return { error: null };
+      }
+      return { error: { statusCode: '413', message: 'too big' } };
+    });
+    const remove = vi.fn(async () => ({ data: [], error: null }));
+    const client = {
+      storage: {
+        from: vi.fn(() => ({
+          upload,
+          remove,
+        })),
+      },
+      from: vi.fn(() => {
+        throw new Error('unexpected DB');
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await uploadConfirmedEpisodeMedia(client, {
+      userId: 'u1',
+      episodeId: 'ep1',
+      episodeSymptomId: 'sx1',
+      mediaType: 'photo',
+      body: 'blob',
+      contentType: 'image/jpeg',
+      extension: 'jpg',
+      thumbnail: {
+        body: 'thumb',
+        contentType: 'image/jpeg',
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    expect(upload).toHaveBeenCalledTimes(2);
+    expect(remove).toHaveBeenCalledWith([
+      expect.stringMatching(/^u1\/ep1\/photo-/),
+      expect.stringMatching(/^u1\/ep1\/thumb-/),
+    ]);
+  });
+
+  it('returns validation_error when thumbnail is present without thumbnail content type', async () => {
+    const upload = vi.fn();
+    const client = {
+      storage: {
+        from: vi.fn(() => ({
+          upload,
+          remove: vi.fn(async () => ({ data: [], error: null })),
+        })),
+      },
+      from: vi.fn(() => {
+        throw new Error('unexpected DB');
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await uploadConfirmedEpisodeMedia(client, {
+      userId: 'u1',
+      episodeId: 'ep1',
+      episodeSymptomId: 'sx1',
+      mediaType: 'photo',
+      body: 'blob',
+      contentType: 'image/jpeg',
+      extension: 'jpg',
+      thumbnail: {
+        body: 'thumb',
+        contentType: '   ',
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('validation_error');
+      expect(result.error.message).toMatch(/Thumbnail content type/i);
+    }
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it('returns validation_error when thumbnail content type is not image/jpeg', async () => {
+    const upload = vi.fn();
+    const client = {
+      storage: {
+        from: vi.fn(() => ({
+          upload,
+          remove: vi.fn(async () => ({ data: [], error: null })),
+        })),
+      },
+      from: vi.fn(() => {
+        throw new Error('unexpected DB');
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await uploadConfirmedEpisodeMedia(client, {
+      userId: 'u1',
+      episodeId: 'ep1',
+      episodeSymptomId: 'sx1',
+      mediaType: 'photo',
+      body: 'blob',
+      contentType: 'image/jpeg',
+      extension: 'jpg',
+      thumbnail: {
+        body: 'thumb',
+        contentType: 'image/png',
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('validation_error');
+      expect(result.error.message).toMatch(/image\/jpeg/);
+    }
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it('removes both new blobs when insert fails after primary and thumbnail upload', async () => {
+    const upload = vi.fn(async () => ({ error: null }));
+    const remove = vi.fn(async () => ({ data: [], error: null }));
+    const maybeSingle = vi.fn(async () => ({ data: null, error: null }));
+    const single = vi.fn(async () => ({
+      data: null,
+      error: { message: 'insert failed' },
+    }));
+    const client = {
+      storage: {
+        from: vi.fn(() => ({
+          upload,
+          remove,
+        })),
+      },
+      from: vi.fn((table: string) => {
+        if (table === 'episode_media') {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    limit: vi.fn(() => ({
+                      maybeSingle,
+                    })),
+                  })),
+                })),
+              })),
+            })),
+            insert: vi.fn(() => ({
+              select: vi.fn(() => ({
+                single,
+              })),
+            })),
+          };
+        }
+        throw new Error(`unexpected table ${table}`);
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await uploadConfirmedEpisodeMedia(client, {
+      userId: 'u1',
+      episodeId: 'ep1',
+      episodeSymptomId: 'sx1',
+      mediaType: 'photo',
+      body: 'blob',
+      contentType: 'image/jpeg',
+      extension: 'jpg',
+      thumbnail: {
+        body: 'thumb',
+        contentType: 'image/jpeg',
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    expect(upload).toHaveBeenCalledTimes(2);
+    expect(remove).toHaveBeenCalledTimes(1);
+    const removed = (
+      remove.mock.calls[0] as unknown as [string[]] | undefined
+    )?.[0];
+    expect(removed?.length).toBe(2);
+    expect(removed?.[0]).toMatch(/^u1\/ep1\/photo-/);
+    expect(removed?.[1]).toMatch(/^u1\/ep1\/thumb-/);
+  });
+
+  it('removes previous thumbnail when updating media replaces keys', async () => {
+    const upload = vi.fn(async () => ({ error: null }));
+    const remove = vi.fn(async () => ({ data: [], error: null }));
+    const maybeSingle = vi.fn(async () => ({
+      data: {
+        id: 'em-existing',
+        storage_object_key: 'u1/ep1/photo-old.jpg',
+        thumbnail_storage_key: 'u1/ep1/thumb-old.jpg',
+      },
+      error: null,
+    }));
+    const single = vi.fn(async () => ({
+      data: {
+        id: 'em-existing',
+        storage_object_key: 'u1/ep1/photo-new.jpg',
+        thumbnail_storage_key: 'u1/ep1/thumb-new.jpg',
+        media_type: 'photo',
+      },
+      error: null,
+    }));
+    const client = {
+      storage: {
+        from: vi.fn(() => ({
+          upload,
+          remove,
+        })),
+      },
+      from: vi.fn((table: string) => {
+        if (table === 'episode_media') {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    limit: vi.fn(() => ({
+                      maybeSingle,
+                    })),
+                  })),
+                })),
+              })),
+            })),
+            update: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                select: vi.fn(() => ({
+                  single,
+                })),
+              })),
+            })),
+          };
+        }
+        throw new Error(`unexpected table ${table}`);
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await uploadConfirmedEpisodeMedia(client, {
+      userId: 'u1',
+      episodeId: 'ep1',
+      episodeSymptomId: 'sx1',
+      mediaType: 'photo',
+      body: 'blob',
+      contentType: 'image/jpeg',
+      extension: 'jpg',
+      thumbnail: {
+        body: 'thumb',
+        contentType: 'image/jpeg',
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    const removeArgLists = remove.mock.calls.map(
+      (call) => (call as unknown[])[0],
+    ) as string[][];
+    expect(removeArgLists).toEqual([
+      ['u1/ep1/photo-old.jpg'],
+      ['u1/ep1/thumb-old.jpg'],
+    ]);
+  });
+
   it('does not blame generic connectivity when RN reports transport failure on upload', async () => {
     const upload = vi.fn(async () => ({
       error: new Error('Network request failed'),
@@ -990,7 +1431,7 @@ describe('listEpisodeMediaForEpisode', () => {
 
     expect(result.ok).toBe(true);
     expect(select).toHaveBeenCalledWith(
-      'episode_symptom_id, storage_object_key, upload_completed_at, duration_seconds',
+      'episode_symptom_id, storage_object_key, thumbnail_storage_key, upload_completed_at, duration_seconds',
     );
     expect(orderCalls).toEqual([
       { column: 'created_at', ascending: false },

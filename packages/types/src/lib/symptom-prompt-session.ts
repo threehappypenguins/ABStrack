@@ -11,6 +11,11 @@ export interface SymptomPromptPhotoCaptureRef {
   localUri: string;
   /** ISO timestamp of when capture completed. */
   capturedAt: string;
+  /**
+   * After upload, `storage:{thumbnail_storage_key}` so lightweight previews use the same
+   * authorization boundary as the primary photo without downloading full-resolution bytes.
+   */
+  thumbnailStorageUri?: string | null;
 }
 
 /**
@@ -23,6 +28,10 @@ export interface SymptomPromptVideoCaptureRef {
   durationMs: number | null;
   /** ISO timestamp of when capture completed. */
   capturedAt: string;
+  /**
+   * After upload, `storage:{thumbnail_storage_key}` (JPEG poster frame) for grids and listings.
+   */
+  thumbnailStorageUri?: string | null;
 }
 
 /**

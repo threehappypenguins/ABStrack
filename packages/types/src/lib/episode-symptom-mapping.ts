@@ -28,6 +28,45 @@ export function episodeSymptomRowToPromptAnswer(
   }
 }
 
+/** True when `uri` is a persisted `storage:…` ref (not `blob:`, `file:`, etc.). */
+function isEpisodeMediaStoragePathHint(uri: string): boolean {
+  return uri.trim().startsWith('storage:');
+}
+
+/**
+ * Collects primary and thumbnail `storage:…` strings from a committed photo/video answer for Storage
+ * cleanup when deleting the symptom row (passed through to Supabase helpers).
+ *
+ * @param answer - Current prompt answer (ignored unless type is `photo` or `video` with a value).
+ * @returns Trimmed `storage:…` strings only — transient capture URIs are excluded.
+ */
+export function episodeMediaStoragePathHintsFromPromptAnswer(
+  answer: SymptomPromptAnswer | undefined,
+): string[] {
+  if (
+    answer == null ||
+    (answer.type !== 'photo' && answer.type !== 'video') ||
+    answer.value == null
+  ) {
+    return [];
+  }
+  const v = answer.value;
+  const out: string[] = [];
+  if (typeof v.localUri === 'string') {
+    const local = v.localUri.trim();
+    if (local && isEpisodeMediaStoragePathHint(local)) {
+      out.push(local);
+    }
+  }
+  if (typeof v.thumbnailStorageUri === 'string') {
+    const thumb = v.thumbnailStorageUri.trim();
+    if (thumb && isEpisodeMediaStoragePathHint(thumb)) {
+      out.push(thumb);
+    }
+  }
+  return out;
+}
+
 /**
  * Converts a prompt answer into `episode_symptoms` response columns (CHECK-aligned).
  *

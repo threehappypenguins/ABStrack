@@ -1,5 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   type GestureResponderEvent,
   Image,
   Modal,
@@ -31,7 +33,59 @@ export type SymptomPromptResponseFieldProps = {
   answer: SymptomPromptAnswer | undefined;
   onChange: (next: SymptomPromptAnswer) => void;
   disabled: boolean;
+  /**
+   * Resolves `storage:…` refs to a short-lived HTTPS URL for previews (photo/thumbnail or full
+   * video).
+   */
+  resolveEpisodeMediaPreviewUrl?: (
+    storageUri: string,
+  ) => Promise<string | null>;
+  /** Clears persisted photo/video answer and deletes primary + thumbnail objects server-side. */
+  onClearUploadedEpisodeMedia?: () => void;
 };
+
+function isPersistedEpisodeMediaLocalUri(
+  localUri: string | null | undefined,
+): boolean {
+  return Boolean(localUri?.trim().startsWith('storage:'));
+}
+
+/**
+ * Chooses the URI passed to preview signing. Prefer thumbnail only when it is a persisted
+ * `storage:` ref — stale `file:` / `blob:` thumbnail strings fall back to `localUri`.
+ */
+function preferredEpisodeMediaPreviewStorageUri(cap: {
+  localUri: string;
+  thumbnailStorageUri?: string | null;
+}): string {
+  const thumb = cap.thumbnailStorageUri?.trim();
+  if (thumb && thumb.startsWith('storage:')) {
+    return thumb;
+  }
+  return cap.localUri.trim();
+}
+
+/** True when `answer` is a photo step with a non-empty capture URI (blob or `storage:`). */
+function hasEpisodePhotoMediaAnswer(answer: SymptomPromptAnswer): boolean {
+  if (answer.type !== 'photo') {
+    return false;
+  }
+  const v = answer.value;
+  return (
+    v !== null && typeof v.localUri === 'string' && v.localUri.trim().length > 0
+  );
+}
+
+/** True when `answer` is a video step with a non-empty capture URI (blob or `storage:`). */
+function hasEpisodeVideoMediaAnswer(answer: SymptomPromptAnswer): boolean {
+  if (answer.type !== 'video') {
+    return false;
+  }
+  const v = answer.value;
+  return (
+    v !== null && typeof v.localUri === 'string' && v.localUri.trim().length > 0
+  );
+}
 
 function PendingVideoPreview({
   uri,
@@ -47,7 +101,7 @@ function PendingVideoPreview({
       accessibilityLabel={accessibilityLabel}
       nativeControls
       contentFit="contain"
-      style={{ height: '100%', width: '100%' }}
+      style={{ flex: 1, width: '100%', height: '100%' }}
     />
   );
 }
@@ -57,9 +111,17 @@ const VIDEO_MAX_DURATION_SECONDS = Math.floor(
 );
 
 /**
+ * Height of the dashed episode-media preview slot (loading + committed). A fixed inner height
+ * avoids `aspectRatio` on the video wrapper leaving empty space below `min-h-[280]` on the outer
+ * frame (portrait phones: width×9/16 is shorter than 280).
+ */
+const EPISODE_MEDIA_PREVIEW_SLOT_HEIGHT_DP = 280;
+
+/**
  * Renders the capture UI for one preset symptom line.
  *
- * @param props - Line metadata, current answer, change handler, disabled flag.
+ * @param props - Line metadata, current answer, change handler, disabled flag,
+ *   optional preview URL resolver and clear handler for persisted episode media.
  * @returns Response-type-specific controls.
  */
 export function SymptomPromptResponseField({
@@ -67,6 +129,8 @@ export function SymptomPromptResponseField({
   answer,
   onChange,
   disabled,
+  resolveEpisodeMediaPreviewUrl,
+  onClearUploadedEpisodeMedia,
 }: SymptomPromptResponseFieldProps) {
   const { colors } = useAppTheme();
   const [photoBusy, setPhotoBusy] = useState(false);
@@ -124,6 +188,29 @@ export function SymptomPromptResponseField({
       }
     };
   }, []);
+
+  const [committedMediaPreviewUrl, setCommittedMediaPreviewUrl] = useState<
+    string | null
+  >(null);
+  const [committedMediaPreviewError, setCommittedMediaPreviewError] = useState<
+    string | null
+  >(null);
+  /**
+   * Incremented when the user retries preview resolution so the signed-URL effect reruns without
+   * changing `effective` (e.g. after network or resolver errors).
+   */
+  const [
+    committedMediaPreviewRetryGeneration,
+    setCommittedMediaPreviewRetryGeneration,
+  ] = useState(0);
+  /**
+   * True on “Use photo” / “Use video” until parent `answer` includes the capture (covers the gap
+   * before React state reaches this component).
+   */
+  const [confirmPhotoUseTapPending, setConfirmPhotoUseTapPending] =
+    useState(false);
+  const [confirmVideoUseTapPending, setConfirmVideoUseTapPending] =
+    useState(false);
 
   const stopVideoTimer = () => {
     if (videoTimerRef.current !== null) {
@@ -187,6 +274,79 @@ export function SymptomPromptResponseField({
   };
   const effective =
     answer ?? createDefaultSymptomPromptAnswer(line.response_type);
+
+  useEffect(() => {
+    if (line.response_type !== 'photo' && line.response_type !== 'video') {
+      setCommittedMediaPreviewUrl(null);
+      setCommittedMediaPreviewError(null);
+      return;
+    }
+    if (effective.type !== 'photo' && effective.type !== 'video') {
+      setCommittedMediaPreviewUrl(null);
+      setCommittedMediaPreviewError(null);
+      return;
+    }
+    const cap = effective.value;
+    if (
+      !cap ||
+      !resolveEpisodeMediaPreviewUrl ||
+      !isPersistedEpisodeMediaLocalUri(cap.localUri)
+    ) {
+      setCommittedMediaPreviewUrl(null);
+      setCommittedMediaPreviewError(null);
+      return;
+    }
+    const uri =
+      effective.type === 'photo'
+        ? preferredEpisodeMediaPreviewStorageUri(cap)
+        : cap.localUri.trim();
+    let cancelled = false;
+    setCommittedMediaPreviewError(null);
+    setCommittedMediaPreviewUrl(null);
+    void resolveEpisodeMediaPreviewUrl(uri)
+      .then((url) => {
+        if (!cancelled) {
+          if (url) {
+            setCommittedMediaPreviewUrl(url);
+          } else {
+            setCommittedMediaPreviewError(
+              effective.type === 'photo'
+                ? 'Could not load preview. Try again.'
+                : 'Could not load video. Try again.',
+            );
+          }
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCommittedMediaPreviewError(
+            effective.type === 'photo'
+              ? 'Could not load preview. Check your connection and try again.'
+              : 'Could not load video. Check your connection and try again.',
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    effective,
+    line.response_type,
+    resolveEpisodeMediaPreviewUrl,
+    committedMediaPreviewRetryGeneration,
+  ]);
+
+  useLayoutEffect(() => {
+    if (confirmPhotoUseTapPending && hasEpisodePhotoMediaAnswer(effective)) {
+      setConfirmPhotoUseTapPending(false);
+    }
+  }, [effective, confirmPhotoUseTapPending]);
+
+  useLayoutEffect(() => {
+    if (confirmVideoUseTapPending && hasEpisodeVideoMediaAnswer(effective)) {
+      setConfirmVideoUseTapPending(false);
+    }
+  }, [effective, confirmVideoUseTapPending]);
 
   switch (line.response_type) {
     case 'yes_no': {
@@ -296,6 +456,16 @@ export function SymptomPromptResponseField({
     }
     case 'photo': {
       const capturedPhoto = effective.type === 'photo' ? effective.value : null;
+      const canRemovePersistedUploadedPhoto =
+        Boolean(onClearUploadedEpisodeMedia) &&
+        capturedPhoto !== null &&
+        isPersistedEpisodeMediaLocalUri(capturedPhoto.localUri);
+      const showPhotoPreviewPanel =
+        !pendingPhotoReview &&
+        (confirmPhotoUseTapPending ||
+          (capturedPhoto !== null &&
+            typeof capturedPhoto.localUri === 'string' &&
+            capturedPhoto.localUri.trim().length > 0));
       return (
         <View className="gap-3 rounded-xl border border-app-border bg-app-bg p-4 dark:border-app-border-dark dark:bg-app-bg-dark">
           <Pressable
@@ -402,6 +572,7 @@ export function SymptomPromptResponseField({
                   accessibilityRole="button"
                   accessibilityLabel={`Use ${line.symptom_name} photo`}
                   onPress={() => {
+                    setConfirmPhotoUseTapPending(true);
                     onChange({
                       type: 'photo',
                       value: pendingPhotoReview,
@@ -433,6 +604,138 @@ export function SymptomPromptResponseField({
                   </Text>
                 </Pressable>
               </View>
+            </View>
+          ) : null}
+          {showPhotoPreviewPanel ? (
+            <View
+              className="relative overflow-hidden rounded-xl border-2 border-dashed border-app-border bg-black/10 dark:bg-black/30"
+              style={{ minHeight: EPISODE_MEDIA_PREVIEW_SLOT_HEIGHT_DP }}
+            >
+              {!capturedPhoto ||
+              !isPersistedEpisodeMediaLocalUri(capturedPhoto.localUri) ? (
+                <View
+                  accessibilityLabel="Loading preview"
+                  className="items-center justify-center px-4 py-8"
+                  style={{ minHeight: EPISODE_MEDIA_PREVIEW_SLOT_HEIGHT_DP }}
+                >
+                  <ActivityIndicator />
+                  <Text
+                    className={`mt-2 text-sm ${nw.textMuted}`}
+                    maxFontSizeMultiplier={2}
+                  >
+                    Loading preview…
+                  </Text>
+                </View>
+              ) : !resolveEpisodeMediaPreviewUrl ? (
+                <View
+                  accessibilityLabel="Loading preview"
+                  className="items-center justify-center px-4 py-8"
+                  style={{ minHeight: EPISODE_MEDIA_PREVIEW_SLOT_HEIGHT_DP }}
+                >
+                  <ActivityIndicator />
+                  <Text
+                    className={`mt-2 text-sm ${nw.textMuted}`}
+                    maxFontSizeMultiplier={2}
+                  >
+                    Loading preview…
+                  </Text>
+                </View>
+              ) : committedMediaPreviewError ? (
+                <View
+                  className="gap-3 px-4 py-4"
+                  style={{ minHeight: EPISODE_MEDIA_PREVIEW_SLOT_HEIGHT_DP }}
+                >
+                  <Text
+                    accessibilityRole="alert"
+                    className="text-sm text-red-700 dark:text-red-300"
+                    maxFontSizeMultiplier={2}
+                  >
+                    {committedMediaPreviewError}
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Retry loading ${line.symptom_name} photo preview`}
+                    accessibilityState={{ disabled }}
+                    disabled={disabled}
+                    onPress={() => {
+                      setCommittedMediaPreviewError(null);
+                      setCommittedMediaPreviewRetryGeneration((g) => g + 1);
+                    }}
+                    style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                    className="max-w-[220px] items-center justify-center self-start rounded-xl border border-app-border px-4 py-3 active:opacity-90 dark:border-app-border-dark"
+                  >
+                    <Text className={`text-[17px] font-semibold ${nw.textInk}`}>
+                      Try again
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : !committedMediaPreviewUrl ? (
+                <View
+                  accessibilityLabel="Loading preview"
+                  className="items-center justify-center px-4 py-8"
+                  style={{ minHeight: EPISODE_MEDIA_PREVIEW_SLOT_HEIGHT_DP }}
+                >
+                  <ActivityIndicator />
+                  <Text
+                    className={`mt-2 text-sm ${nw.textMuted}`}
+                    maxFontSizeMultiplier={2}
+                  >
+                    Loading preview…
+                  </Text>
+                </View>
+              ) : (
+                <View
+                  className="overflow-hidden rounded-lg bg-black"
+                  style={{
+                    width: '100%',
+                    height: EPISODE_MEDIA_PREVIEW_SLOT_HEIGHT_DP,
+                  }}
+                >
+                  <Image
+                    source={{ uri: committedMediaPreviewUrl }}
+                    accessibilityLabel={`${line.symptom_name} uploaded photo preview`}
+                    accessibilityIgnoresInvertColors
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      borderRadius: 12,
+                    }}
+                    resizeMode="contain"
+                  />
+                </View>
+              )}
+              {canRemovePersistedUploadedPhoto ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Remove uploaded ${line.symptom_name} photo`}
+                  accessibilityState={{ disabled }}
+                  disabled={disabled}
+                  onPress={() => {
+                    Alert.alert(
+                      'Remove uploaded photo?',
+                      'This deletes the saved photo and its thumbnail from this episode. You cannot undo this.',
+                      [
+                        { text: 'Keep photo', style: 'cancel' },
+                        {
+                          text: 'Remove',
+                          style: 'destructive',
+                          onPress: () => onClearUploadedEpisodeMedia?.(),
+                        },
+                      ],
+                    );
+                  }}
+                  style={{
+                    position: 'absolute',
+                    right: 8,
+                    top: 8,
+                    minHeight: COMFORTABLE_TOUCH_TARGET_DP,
+                    minWidth: COMFORTABLE_TOUCH_TARGET_DP,
+                  }}
+                  className="items-center justify-center rounded-full border border-white/30 bg-black/65"
+                >
+                  <Ionicons name="close" size={26} color="#ffffff" />
+                </Pressable>
+              ) : null}
             </View>
           ) : null}
           <Modal
@@ -573,10 +876,20 @@ export function SymptomPromptResponseField({
     }
     case 'video': {
       const captured = effective.type === 'video' ? effective.value : null;
+      const canRemovePersistedUploadedVideo =
+        Boolean(onClearUploadedEpisodeMedia) &&
+        captured !== null &&
+        isPersistedEpisodeMediaLocalUri(captured.localUri);
       const elapsedLabel = `${String(Math.floor(elapsedSeconds / 60)).padStart(
         2,
         '0',
       )}:${String(elapsedSeconds % 60).padStart(2, '0')}`;
+      const showVideoPreviewPanel =
+        !pendingVideoReview &&
+        (confirmVideoUseTapPending ||
+          (captured !== null &&
+            typeof captured.localUri === 'string' &&
+            captured.localUri.trim().length > 0));
       return (
         <View className="gap-3 rounded-xl border border-app-border bg-app-bg p-4 dark:border-app-border-dark dark:bg-app-bg-dark">
           <Pressable
@@ -686,6 +999,131 @@ export function SymptomPromptResponseField({
             Media uploads to private episode storage after you confirm this
             capture.
           </Text>
+          {showVideoPreviewPanel ? (
+            <View
+              className="relative overflow-hidden rounded-xl border-2 border-dashed border-app-border bg-black/10 dark:bg-black/30"
+              style={{ minHeight: EPISODE_MEDIA_PREVIEW_SLOT_HEIGHT_DP }}
+            >
+              {!captured ||
+              !isPersistedEpisodeMediaLocalUri(captured.localUri) ? (
+                <View
+                  accessibilityLabel="Loading video preview"
+                  className="items-center justify-center px-4 py-8"
+                  style={{ minHeight: EPISODE_MEDIA_PREVIEW_SLOT_HEIGHT_DP }}
+                >
+                  <ActivityIndicator />
+                  <Text
+                    className={`mt-2 text-sm ${nw.textMuted}`}
+                    maxFontSizeMultiplier={2}
+                  >
+                    Loading preview…
+                  </Text>
+                </View>
+              ) : !resolveEpisodeMediaPreviewUrl ? (
+                <View
+                  accessibilityLabel="Loading video preview"
+                  className="items-center justify-center px-4 py-8"
+                  style={{ minHeight: EPISODE_MEDIA_PREVIEW_SLOT_HEIGHT_DP }}
+                >
+                  <ActivityIndicator />
+                  <Text
+                    className={`mt-2 text-sm ${nw.textMuted}`}
+                    maxFontSizeMultiplier={2}
+                  >
+                    Loading preview…
+                  </Text>
+                </View>
+              ) : committedMediaPreviewError ? (
+                <View
+                  className="gap-3 px-4 py-4"
+                  style={{ minHeight: EPISODE_MEDIA_PREVIEW_SLOT_HEIGHT_DP }}
+                >
+                  <Text
+                    accessibilityRole="alert"
+                    className="text-sm text-red-700 dark:text-red-300"
+                    maxFontSizeMultiplier={2}
+                  >
+                    {committedMediaPreviewError}
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Retry loading ${line.symptom_name} video preview`}
+                    accessibilityState={{ disabled }}
+                    disabled={disabled}
+                    onPress={() => {
+                      setCommittedMediaPreviewError(null);
+                      setCommittedMediaPreviewRetryGeneration((g) => g + 1);
+                    }}
+                    style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP }}
+                    className="max-w-[220px] items-center justify-center self-start rounded-xl border border-app-border px-4 py-3 active:opacity-90 dark:border-app-border-dark"
+                  >
+                    <Text className={`text-[17px] font-semibold ${nw.textInk}`}>
+                      Try again
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : !committedMediaPreviewUrl ? (
+                <View
+                  accessibilityLabel="Loading video preview"
+                  className="items-center justify-center px-4 py-8"
+                  style={{ minHeight: EPISODE_MEDIA_PREVIEW_SLOT_HEIGHT_DP }}
+                >
+                  <ActivityIndicator />
+                  <Text
+                    className={`mt-2 text-sm ${nw.textMuted}`}
+                    maxFontSizeMultiplier={2}
+                  >
+                    Loading preview…
+                  </Text>
+                </View>
+              ) : (
+                <View
+                  className="overflow-hidden rounded-lg bg-black"
+                  style={{
+                    width: '100%',
+                    height: EPISODE_MEDIA_PREVIEW_SLOT_HEIGHT_DP,
+                  }}
+                >
+                  <PendingVideoPreview
+                    uri={committedMediaPreviewUrl}
+                    accessibilityLabel={`${line.symptom_name} uploaded video`}
+                  />
+                </View>
+              )}
+              {canRemovePersistedUploadedVideo ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Remove uploaded ${line.symptom_name} video`}
+                  accessibilityState={{ disabled }}
+                  disabled={disabled}
+                  onPress={() => {
+                    Alert.alert(
+                      'Remove uploaded video?',
+                      'This deletes the saved video and its thumbnail from this episode. You cannot undo this.',
+                      [
+                        { text: 'Keep video', style: 'cancel' },
+                        {
+                          text: 'Remove',
+                          style: 'destructive',
+                          onPress: () => onClearUploadedEpisodeMedia?.(),
+                        },
+                      ],
+                    );
+                  }}
+                  style={{
+                    position: 'absolute',
+                    right: 8,
+                    top: 8,
+                    minHeight: COMFORTABLE_TOUCH_TARGET_DP,
+                    minWidth: COMFORTABLE_TOUCH_TARGET_DP,
+                  }}
+                  className="items-center justify-center rounded-full border border-white/30 bg-black/65"
+                >
+                  <Ionicons name="close" size={26} color="#ffffff" />
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
           <Modal
             visible={videoModalOpen}
             animationType="slide"
@@ -849,6 +1287,7 @@ export function SymptomPromptResponseField({
                       accessibilityRole="button"
                       accessibilityLabel={`Use ${line.symptom_name} video`}
                       onPress={() => {
+                        setConfirmVideoUseTapPending(true);
                         onChange({
                           type: 'video',
                           value: pendingVideoReview,
