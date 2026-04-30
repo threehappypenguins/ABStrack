@@ -640,14 +640,14 @@ export async function uploadConfirmedEpisodeMedia(
           upsert: false,
         });
     } catch (caught) {
-      await removeBucketObjectsBestEffort(client, [objectKey]);
+      await removeBucketObjectsBestEffort(client, [objectKey, thumbnailKey]);
       return {
         ok: false,
         error: mapEpisodeMediaStorageUploadError(caught),
       };
     }
     if (thumbUploaded.error) {
-      await removeBucketObjectsBestEffort(client, [objectKey]);
+      await removeBucketObjectsBestEffort(client, [objectKey, thumbnailKey]);
       return {
         ok: false,
         error: mapEpisodeMediaStorageUploadError(thumbUploaded.error),

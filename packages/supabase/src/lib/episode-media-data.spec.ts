@@ -1147,6 +1147,7 @@ describe('uploadConfirmedEpisodeMedia', () => {
     expect(upload).toHaveBeenCalledTimes(2);
     expect(remove).toHaveBeenCalledWith([
       expect.stringMatching(/^u1\/ep1\/photo-/),
+      expect.stringMatching(/^u1\/ep1\/thumb-/),
     ]);
   });
 

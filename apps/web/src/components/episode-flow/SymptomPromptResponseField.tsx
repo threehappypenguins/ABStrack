@@ -59,12 +59,16 @@ function isPersistedEpisodeMediaRef(
   return u.startsWith('storage:');
 }
 
+/**
+ * Chooses the URI passed to preview signing. Prefer thumbnail only when it is a persisted
+ * `storage:` ref — stale `file:` / `blob:` thumbnail strings fall back to `localUri`.
+ */
 function preferredEpisodeMediaPreviewStorageUri(args: {
   localUri: string;
   thumbnailStorageUri?: string | null;
 }): string {
   const thumb = args.thumbnailStorageUri?.trim();
-  if (thumb) {
+  if (thumb && thumb.startsWith('storage:')) {
     return thumb;
   }
   return args.localUri.trim();
