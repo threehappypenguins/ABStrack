@@ -1,9 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { deleteEpisodeById } from '@abstrack/supabase';
-import { formatEpisodeDurationSimple, type EpisodeRow } from '@abstrack/types';
+import {
+  createEpisodeMediaSignedDisplayUrl,
+  deleteEpisodeById,
+  listEpisodeMediaForEpisode,
+} from '@abstrack/supabase';
+import {
+  formatEpisodeDurationSimple,
+  isMediaType,
+  type EpisodeRow,
+} from '@abstrack/types';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
 import { formatEpisodeTypeSummary } from '@/lib/episodes/format-episode-meta';
@@ -40,6 +48,60 @@ export function RecentEpisodesList({
   const [deletingEpisodeId, setDeletingEpisodeId] = useState<string | null>(
     null,
   );
+  const [mediaByEpisodeId, setMediaByEpisodeId] = useState<
+    Record<
+      string,
+      {
+        loading: boolean;
+        error: string | null;
+        items: Array<{
+          key: string;
+          signedUrl: string | null;
+          mediaType: 'video' | 'photo';
+          durationSeconds: number | null;
+          loadError: string | null;
+        }>;
+      }
+    >
+  >({});
+  /** Prevents overlapping media loads per episode (e.g. double‑tap before `loading` commits). */
+  const episodeMediaLoadInFlightRef = useRef<Record<string, boolean>>({});
+
+  /**
+   * Signed URL existed but the asset failed to load (expired, 403, network). Per-item error UI +
+   * refresh affordance.
+   *
+   * @param episodeId - Episode whose media list should be updated.
+   * @param storageKey - Episode media storage object key (`item.key`).
+   */
+  const onEpisodeMediaDisplayError = useCallback(
+    (episodeId: string, storageKey: string) => {
+      setMediaByEpisodeId((prev) => {
+        const state = prev[episodeId];
+        if (!state?.items?.length) {
+          return prev;
+        }
+        let changed = false;
+        const items = state.items.map((it) => {
+          if (it.key !== storageKey || !it.signedUrl) {
+            return it;
+          }
+          changed = true;
+          return {
+            ...it,
+            signedUrl: null,
+            loadError: 'Link expired or unavailable.',
+          };
+        });
+        if (!changed) {
+          return prev;
+        }
+        return { ...prev, [episodeId]: { ...state, items } };
+      });
+    },
+    [],
+  );
+
   const pendingEpisode =
     episodes.find((ep) => ep.id === pendingDeleteEpisodeId) ?? null;
   const isDeletingEpisode = deletingEpisodeId !== null;
@@ -73,6 +135,78 @@ export function RecentEpisodesList({
       setDeletingEpisodeId(null);
     }
   };
+
+  const loadEpisodeMedia = useCallback(async (episodeId: string) => {
+    if (episodeMediaLoadInFlightRef.current[episodeId]) {
+      return;
+    }
+    episodeMediaLoadInFlightRef.current[episodeId] = true;
+    setMediaByEpisodeId((prev) => ({
+      ...prev,
+      [episodeId]: {
+        loading: true,
+        error: null,
+        items: prev[episodeId]?.items ?? [],
+      },
+    }));
+    try {
+      const supabase = createBrowserClient();
+      const listed = await listEpisodeMediaForEpisode(supabase, episodeId);
+      if (!listed.ok) {
+        setMediaByEpisodeId((prev) => ({
+          ...prev,
+          [episodeId]: {
+            loading: false,
+            error: listed.error.message,
+            items: [],
+          },
+        }));
+        return;
+      }
+      // Signing uses `createEpisodeMediaSignedDisplayUrl`: checks Storage `signed.error`, tries
+      // normalized legacy key shapes (`storage:`, `episode-media/`, URLs). Per-item `loadError`
+      // carries API/auth messages instead of only implying an expired link.
+      const items = await Promise.all(
+        listed.data.map(async (row) => {
+          const rawKey = row.storage_object_key ?? '';
+          const { signedUrl, errorMessage } =
+            await createEpisodeMediaSignedDisplayUrl(supabase, rawKey, 120);
+          const key = rawKey.trim();
+          const mediaType: 'video' | 'photo' = isMediaType(row.media_type)
+            ? row.media_type
+            : 'photo';
+          const signingFailure =
+            typeof errorMessage === 'string' ? errorMessage.trim() : '';
+          return {
+            key,
+            signedUrl,
+            mediaType,
+            durationSeconds: row.duration_seconds,
+            loadError: signedUrl
+              ? null
+              : signingFailure !== ''
+                ? signingFailure
+                : 'Could not create media link.',
+          };
+        }),
+      );
+      setMediaByEpisodeId((prev) => ({
+        ...prev,
+        [episodeId]: { loading: false, error: null, items },
+      }));
+    } catch {
+      setMediaByEpisodeId((prev) => ({
+        ...prev,
+        [episodeId]: {
+          loading: false,
+          error: 'Unable to load media preview.',
+          items: [],
+        },
+      }));
+    } finally {
+      episodeMediaLoadInFlightRef.current[episodeId] = false;
+    }
+  }, []);
 
   return (
     <>
@@ -133,6 +267,109 @@ export function RecentEpisodesList({
                       {ep.episode_label.trim()}
                     </p>
                   ) : null}
+                </div>
+                <div
+                  className="mt-3"
+                  aria-busy={mediaByEpisodeId[ep.id]?.loading === true}
+                >
+                  {(() => {
+                    const mediaState = mediaByEpisodeId[ep.id];
+                    return (
+                      <>
+                        <p className="text-xs font-semibold text-app-ink/90">
+                          Media
+                        </p>
+                        {!mediaState ? (
+                          <button
+                            type="button"
+                            className="mt-2 inline-flex min-h-[40px] items-center rounded-lg border border-app-border px-3 py-2 text-xs font-semibold text-app-primary"
+                            onClick={() => void loadEpisodeMedia(ep.id)}
+                          >
+                            Load media
+                          </button>
+                        ) : null}
+                        {mediaState?.loading ? (
+                          <p className="mt-2 text-xs text-app-muted">
+                            Loading media…
+                          </p>
+                        ) : null}
+                        {mediaState?.error ? (
+                          <div className="mt-2">
+                            <p className="text-xs text-red-700 dark:text-red-300">
+                              {mediaState.error}
+                            </p>
+                            <button
+                              type="button"
+                              className={`mt-2 inline-flex min-h-[36px] items-center rounded-lg border border-app-border px-3 py-1.5 text-xs font-semibold text-app-primary ${mediaState?.loading ? 'cursor-not-allowed opacity-50' : ''}`}
+                              onClick={() => void loadEpisodeMedia(ep.id)}
+                              disabled={Boolean(mediaState?.loading)}
+                            >
+                              Retry
+                            </button>
+                          </div>
+                        ) : null}
+                        {!mediaState?.loading &&
+                        !mediaState?.error &&
+                        mediaState &&
+                        mediaState.items.length === 0 ? (
+                          <p className="mt-2 text-xs text-app-muted">
+                            No photo or video for this episode.
+                          </p>
+                        ) : null}
+                        {mediaState?.items.length ? (
+                          <div className="mt-2 space-y-2">
+                            {mediaState.items.map((item) => (
+                              <div
+                                key={item.key}
+                                className="rounded border border-app-border/70 p-2"
+                              >
+                                {item.signedUrl ? (
+                                  item.mediaType === 'video' ? (
+                                    <video
+                                      src={item.signedUrl}
+                                      controls
+                                      className="max-h-56 w-full rounded bg-black object-contain"
+                                      onError={() =>
+                                        onEpisodeMediaDisplayError(
+                                          ep.id,
+                                          item.key,
+                                        )
+                                      }
+                                    />
+                                  ) : (
+                                    <img
+                                      src={item.signedUrl}
+                                      alt="Episode media"
+                                      className="max-h-56 w-full rounded bg-black/5 object-contain"
+                                      onError={() =>
+                                        onEpisodeMediaDisplayError(
+                                          ep.id,
+                                          item.key,
+                                        )
+                                      }
+                                    />
+                                  )
+                                ) : (
+                                  <p className="text-xs text-red-700 dark:text-red-300">
+                                    {item.loadError ??
+                                      'Link expired or unavailable.'}
+                                  </p>
+                                )}
+                              </div>
+                            ))}
+                            <button
+                              type="button"
+                              className={`inline-flex min-h-[36px] items-center rounded-lg border border-app-border px-3 py-1.5 text-xs font-semibold text-app-primary ${mediaState?.loading ? 'cursor-not-allowed opacity-50' : ''}`}
+                              onClick={() => void loadEpisodeMedia(ep.id)}
+                              disabled={Boolean(mediaState?.loading)}
+                            >
+                              Refresh media links
+                            </button>
+                          </div>
+                        ) : null}
+                      </>
+                    );
+                  })()}
                 </div>
               </details>
               <button

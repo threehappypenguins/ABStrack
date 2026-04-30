@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   createEpisodeMediaObjectKey,
+  createEpisodeMediaSignedDisplayUrl,
   createEpisodeMediaThumbnailObjectKey,
   listEpisodeMediaForEpisode,
   normalizedEpisodeMediaBucketKeysFromHints,
@@ -76,6 +77,77 @@ describe('normalizedEpisodeMediaBucketKeysFromHints', () => {
       '11111111-1111-4111-8111-111111111111/ep/v.webm',
       '11111111-1111-4111-8111-111111111111/ep/th.jpg',
     ]);
+  });
+});
+
+describe('createEpisodeMediaSignedDisplayUrl', () => {
+  const uuidPath =
+    '11111111-1111-4111-8111-111111111111/ep/video.webm' as const;
+
+  it('returns Storage API error message when createSignedUrl returns error', async () => {
+    const createSignedUrl = vi.fn(async () => ({
+      data: null as { signedUrl: string } | null,
+      error: { message: 'Object not found' },
+    }));
+    const client = {
+      storage: {
+        from: vi.fn(() => ({ createSignedUrl })),
+      },
+    } as unknown as AbstrackSupabaseClient;
+
+    const r = await createEpisodeMediaSignedDisplayUrl(client, uuidPath, 120);
+    expect(r.signedUrl).toBeNull();
+    expect(r.errorMessage).toBe('Object not found');
+    expect(createSignedUrl).toHaveBeenCalledWith(uuidPath, 120);
+  });
+
+  it('returns signed URL when signing succeeds', async () => {
+    const createSignedUrl = vi.fn(async () => ({
+      data: { signedUrl: 'https://example.test/signed' },
+      error: null,
+    }));
+    const client = {
+      storage: {
+        from: vi.fn(() => ({ createSignedUrl })),
+      },
+    } as unknown as AbstrackSupabaseClient;
+
+    const r = await createEpisodeMediaSignedDisplayUrl(client, uuidPath, 120);
+    expect(r.signedUrl).toBe('https://example.test/signed');
+    expect(r.errorMessage).toBeNull();
+  });
+
+  it('normalizes storage: prefix before signing', async () => {
+    const createSignedUrl = vi.fn(async () => ({
+      data: { signedUrl: 'https://example.test/signed' },
+      error: null,
+    }));
+    const client = {
+      storage: {
+        from: vi.fn(() => ({ createSignedUrl })),
+      },
+    } as unknown as AbstrackSupabaseClient;
+
+    await createEpisodeMediaSignedDisplayUrl(
+      client,
+      `storage:${uuidPath}`,
+      120,
+    );
+    expect(createSignedUrl).toHaveBeenCalledWith(uuidPath, 120);
+  });
+
+  it('returns missing key message for blank storage key', async () => {
+    const createSignedUrl = vi.fn();
+    const client = {
+      storage: {
+        from: vi.fn(() => ({ createSignedUrl })),
+      },
+    } as unknown as AbstrackSupabaseClient;
+
+    const r = await createEpisodeMediaSignedDisplayUrl(client, '   ', 120);
+    expect(r.signedUrl).toBeNull();
+    expect(r.errorMessage).toBe('Missing storage object key.');
+    expect(createSignedUrl).not.toHaveBeenCalled();
   });
 });
 
@@ -1431,7 +1503,7 @@ describe('listEpisodeMediaForEpisode', () => {
 
     expect(result.ok).toBe(true);
     expect(select).toHaveBeenCalledWith(
-      'episode_symptom_id, storage_object_key, thumbnail_storage_key, upload_completed_at, duration_seconds',
+      'episode_symptom_id, storage_object_key, thumbnail_storage_key, media_type, upload_completed_at, duration_seconds',
     );
     expect(orderCalls).toEqual([
       { column: 'created_at', ascending: false },

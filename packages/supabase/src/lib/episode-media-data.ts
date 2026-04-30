@@ -186,6 +186,69 @@ export function normalizedEpisodeMediaBucketKeysFromHints(
 }
 
 /**
+ * Creates a short-lived signed HTTPS URL for displaying primary episode media in clients (`<video>` /
+ * `<img>`, React Native `Image` / `VideoView`). Uses the same path normalization as deletes ({@link
+ * normalizedEpisodeMediaBucketKeysFromHints}) so legacy `storage:`-prefixed or mis-shaped DB values
+ * still sign when possible. Surfaces Storage API `error` instead of treating failures like an expired
+ * link only.
+ *
+ * @param client - Supabase client (RLS applies to signing).
+ * @param rawStorageObjectKey - `episode_media.storage_object_key` (may include legacy prefixes).
+ * @param expiresIn - Signed URL TTL in seconds (Supabase Storage).
+ * @returns Display URL or an error message suitable for per-item UI.
+ */
+export async function createEpisodeMediaSignedDisplayUrl(
+  client: AbstrackSupabaseClient,
+  rawStorageObjectKey: string,
+  expiresIn: number,
+): Promise<{ signedUrl: string | null; errorMessage: string | null }> {
+  const raw = rawStorageObjectKey.trim();
+  if (!raw) {
+    return { signedUrl: null, errorMessage: 'Missing storage object key.' };
+  }
+
+  let candidates = normalizedEpisodeMediaBucketKeysFromHints([raw]);
+  if (candidates.length === 0) {
+    candidates = normalizedEpisodeMediaBucketKeysFromHints([
+      raw.replace(/^storage:/i, '').trim(),
+    ]);
+  }
+
+  let lastError: string | null = null;
+  for (const key of candidates) {
+    try {
+      const signed = await client.storage
+        .from(EPISODE_MEDIA_BUCKET)
+        .createSignedUrl(key, expiresIn);
+      if (signed.error) {
+        const msg =
+          typeof signed.error.message === 'string'
+            ? signed.error.message.trim()
+            : '';
+        lastError = msg !== '' ? msg : 'Could not create media link.';
+        continue;
+      }
+      const url = signed.data?.signedUrl ?? null;
+      if (url) {
+        return { signedUrl: url, errorMessage: null };
+      }
+      lastError = 'Could not create media link.';
+    } catch {
+      lastError = 'Could not create media link.';
+    }
+  }
+
+  return {
+    signedUrl: null,
+    errorMessage:
+      lastError ??
+      (candidates.length === 0
+        ? 'Invalid storage path for this media.'
+        : 'Could not create media link.'),
+  };
+}
+
+/**
  * RFC 4122 UUID v4 for Storage object keys via Web Crypto `getRandomValues` (cryptographically
  * secure once engines/polyfills expose it — browsers and Node provide `crypto`; React Native needs
  * `react-native-get-random-values` imported first at app startup).
@@ -779,6 +842,7 @@ export type EpisodeMediaListRow = Pick<
   | 'episode_symptom_id'
   | 'storage_object_key'
   | 'thumbnail_storage_key'
+  | 'media_type'
   | 'upload_completed_at'
   | 'duration_seconds'
 >;
@@ -808,7 +872,7 @@ export async function listEpisodeMediaForEpisode(
     let query = client
       .from('episode_media')
       .select(
-        'episode_symptom_id, storage_object_key, thumbnail_storage_key, upload_completed_at, duration_seconds',
+        'episode_symptom_id, storage_object_key, thumbnail_storage_key, media_type, upload_completed_at, duration_seconds',
       )
       .eq('episode_id', episodeId);
 

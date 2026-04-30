@@ -461,6 +461,19 @@ function makePhotoLine(symptomName = 'Facial droop'): PresetSymptomRow {
   };
 }
 
+function makeVideoLine(symptomName = 'Dizziness'): PresetSymptomRow {
+  return {
+    id: 'line-video-persisted',
+    preset_id: 'preset-1',
+    sort_order: 0,
+    symptom_name: symptomName,
+    response_type: 'video',
+    prompt_instruction: null,
+    created_at: '2026-01-01T00:00:00.000Z',
+    updated_at: '2026-01-01T00:00:00.000Z',
+  };
+}
+
 describe('SymptomPromptResponseField photo capture', () => {
   let getContextSpy: jest.SpiedFunction<
     typeof HTMLCanvasElement.prototype.getContext
@@ -786,6 +799,17 @@ function makePersistedPhotoAnswer(args: {
   };
 }
 
+function makePersistedVideoAnswer(localUri: string): SymptomPromptAnswer {
+  return {
+    type: 'video',
+    value: {
+      localUri,
+      durationMs: 5000,
+      capturedAt: '2026-01-01T00:00:00.000Z',
+    },
+  };
+}
+
 describe('SymptomPromptResponseField persisted photo preview', () => {
   let resolveEpisodeMediaPreviewUrl: jest.MockedFunction<
     (storageUri: string) => Promise<string | null>
@@ -962,6 +986,114 @@ describe('SymptomPromptResponseField persisted photo preview', () => {
     });
     await waitFor(() => {
       expect(screen.getByAltText('Persisted uploaded preview')).toBeTruthy();
+    });
+  });
+});
+
+describe('SymptomPromptResponseField persisted video preview', () => {
+  let resolveEpisodeMediaPreviewUrl: jest.MockedFunction<
+    (storageUri: string) => Promise<string | null>
+  >;
+  const originalVideoLoad = HTMLVideoElement.prototype.load;
+
+  /**
+   * Persisted video preview sets `src` on an off-DOM `<video>` and waits for `loadeddata`.
+   * jsdom does not emit that event from real media loads; shim `load()` so tests match browser behavior.
+   *
+   * Restore in `afterAll` only: resetting in `afterEach` runs before Testing Library unmount cleanup,
+   * which would call the real jsdom `load` (not implemented) during effect teardown.
+   */
+  beforeAll(() => {
+    HTMLVideoElement.prototype.load = function patchedLoad(
+      this: HTMLVideoElement,
+    ) {
+      queueMicrotask(() => {
+        if (this.src) {
+          this.dispatchEvent(new Event('loadeddata'));
+        }
+      });
+    };
+  });
+
+  afterAll(() => {
+    HTMLVideoElement.prototype.load = originalVideoLoad;
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resolveEpisodeMediaPreviewUrl = jest.fn();
+  });
+
+  it('shows preview error and retries when the resolver rejects, then renders uploaded video', async () => {
+    resolveEpisodeMediaPreviewUrl
+      .mockRejectedValueOnce(new Error('network'))
+      .mockResolvedValueOnce('https://cdn.example/signed.webm');
+
+    render(
+      <SymptomPromptResponseField
+        line={makeVideoLine('PersistedVideo')}
+        answer={makePersistedVideoAnswer('storage:user-1/ep-1/video.webm')}
+        onChange={jest.fn()}
+        disabled={false}
+        resolveEpisodeMediaPreviewUrl={resolveEpisodeMediaPreviewUrl}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeTruthy();
+      expect(screen.getByText('Could not load video. Try again.')).toBeTruthy();
+    });
+    expect(resolveEpisodeMediaPreviewUrl).toHaveBeenCalledTimes(1);
+    expect(resolveEpisodeMediaPreviewUrl).toHaveBeenCalledWith(
+      'storage:user-1/ep-1/video.webm',
+    );
+
+    fireEvent.click(
+      screen.getByLabelText('Retry loading PersistedVideo video preview'),
+    );
+
+    await waitFor(() => {
+      expect(resolveEpisodeMediaPreviewUrl).toHaveBeenCalledTimes(2);
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText('PersistedVideo uploaded video'),
+      ).toBeTruthy();
+    });
+  });
+
+  it('shows preview error and retries when the resolver returns null, then renders uploaded video', async () => {
+    resolveEpisodeMediaPreviewUrl
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce('https://cdn.example/signed.webm');
+
+    render(
+      <SymptomPromptResponseField
+        line={makeVideoLine('PersistedVideo')}
+        answer={makePersistedVideoAnswer('storage:user-1/ep-1/video.webm')}
+        onChange={jest.fn()}
+        disabled={false}
+        resolveEpisodeMediaPreviewUrl={resolveEpisodeMediaPreviewUrl}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeTruthy();
+      expect(screen.getByText('Could not load video. Try again.')).toBeTruthy();
+    });
+    expect(resolveEpisodeMediaPreviewUrl).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(
+      screen.getByLabelText('Retry loading PersistedVideo video preview'),
+    );
+
+    await waitFor(() => {
+      expect(resolveEpisodeMediaPreviewUrl).toHaveBeenCalledTimes(2);
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText('PersistedVideo uploaded video'),
+      ).toBeTruthy();
     });
   });
 });
