@@ -115,8 +115,8 @@ async function videoBlobToJpegThumbnailBlob(
   maxEdge: number,
 ): Promise<Blob> {
   const url = URL.createObjectURL(blob);
+  const video = document.createElement('video');
   try {
-    const video = document.createElement('video');
     video.muted = true;
     video.playsInline = true;
     await new Promise<void>((resolve, reject) => {
@@ -135,6 +135,7 @@ async function videoBlobToJpegThumbnailBlob(
       video.addEventListener('loadeddata', onLoadedData, { once: true });
       video.addEventListener('error', onError, { once: true });
       video.src = url;
+      video.load();
     });
     const dur = Number.isFinite(video.duration) ? video.duration : 0;
     const seekTarget = dur > 0 ? Math.min(0.25, dur * 0.05) : 0;
@@ -191,6 +192,8 @@ async function videoBlobToJpegThumbnailBlob(
       );
     });
   } finally {
+    video.src = '';
+    video.load();
     URL.revokeObjectURL(url);
   }
 }

@@ -94,13 +94,13 @@ export function sanitizeSymptomPromptAnswerEntry(
       const thumbRaw = photoRef.thumbnailStorageUri;
       let thumbnailStorageUri: string | undefined;
       if (thumbRaw !== undefined && thumbRaw !== null) {
-        if (typeof thumbRaw !== 'string') {
-          return null;
+        if (typeof thumbRaw === 'string') {
+          const t = thumbRaw.trim();
+          if (t.length > 0) {
+            thumbnailStorageUri = t;
+          }
         }
-        const t = thumbRaw.trim();
-        if (t.length > 0) {
-          thumbnailStorageUri = t;
-        }
+        // Non-string thumbnail refs are ignored — optional field must not drop a valid capture ref.
       }
       return {
         type: 'photo',
@@ -149,13 +149,13 @@ export function sanitizeSymptomPromptAnswerEntry(
       const thumbRaw = videoRef.thumbnailStorageUri;
       let thumbnailStorageUri: string | undefined;
       if (thumbRaw !== undefined && thumbRaw !== null) {
-        if (typeof thumbRaw !== 'string') {
-          return null;
+        if (typeof thumbRaw === 'string') {
+          const t = thumbRaw.trim();
+          if (t.length > 0) {
+            thumbnailStorageUri = t;
+          }
         }
-        const t = thumbRaw.trim();
-        if (t.length > 0) {
-          thumbnailStorageUri = t;
-        }
+        // Non-string thumbnail refs are ignored — optional field must not drop a valid capture ref.
       }
       return {
         type: 'video',
