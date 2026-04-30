@@ -1,12 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
+  createEpisodeMediaSignedDisplayUrl,
   deleteEpisodeById,
   listEpisodeMediaForEpisode,
 } from '@abstrack/supabase';
-import { formatEpisodeDurationSimple, type EpisodeRow } from '@abstrack/types';
+import {
+  formatEpisodeDurationSimple,
+  isMediaType,
+  type EpisodeRow,
+} from '@abstrack/types';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
 import { formatEpisodeTypeSummary } from '@/lib/episodes/format-episode-meta';
@@ -54,10 +59,49 @@ export function RecentEpisodesList({
           signedUrl: string | null;
           mediaType: 'video' | 'photo';
           durationSeconds: number | null;
+          loadError: string | null;
         }>;
       }
     >
   >({});
+  /** Prevents overlapping media loads per episode (e.g. double‑tap before `loading` commits). */
+  const episodeMediaLoadInFlightRef = useRef<Record<string, boolean>>({});
+
+  /**
+   * Signed URL existed but the asset failed to load (expired, 403, network). Per-item error UI +
+   * refresh affordance.
+   *
+   * @param episodeId - Episode whose media list should be updated.
+   * @param storageKey - Episode media storage object key (`item.key`).
+   */
+  const onEpisodeMediaDisplayError = useCallback(
+    (episodeId: string, storageKey: string) => {
+      setMediaByEpisodeId((prev) => {
+        const state = prev[episodeId];
+        if (!state?.items?.length) {
+          return prev;
+        }
+        let changed = false;
+        const items = state.items.map((it) => {
+          if (it.key !== storageKey || !it.signedUrl) {
+            return it;
+          }
+          changed = true;
+          return {
+            ...it,
+            signedUrl: null,
+            loadError: 'Link expired or unavailable.',
+          };
+        });
+        if (!changed) {
+          return prev;
+        }
+        return { ...prev, [episodeId]: { ...state, items } };
+      });
+    },
+    [],
+  );
+
   const pendingEpisode =
     episodes.find((ep) => ep.id === pendingDeleteEpisodeId) ?? null;
   const isDeletingEpisode = deletingEpisodeId !== null;
@@ -92,7 +136,11 @@ export function RecentEpisodesList({
     }
   };
 
-  const loadEpisodeMedia = async (episodeId: string) => {
+  const loadEpisodeMedia = useCallback(async (episodeId: string) => {
+    if (episodeMediaLoadInFlightRef.current[episodeId]) {
+      return;
+    }
+    episodeMediaLoadInFlightRef.current[episodeId] = true;
     setMediaByEpisodeId((prev) => ({
       ...prev,
       [episodeId]: {
@@ -115,21 +163,30 @@ export function RecentEpisodesList({
         }));
         return;
       }
+      // Signing uses `createEpisodeMediaSignedDisplayUrl`: checks Storage `signed.error`, tries
+      // normalized legacy key shapes (`storage:`, `episode-media/`, URLs). Per-item `loadError`
+      // carries API/auth messages instead of only implying an expired link.
       const items = await Promise.all(
         listed.data.map(async (row) => {
-          const key = row.storage_object_key.trim();
-          const signed = await supabase.storage
-            .from('episode-media')
-            .createSignedUrl(key, 120);
-          const mediaType: 'video' | 'photo' =
-            typeof row.duration_seconds === 'number' && row.duration_seconds > 0
-              ? 'video'
-              : 'photo';
+          const rawKey = row.storage_object_key ?? '';
+          const { signedUrl, errorMessage } =
+            await createEpisodeMediaSignedDisplayUrl(supabase, rawKey, 120);
+          const key = rawKey.trim();
+          const mediaType: 'video' | 'photo' = isMediaType(row.media_type)
+            ? row.media_type
+            : 'photo';
+          const signingFailure =
+            typeof errorMessage === 'string' ? errorMessage.trim() : '';
           return {
             key,
-            signedUrl: signed.data?.signedUrl ?? null,
+            signedUrl,
             mediaType,
             durationSeconds: row.duration_seconds,
+            loadError: signedUrl
+              ? null
+              : signingFailure !== ''
+                ? signingFailure
+                : 'Could not create media link.',
           };
         }),
       );
@@ -146,8 +203,10 @@ export function RecentEpisodesList({
           items: [],
         },
       }));
+    } finally {
+      episodeMediaLoadInFlightRef.current[episodeId] = false;
     }
-  };
+  }, []);
 
   return (
     <>
@@ -209,7 +268,10 @@ export function RecentEpisodesList({
                     </p>
                   ) : null}
                 </div>
-                <div className="mt-3">
+                <div
+                  className="mt-3"
+                  aria-busy={mediaByEpisodeId[ep.id]?.loading === true}
+                >
                   {(() => {
                     const mediaState = mediaByEpisodeId[ep.id];
                     return (
@@ -238,8 +300,9 @@ export function RecentEpisodesList({
                             </p>
                             <button
                               type="button"
-                              className="mt-2 inline-flex min-h-[36px] items-center rounded-lg border border-app-border px-3 py-1.5 text-xs font-semibold text-app-primary"
+                              className={`mt-2 inline-flex min-h-[36px] items-center rounded-lg border border-app-border px-3 py-1.5 text-xs font-semibold text-app-primary ${mediaState?.loading ? 'cursor-not-allowed opacity-50' : ''}`}
                               onClick={() => void loadEpisodeMedia(ep.id)}
+                              disabled={Boolean(mediaState?.loading)}
                             >
                               Retry
                             </button>
@@ -266,25 +329,39 @@ export function RecentEpisodesList({
                                       src={item.signedUrl}
                                       controls
                                       className="max-h-56 w-full rounded bg-black object-contain"
+                                      onError={() =>
+                                        onEpisodeMediaDisplayError(
+                                          ep.id,
+                                          item.key,
+                                        )
+                                      }
                                     />
                                   ) : (
                                     <img
                                       src={item.signedUrl}
                                       alt="Episode media"
                                       className="max-h-56 w-full rounded bg-black/5 object-contain"
+                                      onError={() =>
+                                        onEpisodeMediaDisplayError(
+                                          ep.id,
+                                          item.key,
+                                        )
+                                      }
                                     />
                                   )
                                 ) : (
                                   <p className="text-xs text-red-700 dark:text-red-300">
-                                    Link expired or unavailable.
+                                    {item.loadError ??
+                                      'Link expired or unavailable.'}
                                   </p>
                                 )}
                               </div>
                             ))}
                             <button
                               type="button"
-                              className="inline-flex min-h-[36px] items-center rounded-lg border border-app-border px-3 py-1.5 text-xs font-semibold text-app-primary"
+                              className={`inline-flex min-h-[36px] items-center rounded-lg border border-app-border px-3 py-1.5 text-xs font-semibold text-app-primary ${mediaState?.loading ? 'cursor-not-allowed opacity-50' : ''}`}
                               onClick={() => void loadEpisodeMedia(ep.id)}
+                              disabled={Boolean(mediaState?.loading)}
                             >
                               Refresh media links
                             </button>

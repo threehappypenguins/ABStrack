@@ -10,10 +10,15 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { formatEpisodeDurationSimple, type EpisodeRow } from '@abstrack/types';
+import {
+  formatEpisodeDurationSimple,
+  isMediaType,
+  type EpisodeRow,
+} from '@abstrack/types';
 import { announce } from '@abstrack/ui/native';
 import {
   cancelActiveEpisodeById,
+  createEpisodeMediaSignedDisplayUrl,
   deleteEpisodeById,
   getActiveEpisodeForUser,
   listEpisodeMediaForEpisode,
@@ -98,10 +103,14 @@ export function EpisodesManagementPanel({
           key: string;
           signedUrl: string | null;
           mediaType: 'video' | 'photo';
+          /** Set when signing fails (permissions, bad path); distinct from expired link retry UX. */
+          loadError: string | null;
         }>;
       }
     >
   >({});
+  /** Prevents overlapping loads per episode (e.g. double tap before `loading` is committed). */
+  const episodeMediaLoadInFlightRef = useRef<Record<string, boolean>>({});
   const loadInitial = useCallback(
     async (cancel?: { cancelled: boolean }) => {
       const generation = ++loadGenRef.current;
@@ -256,6 +265,10 @@ export function EpisodesManagementPanel({
   };
 
   const loadEpisodeMedia = useCallback(async (episodeId: string) => {
+    if (episodeMediaLoadInFlightRef.current[episodeId]) {
+      return;
+    }
+    episodeMediaLoadInFlightRef.current[episodeId] = true;
     setMediaByEpisodeId((prev) => ({
       ...prev,
       [episodeId]: {
@@ -281,14 +294,17 @@ export function EpisodesManagementPanel({
       const items = await Promise.all(
         listed.data.map(async (row) => {
           const key = row.storage_object_key.trim();
-          const signed = await client.storage
-            .from('episode-media')
-            .createSignedUrl(key, 120);
-          const mediaType: 'video' | 'photo' =
-            typeof row.duration_seconds === 'number' && row.duration_seconds > 0
-              ? 'video'
-              : 'photo';
-          return { key, signedUrl: signed.data?.signedUrl ?? null, mediaType };
+          const { signedUrl, errorMessage } =
+            await createEpisodeMediaSignedDisplayUrl(client, key, 120);
+          const mediaType: 'video' | 'photo' = isMediaType(row.media_type)
+            ? row.media_type
+            : 'photo';
+          return {
+            key,
+            signedUrl,
+            mediaType,
+            loadError: signedUrl ? null : errorMessage,
+          };
         }),
       );
       setMediaByEpisodeId((prev) => ({
@@ -304,8 +320,44 @@ export function EpisodesManagementPanel({
           items: [],
         },
       }));
+    } finally {
+      episodeMediaLoadInFlightRef.current[episodeId] = false;
     }
   }, []);
+
+  /**
+   * When a signed URL loads but the asset fails (expired, 403, network), swap to error UI + retry.
+   *
+   * @param episodeId - Episode whose media list should be updated.
+   * @param storageKey - Storage object key (`item.key`) for the failed asset.
+   */
+  const onEpisodeMediaDisplayError = useCallback(
+    (episodeId: string, storageKey: string) => {
+      setMediaByEpisodeId((prev) => {
+        const state = prev[episodeId];
+        if (!state?.items?.length) {
+          return prev;
+        }
+        let changed = false;
+        const items = state.items.map((it) => {
+          if (it.key !== storageKey || !it.signedUrl) {
+            return it;
+          }
+          changed = true;
+          return {
+            ...it,
+            signedUrl: null,
+            loadError: 'Link expired or unavailable.',
+          };
+        });
+        if (!changed) {
+          return prev;
+        }
+        return { ...prev, [episodeId]: { ...state, items } };
+      });
+    },
+    [],
+  );
 
   const onCancelEpisode = useCallback(() => {
     if (!active || cancelingActiveEpisode) {
@@ -637,8 +689,12 @@ export function EpisodesManagementPanel({
                             <Pressable
                               accessibilityRole="button"
                               accessibilityLabel="Retry loading media"
+                              accessibilityState={{
+                                disabled: Boolean(mediaState?.loading),
+                              }}
+                              disabled={Boolean(mediaState?.loading)}
                               onPress={() => void loadEpisodeMedia(ep.id)}
-                              className="mt-2 min-h-[40px] self-start rounded-lg border border-app-border px-3 py-2 dark:border-app-border-dark"
+                              className={`mt-2 min-h-[40px] self-start rounded-lg border border-app-border px-3 py-2 dark:border-app-border-dark ${mediaState?.loading ? 'opacity-50' : ''}`}
                             >
                               <Text
                                 className={`text-xs font-semibold ${nw.textPrimary}`}
@@ -674,11 +730,18 @@ export function EpisodesManagementPanel({
                                       accessibilityIgnoresInvertColors
                                       style={{ width: '100%', height: 220 }}
                                       resizeMode="contain"
+                                      onError={() =>
+                                        onEpisodeMediaDisplayError(
+                                          ep.id,
+                                          item.key,
+                                        )
+                                      }
                                     />
                                   )
                                 ) : (
                                   <Text className="p-3 text-xs text-red-700 dark:text-red-300">
-                                    Link expired or unavailable.
+                                    {item.loadError ??
+                                      'Link expired or unavailable.'}
                                   </Text>
                                 )}
                               </View>
@@ -686,8 +749,12 @@ export function EpisodesManagementPanel({
                             <Pressable
                               accessibilityRole="button"
                               accessibilityLabel="Refresh media links"
+                              accessibilityState={{
+                                disabled: Boolean(mediaState?.loading),
+                              }}
+                              disabled={Boolean(mediaState?.loading)}
                               onPress={() => void loadEpisodeMedia(ep.id)}
-                              className="min-h-[40px] self-start rounded-lg border border-app-border px-3 py-2 dark:border-app-border-dark"
+                              className={`min-h-[40px] self-start rounded-lg border border-app-border px-3 py-2 dark:border-app-border-dark ${mediaState?.loading ? 'opacity-50' : ''}`}
                             >
                               <Text
                                 className={`text-xs font-semibold ${nw.textPrimary}`}

@@ -105,6 +105,7 @@ export type {
   RemoveEpisodeMediaObjectsFromStorageResult,
 } from './lib/episode-media-data.js';
 export {
+  createEpisodeMediaSignedDisplayUrl,
   createEpisodeMediaObjectKey,
   createEpisodeMediaThumbnailObjectKey,
   listEpisodeMediaForEpisode,
