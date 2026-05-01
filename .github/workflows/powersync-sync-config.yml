@@ -1,0 +1,150 @@
+# PowerSync Sync Streams: validate on every PR and branch push; deploy sync-config on main.
+# Requires repository secrets (see docs/SUPABASE_CLOUD_DEVELOPER.md and docs/DEV_SETUP.md).
+#
+# Uses `powersync pull instance` so the directory contains real `service.yaml` from Cloud.
+# IMPORTANT: The CLI resolves `--directory` relative to process.cwd() (join(cwd, directory)).
+# We therefore `cd` into a temp dir and pass `--directory=. ` so files land where we expect.
+#
+# - pull_request (same-repo only; fork PRs skip — no secrets): validate when secrets exist
+# - push to any branch (when paths change): validate when secrets exist
+# - push to main: validate then deploy sync-config when secrets exist
+# - workflow_dispatch: validate; deploy on main only when secrets exist
+#
+# When POWERSYNC_ADMIN_TOKEN / INSTANCE_ID / PROJECT_ID are unset (fork pushes or secrets not
+# configured yet), validate exits successfully without calling the CLI and deploy is skipped —
+# avoids noisy failures while keeping branch push + PR coverage once secrets are added.
+
+name: PowerSync sync config
+
+on:
+  push:
+    paths:
+      - 'packages/powersync/sync-rules.yaml'
+      - '.github/workflows/powersync-sync-config.yml'
+  pull_request:
+    paths:
+      - 'packages/powersync/sync-rules.yaml'
+      - '.github/workflows/powersync-sync-config.yml'
+  workflow_dispatch:
+
+# Pin CLI for reproducible validate/deploy; bump when you intentionally adopt a new CLI.
+env:
+  POWERSYNC_CLI_VERSION: 0.9.4
+
+permissions:
+  contents: read
+
+concurrency:
+  group: powersync-sync-config-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    outputs:
+      powersync_ready: ${{ steps.secrets.outputs.ready }}
+    env:
+      PS_ADMIN_TOKEN: ${{ secrets.POWERSYNC_ADMIN_TOKEN }}
+      INSTANCE_ID: ${{ secrets.POWERSYNC_INSTANCE_ID }}
+      PROJECT_ID: ${{ secrets.POWERSYNC_PROJECT_ID }}
+      ORG_ID: ${{ secrets.POWERSYNC_ORG_ID }}
+    steps:
+      - name: Check PowerSync Actions secrets
+        id: secrets
+        run: |
+          if [ -n "${PS_ADMIN_TOKEN:-}" ] && [ -n "${INSTANCE_ID:-}" ] && [ -n "${PROJECT_ID:-}" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo '::notice title=PowerSync skipped::Repository Actions secrets POWERSYNC_ADMIN_TOKEN, POWERSYNC_INSTANCE_ID, and POWERSYNC_PROJECT_ID are not all set — validate/deploy skipped. Configure them (see docs/DEV_SETUP.md) to run CI against PowerSync Cloud.'
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.secrets.outputs.ready == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.secrets.outputs.ready == 'true'
+        with:
+          node-version: 20
+
+      - name: Pull instance, overlay Sync Streams YAML, validate
+        if: steps.secrets.outputs.ready == 'true'
+        run: |
+          set -euo pipefail
+          CONFIG_DIR=$(mktemp -d)
+          cd "$CONFIG_DIR"
+          pull_args=(
+            pull instance
+            --directory=.
+            --instance-id="$INSTANCE_ID"
+            --project-id="$PROJECT_ID"
+          )
+          if [ -n "${ORG_ID:-}" ]; then pull_args+=(--org-id="$ORG_ID"); fi
+          npx --yes "powersync@${POWERSYNC_CLI_VERSION}" "${pull_args[@]}"
+          if [ ! -f ./service.yaml ]; then
+            echo "Expected ./service.yaml after pull instance; listing $CONFIG_DIR:" >&2
+            ls -la "$CONFIG_DIR" >&2
+            exit 1
+          fi
+          cp "${GITHUB_WORKSPACE}/packages/powersync/sync-rules.yaml" ./sync-config.yaml
+          validate_args=(
+            validate
+            --directory=.
+            --instance-id="$INSTANCE_ID"
+            --project-id="$PROJECT_ID"
+          )
+          if [ -n "${ORG_ID:-}" ]; then validate_args+=(--org-id="$ORG_ID"); fi
+          npx --yes "powersync@${POWERSYNC_CLI_VERSION}" "${validate_args[@]}"
+
+  deploy:
+    needs: validate
+    if: |
+      needs.validate.outputs.powersync_ready == 'true' &&
+      needs.validate.result == 'success' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    env:
+      PS_ADMIN_TOKEN: ${{ secrets.POWERSYNC_ADMIN_TOKEN }}
+      INSTANCE_ID: ${{ secrets.POWERSYNC_INSTANCE_ID }}
+      PROJECT_ID: ${{ secrets.POWERSYNC_PROJECT_ID }}
+      ORG_ID: ${{ secrets.POWERSYNC_ORG_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Pull instance, overlay Sync Streams YAML, deploy sync-config
+        run: |
+          set -euo pipefail
+          CONFIG_DIR=$(mktemp -d)
+          cd "$CONFIG_DIR"
+          pull_args=(
+            pull instance
+            --directory=.
+            --instance-id="$INSTANCE_ID"
+            --project-id="$PROJECT_ID"
+          )
+          if [ -n "${ORG_ID:-}" ]; then pull_args+=(--org-id="$ORG_ID"); fi
+          npx --yes "powersync@${POWERSYNC_CLI_VERSION}" "${pull_args[@]}"
+          if [ ! -f ./service.yaml ]; then
+            echo "Expected ./service.yaml after pull instance; listing $CONFIG_DIR:" >&2
+            ls -la "$CONFIG_DIR" >&2
+            exit 1
+          fi
+          cp "${GITHUB_WORKSPACE}/packages/powersync/sync-rules.yaml" ./sync-config.yaml
+          deploy_args=(
+            deploy
+            sync-config
+            --directory=.
+            --instance-id="$INSTANCE_ID"
+            --project-id="$PROJECT_ID"
+          )
+          if [ -n "${ORG_ID:-}" ]; then deploy_args+=(--org-id="$ORG_ID"); fi
+          npx --yes "powersync@${POWERSYNC_CLI_VERSION}" "${deploy_args[@]}"

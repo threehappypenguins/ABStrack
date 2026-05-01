@@ -1,1 +1,16 @@
-export * from './lib/powersync.js';
+export {
+  type AppRole,
+  type CaretakerGrantRow,
+  type PractitionerGrantRow,
+  type SyncScopeModelInput,
+  visiblePatientUserIdsForPhiSync,
+} from './lib/sync-scope-model.js';
+
+export {
+  type ReplicatedPublicTableName,
+  REPLICATED_PUBLIC_TABLE_NAMES,
+} from './lib/replicated-public-tables.js';
+
+/** Repo-relative path to the deployable PowerSync Sync Streams config (`edition: 3` YAML). */
+export const ABSTRACK_POWERSYNC_SYNC_RULES_PACKAGE_PATH =
+  'packages/powersync/sync-rules.yaml';

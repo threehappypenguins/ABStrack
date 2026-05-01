@@ -9,7 +9,8 @@ Follow **[AGENTS.md](../AGENTS.md)** (section **Correct flow for migrations and 
 **Recommended setup (this repo):**
 
 1. **GitHub Actions** still runs **`supabase db push`** when changes land on **`main`**—so merged code and cloud stay aligned even if you forget a manual step.
-2. **You manually** run **`db push`** from your laptop **when needed** (usually **before merge**, on your feature branch) so cloud has the new migration **before** you run **`gen types typescript --linked`**. That lets you put **migration SQL + `database.types.ts` in one PR** without waiting for merge.
+2. **GitHub Actions** runs **`powersync validate`** on every PR and branch push when that YAML changes, and **`deploy sync-config`** only when **`main`** is updated—see **[PowerSync Sync Streams](#powersync-sync-streams-packagespowersyncsync-rulesyaml)** (secrets required).
+3. **You manually** run **`db push`** from your laptop **when needed** (usually **before merge**, on your feature branch) so cloud has the new migration **before** you run **`gen types typescript --linked`**. That lets you put **migration SQL + `database.types.ts` in one PR** without waiting for merge.
 
 **Wait to `db push` until the migration is stable (e.g. after Copilot / PR review).** Review tools often suggest edits to the same `supabase/migrations/*.sql` file. If you **`db push` too early**, cloud records that migration version as **already applied**; changing the file in git does **not** automatically re-apply it. Safer habit: keep migration work in the PR, finish review-driven SQL tweaks, **then** run **`db push`** once, **`gen types --linked`**, commit `database.types.ts`, and merge. See **[Revising a migration already pushed to cloud (development)](#revising-a-migration-already-pushed-to-cloud-development)** if you jumped the gun.
 
@@ -98,7 +99,8 @@ Then the migration hits cloud when **CI runs `db push` on `main`** after merge. 
 ## One-time setup checklist
 
 1. **GitHub Actions:** repository secrets for [`.github/workflows/supabase-migrations.yml`](../.github/workflows/supabase-migrations.yml)—see [DEV_SETUP.md §4](DEV_SETUP.md#4-supabase-database-migrations-cloud-cli-and-ci) (`SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_ID`, `SUPABASE_DB_PASSWORD`).
-2. **Your laptop (for the recommended migration flow):** `pnpm dlx supabase login`, `pnpm dlx supabase link --project-ref <project-ref>`.
+2. **GitHub Actions (PowerSync):** optional but recommended if you use PowerSync Cloud—secrets for [`.github/workflows/powersync-sync-config.yml`](../.github/workflows/powersync-sync-config.yml)—see [DEV_SETUP.md → PowerSync sync config](DEV_SETUP.md#powersync-sync-config-github-actions).
+3. **Your laptop (for the recommended migration flow):** `pnpm dlx supabase login`, `pnpm dlx supabase link --project-ref <project-ref>`.
 
 ---
 
@@ -165,6 +167,81 @@ pnpm exec nx test @abstrack/supabase
 
 ---
 
+## PowerSync Sync Streams (`packages/powersync/sync-rules.yaml`)
+
+**Copy-paste CLI (repo root):** see **[`packages/powersync/README.md` → Validate or deploy sync rules (CLI)](../packages/powersync/README.md#validate-or-deploy-sync-rules-cli)** for **`pull instance` → copy `sync-rules.yaml` → `validate` / `deploy sync-config`** (same as CI). A bare **`powersync validate`** without **`--directory`** (and no linked config folder) typically errors; pass **`--directory`** to the folder that contains **`service.yaml`** and **`sync-config.yaml`**.
+
+PowerSync Cloud stores **Sync Streams** (edition 3 YAML) separately from Postgres migrations. The repo copy lives at **`packages/powersync/sync-rules.yaml`**.
+
+**Idempotency:** Running **`powersync deploy sync-config`** again with the same file (or re-running the GitHub Action) is normal. PowerSync applies the config again; it does **not** behave like SQL migrations where duplicate versions conflict. You still want PR review because a bad YAML change affects live sync scope immediately after deploy.
+
+### Manual CLI (when you deploy or validate yourself)
+
+Install/run the CLI via npm ([PowerSync CLI](https://docs.powersync.com/tools/cli)); this repo pins the same major/minor as CI (`powersync@0.9.4` — bump **`POWERSYNC_CLI_VERSION`** in [`.github/workflows/powersync-sync-config.yml`](../.github/workflows/powersync-sync-config.yml) when you intentionally upgrade).
+
+**If `powersync: command not found`:** the binary is not on your `PATH` unless you install it globally. Run it ad hoc with **`pnpm dlx powersync@0.9.4 …`** or **`npx --yes powersync@0.9.4 …`** (pin the version to match CI; **`--yes`** skips npx’s install prompt). The steps below use **`pnpm dlx`**; substitute **`npx --yes`** if you prefer npm’s runner. Or **`npm install -g powersync@0.9.4`** so bare **`powersync`** works.
+
+1. **Personal access token:** create one in the [PowerSync Dashboard → Access tokens](https://dashboard.powersync.com/account/access-tokens). It is **one** token. **GitHub Actions** stores it as the repository secret **`POWERSYNC_ADMIN_TOKEN`**; the workflow maps that value into **`PS_ADMIN_TOKEN`** for the CLI ([`powersync-sync-config.yml`](../.github/workflows/powersync-sync-config.yml)). On **your laptop**, either run **`login`** (no export needed after it succeeds) or **`export PS_ADMIN_TOKEN='…'`** before **`validate`** / **`deploy`**—that is the same PAT, only the env var name matches what the CLI expects locally.
+
+2. **Instance + project IDs:** from your PowerSync project/instance (Dashboard). Export **`INSTANCE_ID`**, **`PROJECT_ID`**, and **`ORG_ID`** only if your token has multiple organizations ([CLI / CI env vars](https://docs.powersync.com/tools/cli#deploying-from-ci-eg-github-actions)).
+
+3. **Validate** (full **`powersync validate`**: schema, connections, Cloud sync config — same as CI):
+
+   ```bash
+   export PS_ADMIN_TOKEN='your-pat'
+   export INSTANCE_ID='your-instance-id'
+   export PROJECT_ID='your-project-id'
+   # Optional if your PAT spans multiple orgs:
+   # export ORG_ID='your-org-id'
+
+   REPO_ROOT=$(git rev-parse --show-toplevel)
+   CONFIG_DIR=$(mktemp -d)
+   cd "$CONFIG_DIR"
+   pull_args=(pull instance --directory=. --instance-id="$INSTANCE_ID" --project-id="$PROJECT_ID")
+   [ -n "${ORG_ID:-}" ] && pull_args+=(--org-id="$ORG_ID")
+   pnpm dlx powersync@0.9.4 "${pull_args[@]}"
+   cp "$REPO_ROOT/packages/powersync/sync-rules.yaml" ./sync-config.yaml
+
+   validate_args=(validate --directory=. --instance-id="$INSTANCE_ID" --project-id="$PROJECT_ID")
+   [ -n "${ORG_ID:-}" ] && validate_args+=(--org-id="$ORG_ID")
+   pnpm dlx powersync@0.9.4 "${validate_args[@]}"
+   ```
+
+   Use **`cd …` + `--directory=.`**: the CLI resolves **`--directory`** relative to **`cwd`**; an absolute path can leave files in an unexpected place while logs show the path you passed.
+
+   **`Directory "powersync" not found`:** you ran **`validate`** without a linked config folder. Use the block above. **`npx`** may print **`npm notice`** lines about upgrading npm—that is npm’s own output.
+
+4. **Deploy sync config only** (stay in **`$CONFIG_DIR`**; does not redeploy full service config):
+
+   ```bash
+   deploy_args=(deploy sync-config --directory=. --instance-id="$INSTANCE_ID" --project-id="$PROJECT_ID")
+   [ -n "${ORG_ID:-}" ] && deploy_args+=(--org-id="$ORG_ID")
+   pnpm dlx powersync@0.9.4 "${deploy_args[@]}"
+   ```
+
+**Interactive login:** **`pnpm dlx powersync@0.9.4 login`** or **`npx --yes powersync@0.9.4 login`** opens the browser so PowerSync can give this machine a token. After that, **`validate`** / **`deploy`** can use that saved token instead of **`PS_ADMIN_TOKEN`**.
+
+On **Linux**, the CLI often cannot use a system keychain, so it may ask: _store the token in plaintext under **`~/.config/powersync/config.yaml`**, or use \*\*`PS_ADMIN_TOKEN` instead?_
+
+- **`y`:** saves the token in that file on your machine (only your user account should read it). Convenient for repeat runs.
+- **`N`:** does not write the token to disk; use **`export PS_ADMIN_TOKEN='…'`** in the same terminal before **`validate`** / **`deploy`** (same as the scripted steps above). Fine if you prefer not to keep a PAT in a file.
+
+### GitHub Actions (backstop on merge)
+
+[`.github/workflows/powersync-sync-config.yml`](../.github/workflows/powersync-sync-config.yml) runs when **`packages/powersync/sync-rules.yaml`** (or that workflow file) changes:
+
+- **`pull_request`:** **`powersync validate`** (full checks: schema, connections, Cloud sync config) on same-repo branches when **`POWERSYNC_ADMIN_TOKEN`**, **`POWERSYNC_INSTANCE_ID`**, and **`POWERSYNC_PROJECT_ID`** are set; fork PRs skip the job — GitHub does not expose secrets to forks.
+- **`push` to any branch:** same **`validate`** job when those secrets exist; on **`main`**, **`deploy sync-config`** runs only after a successful validate that actually ran the CLI (**`powersync_ready`**).
+- **`workflow_dispatch`:** same behavior as **`push`** on the branch you select.
+
+If any of the three secrets above is unset (e.g. fork **`push`**, or upstream repo before secrets are configured), **`validate`** completes with a **notice** and skips checkout/CLI so CI stays green; **`deploy`** does not run.
+
+**How CI gets a real connection:** the workflow runs **`powersync pull instance`** using **`POWERSYNC_*`** secrets. The CLI joins **`--directory`** with **`process.cwd()`**, so the job **`cd`s into a temp directory** and passes **`--directory=.`** (same pattern you should use locally). That downloads Cloud’s **`service.yaml`**, then copies **`packages/powersync/sync-rules.yaml`** over **`sync-config.yaml`** and runs **`validate`** / **`deploy sync-config`**.
+
+Repository secrets are documented under **[DEV_SETUP.md → PowerSync sync config (GitHub Actions)](DEV_SETUP.md#powersync-sync-config-github-actions)** (`POWERSYNC_ADMIN_TOKEN`, `POWERSYNC_INSTANCE_ID`, `POWERSYNC_PROJECT_ID`, optional `POWERSYNC_ORG_ID`).
+
+---
+
 ## Cloud-only development (no Docker on your machine)
 
 **You do not need Docker** for the recommended path—only **`db push`** and **`gen types --linked`** against Supabase Cloud. **Docker** in this repo only appears **inside** certain GitHub Actions jobs, not as a requirement for your computer.
@@ -185,7 +262,7 @@ pnpm exec nx test @abstrack/supabase
 
 5. **Do not** imply a bot commits `database.types.ts`.
 
-6. **Ask before changing** `.github/workflows/*` deployment or secrets without her approval.
+6. **Ask before changing** `.github/workflows/*` deployment or secrets without her approval (PowerSync sync deploy is documented in **PowerSync Sync Streams** above and uses **`powersync-sync-config.yml`**).
 
 7. When **`database.types.ts`** or **`supabase/migrations/`** are involved, point to **`gen types --linked`** + Prettier (see **Recommended workflow** above) and that **[`.github/workflows/supabase-migrations.yml`](../.github/workflows/supabase-migrations.yml)** verifies on `main` after `db push`. **Do not** suggest Docker on her laptop unless she asks.
 
@@ -197,5 +274,6 @@ pnpm exec nx test @abstrack/supabase
 | ----------------------------- | -------------------------------------------------------------------------------------------------- |
 | CLI install, link, secrets    | [DEV_SETUP.md §4](DEV_SETUP.md#4-supabase-database-migrations-cloud-cli-and-ci)                    |
 | Migrations + verify on `main` | [`.github/workflows/supabase-migrations.yml`](../.github/workflows/supabase-migrations.yml)        |
+| PowerSync sync YAML on `main` | [`.github/workflows/powersync-sync-config.yml`](../.github/workflows/powersync-sync-config.yml)    |
 | PR types check                | [`.github/workflows/supabase-db-types-pr.yml`](../.github/workflows/supabase-db-types-pr.yml)      |
 | App env vars                  | [`packages/supabase/README.md`](../packages/supabase/README.md), [`.env.example`](../.env.example) |
