@@ -1,7 +1,7 @@
 import { OPSqliteOpenFactory } from '@powersync/op-sqlite';
 import { PowerSyncDatabase } from '@powersync/react-native';
 
-import { abstrackPowerSyncSchema } from './abstrack-app-schema.js';
+import { abstrackPowerSyncSchema } from './abstrack-app-schema';
 
 /**
  * Opens the ABStrack PowerSync SQLite database using OP-SQLite with SQLCipher (see `op-sqlite`
