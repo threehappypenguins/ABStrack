@@ -1,0 +1,114 @@
+# PowerSync Sync Streams: validate on every PR and branch push; deploy only on main.
+# Requires repository secrets (see docs/SUPABASE_CLOUD_DEVELOPER.md and docs/DEV_SETUP.md).
+#
+# The PowerSync CLI expects a scaffolded config directory (service.yaml template + sync-config.yaml).
+# Each job creates a fresh directory via `powersync init cloud`, copies the repo sync config into
+# `sync-config.yaml`, then validates or deploys **sync config only** (`deploy sync-config`).
+#
+# - pull_request (same-repo only; fork PRs skip — no secrets): validate
+# - push to any branch (when paths change): validate
+# - push to main (when paths change): validate, then deploy (second job; no duplicate validate in deploy)
+# - workflow_dispatch on main: validate + deploy; on other branches: validate only
+
+name: PowerSync sync config
+
+on:
+  push:
+    paths:
+      - 'packages/powersync/sync-rules.yaml'
+      - '.github/workflows/powersync-sync-config.yml'
+  pull_request:
+    paths:
+      - 'packages/powersync/sync-rules.yaml'
+      - '.github/workflows/powersync-sync-config.yml'
+  workflow_dispatch:
+
+# Pin CLI for reproducible validate/deploy; bump when you intentionally adopt a new CLI.
+env:
+  POWERSYNC_CLI_VERSION: 0.9.4
+
+permissions:
+  contents: read
+
+concurrency:
+  group: powersync-sync-config-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    env:
+      PS_ADMIN_TOKEN: ${{ secrets.POWERSYNC_ADMIN_TOKEN }}
+      INSTANCE_ID: ${{ secrets.POWERSYNC_INSTANCE_ID }}
+      PROJECT_ID: ${{ secrets.POWERSYNC_PROJECT_ID }}
+      ORG_ID: ${{ secrets.POWERSYNC_ORG_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Prepare PowerSync CLI directory and sync-config.yaml
+        run: |
+          set -euo pipefail
+          POWERSYNC_DIR=$(mktemp -d)
+          npx --yes "powersync@${POWERSYNC_CLI_VERSION}" init cloud --directory="$POWERSYNC_DIR"
+          cp packages/powersync/sync-rules.yaml "$POWERSYNC_DIR/sync-config.yaml"
+          echo "POWERSYNC_DIR=$POWERSYNC_DIR" >> "$GITHUB_ENV"
+
+      - name: Validate sync config (PowerSync Cloud)
+        run: |
+          set -euo pipefail
+          validate_args=(
+            validate
+            --directory="$POWERSYNC_DIR"
+            --instance-id="$INSTANCE_ID"
+            --project-id="$PROJECT_ID"
+          )
+          if [ -n "${ORG_ID:-}" ]; then validate_args+=(--org-id="$ORG_ID"); fi
+          npx --yes "powersync@${POWERSYNC_CLI_VERSION}" "${validate_args[@]}"
+
+  deploy:
+    needs: validate
+    if: |
+      needs.validate.result == 'success' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    env:
+      PS_ADMIN_TOKEN: ${{ secrets.POWERSYNC_ADMIN_TOKEN }}
+      INSTANCE_ID: ${{ secrets.POWERSYNC_INSTANCE_ID }}
+      PROJECT_ID: ${{ secrets.POWERSYNC_PROJECT_ID }}
+      ORG_ID: ${{ secrets.POWERSYNC_ORG_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Prepare PowerSync CLI directory and sync-config.yaml
+        run: |
+          set -euo pipefail
+          POWERSYNC_DIR=$(mktemp -d)
+          npx --yes "powersync@${POWERSYNC_CLI_VERSION}" init cloud --directory="$POWERSYNC_DIR"
+          cp packages/powersync/sync-rules.yaml "$POWERSYNC_DIR/sync-config.yaml"
+          echo "POWERSYNC_DIR=$POWERSYNC_DIR" >> "$GITHUB_ENV"
+
+      - name: Deploy sync config only (Sync Streams / rules YAML)
+        run: |
+          set -euo pipefail
+          deploy_args=(
+            deploy
+            sync-config
+            --directory="$POWERSYNC_DIR"
+            --instance-id="$INSTANCE_ID"
+            --project-id="$PROJECT_ID"
+          )
+          if [ -n "${ORG_ID:-}" ]; then deploy_args+=(--org-id="$ORG_ID"); fi
+          npx --yes "powersync@${POWERSYNC_CLI_VERSION}" "${deploy_args[@]}"

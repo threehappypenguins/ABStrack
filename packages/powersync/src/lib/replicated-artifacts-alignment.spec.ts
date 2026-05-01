@@ -31,9 +31,9 @@ function parsePowerSyncSchemaKeys(source: string): string[] {
   return keys;
 }
 
-/** Tables referenced as `FROM tbl` / `JOIN tbl` in sync-rules SQL fragments (unquoted identifiers). */
+/** Tables referenced as `FROM tbl` / `JOIN tbl` in sync-rules SQL (uppercase keywords; avoids prose `from`). */
 function tableNamesFromSqlFragments(source: string): Set<string> {
-  const re = /\b(?:FROM|JOIN)\s+([a-z_][a-z0-9_]*)\b/gi;
+  const re = /\b(?:FROM|JOIN)\s+([a-z_][a-z0-9_]*)\b/g;
   const names = new Set<string>();
   let m: RegExpExecArray | null;
   while ((m = re.exec(source)) !== null) {
