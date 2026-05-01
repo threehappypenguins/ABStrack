@@ -1,14 +1,15 @@
-# PowerSync Sync Streams: validate on every PR and branch push; deploy only on main.
+# PowerSync Sync Streams: validate on every PR and branch push; deploy sync-config on main.
 # Requires repository secrets (see docs/SUPABASE_CLOUD_DEVELOPER.md and docs/DEV_SETUP.md).
 #
-# The PowerSync CLI expects a scaffolded config directory (service.yaml template + sync-config.yaml).
-# Each job creates a fresh directory via `powersync init cloud`, copies the repo sync config into
-# `sync-config.yaml`, then validates or deploys **sync config only** (`deploy sync-config`).
+# Uses `powersync pull instance` (not `init cloud`) so the job directory contains the real
+# `service.yaml` from PowerSync Cloud—including replication connection details. Then we replace
+# `sync-config.yaml` with `packages/powersync/sync-rules.yaml` and run full `validate` /
+# `deploy sync-config`. See PowerSync CLI docs: pull instance downloads service.yaml + sync-config.
 #
 # - pull_request (same-repo only; fork PRs skip — no secrets): validate
 # - push to any branch (when paths change): validate
-# - push to main (when paths change): validate, then deploy (second job; no duplicate validate in deploy)
-# - workflow_dispatch on main: validate + deploy; on other branches: validate only
+# - push to main: validate, then deploy sync-config
+# - workflow_dispatch on main: validate + deploy; other branches: validate only
 
 name: PowerSync sync config
 
@@ -53,20 +54,32 @@ jobs:
         with:
           node-version: 20
 
-      - name: Prepare PowerSync CLI directory and sync-config.yaml
+      - name: Pull Cloud instance config and apply repo Sync Streams YAML
         run: |
           set -euo pipefail
-          POWERSYNC_DIR=$(mktemp -d)
-          npx --yes "powersync@${POWERSYNC_CLI_VERSION}" init cloud --directory="$POWERSYNC_DIR"
-          cp packages/powersync/sync-rules.yaml "$POWERSYNC_DIR/sync-config.yaml"
-          echo "POWERSYNC_DIR=$POWERSYNC_DIR" >> "$GITHUB_ENV"
+          CONFIG_DIR=$(mktemp -d)
+          pull_args=(
+            pull instance
+            --directory="$CONFIG_DIR"
+            --instance-id="$INSTANCE_ID"
+            --project-id="$PROJECT_ID"
+          )
+          if [ -n "${ORG_ID:-}" ]; then pull_args+=(--org-id="$ORG_ID"); fi
+          npx --yes "powersync@${POWERSYNC_CLI_VERSION}" "${pull_args[@]}"
+          if [ ! -f "$CONFIG_DIR/service.yaml" ]; then
+            echo "Expected service.yaml after pull instance; listing $CONFIG_DIR:" >&2
+            ls -la "$CONFIG_DIR" >&2
+            exit 1
+          fi
+          cp packages/powersync/sync-rules.yaml "$CONFIG_DIR/sync-config.yaml"
+          echo "CONFIG_DIR=$CONFIG_DIR" >> "$GITHUB_ENV"
 
-      - name: Validate sync config (PowerSync Cloud)
+      - name: Validate Sync Streams (PowerSync Cloud — full validate)
         run: |
           set -euo pipefail
           validate_args=(
             validate
-            --directory="$POWERSYNC_DIR"
+            --directory="$CONFIG_DIR"
             --instance-id="$INSTANCE_ID"
             --project-id="$PROJECT_ID"
           )
@@ -92,13 +105,25 @@ jobs:
         with:
           node-version: 20
 
-      - name: Prepare PowerSync CLI directory and sync-config.yaml
+      - name: Pull Cloud instance config and apply repo Sync Streams YAML
         run: |
           set -euo pipefail
-          POWERSYNC_DIR=$(mktemp -d)
-          npx --yes "powersync@${POWERSYNC_CLI_VERSION}" init cloud --directory="$POWERSYNC_DIR"
-          cp packages/powersync/sync-rules.yaml "$POWERSYNC_DIR/sync-config.yaml"
-          echo "POWERSYNC_DIR=$POWERSYNC_DIR" >> "$GITHUB_ENV"
+          CONFIG_DIR=$(mktemp -d)
+          pull_args=(
+            pull instance
+            --directory="$CONFIG_DIR"
+            --instance-id="$INSTANCE_ID"
+            --project-id="$PROJECT_ID"
+          )
+          if [ -n "${ORG_ID:-}" ]; then pull_args+=(--org-id="$ORG_ID"); fi
+          npx --yes "powersync@${POWERSYNC_CLI_VERSION}" "${pull_args[@]}"
+          if [ ! -f "$CONFIG_DIR/service.yaml" ]; then
+            echo "Expected service.yaml after pull instance; listing $CONFIG_DIR:" >&2
+            ls -la "$CONFIG_DIR" >&2
+            exit 1
+          fi
+          cp packages/powersync/sync-rules.yaml "$CONFIG_DIR/sync-config.yaml"
+          echo "CONFIG_DIR=$CONFIG_DIR" >> "$GITHUB_ENV"
 
       - name: Deploy sync config only (Sync Streams / rules YAML)
         run: |
@@ -106,7 +131,7 @@ jobs:
           deploy_args=(
             deploy
             sync-config
-            --directory="$POWERSYNC_DIR"
+            --directory="$CONFIG_DIR"
             --instance-id="$INSTANCE_ID"
             --project-id="$PROJECT_ID"
           )

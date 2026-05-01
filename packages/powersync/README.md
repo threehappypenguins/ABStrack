@@ -31,30 +31,33 @@ Typical sequence: `await db.init()`, then `await db.connect(connector)`, then `a
 
 ## Validate or deploy sync rules (CLI)
 
-**Default path:** GitHub Actions validates on every PR and branch push when **`sync-rules.yaml`** changes, and deploys to PowerSync Cloud only when **`main`** is pushed after a successful validate ([**`powersync-sync-config.yml`**](../../.github/workflows/powersync-sync-config.yml)). Use the steps below only if you need to run the CLI locally.
+**Default path:** GitHub Actions runs **`pull instance`** (loads real **`service.yaml`** from Cloud), overlays **`packages/powersync/sync-rules.yaml`** as **`sync-config.yaml`**, then **`validate`** on PRs / branch pushes and **`deploy sync-config`** on **`main`** ([**`powersync-sync-config.yml`**](../../.github/workflows/powersync-sync-config.yml)). Use the steps below only if you need the CLI locally.
 
-**Run every command from the monorepo root** (the folder that contains `packages/`). **`pnpm dlx powersync@0.9.4 validate` by itself always fails** with `Directory "powersync" not found`: the CLI needs a directory created by **`init cloud`**, then your rules copied to **`sync-config.yaml`** inside it (same pattern as that workflow).
+**Run every command from the monorepo root** (the folder that contains `packages/`). Match CI: **`pull instance`**, then copy **`sync-rules.yaml`** into that directory’s **`sync-config.yaml`**, then **`validate`** / **`deploy sync-config`**.
 
 After **`pnpm dlx powersync@0.9.4 login`** (or **`export PS_ADMIN_TOKEN='…'`**), set **`INSTANCE_ID`** and **`PROJECT_ID`** from the PowerSync dashboard, then:
 
 ```bash
-# From repo root only
-POWERSYNC_DIR=$(mktemp -d)
-pnpm dlx powersync@0.9.4 init cloud --directory="$POWERSYNC_DIR"
-cp packages/powersync/sync-rules.yaml "$POWERSYNC_DIR/sync-config.yaml"
+# From repo root only — same sequence as CI
+CONFIG_DIR=$(mktemp -d)
 export INSTANCE_ID='your-instance-id'
 export PROJECT_ID='your-project-id'
 # Optional: export ORG_ID='…' if your token spans multiple orgs
 
-validate_args=(validate --directory="$POWERSYNC_DIR" --instance-id="$INSTANCE_ID" --project-id="$PROJECT_ID")
+pull_args=(pull instance --directory="$CONFIG_DIR" --instance-id="$INSTANCE_ID" --project-id="$PROJECT_ID")
+[ -n "${ORG_ID:-}" ] && pull_args+=(--org-id="$ORG_ID")
+pnpm dlx powersync@0.9.4 "${pull_args[@]}"
+cp packages/powersync/sync-rules.yaml "$CONFIG_DIR/sync-config.yaml"
+
+validate_args=(validate --directory="$CONFIG_DIR" --instance-id="$INSTANCE_ID" --project-id="$PROJECT_ID")
 [ -n "${ORG_ID:-}" ] && validate_args+=(--org-id="$ORG_ID")
 pnpm dlx powersync@0.9.4 "${validate_args[@]}"
 ```
 
-**Deploy** sync config only (reuse **`$POWERSYNC_DIR`** in the **same shell** right after a successful validate):
+**Deploy** sync config only (reuse **`$CONFIG_DIR`** in the **same shell** after a successful validate):
 
 ```bash
-deploy_args=(deploy sync-config --directory="$POWERSYNC_DIR" --instance-id="$INSTANCE_ID" --project-id="$PROJECT_ID")
+deploy_args=(deploy sync-config --directory="$CONFIG_DIR" --instance-id="$INSTANCE_ID" --project-id="$PROJECT_ID")
 [ -n "${ORG_ID:-}" ] && deploy_args+=(--org-id="$ORG_ID")
 pnpm dlx powersync@0.9.4 "${deploy_args[@]}"
 ```

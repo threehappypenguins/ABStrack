@@ -232,7 +232,7 @@ Add these under **Repository → Settings → Secrets and variables → Actions*
 
 ### PowerSync sync config (GitHub Actions)
 
-[`.github/workflows/powersync-sync-config.yml`](../.github/workflows/powersync-sync-config.yml) runs **`powersync validate`** on same-repo PRs and on pushes to any branch when **`packages/powersync/sync-rules.yaml`** (or that workflow) changes; **`powersync deploy sync-config`** runs only after **`validate`** succeeds on **`main`**. Details and optional manual CLI: **[SUPABASE_CLOUD_DEVELOPER.md — PowerSync Sync Streams](SUPABASE_CLOUD_DEVELOPER.md#powersync-sync-streams-packagespowersyncsync-rulesyaml)**.
+[`.github/workflows/powersync-sync-config.yml`](../.github/workflows/powersync-sync-config.yml) runs **`powersync pull instance`** then full **`powersync validate`** on same-repo PRs and on pushes when **`packages/powersync/sync-rules.yaml`** (or that workflow) changes; **`powersync deploy sync-config`** runs on **`main`** after **`validate`** succeeds. Details and manual CLI: **[SUPABASE_CLOUD_DEVELOPER.md — PowerSync Sync Streams](SUPABASE_CLOUD_DEVELOPER.md#powersync-sync-streams-packagespowersyncsync-rulesyaml)**.
 
 | Secret                  | Purpose                                                                                                |
 | ----------------------- | ------------------------------------------------------------------------------------------------------ |

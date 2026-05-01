@@ -169,7 +169,7 @@ pnpm exec nx test @abstrack/supabase
 
 ## PowerSync Sync Streams (`packages/powersync/sync-rules.yaml`)
 
-**Copy-paste CLI (repo root):** see **[`packages/powersync/README.md` → Validate or deploy sync rules (CLI)](../packages/powersync/README.md#validate-or-deploy-sync-rules-cli)** for the full **`init cloud` → copy `sync-rules.yaml` → `validate` / `deploy sync-config`** sequence. A bare **`powersync validate`** (no **`--directory`**) will error with **`Directory "powersync" not found`**.
+**Copy-paste CLI (repo root):** see **[`packages/powersync/README.md` → Validate or deploy sync rules (CLI)](../packages/powersync/README.md#validate-or-deploy-sync-rules-cli)** for **`pull instance` → copy `sync-rules.yaml` → `validate` / `deploy sync-config`** (same as CI). A bare **`powersync validate`** without **`--directory`** (and no linked config folder) typically errors; pass **`--directory`** to the folder that contains **`service.yaml`** and **`sync-config.yaml`**.
 
 PowerSync Cloud stores **Sync Streams** (edition 3 YAML) separately from Postgres migrations. The repo copy lives at **`packages/powersync/sync-rules.yaml`**.
 
@@ -185,29 +185,32 @@ Install/run the CLI via npm ([PowerSync CLI](https://docs.powersync.com/tools/cl
 
 2. **Instance + project IDs:** from your PowerSync project/instance (Dashboard). Export **`INSTANCE_ID`**, **`PROJECT_ID`**, and **`ORG_ID`** only if your token has multiple organizations ([CLI / CI env vars](https://docs.powersync.com/tools/cli#deploying-from-ci-eg-github-actions)).
 
-3. **Validate** (checks schema + sync config against the linked Cloud instance):
+3. **Validate** (full **`powersync validate`**: schema, connections, Cloud sync config — same as CI):
 
    ```bash
-   POWERSYNC_DIR=$(mktemp -d)
-   pnpm dlx powersync@0.9.4 init cloud --directory="$POWERSYNC_DIR"
-   cp packages/powersync/sync-rules.yaml "$POWERSYNC_DIR/sync-config.yaml"
+   CONFIG_DIR=$(mktemp -d)
    export PS_ADMIN_TOKEN='your-pat'
    export INSTANCE_ID='your-instance-id'
    export PROJECT_ID='your-project-id'
    # Optional if your PAT spans multiple orgs:
    # export ORG_ID='your-org-id'
 
-   validate_args=(validate --directory="$POWERSYNC_DIR" --instance-id="$INSTANCE_ID" --project-id="$PROJECT_ID")
+   pull_args=(pull instance --directory="$CONFIG_DIR" --instance-id="$INSTANCE_ID" --project-id="$PROJECT_ID")
+   [ -n "${ORG_ID:-}" ] && pull_args+=(--org-id="$ORG_ID")
+   pnpm dlx powersync@0.9.4 "${pull_args[@]}"
+   cp packages/powersync/sync-rules.yaml "$CONFIG_DIR/sync-config.yaml"
+
+   validate_args=(validate --directory="$CONFIG_DIR" --instance-id="$INSTANCE_ID" --project-id="$PROJECT_ID")
    [ -n "${ORG_ID:-}" ] && validate_args+=(--org-id="$ORG_ID")
    pnpm dlx powersync@0.9.4 "${validate_args[@]}"
    ```
 
-   **`Directory "powersync" not found`:** you ran **`validate`** without an **`init cloud`** directory. Use the block above (temp dir + **`init cloud`** + copy **`sync-rules.yaml`** → **`sync-config.yaml`** + **`validate --directory=…`**). **`npx`** may also print **`npm notice`** lines about upgrading npm—that is npm’s own output, not PowerSync asking you to change tooling.
+   **`Directory "powersync" not found`:** you ran **`validate`** without **`--directory`** pointing at a folder that already contains PowerSync config. Use the block above (**`pull instance`** loads **`service.yaml`** from Cloud, then overlay **`sync-rules.yaml`**). **`npx`** may print **`npm notice`** lines about upgrading npm—that is npm’s own output.
 
 4. **Deploy sync config only** (does not redeploy full service config):
 
    ```bash
-   deploy_args=(deploy sync-config --directory="$POWERSYNC_DIR" --instance-id="$INSTANCE_ID" --project-id="$PROJECT_ID")
+   deploy_args=(deploy sync-config --directory="$CONFIG_DIR" --instance-id="$INSTANCE_ID" --project-id="$PROJECT_ID")
    [ -n "${ORG_ID:-}" ] && deploy_args+=(--org-id="$ORG_ID")
    pnpm dlx powersync@0.9.4 "${deploy_args[@]}"
    ```
@@ -223,9 +226,11 @@ On **Linux**, the CLI often cannot use a system keychain, so it may ask: _store 
 
 [`.github/workflows/powersync-sync-config.yml`](../.github/workflows/powersync-sync-config.yml) runs when **`packages/powersync/sync-rules.yaml`** (or that workflow file) changes:
 
-- **`pull_request`:** **`validate`** only (same-repo branches with secrets; fork PRs skip — GitHub does not expose secrets to forks).
-- **`push` to any branch:** **`validate`** only on non-**`main`** branches; on **`main`**, **`validate`** then **`deploy sync-config`** (two jobs; deploy runs only after **`validate`** succeeds).
-- **`workflow_dispatch`:** **`validate`** on any branch; **`deploy`** only when the selected ref is **`main`**.
+- **`pull_request`:** **`powersync validate`** (full checks: schema, connections, Cloud sync config) on same-repo branches with secrets; fork PRs skip — GitHub does not expose secrets to forks.
+- **`push` to any branch:** same **`validate`** job; on **`main`**, a second job runs **`powersync deploy sync-config`** after **`validate`** succeeds.
+- **`workflow_dispatch`:** **`validate`** on any branch; **`deploy sync-config`** only when the selected ref is **`main`**.
+
+**How CI gets a real connection:** the workflow runs **`powersync pull instance`** into a temp directory (using **`POWERSYNC_*`** secrets). That downloads Cloud’s **`service.yaml`** (replication + auth as configured in the dashboard), then copies **`packages/powersync/sync-rules.yaml`** over **`sync-config.yaml`** and runs **`validate`** / **`deploy sync-config`**. This matches the manual “paste into Sync Streams editor” content while validating against the live instance.
 
 Repository secrets are documented under **[DEV_SETUP.md → PowerSync sync config (GitHub Actions)](DEV_SETUP.md#powersync-sync-config-github-actions)** (`POWERSYNC_ADMIN_TOKEN`, `POWERSYNC_INSTANCE_ID`, `POWERSYNC_PROJECT_ID`, optional `POWERSYNC_ORG_ID`).
 
