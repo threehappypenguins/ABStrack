@@ -1,10 +1,9 @@
 # PowerSync Sync Streams: validate on every PR and branch push; deploy sync-config on main.
 # Requires repository secrets (see docs/SUPABASE_CLOUD_DEVELOPER.md and docs/DEV_SETUP.md).
 #
-# Uses `powersync pull instance` (not `init cloud`) so the job directory contains the real
-# `service.yaml` from PowerSync Cloud—including replication connection details. Then we replace
-# `sync-config.yaml` with `packages/powersync/sync-rules.yaml` and run full `validate` /
-# `deploy sync-config`. See PowerSync CLI docs: pull instance downloads service.yaml + sync-config.
+# Uses `powersync pull instance` so the directory contains real `service.yaml` from Cloud.
+# IMPORTANT: The CLI resolves `--directory` relative to process.cwd() (join(cwd, directory)).
+# We therefore `cd` into a temp dir and pass `--directory=. ` so files land where we expect.
 #
 # - pull_request (same-repo only; fork PRs skip — no secrets): validate
 # - push to any branch (when paths change): validate
@@ -54,32 +53,28 @@ jobs:
         with:
           node-version: 20
 
-      - name: Pull Cloud instance config and apply repo Sync Streams YAML
+      - name: Pull instance, overlay Sync Streams YAML, validate
         run: |
           set -euo pipefail
           CONFIG_DIR=$(mktemp -d)
+          cd "$CONFIG_DIR"
           pull_args=(
             pull instance
-            --directory="$CONFIG_DIR"
+            --directory=.
             --instance-id="$INSTANCE_ID"
             --project-id="$PROJECT_ID"
           )
           if [ -n "${ORG_ID:-}" ]; then pull_args+=(--org-id="$ORG_ID"); fi
           npx --yes "powersync@${POWERSYNC_CLI_VERSION}" "${pull_args[@]}"
-          if [ ! -f "$CONFIG_DIR/service.yaml" ]; then
-            echo "Expected service.yaml after pull instance; listing $CONFIG_DIR:" >&2
+          if [ ! -f ./service.yaml ]; then
+            echo "Expected ./service.yaml after pull instance; listing $CONFIG_DIR:" >&2
             ls -la "$CONFIG_DIR" >&2
             exit 1
           fi
-          cp packages/powersync/sync-rules.yaml "$CONFIG_DIR/sync-config.yaml"
-          echo "CONFIG_DIR=$CONFIG_DIR" >> "$GITHUB_ENV"
-
-      - name: Validate Sync Streams (PowerSync Cloud — full validate)
-        run: |
-          set -euo pipefail
+          cp "${GITHUB_WORKSPACE}/packages/powersync/sync-rules.yaml" ./sync-config.yaml
           validate_args=(
             validate
-            --directory="$CONFIG_DIR"
+            --directory=.
             --instance-id="$INSTANCE_ID"
             --project-id="$PROJECT_ID"
           )
@@ -105,33 +100,29 @@ jobs:
         with:
           node-version: 20
 
-      - name: Pull Cloud instance config and apply repo Sync Streams YAML
+      - name: Pull instance, overlay Sync Streams YAML, deploy sync-config
         run: |
           set -euo pipefail
           CONFIG_DIR=$(mktemp -d)
+          cd "$CONFIG_DIR"
           pull_args=(
             pull instance
-            --directory="$CONFIG_DIR"
+            --directory=.
             --instance-id="$INSTANCE_ID"
             --project-id="$PROJECT_ID"
           )
           if [ -n "${ORG_ID:-}" ]; then pull_args+=(--org-id="$ORG_ID"); fi
           npx --yes "powersync@${POWERSYNC_CLI_VERSION}" "${pull_args[@]}"
-          if [ ! -f "$CONFIG_DIR/service.yaml" ]; then
-            echo "Expected service.yaml after pull instance; listing $CONFIG_DIR:" >&2
+          if [ ! -f ./service.yaml ]; then
+            echo "Expected ./service.yaml after pull instance; listing $CONFIG_DIR:" >&2
             ls -la "$CONFIG_DIR" >&2
             exit 1
           fi
-          cp packages/powersync/sync-rules.yaml "$CONFIG_DIR/sync-config.yaml"
-          echo "CONFIG_DIR=$CONFIG_DIR" >> "$GITHUB_ENV"
-
-      - name: Deploy sync config only (Sync Streams / rules YAML)
-        run: |
-          set -euo pipefail
+          cp "${GITHUB_WORKSPACE}/packages/powersync/sync-rules.yaml" ./sync-config.yaml
           deploy_args=(
             deploy
             sync-config
-            --directory="$CONFIG_DIR"
+            --directory=.
             --instance-id="$INSTANCE_ID"
             --project-id="$PROJECT_ID"
           )
