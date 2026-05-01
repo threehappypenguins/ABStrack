@@ -212,7 +212,13 @@ const caretaker_access = new Table(
     created_at: column.text,
     revoked_at: column.text,
   },
-  { indexes: { caretaker_access_caretaker_idx: ['caretaker_user_id'] } },
+  {
+    // Postgres: caretaker_access_caretaker_idx + caretaker_access_one_active_per_patient_idx (patient_user_id).
+    indexes: {
+      caretaker_access_caretaker_idx: ['caretaker_user_id'],
+      caretaker_access_one_active_per_patient_idx: ['patient_user_id'],
+    },
+  },
 );
 
 const access_log = new Table(

@@ -8,7 +8,11 @@ import { REPLICATED_PUBLIC_TABLE_NAMES } from './replicated-public-tables.js';
 const resolveFromSpec = (relativePath: string) =>
   fileURLToPath(new URL(relativePath, import.meta.url));
 
-/** Property names inside `new Schema({ ... })` in `abstrack-app-schema.ts`. */
+/**
+ * Property names inside `new Schema({ ... })` in `abstrack-app-schema.ts`.
+ * Tolerant of indentation depth and trailing commas; ignores blank lines and `//` line tails so
+ * formatting-only edits don’t break alignment checks.
+ */
 function parsePowerSyncSchemaKeys(source: string): string[] {
   const marker = 'new Schema({';
   const startIdx = source.indexOf(marker);
@@ -23,7 +27,10 @@ function parsePowerSyncSchemaKeys(source: string): string[] {
   const block = after.slice(0, endIdx);
   const keys: string[] = [];
   for (const line of block.split('\n')) {
-    const m = line.match(/^\s{2}([a-z_][a-z0-9_]*)\s*,?\s*$/);
+    const withoutLineComment = line.replace(/\/\/.*$/, '');
+    const trimmed = withoutLineComment.trim();
+    if (trimmed === '') continue;
+    const m = trimmed.match(/^([a-z_][a-z0-9_]*)\s*,?\s*$/);
     if (m) {
       keys.push(m[1]);
     }
