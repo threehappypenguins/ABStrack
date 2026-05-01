@@ -10,7 +10,8 @@
 -- See docs: https://docs.powersync.com/configuration/source-db/setup#postgres
 --
 -- Publication DDL is idempotent: if `powersync` already exists (manual bootstrap / repair),
--- we only ALTER PUBLICATION ADD TABLE for tables missing from pg_publication_tables.
+-- we enforce the intended allowlist (reject FOR ALL TABLES / TABLES IN SCHEMA / non-public tables),
+-- DROP TABLE only for extra public tables, then ADD TABLE for any missing allowlist entries.
 
 DO $$
 BEGIN
@@ -23,6 +24,8 @@ BEGIN
       rolname = 'powersync_role') THEN
     CREATE ROLE powersync_role WITH REPLICATION BYPASSRLS LOGIN;
   END IF;
+  -- Ensure required attributes even when the role pre-existed (manual bootstrap / drift).
+  ALTER ROLE powersync_role WITH LOGIN REPLICATION BYPASSRLS;
 END
 $$;
 
@@ -54,6 +57,7 @@ public.episode_media TO powersync_role;
 DO $$
 DECLARE
   tbl text;
+  extra_tbl text;
   required_tables text[] := ARRAY[
     'profiles',
     'access_log',
@@ -95,6 +99,59 @@ BEGIN
     public.episode_media
     $powersync_pub$;
   ELSE
+    IF EXISTS (
+      SELECT
+        1
+      FROM
+        pg_publication p
+      WHERE
+        p.pubname = 'powersync'
+        AND p.puballtables IS TRUE) THEN
+      RAISE EXCEPTION USING MESSAGE = 'Publication powersync uses FOR ALL TABLES; drop and recreate with an explicit FOR TABLE list (see migration 20260430120000_powersync_replication_role_and_publication.sql).';
+    END IF;
+    IF to_regclass('pg_catalog.pg_publication_namespace') IS NOT NULL THEN
+      IF EXISTS (
+        SELECT
+          1
+        FROM
+          pg_publication_namespace pn
+          INNER JOIN pg_publication p ON p.oid = pn.pnpubid
+        WHERE
+          p.pubname = 'powersync') THEN
+        RAISE EXCEPTION USING MESSAGE = 'Publication powersync uses TABLES IN SCHEMA; drop schema mappings or recreate with explicit FOR TABLE list only (see migration 20260430120000_powersync_replication_role_and_publication.sql).';
+      END IF;
+    END IF;
+    IF EXISTS (
+      SELECT
+        1
+      FROM
+        pg_publication_tables pt
+      WHERE
+        pt.pubname = 'powersync'
+        AND pt.schemaname <> 'public') THEN
+      RAISE EXCEPTION USING MESSAGE = format(
+        'Publication powersync must only reference schema public; remove non-public members or recreate (found: %s).',
+        (
+          SELECT
+            string_agg(quote_ident(pt.schemaname) || '.' || quote_ident(pt.tablename::text), ', ' ORDER BY pt.schemaname, pt.tablename)
+          FROM
+            pg_publication_tables pt
+          WHERE
+            pt.pubname = 'powersync'
+            AND pt.schemaname <> 'public'));
+    END IF;
+    FOR extra_tbl IN
+    SELECT
+      pt.tablename::text AS tablename
+    FROM
+      pg_publication_tables pt
+    WHERE
+      pt.pubname = 'powersync'
+      AND pt.schemaname = 'public'
+      AND NOT (pt.tablename::text = ANY (required_tables))
+      LOOP
+        EXECUTE format('ALTER PUBLICATION powersync DROP TABLE public.%I', extra_tbl);
+      END LOOP;
     FOREACH tbl IN ARRAY required_tables
     LOOP
       IF NOT EXISTS (
@@ -105,7 +162,7 @@ BEGIN
         WHERE
           pt.pubname = 'powersync'
           AND pt.schemaname = 'public'
-          AND pt.tablename = tbl
+          AND pt.tablename::text = tbl
       ) THEN
         EXECUTE format('ALTER PUBLICATION powersync ADD TABLE public.%I', tbl);
       END IF;
