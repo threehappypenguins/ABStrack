@@ -1,7 +1,8 @@
 /**
  * Pure model of PHI replication scope for PowerSync buckets in `packages/powersync/sync-rules.yaml`.
- * Rows replicate only when they belong to a `patient_uid` produced here; grant tables and profiles
- * use separate buckets in YAML.
+ * PHI rows replicate when their `user_id` matches a scoped patient id from this model — the
+ * authenticated user's id (`userId`, same intent as `auth.user_id()` / JWT `sub`) or a linked
+ * `patient_user_id` from grant rows; profiles and grant tables use separate buckets in YAML.
  */
 
 /** Mirrors `public.profiles.app_role` check constraint. */
@@ -53,8 +54,10 @@ function activePractitionerPatients(input: SyncScopeModelInput): Set<string> {
 }
 
 /**
- * Returns distinct patient owners (`user_id` on PHI rows) replicated via `phi_*` buckets:
- * own patient data, caretaker-linked patients, or practitioner-linked patients with MFA.
+ * Returns distinct patient scope ids for `phi_*` buckets (aligned with YAML parameter queries:
+ * `patient_self`, `caretaker_patients`, `practitioner_mfa_patients`). Values match PHI row `user_id`
+ * / profile ids and grant-side `patient_user_id`; combines own patient data, caretaker-linked
+ * patients, or practitioner-linked patients with MFA (`aal2`).
  *
  * @param input Modeled auth claims and grant rows (same intent as sync-rule parameter queries).
  * @returns Stable sorted ids for assertions.
