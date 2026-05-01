@@ -230,9 +230,11 @@ On **Linux**, the CLI often cannot use a system keychain, so it may ask: _store 
 
 [`.github/workflows/powersync-sync-config.yml`](../.github/workflows/powersync-sync-config.yml) runs when **`packages/powersync/sync-rules.yaml`** (or that workflow file) changes:
 
-- **`pull_request`:** **`powersync validate`** (full checks: schema, connections, Cloud sync config) on same-repo branches with secrets; fork PRs skip — GitHub does not expose secrets to forks.
-- **`push` to any branch:** same **`validate`** job; on **`main`**, a second job runs **`powersync deploy sync-config`** after **`validate`** succeeds.
-- **`workflow_dispatch`:** **`validate`** on any branch; **`deploy sync-config`** only when the selected ref is **`main`**.
+- **`pull_request`:** **`powersync validate`** (full checks: schema, connections, Cloud sync config) on same-repo branches when **`POWERSYNC_ADMIN_TOKEN`**, **`POWERSYNC_INSTANCE_ID`**, and **`POWERSYNC_PROJECT_ID`** are set; fork PRs skip the job — GitHub does not expose secrets to forks.
+- **`push` to any branch:** same **`validate`** job when those secrets exist; on **`main`**, **`deploy sync-config`** runs only after a successful validate that actually ran the CLI (**`powersync_ready`**).
+- **`workflow_dispatch`:** same behavior as **`push`** on the branch you select.
+
+If any of the three secrets above is unset (e.g. fork **`push`**, or upstream repo before secrets are configured), **`validate`** completes with a **notice** and skips checkout/CLI so CI stays green; **`deploy`** does not run.
 
 **How CI gets a real connection:** the workflow runs **`powersync pull instance`** using **`POWERSYNC_*`** secrets. The CLI joins **`--directory`** with **`process.cwd()`**, so the job **`cd`s into a temp directory** and passes **`--directory=.`** (same pattern you should use locally). That downloads Cloud’s **`service.yaml`**, then copies **`packages/powersync/sync-rules.yaml`** over **`sync-config.yaml`** and runs **`validate`** / **`deploy sync-config`**.
 

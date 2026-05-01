@@ -5,10 +5,14 @@
 # IMPORTANT: The CLI resolves `--directory` relative to process.cwd() (join(cwd, directory)).
 # We therefore `cd` into a temp dir and pass `--directory=. ` so files land where we expect.
 #
-# - pull_request (same-repo only; fork PRs skip — no secrets): validate
-# - push to any branch (when paths change): validate
-# - push to main: validate, then deploy sync-config
-# - workflow_dispatch on main: validate + deploy; other branches: validate only
+# - pull_request (same-repo only; fork PRs skip — no secrets): validate when secrets exist
+# - push to any branch (when paths change): validate when secrets exist
+# - push to main: validate then deploy sync-config when secrets exist
+# - workflow_dispatch: validate; deploy on main only when secrets exist
+#
+# When POWERSYNC_ADMIN_TOKEN / INSTANCE_ID / PROJECT_ID are unset (fork pushes or secrets not
+# configured yet), validate exits successfully without calling the CLI and deploy is skipped —
+# avoids noisy failures while keeping branch push + PR coverage once secrets are added.
 
 name: PowerSync sync config
 
@@ -41,19 +45,34 @@ jobs:
       github.event_name == 'push' ||
       (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
+    outputs:
+      powersync_ready: ${{ steps.secrets.outputs.ready }}
     env:
       PS_ADMIN_TOKEN: ${{ secrets.POWERSYNC_ADMIN_TOKEN }}
       INSTANCE_ID: ${{ secrets.POWERSYNC_INSTANCE_ID }}
       PROJECT_ID: ${{ secrets.POWERSYNC_PROJECT_ID }}
       ORG_ID: ${{ secrets.POWERSYNC_ORG_ID }}
     steps:
+      - name: Check PowerSync Actions secrets
+        id: secrets
+        run: |
+          if [ -n "${PS_ADMIN_TOKEN:-}" ] && [ -n "${INSTANCE_ID:-}" ] && [ -n "${PROJECT_ID:-}" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo '::notice title=PowerSync skipped::Repository Actions secrets POWERSYNC_ADMIN_TOKEN, POWERSYNC_INSTANCE_ID, and POWERSYNC_PROJECT_ID are not all set — validate/deploy skipped. Configure them (see docs/DEV_SETUP.md) to run CI against PowerSync Cloud.'
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.secrets.outputs.ready == 'true'
 
       - uses: actions/setup-node@v4
+        if: steps.secrets.outputs.ready == 'true'
         with:
           node-version: 20
 
       - name: Pull instance, overlay Sync Streams YAML, validate
+        if: steps.secrets.outputs.ready == 'true'
         run: |
           set -euo pipefail
           CONFIG_DIR=$(mktemp -d)
@@ -84,6 +103,7 @@ jobs:
   deploy:
     needs: validate
     if: |
+      needs.validate.outputs.powersync_ready == 'true' &&
       needs.validate.result == 'success' &&
       github.ref == 'refs/heads/main' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')

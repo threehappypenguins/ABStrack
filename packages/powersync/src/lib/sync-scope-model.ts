@@ -21,7 +21,7 @@ export interface PractitionerGrantRow {
 }
 
 export interface SyncScopeModelInput {
-  /** Authenticated user id (`request.user_id()` / JWT `sub`). */
+  /** Authenticated user id — same intent as PowerSync Sync Streams `auth.user_id()` and JWT `sub`. */
   readonly userId: string;
   readonly appRole: AppRole;
   /** JWT `aal` claim; practitioner PHI requires `aal2` per RLS `user_has_practitioner_access`. */
