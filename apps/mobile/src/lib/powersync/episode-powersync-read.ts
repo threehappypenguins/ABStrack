@@ -60,7 +60,8 @@ export function mapSqliteRowToEpisodeRow(
   };
 }
 
-const EPISODE_COLUMNS =
+/** Column projection shared by PowerSync episode SELECTs (single source of truth). */
+export const EPISODE_COLUMNS =
   'id, user_id, symptom_preset_id, health_marker_preset_id, episode_type, episode_label, note, additional_notes, started_at, ended_at, post_marker_step_completed_at, created_at, updated_at';
 
 /** Active episode: newest `started_at` among rows with `ended_at IS NULL`. */

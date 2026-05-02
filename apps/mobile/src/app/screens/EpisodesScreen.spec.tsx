@@ -75,7 +75,7 @@ function makeEpisodeRow(overrides: Partial<EpisodeRow> = {}): EpisodeRow {
 
 describe('EpisodesScreen', () => {
   const mockNavigate = jest.fn();
-  const mockGetUser = jest.fn();
+  const mockGetSession = jest.fn();
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -84,10 +84,12 @@ describe('EpisodesScreen', () => {
       navigate: mockNavigate,
     } as never);
 
-    mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
+    mockGetSession.mockResolvedValue({
+      data: { session: { user: { id: 'user-1' } } },
+    });
     jest.mocked(getMobileSupabaseClient).mockReturnValue({
       auth: {
-        getUser: mockGetUser,
+        getSession: mockGetSession,
       },
     } as never);
 
@@ -110,20 +112,22 @@ describe('EpisodesScreen', () => {
   });
 
   it('shows loading text until load finishes', async () => {
-    let resolveGetUser!: (v: { data: { user: { id: string } | null } }) => void;
-    const getUserPromise = new Promise<{
-      data: { user: { id: string } | null };
+    let resolveGetSession!: (v: {
+      data: { session: { user: { id: string } } | null };
+    }) => void;
+    const getSessionPromise = new Promise<{
+      data: { session: { user: { id: string } } | null };
     }>((resolve) => {
-      resolveGetUser = resolve;
+      resolveGetSession = resolve;
     });
-    mockGetUser.mockReturnValue(getUserPromise);
+    mockGetSession.mockReturnValue(getSessionPromise);
 
     render(<EpisodesScreen />);
 
     expect(screen.getByText('Loading…')).toBeTruthy();
 
     await act(async () => {
-      resolveGetUser({ data: { user: null } });
+      resolveGetSession({ data: { session: null } });
     });
 
     await waitFor(() => {
@@ -134,7 +138,7 @@ describe('EpisodesScreen', () => {
   });
 
   it('shows empty signed-out-style copy when user is null', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: null } });
+    mockGetSession.mockResolvedValue({ data: { session: null } });
 
     render(<EpisodesScreen />);
 
@@ -161,7 +165,7 @@ describe('EpisodesScreen', () => {
   });
 
   it('surfaces unified error when load throws', async () => {
-    mockGetUser.mockRejectedValue(new Error('network'));
+    mockGetSession.mockRejectedValue(new Error('network'));
 
     render(<EpisodesScreen />);
 

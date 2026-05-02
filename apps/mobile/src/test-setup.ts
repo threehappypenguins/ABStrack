@@ -86,16 +86,33 @@ jest.mock('@powersync/react', () => {
   };
 });
 
-jest.mock('./lib/powersync/PowerSyncSessionBridge', () => ({
-  PowerSyncSessionBridge: ({ children }: { children: unknown }) => children,
-  usePowerSyncBridgeState: () => ({
+jest.mock('./lib/powersync/PowerSyncSessionBridge', () => {
+  /** Stable reference so screen hooks that depend on `[psBridge]` do not thrash `useFocusEffect`. */
+  const mockBridgeState = {
     powerSyncUrlConfigured: false,
     database: null,
     firstSyncCompleted: false,
+    localSqliteInitialized: false,
     syncConnecting: false,
     syncError: null,
-  }),
-}));
+  };
+  return {
+    PowerSyncSessionBridge: ({ children }: { children: unknown }) => children,
+    /** Mirrors production logic; avoid `requireActual` here (pulls native PowerSync into Jest). */
+    powerSyncOfflineReplicaReadsEnabled: (bridge: {
+      powerSyncUrlConfigured: boolean;
+      database: unknown;
+      firstSyncCompleted: boolean;
+      localSqliteInitialized: boolean;
+    }) =>
+      Boolean(
+        bridge.powerSyncUrlConfigured &&
+          bridge.database &&
+          (bridge.firstSyncCompleted || bridge.localSqliteInitialized),
+      ),
+    usePowerSyncBridgeState: () => mockBridgeState,
+  };
+});
 
 if (typeof global.structuredClone === 'undefined') {
   global.structuredClone = (object) => JSON.parse(JSON.stringify(object));

@@ -9,6 +9,7 @@ import type {
 import {
   endEpisodeIfStillActive,
   getActiveEpisodeForUser,
+  PresetDataError,
 } from '@abstrack/supabase';
 import { announce } from '@abstrack/ui/native';
 import {
@@ -18,6 +19,11 @@ import {
 import { clearSymptomPromptSession } from '../../lib/episodes/symptom-prompt-session-store';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { saveEpisodeWithTemplatePresets } from '../../lib/episodes/episode-start-service';
+import { getActiveEpisodeRowFromPowerSyncDb } from '../../lib/powersync/episode-powersync-local-read';
+import {
+  powerSyncOfflineReplicaReadsEnabled,
+  usePowerSyncBridgeState,
+} from '../../lib/powersync/PowerSyncSessionBridge';
 import { AsyncScreenContainer } from '../components/AsyncScreenContainer';
 import { ScreenShell } from '../components/ScreenShell';
 import type { MainStackParamList } from '../navigation/types';
@@ -65,6 +71,8 @@ export function EpisodeStartScreen() {
     useState<EpisodeRow | null>(null);
   const [resolvingActiveGate, setResolvingActiveGate] = useState(false);
 
+  const psBridge = usePowerSyncBridgeState();
+
   const load = useCallback(
     async (focusCancel?: FocusLoadCancel, focusCycle?: number) => {
       const cycleId = focusCycle ?? focusCycleIdRef.current;
@@ -95,25 +103,63 @@ export function EpisodeStartScreen() {
       if (stale()) {
         return;
       }
-      if (!activeResult.ok) {
-        setErrorMessage(activeResult.error.message);
-        setStatus('error');
-        return;
+
+      let activeEpisodeRow: EpisodeRow | null = null;
+      if (activeResult.ok) {
+        activeEpisodeRow = activeResult.data;
+      } else {
+        const isNetwork =
+          activeResult.error instanceof PresetDataError &&
+          activeResult.error.code === 'network_error';
+        if (isNetwork && powerSyncOfflineReplicaReadsEnabled(psBridge)) {
+          const db = psBridge.database;
+          if (db != null) {
+            try {
+              activeEpisodeRow = await getActiveEpisodeRowFromPowerSyncDb(
+                db,
+                userId,
+              );
+            } catch {
+              activeEpisodeRow = null;
+            }
+          }
+        }
+        if (!activeEpisodeRow) {
+          if (!isNetwork) {
+            setErrorMessage(activeResult.error.message);
+            setStatus('error');
+            return;
+          }
+          // Network and no replicated active episode — try templates (may also be offline).
+        }
       }
-      if (activeResult.data) {
-        setBlockingActiveEpisode(activeResult.data);
+
+      if (activeEpisodeRow) {
+        setBlockingActiveEpisode(activeEpisodeRow);
         setRows([]);
         setSubmitting(false);
         setStatus('ready');
         return;
       }
 
-      const result = await fetchEpisodeTemplates();
+      const result = await fetchEpisodeTemplates({
+        powerSyncOfflineRead: {
+          database: psBridge.database,
+          replicationReady: powerSyncOfflineReplicaReadsEnabled(psBridge),
+        },
+      });
       if (stale()) {
         return;
       }
       if (!result.ok) {
-        setErrorMessage(result.error.message);
+        const offlineTemplates =
+          result.error instanceof PresetDataError &&
+          result.error.code === 'network_error';
+        setErrorMessage(
+          offlineTemplates
+            ? 'You are offline. Connect to the internet to load episode templates, or go back to Home to continue an episode that was already synced to this device.'
+            : result.error.message,
+        );
         setStatus('error');
         return;
       }
@@ -176,7 +222,7 @@ export function EpisodeStartScreen() {
       });
       setStatus('ready');
     },
-    [navigation],
+    [navigation, psBridge],
   );
 
   useFocusEffect(

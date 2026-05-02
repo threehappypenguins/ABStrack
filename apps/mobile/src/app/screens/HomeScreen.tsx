@@ -11,12 +11,16 @@ import type { EpisodeRow } from '@abstrack/types';
 import {
   getActiveEpisodeForUser,
   getAuthUser,
+  getSession,
   healthCheckProfilesLimit1,
   signOut,
 } from '@abstrack/supabase';
 import { useMobileAuthUserId } from '../../lib/auth/use-mobile-auth-user-id';
 import { PowerSyncActiveEpisodeSubscription } from '../../lib/powersync/PowerSyncActiveEpisodeSubscription';
-import { usePowerSyncBridgeState } from '../../lib/powersync/PowerSyncSessionBridge';
+import {
+  powerSyncOfflineReplicaReadsEnabled,
+  usePowerSyncBridgeState,
+} from '../../lib/powersync/PowerSyncSessionBridge';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { mapAuthError } from '../auth-helpers';
 import {
@@ -90,16 +94,20 @@ export function HomeScreen({
       try {
         const mobileSupabase = getMobileSupabaseClient();
         const {
-          data: { user },
-        } = await mobileSupabase.auth.getUser();
+          data: { session },
+          error: sessionError,
+        } = await getSession(mobileSupabase);
         if (stale()) {
           return;
         }
-        if (!user) {
+        if (sessionError || !session?.user?.id) {
           setActiveEpisode(null);
           return;
         }
-        const result = await getActiveEpisodeForUser(mobileSupabase, user.id);
+        const result = await getActiveEpisodeForUser(
+          mobileSupabase,
+          session.user.id,
+        );
         if (stale()) {
           return;
         }
@@ -152,8 +160,7 @@ export function HomeScreen({
       return null;
     }
     if (
-      !psBridge.powerSyncUrlConfigured ||
-      !psBridge.firstSyncCompleted ||
+      !powerSyncOfflineReplicaReadsEnabled(psBridge) ||
       psEpisodeSnap.isLoading
     ) {
       return null;
@@ -169,8 +176,7 @@ export function HomeScreen({
     activeEpisodeRemoteFailed,
     psEpisodeSnap.episode,
     psEpisodeSnap.isLoading,
-    psBridge.firstSyncCompleted,
-    psBridge.powerSyncUrlConfigured,
+    psBridge,
   ]);
 
   const showingSyncedHomeEpisode =

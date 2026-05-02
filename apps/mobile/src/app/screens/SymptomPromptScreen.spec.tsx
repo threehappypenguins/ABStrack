@@ -61,6 +61,9 @@ jest.mock('../../lib/supabase-wiring', () => ({
       getUser: jest.fn(async () => ({
         data: { user: { id: 'test-user-1' } },
       })),
+      getSession: jest.fn(async () => ({
+        data: { session: { user: { id: 'test-user-1' } } },
+      })),
     },
   })),
 }));

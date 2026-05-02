@@ -3,10 +3,10 @@ import { useEffect, useState } from 'react';
 import { getMobileSupabaseClient } from '../supabase-wiring';
 
 /**
- * Subscribes to Supabase auth and exposes `auth.users.id` for the signed-in user.
+ * Subscribes to Supabase auth and exposes the signed-in user id from the persisted session.
  *
- * Prefers `auth.getUser()` when present;
- * falls back to `auth.getSession()` so lightweight Jest mocks stay valid.
+ * Uses `auth.getSession()` (not `getUser()`) so Manage and other tabs still resolve the user id
+ * offline; `getUser()` validates with the server and often fails with “Network request failed”.
  *
  * @returns Current user id, or `null` when signed out / unresolved.
  */
@@ -18,22 +18,22 @@ export function useMobileAuthUserId(): string | null {
 
     const refresh = () => {
       const auth = client.auth;
-      if (typeof auth.getUser === 'function') {
+      if (typeof auth.getSession === 'function') {
         void auth
-          .getUser()
+          .getSession()
           .then(({ data }) => {
-            setUserId(data.user?.id ?? null);
+            setUserId(data.session?.user?.id ?? null);
           })
           .catch(() => {
             setUserId(null);
           });
         return;
       }
-      if (typeof auth.getSession === 'function') {
+      if (typeof auth.getUser === 'function') {
         void auth
-          .getSession()
+          .getUser()
           .then(({ data }) => {
-            setUserId(data.session?.user?.id ?? null);
+            setUserId(data.user?.id ?? null);
           })
           .catch(() => {
             setUserId(null);

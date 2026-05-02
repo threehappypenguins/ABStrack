@@ -50,6 +50,16 @@ import {
 } from '@abstrack/supabase';
 import { announce } from '@abstrack/ui/native';
 import { COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
+import {
+  getEpisodeByIdFromPowerSyncDb,
+  listEpisodeMediaForEpisodeFromPowerSyncDb,
+  listEpisodeSymptomsForEpisodeFromPowerSyncDb,
+  listPresetSymptomsForPresetFromPowerSyncDb,
+} from '../../lib/powersync/powersync-episode-flow-reads';
+import {
+  getPowerSyncDatabaseForOfflineReads,
+  isPresetDataNetworkError,
+} from '../../lib/powersync/powersync-offline-read-bridge-snapshot';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import {
   clearSymptomPromptSession,
@@ -412,9 +422,9 @@ export function SymptomPromptScreen() {
         return userIdRef.current;
       }
       const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      const id = user?.id ?? null;
+        data: { session },
+      } = await supabase.auth.getSession();
+      const id = session?.user?.id ?? null;
       userIdRef.current = id;
       return id;
     },
@@ -749,30 +759,49 @@ export function SymptomPromptScreen() {
         setStatus('error');
         return;
       }
-      const ep = await getEpisodeById(supabase, episodeId);
+      const psDb = getPowerSyncDatabaseForOfflineReads();
+
+      const epRemote = await getEpisodeById(supabase, episodeId);
       if (stale()) {
         return;
       }
-      if (!ep.ok) {
-        setErrorMessage(ep.error.message);
+      let episodeRow = epRemote.ok && epRemote.data ? epRemote.data : null;
+      const shouldTryEpisodeReplica =
+        Boolean(psDb) &&
+        ((!epRemote.ok && isPresetDataNetworkError(epRemote.error)) ||
+          (epRemote.ok && !epRemote.data));
+      if (!episodeRow && shouldTryEpisodeReplica && psDb) {
+        episodeRow = await getEpisodeByIdFromPowerSyncDb(psDb, episodeId);
+      }
+      if (!episodeRow) {
+        if (!epRemote.ok) {
+          setErrorMessage(epRemote.error.message);
+        } else {
+          setErrorMessage('Could not load this episode.');
+        }
         setStatus('error');
         return;
       }
-      if (!ep.data) {
-        setErrorMessage('Could not load this episode.');
-        setStatus('error');
-        return;
-      }
-      setEpisodeForEndCta(ep.data);
-      const passBoundary = ep.data.post_marker_step_completed_at ?? null;
+      setEpisodeForEndCta(episodeRow);
+      const passBoundary = episodeRow.post_marker_step_completed_at ?? null;
       lastPostMarkerStepCompletedAtRef.current = passBoundary;
 
-      const result = await listPresetSymptomsForPreset(
-        supabase,
-        symptomPresetId,
-      );
+      let result = await listPresetSymptomsForPreset(supabase, symptomPresetId);
       if (stale()) {
         return;
+      }
+      if (
+        !result.ok &&
+        isPresetDataNetworkError(result.error) &&
+        psDb != null
+      ) {
+        result = {
+          ok: true,
+          data: await listPresetSymptomsForPresetFromPowerSyncDb(
+            psDb,
+            symptomPresetId,
+          ),
+        };
       }
       if (!result.ok) {
         setErrorMessage(result.error.message);
@@ -780,13 +809,30 @@ export function SymptomPromptScreen() {
         return;
       }
       setLines(result.data);
-      const fromServer = await listEpisodeSymptomsForEpisode(
+      let fromServer = await listEpisodeSymptomsForEpisode(
         supabase,
         episodeId,
         {
           orderBy: 'recent',
         },
       );
+      if (stale()) {
+        return;
+      }
+      if (
+        !fromServer.ok &&
+        isPresetDataNetworkError(fromServer.error) &&
+        psDb != null
+      ) {
+        fromServer = {
+          ok: true,
+          data: await listEpisodeSymptomsForEpisodeFromPowerSyncDb(
+            psDb,
+            episodeId,
+            'recent',
+          ),
+        };
+      }
       if (stale()) {
         return;
       }
@@ -802,13 +848,31 @@ export function SymptomPromptScreen() {
             passBoundary,
           )
         : {};
-      const mediaRows = fromServer.ok
+      let mediaRows = fromServer.ok
         ? await listEpisodeMediaForEpisode(supabase, episodeId, {
             episodeSymptomIds: Object.values(
               canonicalSymptomRowsForHydrate,
             ).map((r) => r.id),
           })
         : { ok: true as const, data: [] };
+      if (stale()) {
+        return;
+      }
+      if (
+        fromServer.ok &&
+        !mediaRows.ok &&
+        isPresetDataNetworkError(mediaRows.error) &&
+        psDb != null
+      ) {
+        mediaRows = {
+          ok: true,
+          data: await listEpisodeMediaForEpisodeFromPowerSyncDb(
+            psDb,
+            episodeId,
+            Object.values(canonicalSymptomRowsForHydrate).map((r) => r.id),
+          ),
+        };
+      }
       if (stale()) {
         return;
       }

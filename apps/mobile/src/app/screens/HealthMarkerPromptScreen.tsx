@@ -48,6 +48,15 @@ import {
 } from '@abstrack/supabase';
 import { announce, COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
 import { clearSymptomPromptSession } from '../../lib/episodes/symptom-prompt-session-store';
+import {
+  getEpisodeByIdFromPowerSyncDb,
+  listEpisodeHealthMarkersForEpisodeFromPowerSyncDb,
+  listPresetHealthMarkersForPresetFromPowerSyncDb,
+} from '../../lib/powersync/powersync-episode-flow-reads';
+import {
+  getPowerSyncDatabaseForOfflineReads,
+  isPresetDataNetworkError,
+} from '../../lib/powersync/powersync-offline-read-bridge-snapshot';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { AsyncScreenContainer } from '../components/AsyncScreenContainer';
 import { ScreenShell } from '../components/ScreenShell';
@@ -315,11 +324,12 @@ export function HealthMarkerPromptScreen() {
     setObservationTimeline([]);
 
     const {
-      data: { user },
-    } = await supabase.auth.getUser();
+      data: { session },
+    } = await supabase.auth.getSession();
     if (stale()) {
       return;
     }
+    const user = session?.user;
     if (!user) {
       setErrorMessage(
         'You must be signed in to save health marker answers. Try signing in again.',
@@ -329,16 +339,36 @@ export function HealthMarkerPromptScreen() {
     }
     setUserId(user.id);
 
-    const episode = await getEpisodeById(supabase, episodeId);
+    const psDb = getPowerSyncDatabaseForOfflineReads();
+    let usedPowerSyncReplicaReads = false;
+
+    const episodeRemote = await getEpisodeById(supabase, episodeId);
     if (stale()) {
       return;
     }
-    if (!episode.ok) {
-      setErrorMessage(episode.error.message);
+    let episodeRow =
+      episodeRemote.ok && episodeRemote.data ? episodeRemote.data : null;
+    const shouldTryEpisodeReplica =
+      Boolean(psDb) &&
+      ((!episodeRemote.ok && isPresetDataNetworkError(episodeRemote.error)) ||
+        (episodeRemote.ok && !episodeRemote.data));
+    if (!episodeRow && shouldTryEpisodeReplica && psDb) {
+      const localEp = await getEpisodeByIdFromPowerSyncDb(psDb, episodeId);
+      if (localEp) {
+        episodeRow = localEp;
+        usedPowerSyncReplicaReads = true;
+      }
+    }
+    if (!episodeRow) {
+      if (!episodeRemote.ok) {
+        setErrorMessage(episodeRemote.error.message);
+      } else {
+        setErrorMessage('Could not load this episode.');
+      }
       setStatus('error');
       return;
     }
-    const markerPresetId = episode.data?.health_marker_preset_id;
+    const markerPresetId = episodeRow.health_marker_preset_id;
     if (!markerPresetId) {
       setErrorMessage(
         'This episode has no health marker preset linked. Return home and start a new episode template.',
@@ -346,28 +376,64 @@ export function HealthMarkerPromptScreen() {
       setStatus('error');
       return;
     }
-    setEpisodeRow(episode.data);
-    if (episode.data?.ended_at) {
+    setEpisodeRow(episodeRow);
+    if (episodeRow.ended_at) {
       setEndedSummary({
-        endedAt: episode.data.ended_at,
+        endedAt: episodeRow.ended_at,
         durationText: formatEpisodeDurationSimple(
-          episode.data.started_at,
-          episode.data.ended_at,
+          episodeRow.started_at,
+          episodeRow.ended_at,
         ),
       });
     }
 
-    const [presetLines, markerRows] = await Promise.all([
-      listPresetHealthMarkersForPreset(supabase, markerPresetId),
-      listEpisodeHealthMarkersForEpisode(supabase, episodeId),
-    ]);
+    let presetLines = await listPresetHealthMarkersForPreset(
+      supabase,
+      markerPresetId,
+    );
     if (stale()) {
       return;
+    }
+    if (
+      !presetLines.ok &&
+      isPresetDataNetworkError(presetLines.error) &&
+      psDb != null
+    ) {
+      presetLines = {
+        ok: true,
+        data: await listPresetHealthMarkersForPresetFromPowerSyncDb(
+          psDb,
+          markerPresetId,
+        ),
+      };
+      usedPowerSyncReplicaReads = true;
     }
     if (!presetLines.ok) {
       setErrorMessage(presetLines.error.message);
       setStatus('error');
       return;
+    }
+
+    let markerRows = await listEpisodeHealthMarkersForEpisode(
+      supabase,
+      episodeId,
+    );
+    if (stale()) {
+      return;
+    }
+    if (
+      !markerRows.ok &&
+      isPresetDataNetworkError(markerRows.error) &&
+      psDb != null
+    ) {
+      markerRows = {
+        ok: true,
+        data: await listEpisodeHealthMarkersForEpisodeFromPowerSyncDb(
+          psDb,
+          episodeId,
+        ),
+      };
+      usedPowerSyncReplicaReads = true;
     }
     if (!markerRows.ok) {
       setErrorMessage(markerRows.error.message);
@@ -378,7 +444,7 @@ export function HealthMarkerPromptScreen() {
     setLines(presetLines.data);
 
     const lastPost: string | null =
-      episode.data?.post_marker_step_completed_at ?? null;
+      episodeRow.post_marker_step_completed_at ?? null;
     const passRows = filterHealthMarkerRowsForOpenPass(
       markerRows.data,
       lastPost,
@@ -409,16 +475,20 @@ export function HealthMarkerPromptScreen() {
     }
     setStatus('ready');
 
-    const tl = await listEpisodeObservationTimeline(supabase, episodeId, {
-      prefetchedHealthMarkers: markerRows.data,
-    });
-    if (stale()) {
-      return;
-    }
-    if (tl.ok) {
-      setObservationTimeline(tl.data);
-    } else {
+    if (usedPowerSyncReplicaReads) {
       setObservationTimeline([]);
+    } else {
+      const tl = await listEpisodeObservationTimeline(supabase, episodeId, {
+        prefetchedHealthMarkers: markerRows.data,
+      });
+      if (stale()) {
+        return;
+      }
+      if (tl.ok) {
+        setObservationTimeline(tl.data);
+      } else {
+        setObservationTimeline([]);
+      }
     }
   }, [episodeId, hub, resetFoodDiaryState, resume, supabase]);
 

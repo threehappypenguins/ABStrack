@@ -15,6 +15,7 @@ import { getMobileSupabaseClient } from '../supabase-wiring';
 import { createSupabaseJwtPowerSyncConnector } from './supabase-jwt-connector';
 import { getMobilePowerSyncUrl } from './powersync-env';
 import { getOrCreateDeviceSqlcipherKey } from './powersync-sqlcipher-key';
+import { setPowerSyncOfflineReadBridgeSnapshot } from './powersync-offline-read-bridge-snapshot';
 import { getSharedPowerSyncDatabase } from './powersync-shared-db';
 
 /**
@@ -27,6 +28,12 @@ export type PowerSyncBridgeState = {
   database: PowerSyncDatabase | null;
   /** True after {@link PowerSyncDatabase.waitForFirstSync} completes for the current connection. */
   firstSyncCompleted: boolean;
+  /**
+   * True after {@link PowerSyncDatabase.init} succeeds for this open handle. Unlike
+   * {@link firstSyncCompleted}, this becomes true even when `waitForFirstSync` never finishes
+   * (e.g. cold start offline), so read-only SQL against **persisted** replica data can still run.
+   */
+  localSqliteInitialized: boolean;
   /** True while `init` / `connect` / first sync are in flight. */
   syncConnecting: boolean;
   /** Set when connect or first sync fails (logged-out cleanup errors are ignored). */
@@ -37,6 +44,7 @@ const defaultBridgeState: PowerSyncBridgeState = {
   powerSyncUrlConfigured: false,
   database: null,
   firstSyncCompleted: false,
+  localSqliteInitialized: false,
   syncConnecting: false,
   syncError: null,
 };
@@ -49,6 +57,24 @@ const PowerSyncBridgeContext =
  */
 export function usePowerSyncBridgeState(): PowerSyncBridgeState {
   return useContext(PowerSyncBridgeContext);
+}
+
+/**
+ * Whether preset/template list screens may issue read-only SQL against the encrypted replica.
+ * Uses {@link PowerSyncBridgeState.localSqliteInitialized} so **cold start offline** still reads
+ * rows persisted from an earlier online session when {@link PowerSyncBridgeState.firstSyncCompleted}
+ * is still false (because {@link PowerSyncDatabase.waitForFirstSync} cannot finish without network).
+ *
+ * @param bridge - Latest {@link usePowerSyncBridgeState} value.
+ */
+export function powerSyncOfflineReplicaReadsEnabled(
+  bridge: PowerSyncBridgeState,
+): boolean {
+  return Boolean(
+    bridge.powerSyncUrlConfigured &&
+      bridge.database &&
+      (bridge.firstSyncCompleted || bridge.localSqliteInitialized),
+  );
 }
 
 function isAbortError(error: unknown): boolean {
@@ -93,6 +119,7 @@ export function PowerSyncSessionBridge({
 
   const [db, setDb] = useState<PowerSyncDatabase | null>(null);
   const [firstSyncCompleted, setFirstSyncCompleted] = useState(false);
+  const [localSqliteInitialized, setLocalSqliteInitialized] = useState(false);
   const [syncConnecting, setSyncConnecting] = useState(false);
   const [syncError, setSyncError] = useState<Error | null>(null);
 
@@ -158,7 +185,11 @@ export function PowerSyncSessionBridge({
         setSyncError(null);
         setSyncConnecting(true);
         setFirstSyncCompleted(false);
+        setLocalSqliteInitialized(false);
         await db.init();
+        if (!cancelled) {
+          setLocalSqliteInitialized(true);
+        }
         await db.connect(connector);
         await db.waitForFirstSync(ac.signal);
         if (!cancelled) {
@@ -208,6 +239,7 @@ export function PowerSyncSessionBridge({
         console.warn('[PowerSync] disconnectAndClear after sign-out', e);
       } finally {
         setFirstSyncCompleted(false);
+        setLocalSqliteInitialized(false);
         setSyncError(null);
       }
     })();
@@ -218,11 +250,33 @@ export function PowerSyncSessionBridge({
       powerSyncUrlConfigured: urlConfigured,
       database: db,
       firstSyncCompleted,
+      localSqliteInitialized,
       syncConnecting,
       syncError,
     }),
-    [db, firstSyncCompleted, syncConnecting, syncError, urlConfigured],
+    [
+      db,
+      firstSyncCompleted,
+      localSqliteInitialized,
+      syncConnecting,
+      syncError,
+      urlConfigured,
+    ],
   );
+
+  /**
+   * Keep the module-level offline read gate aligned with {@link bridgeValue} during render (not in
+   * a `useEffect`). Tab screens often load on `useFocusEffect`, which can run in the same commit
+   * before parent effects flush; a deferred snapshot made `getPowerSyncDatabaseForOfflineReads()`
+   * falsely `null` so preset/template lists skipped the SQLite fallback while the UI bridge was
+   * already ready.
+   */
+  setPowerSyncOfflineReadBridgeSnapshot({
+    database: bridgeValue.database,
+    firstSyncCompleted: bridgeValue.firstSyncCompleted,
+    localSqliteInitialized: bridgeValue.localSqliteInitialized,
+    powerSyncUrlConfigured: bridgeValue.powerSyncUrlConfigured,
+  });
 
   // PowerSync typings omit `null`, but hooks treat a missing DB like "not configured" at runtime.
   return (

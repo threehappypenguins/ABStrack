@@ -13,6 +13,10 @@ import {
   saveNewEpisodeTemplate,
 } from '../../lib/episode-templates/episode-template-service';
 import { fetchHealthMarkerPresets } from '../../lib/health-marker-presets/health-marker-preset-service';
+import {
+  powerSyncOfflineReplicaReadsEnabled,
+  usePowerSyncBridgeState,
+} from '../../lib/powersync/PowerSyncSessionBridge';
 import { fetchSymptomPresets } from '../../lib/symptom-presets/symptom-preset-service';
 import { PresetOptionSheetField } from '../components/episode-templates/PresetOptionSheetField';
 import { useUnsavedChangesBeforeRemove } from '../hooks/useUnsavedChangesBeforeRemove';
@@ -37,6 +41,7 @@ type PresetOption = { id: string; name: string };
 export function EpisodeTemplateCreateScreen() {
   const navigation = useNavigation<CreateNav>();
   const { colors } = useAppTheme();
+  const psBridge = usePowerSyncBridgeState();
   const [name, setName] = useState('');
   const [symptomId, setSymptomId] = useState<string | null>(null);
   const [markerId, setMarkerId] = useState<string | null>(null);
@@ -61,9 +66,13 @@ export function EpisodeTemplateCreateScreen() {
     void (async () => {
       setListsLoading(true);
       setListsError(null);
+      const offlineRead = {
+        database: psBridge.database,
+        replicationReady: powerSyncOfflineReplicaReadsEnabled(psBridge),
+      };
       const [sRes, mRes] = await Promise.all([
-        fetchSymptomPresets(),
-        fetchHealthMarkerPresets(),
+        fetchSymptomPresets({ powerSyncOfflineRead: offlineRead }),
+        fetchHealthMarkerPresets({ powerSyncOfflineRead: offlineRead }),
       ]);
       if (cancelled) {
         return;
@@ -96,7 +105,7 @@ export function EpisodeTemplateCreateScreen() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [psBridge]);
 
   const nameOk = useMemo(() => validateEpisodeTemplateName(name).ok, [name]);
 

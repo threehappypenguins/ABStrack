@@ -37,7 +37,10 @@ import {
   PowerSyncEpisodeReadSubscriptions,
   type PowerSyncEpisodeReadSnapshots,
 } from '../../lib/powersync/PowerSyncEpisodeReadSubscriptions';
-import { usePowerSyncBridgeState } from '../../lib/powersync/PowerSyncSessionBridge';
+import {
+  powerSyncOfflineReplicaReadsEnabled,
+  usePowerSyncBridgeState,
+} from '../../lib/powersync/PowerSyncSessionBridge';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { ScreenShell } from '../components/ScreenShell';
 import type { MainStackParamList } from '../navigation/types';
@@ -149,8 +152,7 @@ export function EpisodesManagementPanel({
       return active;
     }
     if (
-      psBridge.powerSyncUrlConfigured &&
-      psBridge.firstSyncCompleted &&
+      powerSyncOfflineReplicaReadsEnabled(psBridge) &&
       !psMirror.activeLoading &&
       psMirror.activeEpisode
     ) {
@@ -162,8 +164,7 @@ export function EpisodesManagementPanel({
     activeError,
     psMirror.activeEpisode,
     psMirror.activeLoading,
-    psBridge.firstSyncCompleted,
-    psBridge.powerSyncUrlConfigured,
+    psBridge,
   ]);
 
   const recentDisplay = useMemo((): EpisodeRow[] => {
@@ -171,16 +172,14 @@ export function EpisodesManagementPanel({
       return recent;
     }
     if (
-      psBridge.powerSyncUrlConfigured &&
-      psBridge.firstSyncCompleted &&
+      powerSyncOfflineReplicaReadsEnabled(psBridge) &&
       !psMirror.completedLoading
     ) {
       return psMirror.completedEpisodes;
     }
     return [];
   }, [
-    psBridge.firstSyncCompleted,
-    psBridge.powerSyncUrlConfigured,
+    psBridge,
     psMirror.completedEpisodes,
     psMirror.completedLoading,
     recent,
@@ -189,7 +188,7 @@ export function EpisodesManagementPanel({
 
   const showingOfflineEpisodeCopy =
     Boolean(activeError || recentError) &&
-    psBridge.firstSyncCompleted &&
+    powerSyncOfflineReplicaReadsEnabled(psBridge) &&
     (activeDisplay !== null || recentDisplay.length > 0);
 
   const loadInitial = useCallback(
@@ -205,12 +204,13 @@ export function EpisodesManagementPanel({
       try {
         const client = getMobileSupabaseClient();
         const {
-          data: { user },
-        } = await client.auth.getUser();
+          data: { session },
+        } = await client.auth.getSession();
         if (stale()) {
           return;
         }
-        if (!user) {
+        const userId = session?.user?.id ?? null;
+        if (!userId) {
           setActive(null);
           setRecent([]);
           setHasMoreRecent(false);
@@ -218,8 +218,8 @@ export function EpisodesManagementPanel({
         }
 
         const [activeRes, recentRes] = await Promise.all([
-          getActiveEpisodeForUser(client, user.id),
-          listCompletedEpisodesForUser(client, user.id, {
+          getActiveEpisodeForUser(client, userId),
+          listCompletedEpisodesForUser(client, userId, {
             limit: RECENT_PAGE_SIZE,
             offset: 0,
             endedAtOrAfter: endedAtOrAfter ?? undefined,
@@ -274,16 +274,17 @@ export function EpisodesManagementPanel({
     try {
       const client = getMobileSupabaseClient();
       const {
-        data: { user },
-      } = await client.auth.getUser();
+        data: { session },
+      } = await client.auth.getSession();
       if (stale()) {
         return;
       }
-      if (!user) {
+      const userId = session?.user?.id ?? null;
+      if (!userId) {
         setHasMoreRecent(false);
         return;
       }
-      const recentRes = await listCompletedEpisodesForUser(client, user.id, {
+      const recentRes = await listCompletedEpisodesForUser(client, userId, {
         limit: RECENT_PAGE_SIZE,
         offset: recent.length,
         endedAtOrAfter: endedAtOrAfter ?? undefined,

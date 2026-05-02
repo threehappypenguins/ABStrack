@@ -4,6 +4,7 @@
  */
 import type {
   HealthMarkerPresetInsert,
+  HealthMarkerPresetRow,
   HealthMarkerPresetUpdate,
   PresetHealthMarkerInsert,
   PresetHealthMarkerUpdate,
@@ -14,8 +15,8 @@ import {
   createPresetHealthMarker,
   deleteHealthMarkerPreset,
   deletePresetHealthMarker,
-  getAuthUser,
   getHealthMarkerPresetById,
+  getSession,
   listHealthMarkerPresets,
   listPresetHealthMarkersForPreset,
   reorderPresetHealthMarkers,
@@ -23,36 +24,75 @@ import {
   updateHealthMarkerPreset,
   updatePresetHealthMarker,
 } from '@abstrack/supabase';
+import { listHealthMarkerPresetsForUserFromPowerSyncDb } from '../powersync/powersync-episode-flow-reads';
+import {
+  clarifyNetworkErrorWhenReplicaUnavailable,
+  isPresetDataNetworkError,
+  resolvePowerSyncDatabaseForOfflineRead,
+  type PowerSyncOfflineReadContext,
+} from '../powersync/powersync-offline-read-bridge-snapshot';
 import { getMobileSupabaseClient } from '../supabase-wiring';
 
 /**
- * Resolves the signed-in user id, or distinguishes “no session” from {@link getAuthUser} failures.
+ * Resolves the signed-in user id from the persisted session (offline-safe).
  *
  * @returns `{ ok: true, data: id }` when signed in; `{ ok: true, data: null }` when signed out with
- * no auth error; `{ ok: false, error }` when the auth lookup failed.
+ * no auth error; `{ ok: false, error }` when the session read failed.
  */
 export async function getCurrentUserId(): Promise<
   PresetDataResult<string | null>
 > {
   try {
     const {
-      data: { user },
+      data: { session },
       error,
-    } = await getAuthUser(getMobileSupabaseClient());
+    } = await getSession(getMobileSupabaseClient());
     if (error) {
       return { ok: false, error: toPresetDataError(error) };
     }
-    return { ok: true, data: user?.id ?? null };
+    return { ok: true, data: session?.user?.id ?? null };
   } catch (caught) {
     return { ok: false, error: toPresetDataError(caught) };
   }
 }
 
 /**
- * Lists the signed-in user’s health marker presets.
+ * Lists the signed-in user’s health marker presets, falling back to the PowerSync replica when
+ * Supabase is unreachable and replication has completed at least once.
+ *
+ * @param options.powerSyncOfflineRead - From `usePowerSyncBridgeState()` when calling from UI.
  */
-export function fetchHealthMarkerPresets() {
-  return listHealthMarkerPresets(getMobileSupabaseClient());
+export async function fetchHealthMarkerPresets(options?: {
+  powerSyncOfflineRead?: PowerSyncOfflineReadContext | null;
+}): Promise<PresetDataResult<HealthMarkerPresetRow[]>> {
+  const client = getMobileSupabaseClient();
+  const remote = await listHealthMarkerPresets(client);
+  if (remote.ok) {
+    return remote;
+  }
+  if (!isPresetDataNetworkError(remote.error)) {
+    return remote;
+  }
+  const db = resolvePowerSyncDatabaseForOfflineRead(
+    options?.powerSyncOfflineRead ?? null,
+  );
+  if (!db) {
+    const alt = clarifyNetworkErrorWhenReplicaUnavailable(remote.error);
+    return alt ? { ok: false, error: alt } : remote;
+  }
+  const auth = await getCurrentUserId();
+  if (!auth.ok || auth.data == null) {
+    return remote;
+  }
+  try {
+    const data = await listHealthMarkerPresetsForUserFromPowerSyncDb(
+      db,
+      auth.data,
+    );
+    return { ok: true, data };
+  } catch {
+    return remote;
+  }
 }
 
 /**
