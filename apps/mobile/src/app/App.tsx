@@ -19,6 +19,7 @@ import { SymptomPromptScreen } from './screens/SymptomPromptScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { SignupScreen } from './screens/SignupScreen';
 import { UpdatePasswordScreen } from './screens/UpdatePasswordScreen';
+import { PowerSyncSessionBridge } from '../lib/powersync/PowerSyncSessionBridge';
 import { getRequireReauthOnOpenPreference } from './reauth-preference';
 import { useAppTheme } from './theme/AppThemeContext';
 import { nw } from './theme/app-nativewind-classes';
@@ -362,79 +363,83 @@ function AppBootstrap() {
 
   if (initializing) {
     return (
-      <View className={`flex-1 ${nw.screenBg}`}>
-        <StatusBar style={statusBarStyle} />
-        <SafeAreaView
-          className={`flex-1 items-center justify-center ${nw.screenBg}`}
-        >
-          <ActivityIndicator size="large" color={colors.primary} />
-        </SafeAreaView>
-      </View>
+      <PowerSyncSessionBridge session={session}>
+        <View className={`flex-1 ${nw.screenBg}`}>
+          <StatusBar style={statusBarStyle} />
+          <SafeAreaView
+            className={`flex-1 items-center justify-center ${nw.screenBg}`}
+          >
+            <ActivityIndicator size="large" color={colors.primary} />
+          </SafeAreaView>
+        </View>
+      </PowerSyncSessionBridge>
     );
   }
 
   return (
-    <View className={`flex-1 ${nw.screenBg}`}>
-      <StatusBar style={statusBarStyle} />
-      <NavigationContainer theme={navigationTheme}>
-        {showAuthStack ? (
-          authStack
-        ) : (
-          <MainStack.Navigator screenOptions={stackScreenOptions}>
-            <MainStack.Screen
-              name="MainTabs"
-              component={MainTabNavigator}
-              options={{ headerShown: false }}
-            />
-            <MainStack.Screen
-              name="EpisodeStart"
-              component={EpisodeStartScreen}
-              options={{
-                title: '',
-                headerBackTitle: 'Home',
-              }}
-            />
-            <MainStack.Screen
-              name="SymptomPrompt"
-              component={SymptomPromptScreen}
-              options={{
-                title: 'Symptoms',
-                headerBackTitle: 'Home',
-              }}
-            />
-            <MainStack.Screen
-              name="HealthMarkerPrompt"
-              component={HealthMarkerPromptScreen}
-              options={{
-                title: 'Health markers',
-                headerBackTitle: 'Home',
-              }}
-            />
-            <MainStack.Screen
-              name="FoodDiaryEntry"
-              component={FoodDiaryEntryScreen}
-              options={{
-                title: 'Food diary',
-                headerBackTitle: 'Home',
-              }}
-            />
-            <MainStack.Screen
-              name="StandaloneHealthMarkers"
-              component={StandaloneHealthMarkersScreen}
-              options={{
-                title: 'Health markers',
-                headerBackTitle: 'Home',
-              }}
-            />
-            <MainStack.Screen
-              name="Settings"
-              component={SettingsScreen}
-              options={{ title: 'Settings' }}
-            />
-          </MainStack.Navigator>
-        )}
-      </NavigationContainer>
-    </View>
+    <PowerSyncSessionBridge session={session}>
+      <View className={`flex-1 ${nw.screenBg}`}>
+        <StatusBar style={statusBarStyle} />
+        <NavigationContainer theme={navigationTheme}>
+          {showAuthStack ? (
+            authStack
+          ) : (
+            <MainStack.Navigator screenOptions={stackScreenOptions}>
+              <MainStack.Screen
+                name="MainTabs"
+                component={MainTabNavigator}
+                options={{ headerShown: false }}
+              />
+              <MainStack.Screen
+                name="EpisodeStart"
+                component={EpisodeStartScreen}
+                options={{
+                  title: '',
+                  headerBackTitle: 'Home',
+                }}
+              />
+              <MainStack.Screen
+                name="SymptomPrompt"
+                component={SymptomPromptScreen}
+                options={{
+                  title: 'Symptoms',
+                  headerBackTitle: 'Home',
+                }}
+              />
+              <MainStack.Screen
+                name="HealthMarkerPrompt"
+                component={HealthMarkerPromptScreen}
+                options={{
+                  title: 'Health markers',
+                  headerBackTitle: 'Home',
+                }}
+              />
+              <MainStack.Screen
+                name="FoodDiaryEntry"
+                component={FoodDiaryEntryScreen}
+                options={{
+                  title: 'Food diary',
+                  headerBackTitle: 'Home',
+                }}
+              />
+              <MainStack.Screen
+                name="StandaloneHealthMarkers"
+                component={StandaloneHealthMarkersScreen}
+                options={{
+                  title: 'Health markers',
+                  headerBackTitle: 'Home',
+                }}
+              />
+              <MainStack.Screen
+                name="Settings"
+                component={SettingsScreen}
+                options={{ title: 'Settings' }}
+              />
+            </MainStack.Navigator>
+          )}
+        </NavigationContainer>
+      </View>
+    </PowerSyncSessionBridge>
   );
 }
 

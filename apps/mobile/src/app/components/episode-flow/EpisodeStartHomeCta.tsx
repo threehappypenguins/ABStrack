@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Platform, Pressable, Text, View } from 'react-native';
+import type { EpisodeRow } from '@abstrack/types';
 import { announce } from '@abstrack/ui/native';
 import { nw } from '../../theme/app-nativewind-classes';
 
@@ -32,6 +33,35 @@ export type EpisodeStartHomeCtaProps = {
   /** Whether an active-episode check is still running. */
   activeEpisodeLoading: boolean;
 };
+
+/**
+ * Builds the home continue-episode summary from a replicated {@link EpisodeRow} (same rules as
+ * Supabase-driven {@link HomeScreen} loading).
+ *
+ * @param row - Episode row from SQLite / PowerSync.
+ * @returns Resume summary for the CTA, or `null` when there is no resumable path.
+ */
+export function episodeRowToActiveHomeSummary(
+  row: EpisodeRow,
+): ActiveEpisodeHomeSummary | null {
+  const hasSymptomResumePath = !!row.symptom_preset_id;
+  const hasEndStepResumePath = row.post_marker_step_completed_at != null;
+  if (!hasSymptomResumePath && !hasEndStepResumePath) {
+    return null;
+  }
+  if (hasEndStepResumePath) {
+    return {
+      episodeId: row.id,
+      resumeAtHealthMarkers: true,
+      symptomPresetId: row.symptom_preset_id,
+    };
+  }
+  return {
+    episodeId: row.id,
+    symptomPresetId: row.symptom_preset_id as string,
+    resumeAtHealthMarkers: false,
+  };
+}
 
 /**
  * Prominent home entry point for episode logging: large touch target, high-contrast primary

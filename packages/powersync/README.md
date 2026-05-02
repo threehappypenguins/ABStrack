@@ -27,6 +27,8 @@ The Expo app wires schema, encryption, and connectors in `apps/mobile/src/lib/po
 
 Typical sequence: `await db.init()`, then `await db.connect(connector)`, then `await db.waitForFirstSync()`.
 
+**Mobile app (Expo):** `PowerSyncSessionBridge` in `apps/mobile/src/app/App.tsx` runs this sequence when `EXPO_PUBLIC_POWERSYNC_URL` is set and the user is signed in. After first sync, **Home** (active episode CTA) and **Manage → Episodes** can read replicated `episodes` from SQLite when Supabase requests fail (offline). See `apps/mobile/src/lib/powersync/README.md` for lifecycle, SQLCipher key notes, and what remains network-only.
+
 **Writes:** Mutating PHI still goes through Supabase with RLS while online. Local CRUD on synced tables is not enabled yet; the connector fails closed if upload batches appear.
 
 ## Validate or deploy sync rules (CLI)

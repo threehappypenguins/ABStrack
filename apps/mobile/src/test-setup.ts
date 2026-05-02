@@ -72,6 +72,31 @@ jest.mock('expo-video', () => {
 
 configure({ asyncUtilTimeout: 5000 });
 
+jest.mock('@powersync/react', () => {
+  const React = require('react');
+  return {
+    PowerSyncContext: React.createContext(null),
+    usePowerSync: () => null,
+    useQuery: () => ({
+      isLoading: false,
+      isFetching: false,
+      data: [],
+      error: undefined,
+    }),
+  };
+});
+
+jest.mock('./lib/powersync/PowerSyncSessionBridge', () => ({
+  PowerSyncSessionBridge: ({ children }: { children: unknown }) => children,
+  usePowerSyncBridgeState: () => ({
+    powerSyncUrlConfigured: false,
+    database: null,
+    firstSyncCompleted: false,
+    syncConnecting: false,
+    syncError: null,
+  }),
+}));
+
 if (typeof global.structuredClone === 'undefined') {
   global.structuredClone = (object) => JSON.parse(JSON.stringify(object));
 }

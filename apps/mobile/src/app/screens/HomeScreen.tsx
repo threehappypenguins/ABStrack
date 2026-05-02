@@ -1,16 +1,27 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import type { EpisodeRow } from '@abstrack/types';
 import {
   getActiveEpisodeForUser,
   getAuthUser,
   healthCheckProfilesLimit1,
   signOut,
 } from '@abstrack/supabase';
+import { useMobileAuthUserId } from '../../lib/auth/use-mobile-auth-user-id';
+import { PowerSyncActiveEpisodeSubscription } from '../../lib/powersync/PowerSyncActiveEpisodeSubscription';
+import { usePowerSyncBridgeState } from '../../lib/powersync/PowerSyncSessionBridge';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { mapAuthError } from '../auth-helpers';
 import {
   EpisodeStartHomeCta,
+  episodeRowToActiveHomeSummary,
   type ActiveEpisodeHomeSummary,
 } from '../components/episode-flow/EpisodeStartHomeCta';
 import { AppNavigationShell } from '../components/AppNavigationShell';
@@ -49,6 +60,21 @@ export function HomeScreen({
   const [activeEpisode, setActiveEpisode] =
     useState<ActiveEpisodeHomeSummary | null>(null);
   const [activeEpisodeLoading, setActiveEpisodeLoading] = useState(true);
+  const [activeEpisodeRemoteFailed, setActiveEpisodeRemoteFailed] =
+    useState(false);
+
+  const userId = useMobileAuthUserId();
+  const psBridge = usePowerSyncBridgeState();
+  const [psEpisodeSnap, setPsEpisodeSnap] = useState<{
+    episode: EpisodeRow | null;
+    isLoading: boolean;
+  }>({ episode: null, isLoading: false });
+
+  useEffect(() => {
+    if (!psBridge.database) {
+      setPsEpisodeSnap({ episode: null, isLoading: false });
+    }
+  }, [psBridge.database]);
 
   /** Bumped on each load start and on blur/unmount so in-flight loads never win over newer work. */
   const loadGenerationRef = useRef(0);
@@ -60,6 +86,7 @@ export function HomeScreen({
         cancel?.cancelled === true || generation !== loadGenerationRef.current;
 
       setActiveEpisodeLoading(true);
+      setActiveEpisodeRemoteFailed(false);
       try {
         const mobileSupabase = getMobileSupabaseClient();
         const {
@@ -102,6 +129,7 @@ export function HomeScreen({
         });
       } catch {
         if (!stale()) {
+          setActiveEpisodeRemoteFailed(true);
           setActiveEpisode(null);
         }
       } finally {
@@ -112,6 +140,44 @@ export function HomeScreen({
     },
     [],
   );
+
+  const homeActiveEpisode = useMemo((): ActiveEpisodeHomeSummary | null => {
+    if (activeEpisodeLoading) {
+      return activeEpisode;
+    }
+    if (activeEpisode !== null) {
+      return activeEpisode;
+    }
+    if (!activeEpisodeRemoteFailed) {
+      return null;
+    }
+    if (
+      !psBridge.powerSyncUrlConfigured ||
+      !psBridge.firstSyncCompleted ||
+      psEpisodeSnap.isLoading
+    ) {
+      return null;
+    }
+    const row = psEpisodeSnap.episode;
+    if (!row) {
+      return null;
+    }
+    return episodeRowToActiveHomeSummary(row);
+  }, [
+    activeEpisode,
+    activeEpisodeLoading,
+    activeEpisodeRemoteFailed,
+    psEpisodeSnap.episode,
+    psEpisodeSnap.isLoading,
+    psBridge.firstSyncCompleted,
+    psBridge.powerSyncUrlConfigured,
+  ]);
+
+  const showingSyncedHomeEpisode =
+    !activeEpisodeLoading &&
+    activeEpisode === null &&
+    homeActiveEpisode !== null &&
+    activeEpisodeRemoteFailed;
 
   useFocusEffect(
     useCallback(() => {
@@ -228,6 +294,12 @@ export function HomeScreen({
 
   return (
     <AppNavigationShell title="Home">
+      {psBridge.database ? (
+        <PowerSyncActiveEpisodeSubscription
+          userId={userId}
+          onChange={setPsEpisodeSnap}
+        />
+      ) : null}
       <ScrollView
         className="flex-1"
         contentContainerStyle={{
@@ -238,10 +310,21 @@ export function HomeScreen({
         }}
         keyboardShouldPersistTaps="handled"
       >
+        {showingSyncedHomeEpisode ? (
+          <Text
+            className={`mb-2 rounded-lg border border-app-border bg-app-surface px-3 py-2 text-sm ${nw.textMuted}`}
+            accessibilityRole="text"
+            accessibilityLiveRegion="polite"
+            maxFontSizeMultiplier={2}
+          >
+            Showing your in-progress episode from data synced on this device
+            (offline).
+          </Text>
+        ) : null}
         <EpisodeStartHomeCta
           onStartEpisode={onStartEpisode}
           onResumeEpisode={onResumeEpisode}
-          activeEpisode={activeEpisode}
+          activeEpisode={homeActiveEpisode}
           activeEpisodeLoading={activeEpisodeLoading}
         />
 
