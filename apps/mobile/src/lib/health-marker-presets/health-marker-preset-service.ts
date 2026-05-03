@@ -16,7 +16,6 @@ import {
   deleteHealthMarkerPreset,
   deletePresetHealthMarker,
   getHealthMarkerPresetById,
-  getSession,
   listHealthMarkerPresets,
   listPresetHealthMarkersForPreset,
   reorderPresetHealthMarkers,
@@ -31,7 +30,10 @@ import {
   resolvePowerSyncDatabaseForOfflineRead,
   type PowerSyncOfflineReadContext,
 } from '../powersync/powersync-offline-read-bridge-snapshot';
-import { getMobileSupabaseClient } from '../supabase-wiring';
+import {
+  getMobileAuthSessionSafe,
+  getMobileSupabaseClient,
+} from '../supabase-wiring';
 
 /**
  * Resolves the signed-in user id from the persisted session (offline-safe).
@@ -46,7 +48,7 @@ export async function getCurrentUserId(): Promise<
     const {
       data: { session },
       error,
-    } = await getSession(getMobileSupabaseClient());
+    } = await getMobileAuthSessionSafe();
     if (error) {
       return { ok: false, error: toPresetDataError(error) };
     }

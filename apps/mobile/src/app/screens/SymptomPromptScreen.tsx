@@ -39,8 +39,6 @@ import {
   symptomPromptAnswerHasValue,
 } from '@abstrack/types';
 import {
-  cancelActiveEpisodeById,
-  deleteCurrentPassEpisodeSymptomAnswer,
   getEpisodeById,
   listEpisodeMediaForEpisode,
   listEpisodeSymptomsForEpisode,
@@ -56,6 +54,8 @@ import {
   listPresetSymptomsForPresetFromPowerSyncDb,
 } from '../../lib/powersync/powersync-episode-flow-reads';
 import {
+  cancelActiveEpisodeByIdOfflineFirst,
+  deleteCurrentPassEpisodeSymptomAnswerOfflineFirst,
   endEpisodeIfStillActiveOfflineFirst,
   insertEpisodeSymptomAnswerOfflineFirst,
 } from '../../lib/episodes/mobile-offline-first-gateway';
@@ -67,7 +67,10 @@ import {
   powerSyncOfflineReplicaReadsEnabled,
   usePowerSyncBridgeState,
 } from '../../lib/powersync/PowerSyncSessionBridge';
-import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
+import {
+  getMobileAuthSessionSafe,
+  getMobileSupabaseClient,
+} from '../../lib/supabase-wiring';
 import {
   clearSymptomPromptSession,
   getSymptomPromptSession,
@@ -428,22 +431,21 @@ export function SymptomPromptScreen() {
    * Caches the auth user id on {@link userIdRef}. Called from {@link load} before `ready`, and
    * from {@link executeServerPersist} so writes never depend on a separate mount-only `getUser()`.
    */
-  const resolveSessionUserId = useCallback(
-    async (
-      supabase: ReturnType<typeof getMobileSupabaseClient>,
-    ): Promise<string | null> => {
-      if (userIdRef.current) {
-        return userIdRef.current;
-      }
+  const resolveSessionUserId = useCallback(async (): Promise<string | null> => {
+    if (userIdRef.current) {
+      return userIdRef.current;
+    }
+    try {
       const {
         data: { session },
-      } = await supabase.auth.getSession();
+      } = await getMobileAuthSessionSafe();
       const id = session?.user?.id ?? null;
       userIdRef.current = id;
       return id;
-    },
-    [],
-  );
+    } catch {
+      return null;
+    }
+  }, []);
 
   useLayoutEffect(() => {
     answersRef.current = answers;
@@ -477,7 +479,7 @@ export function SymptomPromptScreen() {
         .then(async () => {
           const targetEpisodeId = enqueueEpisodeId;
           const supabase = getMobileSupabaseClient();
-          const uid = await resolveSessionUserId(supabase);
+          const uid = await resolveSessionUserId();
           if (!uid) {
             if (
               isMountedRef.current &&
@@ -615,11 +617,15 @@ export function SymptomPromptScreen() {
           }
         });
       queues.set(queueKey, next);
-      void next.finally(() => {
-        if (queues.get(queueKey) === next) {
-          queues.delete(queueKey);
-        }
-      });
+      void next
+        .catch(() => {
+          /* Rejections (e.g. getSession network failure) must not become unhandled */
+        })
+        .finally(() => {
+          if (queues.get(queueKey) === next) {
+            queues.delete(queueKey);
+          }
+        });
     },
     [powerSyncDbForWrites, resolveSessionUserId],
   );
@@ -644,7 +650,7 @@ export function SymptomPromptScreen() {
         .then(async () => {
           const targetEpisodeId = enqueueEpisodeId;
           const supabase = getMobileSupabaseClient();
-          const uid = await resolveSessionUserId(supabase);
+          const uid = await resolveSessionUserId();
           if (!uid) {
             if (
               isMountedRef.current &&
@@ -658,13 +664,17 @@ export function SymptomPromptScreen() {
             }
             return;
           }
-          const r = await deleteCurrentPassEpisodeSymptomAnswer(supabase, {
-            episodeId: targetEpisodeId,
-            presetSymptomId: line.id,
-            lastPostMarkerStepCompletedAt:
-              lastPostMarkerStepCompletedAtRef.current,
-            episodeMediaPathHints: options?.episodeMediaPathHints,
-          });
+          const r = await deleteCurrentPassEpisodeSymptomAnswerOfflineFirst(
+            supabase,
+            powerSyncDbForWrites,
+            {
+              episodeId: targetEpisodeId,
+              presetSymptomId: line.id,
+              lastPostMarkerStepCompletedAt:
+                lastPostMarkerStepCompletedAtRef.current,
+              episodeMediaPathHints: options?.episodeMediaPathHints,
+            },
+          );
           if (enqueueEpoch !== serverPersistEpochRef.current) {
             return;
           }
@@ -684,13 +694,17 @@ export function SymptomPromptScreen() {
           }
         });
       queues.set(queueKey, next);
-      void next.finally(() => {
-        if (queues.get(queueKey) === next) {
-          queues.delete(queueKey);
-        }
-      });
+      void next
+        .catch(() => {
+          /* Rejections (e.g. getSession network failure) must not become unhandled */
+        })
+        .finally(() => {
+          if (queues.get(queueKey) === next) {
+            queues.delete(queueKey);
+          }
+        });
     },
-    [resolveSessionUserId],
+    [powerSyncDbForWrites, resolveSessionUserId],
   );
 
   /**
@@ -766,7 +780,7 @@ export function SymptomPromptScreen() {
     setPersistError(null);
     try {
       const supabase = getMobileSupabaseClient();
-      const uid = await resolveSessionUserId(supabase);
+      const uid = await resolveSessionUserId();
       if (stale()) {
         return;
       }
@@ -1179,8 +1193,9 @@ export function SymptomPromptScreen() {
           onPress: () => {
             void (async () => {
               cancelPendingServerPersist();
-              const result = await cancelActiveEpisodeById(
+              const result = await cancelActiveEpisodeByIdOfflineFirst(
                 getMobileSupabaseClient(),
+                powerSyncDbForWrites,
                 episodeIdRef.current,
               );
               if (!result.ok) {
@@ -1214,7 +1229,7 @@ export function SymptomPromptScreen() {
         },
       ],
     );
-  }, [cancelPendingServerPersist, navigation]);
+  }, [cancelPendingServerPersist, navigation, powerSyncDbForWrites]);
 
   const onEndEpisodePress = useCallback(() => {
     if (endingEpisode || !episodeForEndCta) {

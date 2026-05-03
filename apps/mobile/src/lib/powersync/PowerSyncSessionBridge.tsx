@@ -11,7 +11,10 @@ import type { AbstractPowerSyncDatabase } from '@powersync/common';
 import { PowerSyncContext } from '@powersync/react';
 import type { PowerSyncDatabase } from '@powersync/react-native';
 
-import { getMobileSupabaseClient } from '../supabase-wiring';
+import {
+  getMobileAuthSessionSafe,
+  getMobileSupabaseClient,
+} from '../supabase-wiring';
 import { createSupabaseJwtPowerSyncConnector } from './supabase-jwt-connector';
 import { getMobilePowerSyncUrl } from './powersync-env';
 import { getOrCreateDeviceSqlcipherKey } from './powersync-sqlcipher-key';
@@ -177,12 +180,16 @@ export function PowerSyncSessionBridge({
     const baseConnector = createSupabaseJwtPowerSyncConnector({
       powerSyncUrl,
       getSession: async () => {
-        const { data } = await mobileSupabase.auth.getSession();
-        const next = data.session;
-        if (!next?.access_token) {
+        try {
+          const { data } = await getMobileAuthSessionSafe();
+          const next = data.session;
+          if (!next?.access_token) {
+            return null;
+          }
+          return { access_token: next.access_token };
+        } catch {
           return null;
         }
-        return { access_token: next.access_token };
       },
       getSupabaseClient: () => getMobileSupabaseClient(),
     });

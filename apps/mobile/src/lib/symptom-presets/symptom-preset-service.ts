@@ -15,7 +15,6 @@ import {
   createSymptomPreset,
   deletePresetSymptom,
   deleteSymptomPreset,
-  getSession,
   getSymptomPresetById,
   listPresetSymptomsForPreset,
   listSymptomPresets,
@@ -31,11 +30,14 @@ import {
   resolvePowerSyncDatabaseForOfflineRead,
   type PowerSyncOfflineReadContext,
 } from '../powersync/powersync-offline-read-bridge-snapshot';
-import { getMobileSupabaseClient } from '../supabase-wiring';
+import {
+  getMobileAuthSessionSafe,
+  getMobileSupabaseClient,
+} from '../supabase-wiring';
 
 /**
  * Resolves the signed-in user id from the persisted session (same pattern as episode templates).
- * Uses {@link getSession} rather than `getUser()` so airplane mode does not fail the auth lookup.
+ * Uses {@link getMobileAuthSessionSafe} rather than `getUser()` so airplane mode does not fail the auth lookup.
  *
  * @returns `{ ok: true, data: id }` when signed in; `{ ok: true, data: null }` when signed out with
  * no auth error; `{ ok: false, error }` when the session read failed.
@@ -47,7 +49,7 @@ export async function getCurrentUserId(): Promise<
     const {
       data: { session },
       error,
-    } = await getSession(getMobileSupabaseClient());
+    } = await getMobileAuthSessionSafe();
     if (error) {
       return { ok: false, error: toPresetDataError(error) };
     }

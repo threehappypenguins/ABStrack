@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
 
-import { getMobileSupabaseClient } from '../supabase-wiring';
+import {
+  getMobileAuthSessionSafe,
+  getMobileSupabaseClient,
+} from '../supabase-wiring';
 
 /**
  * Subscribes to Supabase auth and exposes the signed-in user id from the persisted session.
  *
- * Uses `auth.getSession()` (not `getUser()`) so Manage and other tabs still resolve the user id
+ * Uses {@link getMobileAuthSessionSafe} (not `getUser()`) so Manage and other tabs still resolve the user id
  * offline; `getUser()` validates with the server and often fails with “Network request failed”.
  *
  * @returns Current user id, or `null` when signed out / unresolved.
@@ -19,8 +22,7 @@ export function useMobileAuthUserId(): string | null {
     const refresh = () => {
       const auth = client.auth;
       if (typeof auth.getSession === 'function') {
-        void auth
-          .getSession()
+        void getMobileAuthSessionSafe()
           .then(({ data }) => {
             setUserId(data.session?.user?.id ?? null);
           })

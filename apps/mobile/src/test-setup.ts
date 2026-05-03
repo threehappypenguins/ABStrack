@@ -60,6 +60,14 @@ jest.mock('expo-file-system', () => ({
   },
 }));
 
+/** `getMobileAuthSessionSafe` falls back to SecureStore when GoTrue rejects; real native calls can hang Jest. */
+jest.mock('expo-secure-store', () => ({
+  __esModule: true,
+  getItemAsync: jest.fn(async () => null),
+  setItemAsync: jest.fn(async () => undefined),
+  deleteItemAsync: jest.fn(async () => undefined),
+}));
+
 jest.mock('expo-video', () => {
   return {
     VideoView: (props: { accessibilityLabel?: string }) =>

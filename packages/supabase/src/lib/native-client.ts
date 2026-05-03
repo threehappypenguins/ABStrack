@@ -17,6 +17,13 @@ export type NativeClientOptions = {
 /**
  * React Native / Expo: pass a storage adapter (e.g. `expo-secure-store` for encrypted persistent auth session storage via OS Keychain/Keystore).
  * Optional overrides for URL/key (defaults read `EXPO_PUBLIC_*` from the Metro bundle).
+ *
+ * **`autoRefreshToken: false`:** `@supabase/auth-js` treats React Native as a non-browser
+ * environment and, when `autoRefreshToken` is true, runs a continuous `setInterval` refresh loop.
+ * Failed refresh / lock paths can surface as **unhandled** `TypeError: Network request failed`
+ * in Hermes when the device is offline. ABStrack triggers a best-effort
+ * `auth.refreshSession()` from the mobile app when the process returns to foreground instead
+ * (see `App.tsx` `AppState` listener).
  */
 export function createSupabaseNativeClient(
   storage: NativeAuthStorage,
@@ -27,7 +34,7 @@ export function createSupabaseNativeClient(
   return createClient<Database>(url, key, {
     auth: {
       storage,
-      autoRefreshToken: true,
+      autoRefreshToken: false,
       persistSession: true,
       detectSessionInUrl: false,
     },

@@ -11,7 +11,6 @@ import {
   createEpisodeTemplate,
   deleteEpisodeTemplate,
   getEpisodeTemplateById,
-  getSession,
   listEpisodeTemplates,
   toPresetDataError,
   updateEpisodeTemplate,
@@ -26,11 +25,14 @@ import {
   resolvePowerSyncDatabaseForOfflineRead,
   type PowerSyncOfflineReadContext,
 } from '../powersync/powersync-offline-read-bridge-snapshot';
-import { getMobileSupabaseClient } from '../supabase-wiring';
+import {
+  getMobileAuthSessionSafe,
+  getMobileSupabaseClient,
+} from '../supabase-wiring';
 
 /**
  * Resolves the signed-in user id for template saves (same pattern as symptom preset service).
- * Uses {@link getSession} (local persisted session) rather than `getUser()` so airplane mode
+ * Uses {@link getMobileAuthSessionSafe} (local persisted session) rather than `getUser()` so airplane mode
  * does not fail: `auth.getUser()` validates with the server and throws `Network request failed`.
  *
  * @returns User id, null when signed out, or an error when the session read fails.
@@ -42,7 +44,7 @@ export async function getCurrentUserId(): Promise<
     const {
       data: { session },
       error,
-    } = await getSession(getMobileSupabaseClient());
+    } = await getMobileAuthSessionSafe();
     if (error) {
       return { ok: false, error: toPresetDataError(error) };
     }

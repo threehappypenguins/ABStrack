@@ -23,15 +23,17 @@ import {
 } from '@abstrack/types';
 import { announce } from '@abstrack/ui/native';
 import {
-  cancelActiveEpisodeById,
   createEpisodeMediaSignedDisplayUrl,
-  deleteEpisodeById,
   getActiveEpisodeForUser,
   listEpisodeMediaForEpisode,
   listCompletedEpisodesForUser,
 } from '@abstrack/supabase';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useMobileAuthUserId } from '../../lib/auth/use-mobile-auth-user-id';
+import {
+  cancelActiveEpisodeByIdOfflineFirst,
+  deleteEpisodeByIdOfflineFirst,
+} from '../../lib/episodes/mobile-offline-first-gateway';
 import { clearSymptomPromptSession } from '../../lib/episodes/symptom-prompt-session-store';
 import {
   PowerSyncEpisodeReadSubscriptions,
@@ -41,7 +43,10 @@ import {
   powerSyncOfflineReplicaReadsEnabled,
   usePowerSyncBridgeState,
 } from '../../lib/powersync/PowerSyncSessionBridge';
-import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
+import {
+  getMobileAuthSessionSafe,
+  getMobileSupabaseClient,
+} from '../../lib/supabase-wiring';
 import { ScreenShell } from '../components/ScreenShell';
 import type { MainStackParamList } from '../navigation/types';
 import { nw } from '../theme/app-nativewind-classes';
@@ -99,6 +104,11 @@ export function EpisodesManagementPanel({
   const loadGenRef = useRef(0);
   const viewerUserId = useMobileAuthUserId();
   const psBridge = usePowerSyncBridgeState();
+  const powerSyncDbForWrites = useMemo(
+    () =>
+      powerSyncOfflineReplicaReadsEnabled(psBridge) ? psBridge.database : null,
+    [psBridge],
+  );
   const [psMirror, setPsMirror] = useState<PowerSyncEpisodeReadSnapshots>({
     activeEpisode: null,
     activeLoading: false,
@@ -147,49 +157,53 @@ export function EpisodesManagementPanel({
   /** Prevents overlapping loads per episode (e.g. double tap before `loading` is committed). */
   const episodeMediaLoadInFlightRef = useRef<Record<string, boolean>>({});
 
+  const psReplicaReadsEnabled = powerSyncOfflineReplicaReadsEnabled(psBridge);
+
   const activeDisplay = useMemo((): EpisodeRow | null => {
     if (!activeError) {
       return active;
     }
-    if (
-      powerSyncOfflineReplicaReadsEnabled(psBridge) &&
-      !psMirror.activeLoading &&
-      psMirror.activeEpisode
-    ) {
+    if (psReplicaReadsEnabled && psMirror.activeEpisode) {
       return psMirror.activeEpisode;
     }
     return null;
-  }, [
-    active,
-    activeError,
-    psMirror.activeEpisode,
-    psMirror.activeLoading,
-    psBridge,
-  ]);
+  }, [active, activeError, psMirror.activeEpisode, psReplicaReadsEnabled]);
 
   const recentDisplay = useMemo((): EpisodeRow[] => {
     if (!recentError) {
       return recent;
     }
-    if (
-      powerSyncOfflineReplicaReadsEnabled(psBridge) &&
-      !psMirror.completedLoading
-    ) {
+    if (psReplicaReadsEnabled) {
       return psMirror.completedEpisodes;
     }
     return [];
-  }, [
-    psBridge,
-    psMirror.completedEpisodes,
-    psMirror.completedLoading,
-    recent,
-    recentError,
-  ]);
+  }, [psMirror.completedEpisodes, psReplicaReadsEnabled, recent, recentError]);
 
-  const showingOfflineEpisodeCopy =
-    Boolean(activeError || recentError) &&
-    powerSyncOfflineReplicaReadsEnabled(psBridge) &&
-    (activeDisplay !== null || recentDisplay.length > 0);
+  /**
+   * When Supabase list calls fail but this install has a local replica, explain that Manage uses
+   * synced SQLite (same rows upload when online again via PowerSync).
+   */
+  const showOfflineReplicaCallout =
+    psReplicaReadsEnabled && (activeError != null || recentError != null);
+
+  /** When SQLite is available, never show the harsh Supabase error for active/recent headers. */
+  const suppressActiveServerError =
+    Boolean(activeError) && psReplicaReadsEnabled;
+
+  const suppressRecentServerError =
+    Boolean(recentError) && psReplicaReadsEnabled;
+
+  const showActiveReplicaLoadingHint =
+    Boolean(activeError) &&
+    psReplicaReadsEnabled &&
+    psMirror.activeLoading &&
+    psMirror.activeEpisode == null;
+
+  const showRecentReplicaLoadingHint =
+    Boolean(recentError) &&
+    psReplicaReadsEnabled &&
+    psMirror.completedLoading &&
+    psMirror.completedEpisodes.length === 0;
 
   const loadInitial = useCallback(
     async (cancel?: { cancelled: boolean }) => {
@@ -205,7 +219,7 @@ export function EpisodesManagementPanel({
         const client = getMobileSupabaseClient();
         const {
           data: { session },
-        } = await client.auth.getSession();
+        } = await getMobileAuthSessionSafe();
         if (stale()) {
           return;
         }
@@ -275,7 +289,7 @@ export function EpisodesManagementPanel({
       const client = getMobileSupabaseClient();
       const {
         data: { session },
-      } = await client.auth.getSession();
+      } = await getMobileAuthSessionSafe();
       if (stale()) {
         return;
       }
@@ -458,8 +472,9 @@ export function EpisodesManagementPanel({
               setCancelingActiveEpisode(true);
               try {
                 const client = getMobileSupabaseClient();
-                const result = await cancelActiveEpisodeById(
+                const result = await cancelActiveEpisodeByIdOfflineFirst(
                   client,
+                  powerSyncDbForWrites,
                   activeDisplay.id,
                 );
                 if (!result.ok) {
@@ -490,7 +505,12 @@ export function EpisodesManagementPanel({
         },
       ],
     );
-  }, [activeDisplay, cancelingActiveEpisode, loadInitial]);
+  }, [
+    activeDisplay,
+    cancelingActiveEpisode,
+    loadInitial,
+    powerSyncDbForWrites,
+  ]);
 
   const onDeleteEpisode = useCallback(
     (episode: EpisodeRow) => {
@@ -510,7 +530,11 @@ export function EpisodesManagementPanel({
                 setDeletingEpisodeId(episode.id);
                 try {
                   const client = getMobileSupabaseClient();
-                  const result = await deleteEpisodeById(client, episode.id);
+                  const result = await deleteEpisodeByIdOfflineFirst(
+                    client,
+                    powerSyncDbForWrites,
+                    episode.id,
+                  );
                   if (!result.ok) {
                     await announce(result.error.message, {
                       politeness: 'assertive',
@@ -536,7 +560,7 @@ export function EpisodesManagementPanel({
         ],
       );
     },
-    [deletingEpisodeId, loadInitial],
+    [deletingEpisodeId, loadInitial, powerSyncDbForWrites],
   );
 
   const body = (
@@ -576,16 +600,22 @@ export function EpisodesManagementPanel({
           </Text>
         )}
 
-        {showingOfflineEpisodeCopy ? (
-          <Text
-            className={`rounded-lg border border-app-border bg-app-surface px-3 py-2 text-sm ${nw.textMuted}`}
+        {showOfflineReplicaCallout ? (
+          <View
+            className={`rounded-lg px-3 py-2.5 ${nw.card}`}
             accessibilityRole="text"
             accessibilityLiveRegion="polite"
-            maxFontSizeMultiplier={2}
           >
-            Showing episodes from data synced on this device (offline). Media
-            previews and server edits still need a network connection.
-          </Text>
+            <Text
+              className={`text-sm leading-snug ${nw.textInk}`}
+              maxFontSizeMultiplier={2}
+            >
+              Showing episodes from data synced on this device. Media previews
+              still need a network connection. Episode list, cancel, and delete
+              use your local copy and sync to the server when you are back
+              online.
+            </Text>
+          </View>
         ) : null}
 
         <View>
@@ -599,13 +629,22 @@ export function EpisodesManagementPanel({
           {loading ? (
             <Text className={`mt-2 text-sm ${nw.textMuted}`}>Loading…</Text>
           ) : null}
-          {activeError ? (
+          {activeError && !suppressActiveServerError ? (
             <Text
               className={`mt-2 text-sm ${nw.textError}`}
               accessibilityRole="alert"
               maxFontSizeMultiplier={2}
             >
               {activeError}
+            </Text>
+          ) : null}
+          {showActiveReplicaLoadingHint ? (
+            <Text
+              className={`mt-2 text-sm ${nw.textMuted}`}
+              accessibilityLiveRegion="polite"
+              maxFontSizeMultiplier={2}
+            >
+              Loading active episode from this device…
             </Text>
           ) : null}
           {!loading && activeDisplay === null ? (
@@ -690,7 +729,7 @@ export function EpisodesManagementPanel({
           >
             Recent episodes
           </Text>
-          {recentError ? (
+          {recentError && !suppressRecentServerError ? (
             <Text
               className={`mt-2 text-sm ${nw.textError}`}
               accessibilityRole="alert"
@@ -699,7 +738,19 @@ export function EpisodesManagementPanel({
               {recentError}
             </Text>
           ) : null}
-          {!loading && !recentError && recentDisplay.length === 0 ? (
+          {showRecentReplicaLoadingHint ? (
+            <Text
+              className={`mt-2 text-sm ${nw.textMuted}`}
+              accessibilityLiveRegion="polite"
+              maxFontSizeMultiplier={2}
+            >
+              Loading recent episodes from this device…
+            </Text>
+          ) : null}
+          {!loading &&
+          recentDisplay.length === 0 &&
+          (!recentError || suppressRecentServerError) &&
+          !showRecentReplicaLoadingHint ? (
             <Text className={`mt-2 text-sm ${nw.textMuted}`}>
               No ended episodes in your history yet.
             </Text>

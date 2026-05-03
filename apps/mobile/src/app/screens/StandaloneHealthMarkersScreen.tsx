@@ -32,7 +32,10 @@ import {
   listPresetHealthMarkersForPreset,
 } from '@abstrack/supabase';
 import { announce } from '@abstrack/ui/native';
-import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
+import {
+  getMobileAuthSessionSafe,
+  getMobileSupabaseClient,
+} from '../../lib/supabase-wiring';
 import { ScreenShell } from '../components/ScreenShell';
 import type { MainStackParamList } from '../navigation/types';
 import { nw } from '../theme/app-nativewind-classes';
@@ -74,12 +77,17 @@ export function StandaloneHealthMarkersScreen() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const { data } = await supabase.auth.getSession();
-      if (cancelled) {
-        return;
+      try {
+        const { data } = await getMobileAuthSessionSafe();
+        if (cancelled) {
+          return;
+        }
+        setAuthUserId(data.session?.user?.id ?? null);
+      } finally {
+        if (!cancelled) {
+          setAuthLoading(false);
+        }
       }
-      setAuthUserId(data.session?.user?.id ?? null);
-      setAuthLoading(false);
     })();
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
       setAuthUserId(session?.user?.id ?? null);

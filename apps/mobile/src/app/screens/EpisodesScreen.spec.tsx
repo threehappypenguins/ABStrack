@@ -50,9 +50,15 @@ jest.mock('../../lib/episodes/symptom-prompt-session-store', () => ({
   clearSymptomPromptSession: jest.fn(),
 }));
 
-jest.mock('../../lib/supabase-wiring', () => ({
-  getMobileSupabaseClient: jest.fn(),
-}));
+jest.mock('../../lib/supabase-wiring-core', () => {
+  const actual = jest.requireActual(
+    '../../lib/supabase-wiring-core',
+  ) as typeof import('../../lib/supabase-wiring-core');
+  return {
+    ...actual,
+    getMobileSupabaseClient: jest.fn(),
+  };
+});
 
 function makeEpisodeRow(overrides: Partial<EpisodeRow> = {}): EpisodeRow {
   return {
@@ -84,6 +90,8 @@ describe('EpisodesScreen', () => {
       navigate: mockNavigate,
     } as never);
 
+    // `mockReturnValue` in individual tests must not outrank the default signed-in session.
+    mockGetSession.mockReset();
     mockGetSession.mockResolvedValue({
       data: { session: { user: { id: 'user-1' } } },
     });
@@ -164,13 +172,15 @@ describe('EpisodesScreen', () => {
     expect(await screen.findByText('Recent query failed')).toBeTruthy();
   });
 
-  it('surfaces unified error when load throws', async () => {
+  it('treats rejected getSession like no session when storage fallback is empty', async () => {
     mockGetSession.mockRejectedValue(new Error('network'));
 
     render(<EpisodesScreen />);
 
-    const alerts = await screen.findAllByText('Unable to load episodes.');
-    expect(alerts).toHaveLength(2);
+    expect(await screen.findByText('No episode in progress.')).toBeTruthy();
+    expect(
+      await screen.findByText('No ended episodes in your history yet.'),
+    ).toBeTruthy();
   });
 
   it('navigates to SymptomPrompt with resume when Resume is pressed', async () => {

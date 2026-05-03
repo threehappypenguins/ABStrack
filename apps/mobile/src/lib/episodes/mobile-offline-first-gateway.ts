@@ -16,12 +16,17 @@ import type {
 } from '@abstrack/types';
 import type {
   AbstrackSupabaseClient,
+  CancelActiveEpisodeByIdResult,
+  DeleteEpisodeByIdResult,
   EpisodePostMarkerStepWrite,
 } from '@abstrack/supabase';
 import type { PresetDataResult } from '@abstrack/supabase';
 import {
+  cancelActiveEpisodeById,
   completeEpisodePostMarkerStep,
   createFoodDiaryEntry,
+  deleteCurrentPassEpisodeSymptomAnswer,
+  deleteEpisodeById,
   deleteFoodDiaryEntry,
   endEpisodeIfStillActive,
   insertEpisodeHealthMarkerForLine,
@@ -36,7 +41,10 @@ import {
 import type { PowerSyncDatabase } from '@powersync/react-native';
 
 import {
+  cancelActiveEpisodeByIdPowerSyncDb,
   completeEpisodePostMarkerStepPowerSyncDb,
+  deleteCurrentPassEpisodeSymptomAnswerPowerSyncDb,
+  deleteEpisodeByIdPowerSyncDb,
   deleteFoodDiaryEntryPowerSyncDb,
   endEpisodeIfStillActivePowerSyncDb,
   insertEpisodeHealthMarkerLineIntoPowerSyncDb,
@@ -249,4 +257,68 @@ export async function deleteFoodDiaryEntryOfflineFirst(
     return deleteFoodDiaryEntryPowerSyncDb(powerSyncDb, entryId);
   }
   return deleteFoodDiaryEntry(client, entryId);
+}
+
+/**
+ * Deletes the current-pass symptom answer offline-first (PowerSync when the replica is open).
+ *
+ * @param client - Mobile Supabase client (used when PowerSync writes are not active).
+ * @param powerSyncDb - Open PowerSync DB when offline-first writes are enabled.
+ * @param args - Same args as {@link deleteCurrentPassEpisodeSymptomAnswer}; `episodeMediaPathHints`
+ *   are only used on the Supabase path (Storage cleanup).
+ */
+export async function deleteCurrentPassEpisodeSymptomAnswerOfflineFirst(
+  client: AbstrackSupabaseClient,
+  powerSyncDb: PowerSyncDatabase | null | undefined,
+  args: {
+    episodeId: Uuid;
+    presetSymptomId: Uuid;
+    lastPostMarkerStepCompletedAt: string | null;
+    episodeMediaPathHints?: (string | null | undefined)[];
+  },
+): Promise<PresetDataResult<boolean>> {
+  if (powerSyncWritesEnabled(powerSyncDb)) {
+    return deleteCurrentPassEpisodeSymptomAnswerPowerSyncDb(powerSyncDb, {
+      episodeId: args.episodeId,
+      presetSymptomId: args.presetSymptomId,
+      lastPostMarkerStepCompletedAt: args.lastPostMarkerStepCompletedAt,
+    });
+  }
+  return deleteCurrentPassEpisodeSymptomAnswer(client, args);
+}
+
+/**
+ * Cancels an active episode offline-first.
+ *
+ * @param client - Mobile Supabase client.
+ * @param powerSyncDb - Open PowerSync DB when offline-first writes are enabled.
+ * @param episodeId - Episode to cancel.
+ */
+export async function cancelActiveEpisodeByIdOfflineFirst(
+  client: AbstrackSupabaseClient,
+  powerSyncDb: PowerSyncDatabase | null | undefined,
+  episodeId: Uuid,
+): Promise<CancelActiveEpisodeByIdResult> {
+  if (powerSyncWritesEnabled(powerSyncDb)) {
+    return cancelActiveEpisodeByIdPowerSyncDb(powerSyncDb, episodeId);
+  }
+  return cancelActiveEpisodeById(client, episodeId);
+}
+
+/**
+ * Deletes an episode from history (or active) offline-first.
+ *
+ * @param client - Mobile Supabase client.
+ * @param powerSyncDb - Open PowerSync DB when offline-first writes are enabled.
+ * @param episodeId - Episode to delete.
+ */
+export async function deleteEpisodeByIdOfflineFirst(
+  client: AbstrackSupabaseClient,
+  powerSyncDb: PowerSyncDatabase | null | undefined,
+  episodeId: Uuid,
+): Promise<DeleteEpisodeByIdResult> {
+  if (powerSyncWritesEnabled(powerSyncDb)) {
+    return deleteEpisodeByIdPowerSyncDb(powerSyncDb, episodeId);
+  }
+  return deleteEpisodeById(client, episodeId);
 }

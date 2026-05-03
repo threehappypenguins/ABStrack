@@ -11,7 +11,6 @@ import type { EpisodeRow } from '@abstrack/types';
 import {
   getActiveEpisodeForUser,
   getAuthUser,
-  getSession,
   healthCheckProfilesLimit1,
   signOut,
 } from '@abstrack/supabase';
@@ -21,7 +20,10 @@ import {
   powerSyncOfflineReplicaReadsEnabled,
   usePowerSyncBridgeState,
 } from '../../lib/powersync/PowerSyncSessionBridge';
-import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
+import {
+  getMobileAuthSessionSafe,
+  getMobileSupabaseClient,
+} from '../../lib/supabase-wiring';
 import { mapAuthError } from '../auth-helpers';
 import {
   EpisodeStartHomeCta,
@@ -96,7 +98,7 @@ export function HomeScreen({
         const {
           data: { session },
           error: sessionError,
-        } = await getSession(mobileSupabase);
+        } = await getMobileAuthSessionSafe();
         if (stale()) {
           return;
         }
@@ -111,7 +113,12 @@ export function HomeScreen({
         if (stale()) {
           return;
         }
-        if (!result.ok || !result.data) {
+        if (!result.ok) {
+          setActiveEpisode(null);
+          setActiveEpisodeRemoteFailed(true);
+          return;
+        }
+        if (!result.data) {
           setActiveEpisode(null);
           return;
         }
@@ -159,10 +166,10 @@ export function HomeScreen({
     if (!activeEpisodeRemoteFailed) {
       return null;
     }
-    if (
-      !powerSyncOfflineReplicaReadsEnabled(psBridge) ||
-      psEpisodeSnap.isLoading
-    ) {
+    if (!powerSyncOfflineReplicaReadsEnabled(psBridge)) {
+      return null;
+    }
+    if (psEpisodeSnap.isLoading && !psEpisodeSnap.episode) {
       return null;
     }
     const row = psEpisodeSnap.episode;
@@ -178,12 +185,6 @@ export function HomeScreen({
     psEpisodeSnap.isLoading,
     psBridge,
   ]);
-
-  const showingSyncedHomeEpisode =
-    !activeEpisodeLoading &&
-    activeEpisode === null &&
-    homeActiveEpisode !== null &&
-    activeEpisodeRemoteFailed;
 
   useFocusEffect(
     useCallback(() => {
@@ -316,17 +317,6 @@ export function HomeScreen({
         }}
         keyboardShouldPersistTaps="handled"
       >
-        {showingSyncedHomeEpisode ? (
-          <Text
-            className={`mb-2 rounded-lg border border-app-border bg-app-surface px-3 py-2 text-sm ${nw.textMuted}`}
-            accessibilityRole="text"
-            accessibilityLiveRegion="polite"
-            maxFontSizeMultiplier={2}
-          >
-            Showing your in-progress episode from data synced on this device
-            (offline).
-          </Text>
-        ) : null}
         <EpisodeStartHomeCta
           onStartEpisode={onStartEpisode}
           onResumeEpisode={onResumeEpisode}

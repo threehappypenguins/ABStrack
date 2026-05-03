@@ -5,7 +5,10 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import type { Session } from '@abstrack/supabase';
-import { getMobileSupabaseClient } from '../lib/supabase-wiring';
+import {
+  getMobileAuthSessionSafe,
+  getMobileSupabaseClient,
+} from '../lib/supabase-wiring';
 import { AppProviders } from './components/AppProviders';
 import { ForgotPasswordScreen } from './screens/ForgotPasswordScreen';
 import { MainTabNavigator } from './navigation/MainTabNavigator';
@@ -140,7 +143,7 @@ function AppBootstrap() {
         const {
           data: { session: currentSession },
           error: getSessionError,
-        } = await mobileSupabase.auth.getSession();
+        } = await getMobileAuthSessionSafe();
 
         if (getSessionError) {
           console.warn(
@@ -235,7 +238,7 @@ function AppBootstrap() {
 
     const bootstrap = async () => {
       const [{ data }, initialUrl] = await Promise.all([
-        mobileSupabase.auth.getSession(),
+        getMobileAuthSessionSafe(),
         Linking.getInitialURL(),
       ]);
 
@@ -254,10 +257,14 @@ function AppBootstrap() {
       }
     };
 
-    void bootstrap();
+    void bootstrap().catch(() => {
+      /* Hermes LogBox: bootstrap must never surface an unhandled rejection */
+    });
 
     const urlSubscription = Linking.addEventListener('url', ({ url }) => {
-      void handleRecoveryLink(url);
+      void handleRecoveryLink(url).catch(() => {
+        /* Deep link handling must not reject unhandled */
+      });
     });
 
     const appStateSubscription = AppState.addEventListener(
@@ -265,6 +272,12 @@ function AppBootstrap() {
       (nextState) => {
         if (nextState === 'active') {
           void enforceReauthIfNeeded();
+          const refresh = mobileSupabase.auth.refreshSession;
+          if (typeof refresh === 'function') {
+            void refresh.call(mobileSupabase.auth).catch(() => {
+              /* Offline / transient; native client uses autoRefreshToken: false */
+            });
+          }
         }
       },
     );

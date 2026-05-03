@@ -24,14 +24,20 @@ jest.mock('@abstrack/supabase', () => {
 
 const mockGetUser = jest.fn();
 
-jest.mock('../../lib/supabase-wiring', () => ({
-  getMobileSupabaseClient: jest.fn(() => ({
-    mockClient: true,
-    auth: {
-      getUser: mockGetUser,
-    },
-  })),
-}));
+jest.mock('../../lib/supabase-wiring-core', () => {
+  const actual = jest.requireActual(
+    '../../lib/supabase-wiring-core',
+  ) as typeof import('../../lib/supabase-wiring-core');
+  return {
+    ...actual,
+    getMobileSupabaseClient: jest.fn(() => ({
+      mockClient: true,
+      auth: {
+        getUser: mockGetUser,
+      },
+    })),
+  };
+});
 
 jest.mock('../theme/AppThemeContext', () => ({
   useAppTheme: jest.fn(),

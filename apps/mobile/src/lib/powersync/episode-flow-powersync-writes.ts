@@ -21,6 +21,8 @@ import {
   validatePresetHealthMarkerCustomFields,
 } from '@abstrack/types';
 import type {
+  CancelActiveEpisodeByIdResult,
+  DeleteEpisodeByIdResult,
   EpisodePostMarkerStepWrite,
   PresetDataResult,
 } from '@abstrack/supabase';
@@ -674,6 +676,166 @@ export async function deleteFoodDiaryEntryPowerSyncDb(
   try {
     await db.execute(`DELETE FROM food_diary_entries WHERE id = ?`, [entryId]);
     return { ok: true, data: true };
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    return {
+      ok: false,
+      error: new PresetDataError('unknown', message, e),
+    };
+  }
+}
+
+/**
+ * Deletes dependent rows for one episode so the `episodes` row can be removed locally (mirrors
+ * Postgres `ON DELETE CASCADE` / `SET NULL` for replicated tables).
+ *
+ * @param db - PowerSync database.
+ * @param episodeId - `episodes.id`.
+ */
+async function deleteEpisodeChildRowsPowerSyncDb(
+  db: PowerSyncDatabase,
+  episodeId: Uuid,
+): Promise<void> {
+  const now = new Date().toISOString();
+  await db.execute(`DELETE FROM episode_media WHERE episode_id = ?`, [
+    episodeId,
+  ]);
+  await db.execute(`DELETE FROM episode_symptoms WHERE episode_id = ?`, [
+    episodeId,
+  ]);
+  await db.execute(`DELETE FROM health_markers WHERE episode_id = ?`, [
+    episodeId,
+  ]);
+  await db.execute(
+    `UPDATE food_diary_entries SET episode_id = NULL, updated_at = ? WHERE episode_id = ?`,
+    [now, episodeId],
+  );
+}
+
+/**
+ * Deletes `episode_symptoms` for the current pass (same filter as Supabase
+ * {@link deleteCurrentPassEpisodeSymptomAnswer}). Removes matching `episode_media` rows first.
+ * Storage cleanup is skipped offline (handled when online in a later pass).
+ *
+ * @param db - PowerSync database.
+ * @param args - Episode id, preset line id, and pass boundary from `episodes.post_marker_step_completed_at`.
+ */
+export async function deleteCurrentPassEpisodeSymptomAnswerPowerSyncDb(
+  db: PowerSyncDatabase,
+  args: {
+    episodeId: Uuid;
+    presetSymptomId: Uuid;
+    lastPostMarkerStepCompletedAt: string | null;
+  },
+): Promise<PresetDataResult<boolean>> {
+  const { episodeId, presetSymptomId, lastPostMarkerStepCompletedAt } = args;
+  try {
+    const idSql =
+      lastPostMarkerStepCompletedAt == null ||
+      lastPostMarkerStepCompletedAt === ''
+        ? `SELECT id FROM episode_symptoms WHERE episode_id = ? AND preset_symptom_id = ?`
+        : `SELECT id FROM episode_symptoms WHERE episode_id = ? AND preset_symptom_id = ? AND created_at > ?`;
+    const idParams: unknown[] =
+      lastPostMarkerStepCompletedAt == null ||
+      lastPostMarkerStepCompletedAt === ''
+        ? [episodeId, presetSymptomId]
+        : [episodeId, presetSymptomId, lastPostMarkerStepCompletedAt];
+
+    const idRows = await db.getAll<{ id: string }>(idSql, idParams);
+    const symptomIds = idRows.map((r) => r.id).filter(Boolean);
+    if (symptomIds.length > 0) {
+      const placeholders = symptomIds.map(() => '?').join(', ');
+      await db.execute(
+        `DELETE FROM episode_media WHERE episode_id = ? AND episode_symptom_id IN (${placeholders})`,
+        [episodeId, ...symptomIds],
+      );
+    }
+
+    const delSql =
+      lastPostMarkerStepCompletedAt == null ||
+      lastPostMarkerStepCompletedAt === ''
+        ? `DELETE FROM episode_symptoms WHERE episode_id = ? AND preset_symptom_id = ?`
+        : `DELETE FROM episode_symptoms WHERE episode_id = ? AND preset_symptom_id = ? AND created_at > ?`;
+    await db.execute(
+      delSql,
+      lastPostMarkerStepCompletedAt == null ||
+        lastPostMarkerStepCompletedAt === ''
+        ? [episodeId, presetSymptomId]
+        : [episodeId, presetSymptomId, lastPostMarkerStepCompletedAt],
+    );
+    return { ok: true, data: true };
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    return {
+      ok: false,
+      error: new PresetDataError('unknown', message, e),
+    };
+  }
+}
+
+/**
+ * Deletes an active episode row locally after removing dependent rows (mirrors Supabase
+ * {@link cancelActiveEpisodeById} data effects; Storage cleanup is skipped offline).
+ *
+ * @param db - PowerSync database.
+ * @param episodeId - `episodes.id`.
+ */
+export async function cancelActiveEpisodeByIdPowerSyncDb(
+  db: PowerSyncDatabase,
+  episodeId: Uuid,
+): Promise<CancelActiveEpisodeByIdResult> {
+  try {
+    const prior = await db.getOptional<{ ended_at: string | null }>(
+      `SELECT ended_at FROM episodes WHERE id = ?`,
+      [episodeId],
+    );
+    if (!prior || prior.ended_at != null) {
+      return { ok: true, data: { didCancel: false } };
+    }
+    await deleteEpisodeChildRowsPowerSyncDb(db, episodeId);
+    await db.execute(`DELETE FROM episodes WHERE id = ? AND ended_at IS NULL`, [
+      episodeId,
+    ]);
+    const still = await db.getOptional<{ id: string }>(
+      `SELECT id FROM episodes WHERE id = ?`,
+      [episodeId],
+    );
+    return { ok: true, data: { didCancel: still == null } };
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    return {
+      ok: false,
+      error: new PresetDataError('unknown', message, e),
+    };
+  }
+}
+
+/**
+ * Deletes one episode row locally (active or completed) after removing dependent rows (mirrors
+ * Supabase {@link deleteEpisodeById} data effects; Storage cleanup is skipped offline).
+ *
+ * @param db - PowerSync database.
+ * @param episodeId - `episodes.id`.
+ */
+export async function deleteEpisodeByIdPowerSyncDb(
+  db: PowerSyncDatabase,
+  episodeId: Uuid,
+): Promise<DeleteEpisodeByIdResult> {
+  try {
+    const exists = await db.getOptional<{ id: string }>(
+      `SELECT id FROM episodes WHERE id = ?`,
+      [episodeId],
+    );
+    if (!exists) {
+      return { ok: true, data: { didDelete: false } };
+    }
+    await deleteEpisodeChildRowsPowerSyncDb(db, episodeId);
+    await db.execute(`DELETE FROM episodes WHERE id = ?`, [episodeId]);
+    const still = await db.getOptional<{ id: string }>(
+      `SELECT id FROM episodes WHERE id = ?`,
+      [episodeId],
+    );
+    return { ok: true, data: { didDelete: still == null } };
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     return {

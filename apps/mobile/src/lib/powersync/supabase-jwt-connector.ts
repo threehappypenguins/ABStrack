@@ -29,12 +29,16 @@ export function createSupabaseJwtPowerSyncConnector(options: {
 }): PowerSyncBackendConnector {
   return {
     fetchCredentials: async (): Promise<PowerSyncCredentials | null> => {
-      const session = await options.getSession();
-      if (!session?.access_token) return null;
-      return {
-        endpoint: options.powerSyncUrl,
-        token: session.access_token,
-      };
+      try {
+        const session = await options.getSession();
+        if (!session?.access_token) return null;
+        return {
+          endpoint: options.powerSyncUrl,
+          token: session.access_token,
+        };
+      } catch {
+        return null;
+      }
     },
 
     uploadData: async (database: AbstractPowerSyncDatabase): Promise<void> => {
@@ -47,7 +51,15 @@ export function createSupabaseJwtPowerSyncConnector(options: {
           if (!batch.haveMore) return;
           continue;
         }
-        await uploadPowerSyncCrudBatchToSupabase(client, batch);
+        try {
+          await uploadPowerSyncCrudBatchToSupabase(client, batch);
+        } catch (e) {
+          console.warn(
+            '[PowerSync] Upload batch failed (will retry when online):',
+            e instanceof Error ? e.message : e,
+          );
+          return;
+        }
         if (!batch.haveMore) return;
       }
     },

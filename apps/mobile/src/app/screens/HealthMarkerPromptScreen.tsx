@@ -35,7 +35,6 @@ import {
   validatePresetHealthMarkerCustomFields,
 } from '@abstrack/types';
 import {
-  cancelActiveEpisodeById,
   getEpisodeById,
   listEpisodeObservationTimeline,
   listPresetHealthMarkersForPreset,
@@ -45,6 +44,7 @@ import {
 import { announce, COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
 import { clearSymptomPromptSession } from '../../lib/episodes/symptom-prompt-session-store';
 import {
+  cancelActiveEpisodeByIdOfflineFirst,
   completeEpisodePostMarkerStepOfflineFirst,
   endEpisodeIfStillActiveOfflineFirst,
   insertEpisodeHealthMarkerLineOfflineFirst,
@@ -63,7 +63,10 @@ import {
   powerSyncOfflineReplicaReadsEnabled,
   usePowerSyncBridgeState,
 } from '../../lib/powersync/PowerSyncSessionBridge';
-import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
+import {
+  getMobileAuthSessionSafe,
+  getMobileSupabaseClient,
+} from '../../lib/supabase-wiring';
 import { AsyncScreenContainer } from '../components/AsyncScreenContainer';
 import { ScreenShell } from '../components/ScreenShell';
 import { EpisodeFlowSecondaryActionsSection } from '../components/episode-flow/EpisodeFlowSecondaryActionsSection';
@@ -336,21 +339,26 @@ export function HealthMarkerPromptScreen() {
     setEndedSummary(null);
     setObservationTimeline([]);
 
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
+    let sessionUserId: string | null = null;
+    try {
+      const {
+        data: { session },
+      } = await getMobileAuthSessionSafe();
+      sessionUserId = session?.user?.id ?? null;
+    } catch {
+      sessionUserId = null;
+    }
     if (stale()) {
       return;
     }
-    const user = session?.user;
-    if (!user) {
+    if (!sessionUserId) {
       setErrorMessage(
         'You must be signed in to save health marker answers. Try signing in again.',
       );
       setStatus('error');
       return;
     }
-    setUserId(user.id);
+    setUserId(sessionUserId);
 
     const psDb = getPowerSyncDatabaseForOfflineReads();
     let usedPowerSyncReplicaReads = false;
@@ -514,7 +522,9 @@ export function HealthMarkerPromptScreen() {
   ]);
 
   useEffect(() => {
-    void load();
+    void load().catch(() => {
+      /* load() should not reject; absorb to avoid LogBox on RN getSession / transport throws */
+    });
     return () => {
       loadGenerationRef.current += 1;
     };
@@ -768,8 +778,9 @@ export function HealthMarkerPromptScreen() {
             void (async () => {
               setCancelingEpisode(true);
               try {
-                const result = await cancelActiveEpisodeById(
+                const result = await cancelActiveEpisodeByIdOfflineFirst(
                   supabase,
+                  powerSyncDbForWrites,
                   episodeId,
                 );
                 if (!result.ok) {

@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { Pressable, Text, TextInput } from 'react-native';
 import { signOut, updatePassword } from '@abstrack/supabase';
-import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
+import {
+  getMobileAuthSessionSafe,
+  getMobileSupabaseClient,
+} from '../../lib/supabase-wiring';
 import { mapAuthError, validateSignupPassword } from '../auth-helpers';
 import { ScreenShell } from '../components/ScreenShell';
 import { nw } from '../theme/app-nativewind-classes';
@@ -63,7 +66,7 @@ export function UpdatePasswordScreen({
     try {
       const {
         data: { session },
-      } = await mobileSupabase.auth.getSession();
+      } = await getMobileAuthSessionSafe();
 
       if (!session) {
         setErrorMessage(

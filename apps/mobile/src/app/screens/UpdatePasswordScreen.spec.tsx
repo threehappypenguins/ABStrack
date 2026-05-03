@@ -4,9 +4,15 @@ import { act, fireEvent, render } from '@testing-library/react-native';
 import { AppThemeProvider } from '../theme/AppThemeContext';
 import { UpdatePasswordScreen } from './UpdatePasswordScreen';
 
-jest.mock('../../lib/supabase-wiring', () => ({
-  getMobileSupabaseClient: jest.fn(),
-}));
+jest.mock('../../lib/supabase-wiring-core', () => {
+  const actual = jest.requireActual(
+    '../../lib/supabase-wiring-core',
+  ) as typeof import('../../lib/supabase-wiring-core');
+  return {
+    ...actual,
+    getMobileSupabaseClient: jest.fn(),
+  };
+});
 
 /** Flush microtasks + next macrotask so AppThemeProvider’s async theme hydration runs inside `act`. */
 function flushAsyncThemeHydration(): Promise<void> {

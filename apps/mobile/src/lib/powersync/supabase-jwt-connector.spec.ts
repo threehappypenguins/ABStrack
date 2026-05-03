@@ -54,6 +54,17 @@ describe('createSupabaseJwtPowerSyncConnector', () => {
         token: 'jwt-token-example',
       });
     });
+
+    it('returns null when getSession rejects (e.g. offline transport)', async () => {
+      const connector = createSupabaseJwtPowerSyncConnector({
+        powerSyncUrl,
+        getSession: jest
+          .fn()
+          .mockRejectedValue(new TypeError('Network request failed')),
+        getSupabaseClient: () => mockSupabaseClient,
+      });
+      await expect(connector.fetchCredentials?.()).resolves.toBeNull();
+    });
   });
 
   describe('uploadData', () => {
@@ -133,6 +144,29 @@ describe('createSupabaseJwtPowerSyncConnector', () => {
         batch,
       );
       expect(complete).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not complete batch or rethrow when upload fails', async () => {
+      jest
+        .mocked(uploadPowerSyncCrudBatchToSupabase)
+        .mockRejectedValueOnce(new TypeError('Network request failed'));
+      const connector = createSupabaseJwtPowerSyncConnector({
+        powerSyncUrl,
+        getSession: jest.fn(),
+        getSupabaseClient: () => mockSupabaseClient,
+      });
+      const complete = jest.fn().mockResolvedValue(undefined);
+      const batch = {
+        crud: [{ id: '1' }],
+        haveMore: false,
+        complete,
+      };
+      const db = {
+        getCrudBatch: jest.fn().mockResolvedValue(batch),
+      } as unknown as AbstractPowerSyncDatabase;
+
+      await expect(connector.uploadData?.(db)).resolves.toBeUndefined();
+      expect(complete).not.toHaveBeenCalled();
     });
   });
 });

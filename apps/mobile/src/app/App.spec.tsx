@@ -10,14 +10,8 @@ import {
   getMobileSupabaseClient,
 } from '../lib/supabase-wiring';
 
-jest.mock('expo-secure-store', () => ({
-  getItemAsync: jest.fn(async () => null),
-  setItemAsync: jest.fn(async () => undefined),
-  deleteItemAsync: jest.fn(async () => undefined),
-}));
-
-jest.mock('../lib/supabase-wiring', () => {
-  const original = jest.requireActual('../lib/supabase-wiring');
+jest.mock('../lib/supabase-wiring-core', () => {
+  const original = jest.requireActual('../lib/supabase-wiring-core');
   return {
     ...original,
     getMobileSupabaseClient: jest.fn(),
