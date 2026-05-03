@@ -52,6 +52,18 @@ jest.mock('@abstrack/supabase', () => {
   };
 });
 
+jest.mock('../../lib/powersync/PowerSyncSessionBridge', () => ({
+  usePowerSyncBridgeState: jest.fn(() => ({
+    powerSyncUrlConfigured: false,
+    database: null,
+    firstSyncCompleted: false,
+    localSqliteInitialized: false,
+    syncConnecting: false,
+    syncError: null,
+  })),
+  powerSyncOfflineReplicaReadsEnabled: jest.fn(() => false),
+}));
+
 jest.mock('../../lib/supabase-wiring', () => ({
   getMobileSupabaseClient: jest.fn(() => ({
     mockClient: true,

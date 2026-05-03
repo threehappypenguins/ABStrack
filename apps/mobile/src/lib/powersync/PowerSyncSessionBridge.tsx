@@ -16,6 +16,15 @@ import { createSupabaseJwtPowerSyncConnector } from './supabase-jwt-connector';
 import { getMobilePowerSyncUrl } from './powersync-env';
 import { getOrCreateDeviceSqlcipherKey } from './powersync-sqlcipher-key';
 import { setPowerSyncOfflineReadBridgeSnapshot } from './powersync-offline-read-bridge-snapshot';
+import {
+  isPowerSyncReplicaDiagnosticsEnabled,
+  runPowerSyncReplicaDiagnostics,
+} from './powersync-replica-diagnostics';
+import {
+  registerPowerSyncSyncStatusDiagnostics,
+  summarizePowerSyncSyncStatusForLog,
+  wrapPowerSyncBackendConnectorWithFetchDiagnostics,
+} from './powersync-sync-diagnostics';
 import { getSharedPowerSyncDatabase } from './powersync-shared-db';
 
 /**
@@ -165,7 +174,7 @@ export function PowerSyncSessionBridge({
       return;
     }
 
-    const connector = createSupabaseJwtPowerSyncConnector({
+    const baseConnector = createSupabaseJwtPowerSyncConnector({
       powerSyncUrl,
       getSession: async () => {
         const { data } = await mobileSupabase.auth.getSession();
@@ -175,10 +184,30 @@ export function PowerSyncSessionBridge({
         }
         return { access_token: next.access_token };
       },
+      getSupabaseClient: () => getMobileSupabaseClient(),
     });
+    const connector = isPowerSyncReplicaDiagnosticsEnabled()
+      ? wrapPowerSyncBackendConnectorWithFetchDiagnostics(
+          baseConnector,
+          (jsonLine) => {
+            console.info('[PowerSyncReplicaDiag:fetch_credentials]', jsonLine);
+          },
+        )
+      : baseConnector;
 
     const ac = new AbortController();
     let cancelled = false;
+    let reachedAfterWaitForFirstSync = false;
+    let syncCaughtMessage: string | undefined;
+    let firstSyncWatchdogId: ReturnType<typeof setTimeout> | undefined;
+    let disposeSyncStatusDiag: (() => void) | undefined;
+
+    const clearFirstSyncWatchdog = () => {
+      if (firstSyncWatchdogId != null) {
+        clearTimeout(firstSyncWatchdogId);
+        firstSyncWatchdogId = undefined;
+      }
+    };
 
     void (async () => {
       try {
@@ -190,16 +219,107 @@ export function PowerSyncSessionBridge({
         if (!cancelled) {
           setLocalSqliteInitialized(true);
         }
+        if (!cancelled && isPowerSyncReplicaDiagnosticsEnabled()) {
+          void runPowerSyncReplicaDiagnostics(db).then((diag) => {
+            console.info(
+              '[PowerSyncReplicaDiag:after_sqlite_init]',
+              JSON.stringify(diag),
+            );
+          });
+        }
         await db.connect(connector);
+        if (!cancelled && isPowerSyncReplicaDiagnosticsEnabled()) {
+          void runPowerSyncReplicaDiagnostics(db).then((diag) => {
+            console.info(
+              '[PowerSyncReplicaDiag:after_connect]',
+              JSON.stringify(diag),
+            );
+          });
+          firstSyncWatchdogId = setTimeout(() => {
+            if (cancelled || reachedAfterWaitForFirstSync) {
+              return;
+            }
+            console.warn(
+              '[PowerSyncReplicaDiag:watchdog_first_sync_pending_30s]',
+              'waitForFirstSync still pending after 30s. Inspect prior [PowerSyncReplicaDiag:fetch_credentials] and [PowerSyncReplicaDiag:status] lines for downloadError / hasSynced. Verify EXPO_PUBLIC_POWERSYNC_URL, PowerSync JWT/JWKS vs Supabase project, Dashboard sync streams, and network reachability.',
+            );
+            console.info(
+              '[PowerSyncReplicaDiag:watchdog_status]',
+              JSON.stringify(
+                summarizePowerSyncSyncStatusForLog(db.currentStatus),
+              ),
+            );
+            void runPowerSyncReplicaDiagnostics(db).then((diag) => {
+              console.info(
+                '[PowerSyncReplicaDiag:watchdog_counts]',
+                JSON.stringify(diag),
+              );
+            });
+          }, 30_000);
+        }
+        if (!cancelled && isPowerSyncReplicaDiagnosticsEnabled()) {
+          disposeSyncStatusDiag = registerPowerSyncSyncStatusDiagnostics(
+            db,
+            (jsonLine) => {
+              console.info('[PowerSyncReplicaDiag:status]', jsonLine);
+            },
+          );
+          console.info(
+            '[PowerSyncReplicaDiag:status_snapshot_after_connect]',
+            JSON.stringify(
+              summarizePowerSyncSyncStatusForLog(db.currentStatus),
+            ),
+          );
+        }
         await db.waitForFirstSync(ac.signal);
+        reachedAfterWaitForFirstSync = true;
+        clearFirstSyncWatchdog();
         if (!cancelled) {
           setFirstSyncCompleted(true);
         }
+        if (!cancelled && isPowerSyncReplicaDiagnosticsEnabled()) {
+          void runPowerSyncReplicaDiagnostics(db).then((diag) => {
+            console.info(
+              '[PowerSyncReplicaDiag:after_first_sync]',
+              JSON.stringify(diag),
+            );
+          });
+        }
       } catch (e) {
+        clearFirstSyncWatchdog();
         if (!cancelled && !isAbortError(e)) {
+          syncCaughtMessage =
+            e instanceof Error ? e.message : JSON.stringify(e);
           setSyncError(e instanceof Error ? e : new Error(String(e)));
+          if (isPowerSyncReplicaDiagnosticsEnabled()) {
+            console.warn(
+              '[PowerSyncReplicaDiag:sync_caught_error]',
+              syncCaughtMessage,
+            );
+            void runPowerSyncReplicaDiagnostics(db).then((diag) => {
+              console.info(
+                '[PowerSyncReplicaDiag:on_error_counts]',
+                JSON.stringify(diag),
+              );
+            });
+          }
         }
       } finally {
+        clearFirstSyncWatchdog();
+        disposeSyncStatusDiag?.();
+        disposeSyncStatusDiag = undefined;
+        if (!cancelled && isPowerSyncReplicaDiagnosticsEnabled()) {
+          void runPowerSyncReplicaDiagnostics(db).then((diag) => {
+            console.info(
+              '[PowerSyncReplicaDiag:sync_attempt_finished]',
+              JSON.stringify({
+                reachedAfterWaitForFirstSync,
+                syncCaughtMessage: syncCaughtMessage ?? null,
+                diag,
+              }),
+            );
+          });
+        }
         if (!cancelled) {
           setSyncConnecting(false);
         }
@@ -209,6 +329,8 @@ export function PowerSyncSessionBridge({
     return () => {
       cancelled = true;
       ac.abort();
+      disposeSyncStatusDiag?.();
+      disposeSyncStatusDiag = undefined;
       // Sign-out: `disconnectAndClear` runs in the following effect — do not disconnect here.
       if (!sessionRef.current?.access_token) {
         return;

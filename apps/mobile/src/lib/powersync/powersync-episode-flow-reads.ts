@@ -394,6 +394,22 @@ ${lim != null ? `LIMIT ${lim}` : ''}
   return out;
 }
 
+/**
+ * Mobile app scope is **patient and caretaker only** (no practitioner mobile). Rows whose `user_id`
+ * is the signed-in user or a patient linked via non-revoked caretaker grant. Two placeholders,
+ * both bound to the signed-in auth user id.
+ */
+const PHI_ROW_USER_ID_VISIBLE_TO_AUTH_SQL = `
+(
+  user_id = ?
+  OR user_id IN (
+    SELECT ca.patient_user_id FROM caretaker_access ca
+    WHERE ca.caretaker_user_id = ?
+      AND (ca.revoked_at IS NULL OR ca.revoked_at = '')
+  )
+)
+`.trim();
+
 function mapSqliteRowToSymptomPresetRow(
   row: Record<string, unknown>,
 ): SymptomPresetRow | null {
@@ -409,22 +425,22 @@ function mapSqliteRowToSymptomPresetRow(
 }
 
 /**
- * Lists the signed-in user’s symptom presets from the local replica.
+ * Lists symptom presets visible to the signed-in patient or caretaker from the local replica.
  *
  * @param db - Open PowerSync database.
- * @param userId - `symptom_presets.user_id`.
+ * @param authUserId - Signed-in Supabase auth user id.
  */
 export async function listSymptomPresetsForUserFromPowerSyncDb(
   db: PowerSyncDatabase,
-  userId: string,
+  authUserId: string,
 ): Promise<SymptomPresetRow[]> {
   const sql = `
 SELECT id, user_id, name, created_at, updated_at
 FROM symptom_presets
-WHERE user_id = ?
+WHERE ${PHI_ROW_USER_ID_VISIBLE_TO_AUTH_SQL}
 ORDER BY created_at ASC, id ASC
 `.trim();
-  const rows = await db.getAll(sql, [userId]);
+  const rows = await db.getAll(sql, [authUserId, authUserId]);
   const out: SymptomPresetRow[] = [];
   for (const raw of rows) {
     if (!raw || typeof raw !== 'object') {
@@ -455,22 +471,22 @@ function mapSqliteRowToHealthMarkerPresetRow(
 }
 
 /**
- * Lists the signed-in user’s health marker presets from the local replica.
+ * Lists health marker presets visible to the signed-in patient or caretaker from the local replica.
  *
  * @param db - Open PowerSync database.
- * @param userId - `health_marker_presets.user_id`.
+ * @param authUserId - Signed-in Supabase auth user id.
  */
 export async function listHealthMarkerPresetsForUserFromPowerSyncDb(
   db: PowerSyncDatabase,
-  userId: string,
+  authUserId: string,
 ): Promise<HealthMarkerPresetRow[]> {
   const sql = `
 SELECT id, user_id, name, created_at, updated_at
 FROM health_marker_presets
-WHERE user_id = ?
+WHERE ${PHI_ROW_USER_ID_VISIBLE_TO_AUTH_SQL}
 ORDER BY created_at ASC, id ASC
 `.trim();
-  const rows = await db.getAll(sql, [userId]);
+  const rows = await db.getAll(sql, [authUserId, authUserId]);
   const out: HealthMarkerPresetRow[] = [];
   for (const raw of rows) {
     if (!raw || typeof raw !== 'object') {
@@ -486,17 +502,48 @@ ORDER BY created_at ASC, id ASC
   return out;
 }
 
-/**
- * Lists episode templates with nested preset names from the local replica (same ordering as Supabase).
- *
- * @param db - Open PowerSync database.
- * @param userId - `episode_templates.user_id`.
- */
-export async function listEpisodeTemplatesWithPresetsFromPowerSyncDb(
-  db: PowerSyncDatabase,
-  userId: string,
-): Promise<EpisodeTemplateWithPresetsRow[]> {
-  const sql = `
+function mapSqliteRowToEpisodeTemplateWithPresetsRow(
+  raw: Record<string, unknown>,
+): EpisodeTemplateWithPresetsRow | null {
+  const id = requiredText(raw.id);
+  const rowUserId = requiredText(raw.user_id);
+  const name = requiredText(raw.name);
+  const symptom_preset_id = requiredText(raw.symptom_preset_id);
+  const health_marker_preset_id = requiredText(raw.health_marker_preset_id);
+  const created_at = requiredText(raw.created_at);
+  const updated_at = requiredText(raw.updated_at);
+  const symptom_preset_name = requiredText(raw.symptom_preset_name);
+  const health_marker_preset_name = requiredText(raw.health_marker_preset_name);
+  if (
+    !id ||
+    !rowUserId ||
+    !name ||
+    !symptom_preset_id ||
+    !health_marker_preset_id ||
+    !created_at ||
+    !updated_at ||
+    !symptom_preset_name ||
+    !health_marker_preset_name
+  ) {
+    return null;
+  }
+  return {
+    id,
+    user_id: rowUserId,
+    name,
+    symptom_preset_id,
+    health_marker_preset_id,
+    created_at,
+    updated_at,
+    symptom_preset: { id: symptom_preset_id, name: symptom_preset_name },
+    health_marker_preset: {
+      id: health_marker_preset_id,
+      name: health_marker_preset_name,
+    },
+  };
+}
+
+const EPISODE_TEMPLATE_WITH_PRESETS_SQL = `
 SELECT
   et.id,
   et.user_id,
@@ -510,54 +557,80 @@ SELECT
 FROM episode_templates et
 INNER JOIN symptom_presets sp ON sp.id = et.symptom_preset_id
 INNER JOIN health_marker_presets hmp ON hmp.id = et.health_marker_preset_id
-WHERE et.user_id = ?
+`.trim();
+
+/**
+ * Patient/caretaker mobile scope only: own template rows or templates for a patient linked via
+ * active `caretaker_access`. Two placeholders, both the signed-in auth user id.
+ */
+const EPISODE_TEMPLATE_VISIBLE_TO_AUTH_SQL = `
+(
+  et.user_id = ?
+  OR et.user_id IN (
+    SELECT ca.patient_user_id FROM caretaker_access ca
+    WHERE ca.caretaker_user_id = ?
+      AND (ca.revoked_at IS NULL OR ca.revoked_at = '')
+  )
+)
+`.trim();
+
+/**
+ * Lists episode templates with nested preset names from the local replica (same ordering as Supabase).
+ *
+ * @param db - Open PowerSync database.
+ * @param authUserId - Signed-in Supabase auth user id (patient or caretaker); not practitioner—
+ *   the mobile app does not serve practitioners.
+ */
+export async function listEpisodeTemplatesWithPresetsFromPowerSyncDb(
+  db: PowerSyncDatabase,
+  authUserId: string,
+): Promise<EpisodeTemplateWithPresetsRow[]> {
+  const sql = `
+${EPISODE_TEMPLATE_WITH_PRESETS_SQL}
+WHERE ${EPISODE_TEMPLATE_VISIBLE_TO_AUTH_SQL}
 ORDER BY et.created_at ASC, et.id ASC
 `.trim();
-  const rows = await db.getAll(sql, [userId]);
+  const rows = await db.getAll(sql, [authUserId, authUserId]);
   const out: EpisodeTemplateWithPresetsRow[] = [];
   for (const raw of rows) {
     if (!raw || typeof raw !== 'object') {
       continue;
     }
-    const r = raw as Record<string, unknown>;
-    const id = requiredText(r.id);
-    const rowUserId = requiredText(r.user_id);
-    const name = requiredText(r.name);
-    const symptom_preset_id = requiredText(r.symptom_preset_id);
-    const health_marker_preset_id = requiredText(r.health_marker_preset_id);
-    const created_at = requiredText(r.created_at);
-    const updated_at = requiredText(r.updated_at);
-    const symptom_preset_name = requiredText(r.symptom_preset_name);
-    const health_marker_preset_name = requiredText(r.health_marker_preset_name);
-    if (
-      !id ||
-      !rowUserId ||
-      !name ||
-      !symptom_preset_id ||
-      !health_marker_preset_id ||
-      !created_at ||
-      !updated_at ||
-      !symptom_preset_name ||
-      !health_marker_preset_name
-    ) {
-      continue;
+    const mapped = mapSqliteRowToEpisodeTemplateWithPresetsRow(
+      raw as Record<string, unknown>,
+    );
+    if (mapped) {
+      out.push(mapped);
     }
-    out.push({
-      id,
-      user_id: rowUserId,
-      name,
-      symptom_preset_id,
-      health_marker_preset_id,
-      created_at,
-      updated_at,
-      symptom_preset: { id: symptom_preset_id, name: symptom_preset_name },
-      health_marker_preset: {
-        id: health_marker_preset_id,
-        name: health_marker_preset_name,
-      },
-    });
   }
   return out;
+}
+
+/**
+ * Loads one episode template visible to the signed-in user (same rules as
+ * {@link listEpisodeTemplatesWithPresetsFromPowerSyncDb}).
+ *
+ * @param db - Open PowerSync database.
+ * @param templateId - `episode_templates.id`.
+ * @param authUserId - Signed-in Supabase auth user id.
+ */
+export async function getEpisodeTemplateWithPresetsByIdFromPowerSyncDb(
+  db: PowerSyncDatabase,
+  templateId: string,
+  authUserId: string,
+): Promise<EpisodeTemplateWithPresetsRow | null> {
+  const sql = `
+${EPISODE_TEMPLATE_WITH_PRESETS_SQL}
+WHERE et.id = ? AND ${EPISODE_TEMPLATE_VISIBLE_TO_AUTH_SQL}
+LIMIT 1
+`.trim();
+  const raw = await db.getOptional(sql, [templateId, authUserId, authUserId]);
+  if (!raw || typeof raw !== 'object') {
+    return null;
+  }
+  return mapSqliteRowToEpisodeTemplateWithPresetsRow(
+    raw as Record<string, unknown>,
+  );
 }
 
 /**

@@ -82,7 +82,9 @@ export function EpisodeTemplateEditorScreen() {
       replicationReady: powerSyncOfflineReplicaReadsEnabled(psBridge),
     };
     const [tRes, sRes, mRes] = await Promise.all([
-      fetchEpisodeTemplateById(templateId),
+      fetchEpisodeTemplateById(templateId, {
+        powerSyncOfflineRead: offlineRead,
+      }),
       fetchSymptomPresets({ powerSyncOfflineRead: offlineRead }),
       fetchHealthMarkerPresets({ powerSyncOfflineRead: offlineRead }),
     ]);

@@ -11,6 +11,7 @@ export {
 export { getActiveEpisodeRowFromPowerSyncDb } from './episode-powersync-local-read';
 export {
   getEpisodeByIdFromPowerSyncDb,
+  getEpisodeTemplateWithPresetsByIdFromPowerSyncDb,
   listEpisodeHealthMarkersForEpisodeFromPowerSyncDb,
   listEpisodeMediaForEpisodeFromPowerSyncDb,
   listEpisodeSymptomsForEpisodeFromPowerSyncDb,
@@ -29,6 +30,13 @@ export {
   setPowerSyncOfflineReadBridgeSnapshot,
   type PowerSyncOfflineReadContext,
 } from './powersync-offline-read-bridge-snapshot';
+export {
+  formatPowerSyncReplicaDiagnosticsMessage,
+  isPowerSyncReplicaDiagnosticsEnabled,
+  runPowerSyncReplicaDiagnostics,
+  type PowerSyncReplicaDiagnosticsBridgeSlice,
+  type PowerSyncReplicaDiagnosticsResult,
+} from './powersync-replica-diagnostics';
 export { getMobilePowerSyncUrl } from './powersync-env';
 export {
   PowerSyncSessionBridge,

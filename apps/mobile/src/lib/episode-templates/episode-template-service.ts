@@ -16,7 +16,10 @@ import {
   toPresetDataError,
   updateEpisodeTemplate,
 } from '@abstrack/supabase';
-import { listEpisodeTemplatesWithPresetsFromPowerSyncDb } from '../powersync/powersync-episode-flow-reads';
+import {
+  getEpisodeTemplateWithPresetsByIdFromPowerSyncDb,
+  listEpisodeTemplatesWithPresetsFromPowerSyncDb,
+} from '../powersync/powersync-episode-flow-reads';
 import {
   clarifyNetworkErrorWhenReplicaUnavailable,
   isPresetDataNetworkError,
@@ -51,7 +54,8 @@ export async function getCurrentUserId(): Promise<
 
 /**
  * Lists episode templates with nested preset names, falling back to the PowerSync replica when
- * Supabase is unreachable (e.g. airplane mode) and replication has completed at least once.
+ * Supabase fails with a transport-style error or returns an empty list while the replica is
+ * readable (some offline paths yield `{ data: [], error: null }` instead of a network error).
  *
  * @param options.powerSyncOfflineRead - From `usePowerSyncBridgeState()` when calling from UI.
  * @returns {@link PresetDataResult} of template rows or an error.
@@ -61,37 +65,117 @@ export async function fetchEpisodeTemplates(options?: {
 }): Promise<PresetDataResult<EpisodeTemplateWithPresetsRow[]>> {
   const client = getMobileSupabaseClient();
   const remote = await listEpisodeTemplates(client);
-  if (remote.ok) {
+
+  if (remote.ok && remote.data.length > 0) {
     return remote;
   }
-  if (!isPresetDataNetworkError(remote.error)) {
-    return remote;
-  }
+
   const db = resolvePowerSyncDatabaseForOfflineRead(
     options?.powerSyncOfflineRead ?? null,
   );
-  if (!db) {
-    const alt = clarifyNetworkErrorWhenReplicaUnavailable(remote.error);
-    return alt ? { ok: false, error: alt } : remote;
-  }
+
   const auth = await getCurrentUserId();
   if (!auth.ok || auth.data == null) {
     return remote;
   }
-  try {
-    const data = await listEpisodeTemplatesWithPresetsFromPowerSyncDb(
-      db,
-      auth.data,
-    );
-    return { ok: true, data };
-  } catch {
-    return remote;
+  const userId = auth.data;
+
+  if (!remote.ok && isPresetDataNetworkError(remote.error)) {
+    if (!db) {
+      const alt = clarifyNetworkErrorWhenReplicaUnavailable(remote.error);
+      return alt ? { ok: false, error: alt } : remote;
+    }
+    try {
+      const data = await listEpisodeTemplatesWithPresetsFromPowerSyncDb(
+        db,
+        userId,
+      );
+      return { ok: true, data };
+    } catch {
+      const alt = clarifyNetworkErrorWhenReplicaUnavailable(remote.error);
+      return alt ? { ok: false, error: alt } : remote;
+    }
   }
+
+  // Supabase sometimes yields `{ data: [], error: null }` offline; prefer replica rows when present.
+  if (remote.ok && remote.data.length === 0 && db) {
+    try {
+      const localRows = await listEpisodeTemplatesWithPresetsFromPowerSyncDb(
+        db,
+        userId,
+      );
+      if (localRows.length > 0) {
+        return { ok: true, data: localRows };
+      }
+    } catch {
+      /* keep remote */
+    }
+  }
+
+  return remote;
 }
 
-/** Fetches one template by id with nested names. */
-export function fetchEpisodeTemplateById(id: string) {
-  return getEpisodeTemplateById(getMobileSupabaseClient(), id);
+/**
+ * Fetches one template by id with nested names, falling back to PowerSync like {@link fetchEpisodeTemplates}.
+ *
+ * @param id - Template row id.
+ * @param options.powerSyncOfflineRead - From `usePowerSyncBridgeState()` when calling from UI.
+ */
+export async function fetchEpisodeTemplateById(
+  id: string,
+  options?: { powerSyncOfflineRead?: PowerSyncOfflineReadContext | null },
+): Promise<PresetDataResult<EpisodeTemplateWithPresetsRow | null>> {
+  const client = getMobileSupabaseClient();
+  const remote = await getEpisodeTemplateById(client, id);
+
+  if (remote.ok && remote.data != null) {
+    return remote;
+  }
+
+  const db = resolvePowerSyncDatabaseForOfflineRead(
+    options?.powerSyncOfflineRead ?? null,
+  );
+
+  const auth = await getCurrentUserId();
+  if (!auth.ok || auth.data == null) {
+    return remote;
+  }
+  const userId = auth.data;
+
+  if (!remote.ok && isPresetDataNetworkError(remote.error)) {
+    if (!db) {
+      const alt = clarifyNetworkErrorWhenReplicaUnavailable(remote.error);
+      return alt ? { ok: false, error: alt } : remote;
+    }
+    try {
+      const data = await getEpisodeTemplateWithPresetsByIdFromPowerSyncDb(
+        db,
+        id,
+        userId,
+      );
+      return { ok: true, data };
+    } catch {
+      const alt = clarifyNetworkErrorWhenReplicaUnavailable(remote.error);
+      return alt ? { ok: false, error: alt } : remote;
+    }
+  }
+
+  if (remote.ok && remote.data == null && db) {
+    try {
+      const localRow = await getEpisodeTemplateWithPresetsByIdFromPowerSyncDb(
+        db,
+        id,
+        userId,
+      );
+      if (localRow != null) {
+        return { ok: true, data: localRow };
+      }
+    } catch {
+      /* keep remote */
+    }
+  }
+
+  return remote;
 }
 
 /** Creates a template row. */

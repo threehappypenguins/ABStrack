@@ -1,8 +1,11 @@
+import type { AbstrackSupabaseClient } from '@abstrack/supabase';
 import type {
   AbstractPowerSyncDatabase,
   PowerSyncBackendConnector,
   PowerSyncCredentials,
 } from '@powersync/react-native';
+
+import { uploadPowerSyncCrudBatchToSupabase } from './powersync-supabase-upload';
 
 export interface SupabaseSessionLike {
   access_token: string;
@@ -12,16 +15,17 @@ export interface SupabaseSessionLike {
  * Backend connector that authenticates to PowerSync with the current Supabase session JWT.
  * Configure the PowerSync Service to validate Supabase-issued tokens for your project.
  *
- * **Uploads:** ABStrack writes mutating PHI through Supabase REST (RLS) while online; local CRUD on
- * synced tables is not enabled yet. If local writes appear in the upload queue, this connector
- * throws so data is not silently discarded (follow-up: upload batch to Supabase).
+ * **Uploads:** Queued local writes on replicated tables are applied with the same Supabase client
+ * (RLS) via {@link uploadPowerSyncCrudBatchToSupabase}.
  *
  * @param options.powerSyncUrl PowerSync Service WebSocket HTTP endpoint (e.g. from dashboard).
  * @param options.getSession Resolves the active Supabase session or null when signed out.
+ * @param options.getSupabaseClient Supabase JS client used to POST CRUD batches (user JWT).
  */
 export function createSupabaseJwtPowerSyncConnector(options: {
   powerSyncUrl: string;
   getSession: () => Promise<SupabaseSessionLike | null>;
+  getSupabaseClient: () => AbstrackSupabaseClient;
 }): PowerSyncBackendConnector {
   return {
     fetchCredentials: async (): Promise<PowerSyncCredentials | null> => {
@@ -34,15 +38,16 @@ export function createSupabaseJwtPowerSyncConnector(options: {
     },
 
     uploadData: async (database: AbstractPowerSyncDatabase): Promise<void> => {
+      const client = options.getSupabaseClient();
       for (;;) {
         const batch = await database.getCrudBatch();
         if (!batch) return;
-        if (batch.crud.length > 0) {
-          throw new Error(
-            'Local CRUD on synced ABStrack tables is not enabled; use Supabase when online.',
-          );
+        if (batch.crud.length === 0) {
+          await batch.complete();
+          if (!batch.haveMore) return;
+          continue;
         }
-        await batch.complete();
+        await uploadPowerSyncCrudBatchToSupabase(client, batch);
         if (!batch.haveMore) return;
       }
     },

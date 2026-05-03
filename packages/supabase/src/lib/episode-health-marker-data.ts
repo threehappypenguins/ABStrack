@@ -23,7 +23,8 @@ function normalizeCustomField(value: string | null | undefined): string | null {
  *
  * @returns User-facing message, or `null` when valid.
  */
-function validateHealthMarkerNumericPayload(
+/** @public Shared with mobile PowerSync offline inserts (same rules as REST path). */
+export function validateHealthMarkerNumericPayload(
   markerKind: PresetHealthMarkerKind,
   valueNumeric: number | null | undefined,
   systolicNumeric: number | null | undefined,
@@ -246,7 +247,7 @@ export async function insertEpisodeHealthMarkerForLine(
   }
 
   return wrap(async () => {
-    const row: HealthMarkersInsert = createHealthMarkerInsertRow({
+    const row: HealthMarkersInsert = buildHealthMarkerInsertRowForEpisodeLine({
       userId,
       episodeId,
       line,
@@ -271,7 +272,13 @@ export async function insertEpisodeHealthMarkerForLine(
   });
 }
 
-function createHealthMarkerInsertRow(args: {
+/**
+ * Builds the PostgREST / PowerSync insert payload for an episode-bound or standalone health marker
+ * line (same shape as {@link insertEpisodeHealthMarkerForLine} / {@link createStandaloneHealthMarkerForLine}).
+ *
+ * @param args - Normalized custom fields and numeric measurements after validation.
+ */
+export function buildHealthMarkerInsertRowForEpisodeLine(args: {
   userId: Uuid;
   episodeId: Uuid | null;
   line: PresetHealthMarkerRow;
@@ -372,7 +379,7 @@ export async function createStandaloneHealthMarkerForLine(
     };
   }
   return wrap(async () => {
-    const row = createHealthMarkerInsertRow({
+    const row = buildHealthMarkerInsertRowForEpisodeLine({
       userId,
       episodeId: null,
       line,

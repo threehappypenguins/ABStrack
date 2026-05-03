@@ -4,13 +4,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Platform } from 'react-native';
 import type { FoodDiaryEntryRow, MealTag } from '@abstrack/types';
 import type { AbstrackSupabaseClient } from '@abstrack/supabase';
-import {
-  createFoodDiaryEntry,
-  deleteFoodDiaryEntry,
-  listFoodDiaryEntriesForEpisode,
-  updateFoodDiaryEntry,
-} from '@abstrack/supabase';
+import type { PowerSyncDatabase } from '@powersync/react-native';
 import { announce } from '@abstrack/ui/native';
+import {
+  createFoodDiaryEntryOfflineFirst,
+  deleteFoodDiaryEntryOfflineFirst,
+  listFoodDiaryEntriesForEpisodeOfflineFirst,
+  updateFoodDiaryEntryOfflineFirst,
+} from '../../lib/episodes/mobile-offline-first-gateway';
 import {
   currentLocalDate,
   currentLocalTime,
@@ -51,6 +52,8 @@ export type UseHealthMarkerFoodDiaryArgs = {
   episodeId: string;
   userId: string | null;
   supabase: AbstrackSupabaseClient;
+  /** When set (PowerSync replica ready), food diary CRUD uses local SQLite + upload queue. */
+  powerSyncDatabase?: PowerSyncDatabase | null;
   enabled: boolean;
   onLeaveFoodDiary: (decision: 'saved' | 'skipped') => void | Promise<void>;
   onBack: () => void | Promise<void>;
@@ -117,6 +120,7 @@ export function useHealthMarkerFoodDiary({
   episodeId,
   userId,
   supabase,
+  powerSyncDatabase = null,
   enabled,
   onLeaveFoodDiary,
   onBack,
@@ -236,14 +240,18 @@ export function useHealthMarkerFoodDiary({
   const loadFoodEntries = useCallback(async () => {
     setFoodEntriesLoading(true);
     setFoodEntriesError(null);
-    const result = await listFoodDiaryEntriesForEpisode(supabase, episodeId);
+    const result = await listFoodDiaryEntriesForEpisodeOfflineFirst(
+      supabase,
+      powerSyncDatabase,
+      episodeId,
+    );
     setFoodEntriesLoading(false);
     if (!result.ok) {
       setFoodEntriesError(result.error.message);
       return;
     }
     setFoodEntries(result.data);
-  }, [episodeId, supabase]);
+  }, [episodeId, powerSyncDatabase, supabase]);
 
   useEffect(() => {
     if (!enabled) {
@@ -309,18 +317,23 @@ export function useHealthMarkerFoodDiary({
       : loggedAtIso;
     const result =
       editingId == null
-        ? await createFoodDiaryEntry(supabase, {
+        ? await createFoodDiaryEntryOfflineFirst(supabase, powerSyncDatabase, {
             user_id: userId,
             episode_id: episodeId,
             meal_tag: mealTag,
             food_note: foodNote,
             logged_at: createLoggedAtIso,
           })
-        : await updateFoodDiaryEntry(supabase, editingId, {
-            meal_tag: mealTag,
-            food_note: foodNote,
-            logged_at: loggedAtIso,
-          });
+        : await updateFoodDiaryEntryOfflineFirst(
+            supabase,
+            powerSyncDatabase,
+            editingId,
+            {
+              meal_tag: mealTag,
+              food_note: foodNote,
+              logged_at: loggedAtIso,
+            },
+          );
     if (!result.ok) {
       setSavingFoodDiary(false);
       setFoodDiaryFeedback(result.error.message);
@@ -357,6 +370,7 @@ export function useHealthMarkerFoodDiary({
     foodLoggedTime,
     foodNote,
     mealTag,
+    powerSyncDatabase,
     savingFoodDiary,
     supabase,
     userId,
@@ -522,7 +536,11 @@ export function useHealthMarkerFoodDiary({
             void (async () => {
               setDeletingFoodEntryId(entryId);
               setFoodDiaryFeedback(null);
-              const result = await deleteFoodDiaryEntry(supabase, entryId);
+              const result = await deleteFoodDiaryEntryOfflineFirst(
+                supabase,
+                powerSyncDatabase,
+                entryId,
+              );
               setDeletingFoodEntryId(null);
               if (!result.ok) {
                 setFoodDiaryFeedback(result.error.message);
@@ -547,6 +565,7 @@ export function useHealthMarkerFoodDiary({
       editingFoodEntryId,
       loadFoodEntries,
       onNewFoodEntry,
+      powerSyncDatabase,
       savingFoodDiary,
       supabase,
     ],

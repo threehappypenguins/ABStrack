@@ -2,6 +2,7 @@ import React, {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -40,9 +41,7 @@ import {
 import {
   cancelActiveEpisodeById,
   deleteCurrentPassEpisodeSymptomAnswer,
-  endEpisodeIfStillActive,
   getEpisodeById,
-  insertEpisodeSymptomAnswer,
   listEpisodeMediaForEpisode,
   listEpisodeSymptomsForEpisode,
   listPresetSymptomsForPreset,
@@ -57,9 +56,17 @@ import {
   listPresetSymptomsForPresetFromPowerSyncDb,
 } from '../../lib/powersync/powersync-episode-flow-reads';
 import {
+  endEpisodeIfStillActiveOfflineFirst,
+  insertEpisodeSymptomAnswerOfflineFirst,
+} from '../../lib/episodes/mobile-offline-first-gateway';
+import {
   getPowerSyncDatabaseForOfflineReads,
   isPresetDataNetworkError,
 } from '../../lib/powersync/powersync-offline-read-bridge-snapshot';
+import {
+  powerSyncOfflineReplicaReadsEnabled,
+  usePowerSyncBridgeState,
+} from '../../lib/powersync/PowerSyncSessionBridge';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import {
   clearSymptomPromptSession,
@@ -410,6 +417,13 @@ export function SymptomPromptScreen() {
   );
   const [endingEpisode, setEndingEpisode] = useState(false);
 
+  const psBridge = usePowerSyncBridgeState();
+  const powerSyncDbForWrites = useMemo(
+    () =>
+      powerSyncOfflineReplicaReadsEnabled(psBridge) ? psBridge.database : null,
+    [psBridge],
+  );
+
   /**
    * Caches the auth user id on {@link userIdRef}. Called from {@link load} before `ready`, and
    * from {@link executeServerPersist} so writes never depend on a separate mount-only `getUser()`.
@@ -477,12 +491,16 @@ export function SymptomPromptScreen() {
             }
             return;
           }
-          const r = await insertEpisodeSymptomAnswer(supabase, {
-            userId: uid,
-            episodeId: targetEpisodeId,
-            line,
-            answer,
-          });
+          const r = await insertEpisodeSymptomAnswerOfflineFirst(
+            supabase,
+            powerSyncDbForWrites,
+            {
+              userId: uid,
+              episodeId: targetEpisodeId,
+              line,
+              answer,
+            },
+          );
           if (r.ok && (answer.type === 'photo' || answer.type === 'video')) {
             try {
               const upload = await getMobileMediaUploadData(answer);
@@ -603,7 +621,7 @@ export function SymptomPromptScreen() {
         }
       });
     },
-    [resolveSessionUserId],
+    [powerSyncDbForWrites, resolveSessionUserId],
   );
 
   const executeServerDelete = useCallback(
@@ -1223,8 +1241,9 @@ export function SymptomPromptScreen() {
                 ? episodeForEndCta.started_at
                 : nowIso;
             const supabase = getMobileSupabaseClient();
-            const result = await endEpisodeIfStillActive(
+            const result = await endEpisodeIfStillActiveOfflineFirst(
               supabase,
+              powerSyncDbForWrites,
               episodeId,
               endedAt,
               episodeForEndCta.started_at,
@@ -1258,7 +1277,13 @@ export function SymptomPromptScreen() {
         },
       },
     ]);
-  }, [endingEpisode, episodeForEndCta, episodeId, navigation]);
+  }, [
+    endingEpisode,
+    episodeForEndCta,
+    episodeId,
+    navigation,
+    powerSyncDbForWrites,
+  ]);
 
   const advanceToNextStep = () => {
     if (lines.length === 0) {

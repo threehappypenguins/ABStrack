@@ -1,15 +1,33 @@
+import type { AbstrackSupabaseClient } from '@abstrack/supabase';
 import type { AbstractPowerSyncDatabase } from '@powersync/react-native';
 
+import { uploadPowerSyncCrudBatchToSupabase } from './powersync-supabase-upload';
 import { createSupabaseJwtPowerSyncConnector } from './supabase-jwt-connector';
 
+jest.mock('./powersync-supabase-upload', () => ({
+  uploadPowerSyncCrudBatchToSupabase: jest.fn(
+    async (_client: unknown, batch: { complete: () => Promise<void> }) => {
+      await batch.complete();
+    },
+  ),
+}));
+
 const powerSyncUrl = 'https://powersync.example.test';
+const mockSupabaseClient = {
+  mockSupabase: true,
+} as unknown as AbstrackSupabaseClient;
 
 describe('createSupabaseJwtPowerSyncConnector', () => {
+  beforeEach(() => {
+    jest.mocked(uploadPowerSyncCrudBatchToSupabase).mockClear();
+  });
+
   describe('fetchCredentials', () => {
     it('returns null when signed out', async () => {
       const connector = createSupabaseJwtPowerSyncConnector({
         powerSyncUrl,
         getSession: jest.fn().mockResolvedValue(null),
+        getSupabaseClient: () => mockSupabaseClient,
       });
       await expect(connector.fetchCredentials?.()).resolves.toBeNull();
     });
@@ -18,6 +36,7 @@ describe('createSupabaseJwtPowerSyncConnector', () => {
       const connector = createSupabaseJwtPowerSyncConnector({
         powerSyncUrl,
         getSession: jest.fn().mockResolvedValue({ access_token: '' }),
+        getSupabaseClient: () => mockSupabaseClient,
       });
       await expect(connector.fetchCredentials?.()).resolves.toBeNull();
     });
@@ -28,6 +47,7 @@ describe('createSupabaseJwtPowerSyncConnector', () => {
         getSession: jest
           .fn()
           .mockResolvedValue({ access_token: 'jwt-token-example' }),
+        getSupabaseClient: () => mockSupabaseClient,
       });
       await expect(connector.fetchCredentials?.()).resolves.toEqual({
         endpoint: powerSyncUrl,
@@ -67,6 +87,7 @@ describe('createSupabaseJwtPowerSyncConnector', () => {
       const connector = createSupabaseJwtPowerSyncConnector({
         powerSyncUrl,
         getSession: jest.fn(),
+        getSupabaseClient: () => mockSupabaseClient,
       });
       const { db, getCrudBatch } = stubDatabaseSequence([null]);
       await expect(connector.uploadData?.(db)).resolves.toBeUndefined();
@@ -77,6 +98,7 @@ describe('createSupabaseJwtPowerSyncConnector', () => {
       const connector = createSupabaseJwtPowerSyncConnector({
         powerSyncUrl,
         getSession: jest.fn(),
+        getSupabaseClient: () => mockSupabaseClient,
       });
       const { db, completeMocks } = stubDatabaseSequence([
         { crud: [], haveMore: true },
@@ -88,24 +110,29 @@ describe('createSupabaseJwtPowerSyncConnector', () => {
       expect(completeMocks[1]).toHaveBeenCalledTimes(1);
     });
 
-    it('throws when batch.crud is non-empty and does not complete the batch', async () => {
+    it('uploads non-empty batches via Supabase and completes them', async () => {
       const connector = createSupabaseJwtPowerSyncConnector({
         powerSyncUrl,
         getSession: jest.fn(),
+        getSupabaseClient: () => mockSupabaseClient,
       });
       const complete = jest.fn().mockResolvedValue(undefined);
+      const batch = {
+        crud: [{ id: '1' }],
+        haveMore: false,
+        complete,
+      };
       const db = {
-        getCrudBatch: jest.fn().mockResolvedValue({
-          crud: [{ id: '1' }],
-          haveMore: false,
-          complete,
-        }),
+        getCrudBatch: jest.fn().mockResolvedValue(batch),
       } as unknown as AbstractPowerSyncDatabase;
 
-      await expect(connector.uploadData?.(db)).rejects.toThrow(
-        'Local CRUD on synced ABStrack tables is not enabled',
+      await expect(connector.uploadData?.(db)).resolves.toBeUndefined();
+      expect(uploadPowerSyncCrudBatchToSupabase).toHaveBeenCalledTimes(1);
+      expect(uploadPowerSyncCrudBatchToSupabase).toHaveBeenCalledWith(
+        mockSupabaseClient,
+        batch,
       );
-      expect(complete).not.toHaveBeenCalled();
+      expect(complete).toHaveBeenCalledTimes(1);
     });
   });
 });

@@ -150,12 +150,13 @@ function normalizeOptionalIso(value: string | null | undefined): string | null {
   return new Date(utcMs).toISOString();
 }
 
-type FoodDiaryCreateCore = Pick<
+/** Payload validated by {@link validateAndNormalizeFoodDiaryCreateCore}. */
+export type FoodDiaryCreateCorePayload = Pick<
   FoodDiaryEntryInsert,
   'meal_tag' | 'food_note' | 'logged_at'
 >;
 
-type ValidateCreateCoreResult =
+export type ValidateFoodDiaryCreateCoreResult =
   | { ok: true; food_note: string; logged_at: string }
   | { ok: false; error: PresetDataError };
 
@@ -163,9 +164,9 @@ type ValidateCreateCoreResult =
  * Validates meal tag / note / logged_at and returns normalized strings for insert
  * (single pass — avoids re-parsing after validation).
  */
-function validateAndNormalizeFoodDiaryCreateCore(
-  payload: FoodDiaryCreateCore,
-): ValidateCreateCoreResult {
+export function validateAndNormalizeFoodDiaryCreateCore(
+  payload: FoodDiaryCreateCorePayload,
+): ValidateFoodDiaryCreateCoreResult {
   if (!isMealTag(payload.meal_tag)) {
     return {
       ok: false,
@@ -322,11 +323,14 @@ export async function createFoodDiaryEntry(
  * @param entryId - `food_diary_entries.id`.
  * @param patch - Fields to change.
  */
-export async function updateFoodDiaryEntry(
-  client: AbstrackSupabaseClient,
-  entryId: Uuid,
+/**
+ * Validates and normalizes a food diary update patch (same rules as {@link updateFoodDiaryEntry}).
+ *
+ * @param patch - Partial fields to persist.
+ */
+export function normalizeFoodDiaryEntryUpdate(
   patch: FoodDiaryEntryUpdate,
-): Promise<PresetDataResult<FoodDiaryEntryRow>> {
+): PresetDataResult<FoodDiaryEntryUpdate> {
   const normalizedPatch: FoodDiaryEntryUpdate = { ...patch };
   if (normalizedPatch.food_note !== undefined) {
     const next = normalizeFoodNote(normalizedPatch.food_note);
@@ -366,6 +370,19 @@ export async function updateFoodDiaryEntry(
     }
     normalizedPatch.logged_at = loggedAt;
   }
+  return { ok: true, data: normalizedPatch };
+}
+
+export async function updateFoodDiaryEntry(
+  client: AbstrackSupabaseClient,
+  entryId: Uuid,
+  patch: FoodDiaryEntryUpdate,
+): Promise<PresetDataResult<FoodDiaryEntryRow>> {
+  const normalized = normalizeFoodDiaryEntryUpdate(patch);
+  if (!normalized.ok) {
+    return normalized;
+  }
+  const normalizedPatch = normalized.data;
 
   return wrap(async () => {
     const r = await client
