@@ -36,7 +36,7 @@ export type EpisodeStartHomeCtaProps = {
 
 /**
  * Builds the home continue-episode summary from a replicated {@link EpisodeRow} (same rules as
- * Supabase-driven {@link HomeScreen} loading).
+ * {@link HomeScreen} uses when reading the active episode from PowerSync SQLite).
  *
  * @param row - Episode row from SQLite / PowerSync.
  * @returns Resume summary for the CTA, or `null` when there is no resumable path.

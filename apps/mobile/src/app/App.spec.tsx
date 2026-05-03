@@ -88,7 +88,7 @@ describe('mobile auth state sync', () => {
     'This reset link is invalid or expired. Request a new one.';
 
   /**
-   * Supabase registers multiple `onAuthStateChange` listeners (e.g. App + HomeScreen). Tests must
+   * Supabase registers multiple `onAuthStateChange` listeners (e.g. App). Tests must
    * broadcast to every subscriber; a single stored callback misses App when Home overwrites it.
    */
   function multiSubscriberOnAuthStateChange() {

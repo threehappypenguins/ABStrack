@@ -147,26 +147,33 @@ describe('createSupabaseJwtPowerSyncConnector', () => {
     });
 
     it('does not complete batch or rethrow when upload fails', async () => {
-      jest
-        .mocked(uploadPowerSyncCrudBatchToSupabase)
-        .mockRejectedValueOnce(new TypeError('Network request failed'));
-      const connector = createSupabaseJwtPowerSyncConnector({
-        powerSyncUrl,
-        getSession: jest.fn(),
-        getSupabaseClient: () => mockSupabaseClient,
-      });
-      const complete = jest.fn().mockResolvedValue(undefined);
-      const batch = {
-        crud: [{ id: '1' }],
-        haveMore: false,
-        complete,
-      };
-      const db = {
-        getCrudBatch: jest.fn().mockResolvedValue(batch),
-      } as unknown as AbstractPowerSyncDatabase;
+      const warnSpy = jest
+        .spyOn(console, 'warn')
+        .mockImplementation(() => undefined);
+      try {
+        jest
+          .mocked(uploadPowerSyncCrudBatchToSupabase)
+          .mockRejectedValueOnce(new TypeError('Network request failed'));
+        const connector = createSupabaseJwtPowerSyncConnector({
+          powerSyncUrl,
+          getSession: jest.fn(),
+          getSupabaseClient: () => mockSupabaseClient,
+        });
+        const complete = jest.fn().mockResolvedValue(undefined);
+        const batch = {
+          crud: [{ id: '1' }],
+          haveMore: false,
+          complete,
+        };
+        const db = {
+          getCrudBatch: jest.fn().mockResolvedValue(batch),
+        } as unknown as AbstractPowerSyncDatabase;
 
-      await expect(connector.uploadData?.(db)).resolves.toBeUndefined();
-      expect(complete).not.toHaveBeenCalled();
+        await expect(connector.uploadData?.(db)).resolves.toBeUndefined();
+        expect(complete).not.toHaveBeenCalled();
+      } finally {
+        warnSpy.mockRestore();
+      }
     });
   });
 });
