@@ -34,19 +34,25 @@ export type PowerSyncReplicaDiagnosticsResult = {
 /**
  * Whether replica diagnostics run automatically and the Settings debug control is shown.
  *
- * - **`__DEV__`**: enabled in Metro/dev client builds.
- * - **`EXPO_PUBLIC_POWERSYNC_DEBUG=true`**: enable in release/dev-client builds without flipping `__DEV__`
- *   (set in `.env` / EAS env and rebuild).
+ * - **`EXPO_PUBLIC_POWERSYNC_DEBUG=false`**: off everywhere (including Metro), so local `.env` can
+ *   silence `[PowerSyncReplicaDiag:…]` without a production build.
+ * - **`EXPO_PUBLIC_POWERSYNC_DEBUG=true`**: on even when `__DEV__` is false (release / dev client).
+ * - **Unset or any other value**: on in **`__DEV__`** Metro builds only; off in production unless
+ *   explicitly set to `true`.
  *
  * Never logs the SQLCipher key.
  *
  * @returns `true` when diagnostics should be available.
  */
 export function isPowerSyncReplicaDiagnosticsEnabled(): boolean {
-  if (typeof __DEV__ !== 'undefined' && __DEV__) {
+  const flag = process.env.EXPO_PUBLIC_POWERSYNC_DEBUG;
+  if (flag === 'false') {
+    return false;
+  }
+  if (flag === 'true') {
     return true;
   }
-  return process.env.EXPO_PUBLIC_POWERSYNC_DEBUG === 'true';
+  return typeof __DEV__ !== 'undefined' && __DEV__;
 }
 
 /**

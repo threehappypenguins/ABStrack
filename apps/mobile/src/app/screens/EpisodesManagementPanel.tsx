@@ -568,6 +568,8 @@ export function EpisodesManagementPanel({
       {psBridge.database ? (
         <PowerSyncEpisodeReadSubscriptions
           userId={viewerUserId}
+          endedAtOrAfter={endedAtOrAfter}
+          endedAtOrBefore={endedAtOrBefore}
           onSnapshots={setPsMirror}
         />
       ) : null}

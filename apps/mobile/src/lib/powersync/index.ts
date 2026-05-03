@@ -4,6 +4,8 @@ export { createEncryptedAbstrackPowerSyncDatabase } from './encrypted-database';
 export {
   EPISODE_COLUMNS,
   mapSqliteRowToEpisodeRow,
+  POWERSYNC_COMPLETED_ENDED_AT_MAX,
+  POWERSYNC_COMPLETED_ENDED_AT_MIN,
   POWERSYNC_OFFLINE_EPISODE_PAGE_SIZE,
   POWERSYNC_SQL_ACTIVE_EPISODE,
   POWERSYNC_SQL_COMPLETED_EPISODES,

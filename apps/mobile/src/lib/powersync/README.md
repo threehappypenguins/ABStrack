@@ -14,16 +14,20 @@
 
 ## Read paths (this issue)
 
-| Surface                         | PowerSync-backed behavior                                                                 |
-| ------------------------------- | ----------------------------------------------------------------------------------------- |
-| **Home** — continue episode CTA | Falls back to SQLite after the Supabase active-episode **request throws** (e.g. offline). |
-| **Manage → Episodes**           | Falls back to SQLite for active + completed lists when Supabase list calls **error**.     |
+| Surface                         | PowerSync-backed behavior                                                                                                                                     |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Home** — continue episode CTA | [`PowerSyncActiveEpisodeSubscription`](./PowerSyncActiveEpisodeSubscription.tsx) + replicated `episodes` row only (**no** `getActiveEpisodeForUser` on Home). |
+| **Manage → Episodes**           | Falls back to SQLite for active + completed lists when Supabase list calls **error** (replica subscriptions + mirror state).                                  |
 
-SQL lives in [`episode-powersync-read.ts`](./episode-powersync-read.ts). Offline completed history is capped at `POWERSYNC_OFFLINE_EPISODE_PAGE_SIZE` and **does not apply** Manage date filters yet (documented limitation).
+SQL lives in [`episode-powersync-read.ts`](./episode-powersync-read.ts). Offline completed history is capped at `POWERSYNC_OFFLINE_EPISODE_PAGE_SIZE` and respects the same inclusive **`ended_at`** bounds as the network list when Manage passes `endedAtOrAfter` / `endedAtOrBefore` (see [`PowerSyncEpisodeReadSubscriptions`](./PowerSyncEpisodeReadSubscriptions.tsx)).
+
+## Writes (partial, this issue)
+
+Queued local CRUD on replicated tables uploads via [`supabase-jwt-connector.ts`](./supabase-jwt-connector.ts) → [`powersync-supabase-upload.ts`](./powersync-supabase-upload.ts). Episode-flow screens use [`mobile-offline-first-gateway.ts`](../../episodes/mobile-offline-first-gateway.ts) where wired so mutations can hit SQLite + sync when PowerSync is available (not a full audit of every write path).
 
 ## Still network-only (examples)
 
-- Episode **mutations** (cancel, delete, resume flows that write), media **signed URLs**, presets/templates CRUD, health checks, anything not yet querying SQLite.
+- Media **signed URLs**, many preset/template CRUD paths, **dev** health check follow-up queries, and anything not yet listed above.
 
 ## Next issue (#138)
 

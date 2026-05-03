@@ -24,18 +24,28 @@ export type PowerSyncEpisodeReadSnapshots = {
  * after the DB exists keeps the hook order stable (React rules of hooks).
  *
  * @param props.userId - Current auth user id for SQL filters.
+ * @param props.endedAtOrAfter - Optional inclusive lower bound on `ended_at` for completed-episode SQL (Manage day filter).
+ * @param props.endedAtOrBefore - Optional inclusive upper bound on `ended_at` for completed-episode SQL.
  * @param props.onSnapshots - Called when query outputs change.
  * @returns Renders nothing (subscription-only).
  */
 export function PowerSyncEpisodeReadSubscriptions({
   userId,
+  endedAtOrAfter = null,
+  endedAtOrBefore = null,
   onSnapshots,
 }: {
   userId: string | null;
+  endedAtOrAfter?: string | null;
+  endedAtOrBefore?: string | null;
   onSnapshots: (snapshots: PowerSyncEpisodeReadSnapshots) => void;
 }) {
   const psActive = usePowerSyncActiveEpisodeQuery(userId);
-  const psCompleted = usePowerSyncCompletedEpisodesQuery(userId);
+  const psCompleted = usePowerSyncCompletedEpisodesQuery(
+    userId,
+    endedAtOrAfter,
+    endedAtOrBefore,
+  );
 
   useEffect(() => {
     onSnapshots({

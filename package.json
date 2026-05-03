@@ -34,7 +34,7 @@
     "build": "nx run-many -t build -p web,practitioner && pnpm mobile:typecheck && pnpm supabase:typecheck",
     "typecheck": "nx typecheck mobile",
     "validate": "nx run-many -t lint test",
-    "android": "cd apps/mobile && pnpm expo run:android 2>&1 | grep -v 'Trying to close for the second time'",
+    "android": "node tools/scripts/run-expo-android.mjs",
     "ios": "cd apps/mobile && pnpm expo run:ios"
   },
   "private": true,

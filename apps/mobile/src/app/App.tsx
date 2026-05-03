@@ -237,29 +237,34 @@ function AppBootstrap() {
     };
 
     const bootstrap = async () => {
-      const [{ data }, initialUrl] = await Promise.all([
-        getMobileAuthSessionSafe(),
-        Linking.getInitialURL(),
-      ]);
+      try {
+        const [{ data }, initialUrl] = await Promise.all([
+          getMobileAuthSessionSafe(),
+          Linking.getInitialURL(),
+        ]);
 
-      if (mounted) {
-        setSession(data.session ?? null);
-      }
+        if (mounted) {
+          setSession(data.session ?? null);
+        }
 
-      if (initialUrl) {
-        await handleRecoveryLink(initialUrl);
-      }
+        if (initialUrl) {
+          await handleRecoveryLink(initialUrl);
+        }
 
-      await enforceReauthIfNeeded();
-
-      if (mounted) {
-        setInitializing(false);
+        await enforceReauthIfNeeded();
+      } catch (error) {
+        /* Hermes LogBox: do not rethrow; still leave bootstrap so the UI is not stuck loading. */
+        if (__DEV__) {
+          console.warn('[AppBootstrap] Startup failed', error);
+        }
+      } finally {
+        if (mounted) {
+          setInitializing(false);
+        }
       }
     };
 
-    void bootstrap().catch(() => {
-      /* Hermes LogBox: bootstrap must never surface an unhandled rejection */
-    });
+    void bootstrap();
 
     const urlSubscription = Linking.addEventListener('url', ({ url }) => {
       void handleRecoveryLink(url).catch(() => {
@@ -275,7 +280,7 @@ function AppBootstrap() {
           const refresh = mobileSupabase.auth.refreshSession;
           if (typeof refresh === 'function') {
             void refresh.call(mobileSupabase.auth).catch(() => {
-              /* Offline / transient; native client uses autoRefreshToken: false */
+              /* Offline / transient; best-effort wake refresh alongside SDK auto-refresh */
             });
           }
         }
