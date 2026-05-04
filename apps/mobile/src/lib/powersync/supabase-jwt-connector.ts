@@ -22,7 +22,8 @@ export interface SupabaseSessionLike {
  * other 4xx / PostgREST client errors) call `batch.complete()` only for **single-op** batches so a
  * bad row does not block forever (see {@link isPowerSyncUploadPermanentServerFailure}). For
  * **multi-op** batches, completing after a mid-batch failure would dequeue operations that were never
- * sent to Supabase, so we skip `complete()` and leave the batch pending to retry.
+ * sent to Supabase, so we skip `complete()` and **return** (same head batch would otherwise be
+ * returned again immediately and spin). The next `uploadData` run retries after backoff / reconnect.
  *
  * @param options.powerSyncUrl PowerSync Service WebSocket HTTP endpoint (e.g. from dashboard).
  * @param options.getSession Resolves the active Supabase session or null when signed out.
@@ -64,21 +65,22 @@ export function createSupabaseJwtPowerSyncConnector(options: {
             const multiOp = batch.crud.length > 1;
             console.warn(
               multiOp
-                ? '[PowerSync] Permanent upload failure in a multi-op batch; not completing so queued tail ops are not dropped (batch will retry):'
+                ? '[PowerSync] Permanent upload failure in a multi-op batch; not completing so queued tail ops are not dropped (yielding until next upload run):'
                 : '[PowerSync] Upload batch rejected by server (dequeuing; local row may diverge until next sync):',
               e instanceof Error ? e.message : e,
             );
-            if (!multiOp) {
-              try {
-                await batch.complete();
-              } catch (completeErr) {
-                console.warn(
-                  '[PowerSync] batch.complete after permanent upload failure:',
-                  completeErr instanceof Error
-                    ? completeErr.message
-                    : completeErr,
-                );
-              }
+            if (multiOp) {
+              return;
+            }
+            try {
+              await batch.complete();
+            } catch (completeErr) {
+              console.warn(
+                '[PowerSync] batch.complete after permanent upload failure:',
+                completeErr instanceof Error
+                  ? completeErr.message
+                  : completeErr,
+              );
             }
             if (!batch.haveMore) {
               return;

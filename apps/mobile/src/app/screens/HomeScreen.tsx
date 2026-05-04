@@ -198,21 +198,29 @@ export function HomeScreen({
   }, [loadNetworkResumeEpisode, psBridge.powerSyncUrlConfigured]);
 
   /**
-   * Episode CTA loading: with PowerSync configured, until local SQLite `init` completes; without
-   * PowerSync URL, while the optional online resume fetch runs.
+   * Episode CTA loading: with PowerSync configured, until local SQLite `init` completes **and**
+   * the first sync attempt has finished (`syncConnecting` false) or `firstSyncCompleted` is
+   * true — otherwise the replica can still be empty right after `init()` while the server already
+   * has an active episode (fresh install / after `disconnectAndClear`). Without PowerSync URL,
+   * while the optional online resume fetch runs.
    */
   const activeEpisodeLoading = useMemo(() => {
     if (!userId) {
       return false;
     }
     if (psBridge.powerSyncUrlConfigured) {
-      return !psBridge.localSqliteInitialized;
+      if (!psBridge.localSqliteInitialized) {
+        return true;
+      }
+      return !psBridge.firstSyncCompleted && psBridge.syncConnecting;
     }
     return networkResumeLoading;
   }, [
     userId,
     psBridge.powerSyncUrlConfigured,
+    psBridge.firstSyncCompleted,
     psBridge.localSqliteInitialized,
+    psBridge.syncConnecting,
     networkResumeLoading,
   ]);
 

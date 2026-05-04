@@ -1,13 +1,17 @@
 import NetInfo from '@react-native-community/netinfo';
 import { useEffect, useState } from 'react';
 
-import { fetchMobileDeviceIsConnected } from './mobile-device-netinfo';
+import {
+  fetchMobileDeviceIsConnected,
+  mapNetInfoStateToAppOnline,
+} from './mobile-device-netinfo';
 
 /**
  * Subscribes to {@link NetInfo} so UI can tell **device offline** (no radio / no path) from
  * **online-but-sync-errors** (PowerSync upload/download failures).
  *
- * @returns `isConnected` is `null` until the first snapshot, then `true` / `false` from NetInfo.
+ * @returns `isConnected` is `null` until the first snapshot, then `true` / `false` using the same
+ * rules as {@link mapNetInfoStateToAppOnline} (not raw NetInfo `isConnected` alone).
  */
 export function useMobileDeviceNetworkConnected(): {
   isConnected: boolean | null;
@@ -32,7 +36,7 @@ export function useMobileDeviceNetworkConnected(): {
       });
 
     const unsubscribe = NetInfo.addEventListener((state) => {
-      apply(typeof state.isConnected === 'boolean' ? state.isConnected : null);
+      apply(mapNetInfoStateToAppOnline(state));
     });
 
     return () => {

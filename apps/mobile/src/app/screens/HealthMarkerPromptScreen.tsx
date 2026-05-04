@@ -369,10 +369,11 @@ export function HealthMarkerPromptScreen() {
     }
     let episodeRow =
       episodeRemote.ok && episodeRemote.data ? episodeRemote.data : null;
+    // Do not read SQLite on `ok` + null: authoritative not-found / RLS; replica could be stale online.
     const shouldTryEpisodeReplica =
       Boolean(psDb) &&
-      ((!episodeRemote.ok && isPresetDataNetworkError(episodeRemote.error)) ||
-        (episodeRemote.ok && !episodeRemote.data));
+      !episodeRemote.ok &&
+      isPresetDataNetworkError(episodeRemote.error);
     if (!episodeRow && shouldTryEpisodeReplica && psDb) {
       const localEp = await getEpisodeByIdFromPowerSyncDb(psDb, episodeId);
       if (localEp) {

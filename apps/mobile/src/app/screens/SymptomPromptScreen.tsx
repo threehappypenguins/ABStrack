@@ -798,10 +798,11 @@ export function SymptomPromptScreen() {
         return;
       }
       let episodeRow = epRemote.ok && epRemote.data ? epRemote.data : null;
+      // Do not read SQLite on `ok` + null: that is authoritative (deleted / RLS); replica could be stale online.
       const shouldTryEpisodeReplica =
         Boolean(psDb) &&
-        ((!epRemote.ok && isPresetDataNetworkError(epRemote.error)) ||
-          (epRemote.ok && !epRemote.data));
+        !epRemote.ok &&
+        isPresetDataNetworkError(epRemote.error);
       if (!episodeRow && shouldTryEpisodeReplica && psDb) {
         episodeRow = await getEpisodeByIdFromPowerSyncDb(psDb, episodeId);
       }
