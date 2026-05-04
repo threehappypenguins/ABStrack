@@ -712,7 +712,7 @@ describe('mobile auth state sync', () => {
     addEventListenerSpy.mockRestore();
   });
 
-  test('skips re-auth signOut and refreshSession when foregrounding offline', async () => {
+  test('uses local signOut for re-auth when foregrounding offline and skips refreshSession', async () => {
     let appStateListener: ((state: string) => void) | null = null;
     const addEventListenerSpy = jest
       .spyOn(AppState, 'addEventListener')
@@ -803,7 +803,10 @@ describe('mobile auth state sync', () => {
       expect(netFetchCount).toBeGreaterThanOrEqual(2);
     });
 
-    expect(signOut).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(signOut).toHaveBeenCalledTimes(1);
+    });
+    expect(signOut).toHaveBeenCalledWith({ scope: 'local' });
 
     await act(async () => {
       await new Promise<void>((resolve) => setTimeout(resolve, 500));

@@ -132,7 +132,11 @@ function AppBootstrap() {
       authRouteRef.current === 'UpdatePassword';
 
     const enforceReauthIfNeeded = async (options?: {
-      /** When false, session is read locally but server `signOut` is skipped (offline / unknown radio). */
+      /**
+       * When false (offline / unknown reachability), still enforce re-auth privacy with
+       * `signOut({ scope: 'local' })` so the session is cleared on-device without a network round
+       * trip. When true, uses the default sign-out (server + local) after a confident online read.
+       */
       allowServerSignOut?: boolean;
     }) => {
       const allowServerSignOut = options?.allowServerSignOut ?? true;
@@ -168,15 +172,15 @@ function AppBootstrap() {
           return;
         }
 
-        if (!allowServerSignOut) {
-          return;
-        }
-
-        const { error: signOutError } = await mobileSupabase.auth.signOut();
+        const { error: signOutError } = allowServerSignOut
+          ? await mobileSupabase.auth.signOut()
+          : await mobileSupabase.auth.signOut({ scope: 'local' });
 
         if (signOutError) {
           console.warn(
-            'Unable to sign out while enforcing re-auth preference.',
+            allowServerSignOut
+              ? 'Unable to sign out while enforcing re-auth preference.'
+              : 'Unable to sign out locally while enforcing re-auth preference.',
             signOutError,
           );
         }
