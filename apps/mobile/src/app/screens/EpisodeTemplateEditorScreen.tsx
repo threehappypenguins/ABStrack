@@ -140,6 +140,22 @@ export function EpisodeTemplateEditorScreen() {
     void loadRef.current();
   }, [templateId]);
 
+  /**
+   * Cold start / offline: the initial load can fail before
+   * {@link powerSyncOfflineReplicaReadsEnabled} is true. Do not tie the primary load effect to
+   * bridge state (that would reset the form whenever PowerSync flips while the screen is already
+   * `ready`). Only auto-retry from **error** once the replica is readable.
+   */
+  useEffect(() => {
+    if (status !== 'error') {
+      return;
+    }
+    if (!replicaMirrorReads) {
+      return;
+    }
+    void loadRef.current();
+  }, [replicaMirrorReads, status]);
+
   const isDirty = useMemo(() => {
     if (!row) {
       return false;

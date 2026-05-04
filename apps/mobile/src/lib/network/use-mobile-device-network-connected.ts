@@ -16,8 +16,9 @@ import {
  * {@link NetInfo.fetch} cannot overwrite fresher connectivity. Initial callbacks that are still
  * unknown (`null`) do not block fetch, so the hook is not stuck at `null` until the next transition.
  *
- * @returns `isConnected` is `null` until the first snapshot, then `true` / `false` using the same
- * rules as {@link mapNetInfoStateToAppOnline} (not raw NetInfo `isConnected` alone).
+ * @returns `isConnected` is `null` until the first **definite** online/offline value (listener or
+ * fetch). Transient listener snapshots that map to `null` do not clear an established
+ * `true` / `false` (see {@link mapNetInfoStateToAppOnline}).
  */
 export function useMobileDeviceNetworkConnected(): {
   isConnected: boolean | null;
@@ -34,9 +35,23 @@ export function useMobileDeviceNetworkConnected(): {
      */
     let listenerResolvedConnectivityCount = 0;
 
+    /**
+     * Once a definite `true`/`false` was applied (from listener or fetch), ignore later `null`
+     * snapshots so NetInfo “unknown” blips do not erase the last known reachability.
+     */
+    let definiteConnectivityEstablished = false;
+
     const apply = (connected: boolean | null) => {
-      if (active) {
+      if (!active) {
+        return;
+      }
+      if (connected !== null) {
+        definiteConnectivityEstablished = true;
         setIsConnected(connected);
+        return;
+      }
+      if (!definiteConnectivityEstablished) {
+        setIsConnected(null);
       }
     };
 

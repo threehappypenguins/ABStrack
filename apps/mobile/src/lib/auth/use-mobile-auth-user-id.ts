@@ -11,6 +11,9 @@ import {
  * Uses {@link getMobileAuthSessionSafe} (not `getUser()`) so Manage and other tabs still resolve the user id
  * offline; `getUser()` validates with the server and often fails with “Network request failed”.
  *
+ * Overlapping refresh calls (e.g. rapid `onAuthStateChange` events) are sequenced so an older
+ * `getSession` / `getUser` result cannot overwrite a newer sign-out or account switch.
+ *
  * @returns Current user id, or `null` when signed out / unresolved.
  */
 export function useMobileAuthUserId(): string | null {
@@ -18,16 +21,26 @@ export function useMobileAuthUserId(): string | null {
 
   useEffect(() => {
     const client = getMobileSupabaseClient();
+    let cancelled = false;
+    let refreshGeneration = 0;
+
+    const applyIfCurrent = (generation: number, nextUserId: string | null) => {
+      if (cancelled || generation !== refreshGeneration) {
+        return;
+      }
+      setUserId(nextUserId);
+    };
 
     const refresh = () => {
       const auth = client.auth;
+      const generation = ++refreshGeneration;
       if (typeof auth.getSession === 'function') {
         void getMobileAuthSessionSafe()
           .then(({ data }) => {
-            setUserId(data.session?.user?.id ?? null);
+            applyIfCurrent(generation, data.session?.user?.id ?? null);
           })
           .catch(() => {
-            setUserId(null);
+            applyIfCurrent(generation, null);
           });
         return;
       }
@@ -35,10 +48,10 @@ export function useMobileAuthUserId(): string | null {
         void auth
           .getUser()
           .then(({ data }) => {
-            setUserId(data.user?.id ?? null);
+            applyIfCurrent(generation, data.user?.id ?? null);
           })
           .catch(() => {
-            setUserId(null);
+            applyIfCurrent(generation, null);
           });
       }
     };
@@ -46,7 +59,9 @@ export function useMobileAuthUserId(): string | null {
     refresh();
 
     if (typeof client.auth.onAuthStateChange !== 'function') {
-      return;
+      return () => {
+        cancelled = true;
+      };
     }
 
     const {
@@ -56,6 +71,7 @@ export function useMobileAuthUserId(): string | null {
     });
 
     return () => {
+      cancelled = true;
       subscription.unsubscribe();
     };
   }, []);

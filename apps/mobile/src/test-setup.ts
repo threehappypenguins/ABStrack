@@ -148,7 +148,7 @@ jest.mock('./lib/powersync/PowerSyncSessionBridge', () => {
     }) => Boolean(bridge.database && bridge.localSqliteInitialized),
     usePowerSyncBridgeState: () => mockBridgeState,
     usePowerSyncManualResync: () => ({
-      requestManualResync: jest.fn().mockResolvedValue(undefined),
+      requestManualResync: jest.fn().mockResolvedValue(true),
       manualResyncBusy: false,
     }),
   };

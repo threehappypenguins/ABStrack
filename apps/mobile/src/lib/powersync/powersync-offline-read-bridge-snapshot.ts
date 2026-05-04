@@ -2,22 +2,10 @@ import type { PowerSyncDatabase } from '@powersync/react-native';
 
 import { PresetDataError } from '@abstrack/supabase';
 
+import { messageLooksLikeFetchTransportFailure } from '../network/fetch-transport-failure-heuristic';
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
-}
-
-/** Mirrors `@abstrack/supabase` transport heuristics; RN often yields `PresetDataError` code `unknown` with message `Network request failed`. */
-function messageLooksLikeFetchTransportFailure(message: string): boolean {
-  const m = message.toLowerCase();
-  return (
-    m.includes('failed to fetch') ||
-    m.includes('networkerror when attempting') ||
-    m.includes('load failed') ||
-    m.includes('network request failed') ||
-    m.includes('the network connection was lost') ||
-    m.includes('internet connection appears to be offline') ||
-    m.includes('could not connect to the server')
-  );
 }
 
 function readErrorProbe(error: unknown): { code?: string; message: string } {

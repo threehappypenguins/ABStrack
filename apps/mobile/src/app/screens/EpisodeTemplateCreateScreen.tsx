@@ -50,7 +50,7 @@ export function EpisodeTemplateCreateScreen() {
   const psBridge = usePowerSyncBridgeState();
   const replicaMirrorReads = powerSyncOfflineReplicaReadsEnabled(psBridge);
 
-  /** Latest offline-read knobs; preset list load runs once on mount (see effect deps). */
+  /** Latest offline-read knobs for fetches without re-subscribing when PowerSync opens. */
   const offlineReadRef = useRef({
     database: psBridge.database,
     replicationReady: replicaMirrorReads,
@@ -59,6 +59,12 @@ export function EpisodeTemplateCreateScreen() {
     database: psBridge.database,
     replicationReady: replicaMirrorReads,
   };
+
+  /**
+   * One automatic retry when lists failed but the mirror later becomes readable; reset when the
+   * error clears or the replica drops so another offline→online cycle can retry again.
+   */
+  const presetListsAutoRetryConsumedRef = useRef(false);
 
   const [name, setName] = useState('');
   const [symptomId, setSymptomId] = useState<string | null>(null);
@@ -79,50 +85,83 @@ export function EpisodeTemplateCreateScreen() {
     markerId: null,
   });
 
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      setListsLoading(true);
-      setListsError(null);
-      const offlineRead = offlineReadRef.current;
-      const [sRes, mRes] = await Promise.all([
-        fetchSymptomPresets({ powerSyncOfflineRead: offlineRead }),
-        fetchHealthMarkerPresets({ powerSyncOfflineRead: offlineRead }),
-      ]);
-      if (cancelled) {
-        return;
-      }
-      if (!sRes.ok) {
-        setListsError(sRes.error.message);
-        setListsLoading(false);
-        return;
-      }
-      if (!mRes.ok) {
-        setListsError(mRes.error.message);
-        setListsLoading(false);
-        return;
-      }
-      const sList = sRes.data.map((r) => ({ id: r.id, name: r.name }));
-      const mList = mRes.data.map((r) => ({ id: r.id, name: r.name }));
-      const initSymptom = sList.length === 1 ? sList[0].id : null;
-      const initMarker = mList.length === 1 ? mList[0].id : null;
-      setSymptoms(sList);
-      setMarkers(mList);
-      setSymptomId(initSymptom);
-      setMarkerId(initMarker);
-      setFormBaseline({
-        name: '',
-        symptomId: initSymptom,
-        markerId: initMarker,
-      });
+  const loadPresetLists = useCallback(async (signal?: AbortSignal) => {
+    setListsLoading(true);
+    setListsError(null);
+    const offlineRead = offlineReadRef.current;
+    const [sRes, mRes] = await Promise.all([
+      fetchSymptomPresets({ powerSyncOfflineRead: offlineRead }),
+      fetchHealthMarkerPresets({ powerSyncOfflineRead: offlineRead }),
+    ]);
+    if (signal?.aborted) {
+      return;
+    }
+    if (!sRes.ok) {
+      setListsError(sRes.error.message);
       setListsLoading(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // Run only on mount: rerunning this initialization after PowerSync becomes ready can
-    // overwrite in-progress user selections and reset the dirty-state baseline.
+      return;
+    }
+    if (!mRes.ok) {
+      setListsError(mRes.error.message);
+      setListsLoading(false);
+      return;
+    }
+    const sList = sRes.data.map((r) => ({ id: r.id, name: r.name }));
+    const mList = mRes.data.map((r) => ({ id: r.id, name: r.name }));
+    const initSymptom = sList.length === 1 ? sList[0].id : null;
+    const initMarker = mList.length === 1 ? mList[0].id : null;
+    setSymptoms(sList);
+    setMarkers(mList);
+    setSymptomId(initSymptom);
+    setMarkerId(initMarker);
+    setFormBaseline({
+      name: '',
+      symptomId: initSymptom,
+      markerId: initMarker,
+    });
+    setListsLoading(false);
   }, []);
+
+  const loadPresetListsRef = useRef(loadPresetLists);
+  loadPresetListsRef.current = loadPresetLists;
+
+  useEffect(() => {
+    presetListsAutoRetryConsumedRef.current = false;
+    const ac = new AbortController();
+    void loadPresetListsRef.current(ac.signal);
+    return () => {
+      ac.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!listsError) {
+      presetListsAutoRetryConsumedRef.current = false;
+    }
+  }, [listsError]);
+
+  useEffect(() => {
+    if (!replicaMirrorReads) {
+      presetListsAutoRetryConsumedRef.current = false;
+    }
+  }, [replicaMirrorReads]);
+
+  /**
+   * Cold start: first fetch can fail before the replica is mirror-readable. Do not tie the mount
+   * load to `powerSyncOfflineReplicaReadsEnabled` (that would reset lists and baseline whenever
+   * PowerSync flips while the user is editing). When we still show a list error and the mirror is
+   * ready, retry once per error/replica cycle (`presetListsAutoRetryConsumedRef`).
+   */
+  useEffect(() => {
+    if (!listsError || !replicaMirrorReads || listsLoading) {
+      return;
+    }
+    if (presetListsAutoRetryConsumedRef.current) {
+      return;
+    }
+    presetListsAutoRetryConsumedRef.current = true;
+    void loadPresetListsRef.current();
+  }, [replicaMirrorReads, listsError, listsLoading]);
 
   const nameOk = useMemo(() => validateEpisodeTemplateName(name).ok, [name]);
 

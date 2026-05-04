@@ -1,3 +1,5 @@
+import { messageLooksLikeFetchTransportFailure } from './fetch-transport-failure-heuristic';
+
 /**
  * Maps transport-layer failures to copy suitable for async screen error panels.
  *
@@ -12,14 +14,7 @@ export function humanizeUnexpectedScreenError(
   if (!(caught instanceof Error)) {
     return fallback;
   }
-  const m = caught.message.toLowerCase();
-  if (
-    m.includes('network request failed') ||
-    m.includes('failed to fetch') ||
-    m.includes('networkerror when attempting') ||
-    m.includes('the internet connection appears to be offline') ||
-    m.includes('could not connect to the server')
-  ) {
+  if (messageLooksLikeFetchTransportFailure(caught.message)) {
     return fallback;
   }
   return caught.message.trim().length > 0 ? caught.message : fallback;

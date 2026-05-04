@@ -100,4 +100,65 @@ describe('useMobileDeviceNetworkConnected', () => {
       expect(getByTestId('net').props.children).toBe('true');
     });
   });
+
+  it('does not replace a resolved listener value with a later unknown snapshot', async () => {
+    let netCallback: ((state: NetInfoState) => void) | undefined;
+    jest
+      .mocked(NetInfo.fetch)
+      .mockResolvedValue(
+        wifiOnline() as Awaited<ReturnType<typeof NetInfo.fetch>>,
+      );
+    jest.mocked(NetInfo.addEventListener).mockImplementation((callback) => {
+      netCallback = callback;
+      callback(wifiOnline());
+      return jest.fn();
+    });
+
+    const { getByTestId } = render(<Host />);
+    await waitFor(() => {
+      expect(getByTestId('net').props.children).toBe('true');
+    });
+
+    if (netCallback === undefined) {
+      throw new Error('Expected NetInfo.addEventListener callback');
+    }
+    netCallback({
+      type: 'unknown',
+      isConnected: null,
+      isInternetReachable: null,
+      details: null,
+    } as NetInfoState);
+
+    expect(getByTestId('net').props.children).toBe('true');
+  });
+
+  it('does not replace fetch-established connectivity with a later unknown listener snapshot', async () => {
+    let netCallback: ((state: NetInfoState) => void) | undefined;
+    jest
+      .mocked(NetInfo.fetch)
+      .mockResolvedValue(
+        wifiOnline() as Awaited<ReturnType<typeof NetInfo.fetch>>,
+      );
+    jest.mocked(NetInfo.addEventListener).mockImplementation((callback) => {
+      netCallback = callback;
+      return jest.fn();
+    });
+
+    const { getByTestId } = render(<Host />);
+    await waitFor(() => {
+      expect(getByTestId('net').props.children).toBe('true');
+    });
+
+    if (netCallback === undefined) {
+      throw new Error('Expected NetInfo.addEventListener callback');
+    }
+    netCallback({
+      type: 'unknown',
+      isConnected: null,
+      isInternetReachable: null,
+      details: null,
+    } as NetInfoState);
+
+    expect(getByTestId('net').props.children).toBe('true');
+  });
 });

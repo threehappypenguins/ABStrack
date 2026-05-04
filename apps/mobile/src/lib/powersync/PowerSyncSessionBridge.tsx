@@ -110,16 +110,17 @@ export type PowerSyncManualResyncContextValue = {
    * {@link PowerSyncBridgeState.syncError} after a successful `connect`, and awaits first sync
    * again when needed, with a **60s** cap on `waitForFirstSync` so the UI cannot hang indefinitely
    * offline. Safe to call when the replica is disabled or the DB is not open — it no-ops.
+   *
+   * @returns `true` when `waitForFirstSync` completed on this attempt; `false` when skipped, the
+   * session was lost mid-flight, first sync wait timed out, or an error was recorded.
    */
-  requestManualResync: () => Promise<void>;
+  requestManualResync: () => Promise<boolean>;
   /** True while {@link requestManualResync} is running. */
   manualResyncBusy: boolean;
 };
 
 const defaultManualResync: PowerSyncManualResyncContextValue = {
-  requestManualResync: async () => {
-    void 0;
-  },
+  requestManualResync: async () => false,
   manualResyncBusy: false,
 };
 
@@ -306,20 +307,21 @@ export function PowerSyncSessionBridge({
   const manualResyncBusyRef = useRef(false);
   const [manualResyncBusy, setManualResyncBusy] = useState(false);
 
-  const requestManualResync = useCallback(async () => {
+  const requestManualResync = useCallback(async (): Promise<boolean> => {
     if (!db || !hasAuthSession || !urlConfigured) {
-      return;
+      return false;
     }
     if (manualResyncBusyRef.current) {
-      return;
+      return false;
     }
     manualResyncBusyRef.current = true;
     setManualResyncBusy(true);
+    let outcome = false;
     try {
       const connector = buildConnector();
       await db.disconnect();
       if (!sessionRef.current?.access_token) {
-        return;
+        return false;
       }
       await db.connect(connector);
       setSyncError(null);
@@ -332,6 +334,7 @@ export function PowerSyncSessionBridge({
         }, MANUAL_RESYNC_WAIT_FOR_FIRST_SYNC_MS);
         try {
           await db.waitForFirstSync(ac.signal);
+          outcome = true;
           setFirstSyncCompleted(true);
           recordFirstSyncLanded();
         } finally {
@@ -359,6 +362,7 @@ export function PowerSyncSessionBridge({
       manualResyncBusyRef.current = false;
       setManualResyncBusy(false);
     }
+    return outcome;
   }, [
     buildConnector,
     db,

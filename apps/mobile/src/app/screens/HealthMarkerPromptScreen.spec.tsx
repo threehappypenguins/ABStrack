@@ -65,7 +65,7 @@ jest.mock('../../lib/powersync/PowerSyncSessionBridge', () => ({
     firstSyncLandingHydrated: true,
   })),
   usePowerSyncManualResync: jest.fn(() => ({
-    requestManualResync: jest.fn().mockResolvedValue(undefined),
+    requestManualResync: jest.fn().mockResolvedValue(true),
     manualResyncBusy: false,
   })),
   powerSyncOfflineReplicaReadsEnabled: jest.fn(() => false),

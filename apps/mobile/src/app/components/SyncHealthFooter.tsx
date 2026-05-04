@@ -246,8 +246,15 @@ export function SyncHealthFooter() {
       });
       return;
     }
-    await requestManualResync();
-    await announce('Sync requested.', { politeness: 'polite' });
+    const ok = await requestManualResync();
+    if (ok) {
+      await announce('Sync requested.', { politeness: 'polite' });
+    } else {
+      await announce(
+        'Sync reconnect did not finish. Open sync details for status.',
+        { politeness: 'assertive' },
+      );
+    }
   }, [psBridge.database, requestManualResync]);
 
   if (!psBridge.syncChromeEnabled) {
