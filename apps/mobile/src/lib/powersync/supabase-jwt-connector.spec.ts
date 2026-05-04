@@ -146,7 +146,7 @@ describe('createSupabaseJwtPowerSyncConnector', () => {
       expect(complete).toHaveBeenCalledTimes(1);
     });
 
-    it('does not complete batch or rethrow when upload fails', async () => {
+    it('does not complete batch when upload fails with transient network error', async () => {
       const warnSpy = jest
         .spyOn(console, 'warn')
         .mockImplementation(() => undefined);
@@ -171,6 +171,37 @@ describe('createSupabaseJwtPowerSyncConnector', () => {
 
         await expect(connector.uploadData?.(db)).resolves.toBeUndefined();
         expect(complete).not.toHaveBeenCalled();
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it('completes batch when upload fails with permanent server rejection', async () => {
+      const warnSpy = jest
+        .spyOn(console, 'warn')
+        .mockImplementation(() => undefined);
+      try {
+        jest.mocked(uploadPowerSyncCrudBatchToSupabase).mockRejectedValueOnce({
+          code: '23503',
+          message: 'violates foreign key constraint',
+        });
+        const connector = createSupabaseJwtPowerSyncConnector({
+          powerSyncUrl,
+          getSession: jest.fn(),
+          getSupabaseClient: () => mockSupabaseClient,
+        });
+        const complete = jest.fn().mockResolvedValue(undefined);
+        const batch = {
+          crud: [{ id: '1' }],
+          haveMore: false,
+          complete,
+        };
+        const db = {
+          getCrudBatch: jest.fn().mockResolvedValue(batch),
+        } as unknown as AbstractPowerSyncDatabase;
+
+        await expect(connector.uploadData?.(db)).resolves.toBeUndefined();
+        expect(complete).toHaveBeenCalledTimes(1);
       } finally {
         warnSpy.mockRestore();
       }

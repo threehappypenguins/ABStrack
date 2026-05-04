@@ -10,6 +10,20 @@ import {
   getMobileSupabaseClient,
 } from '../lib/supabase-wiring';
 
+jest.mock('@abstrack/supabase', () => {
+  const actual =
+    jest.requireActual<typeof import('@abstrack/supabase')>(
+      '@abstrack/supabase',
+    );
+  return {
+    ...actual,
+    getActiveEpisodeForUser: jest.fn().mockResolvedValue({
+      ok: true,
+      data: null,
+    }),
+  };
+});
+
 jest.mock('../lib/supabase-wiring-core', () => {
   const original = jest.requireActual('../lib/supabase-wiring-core');
   return {

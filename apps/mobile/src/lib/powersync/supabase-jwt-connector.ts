@@ -6,6 +6,7 @@ import type {
 } from '@powersync/react-native';
 
 import { uploadPowerSyncCrudBatchToSupabase } from './powersync-supabase-upload';
+import { isPowerSyncUploadPermanentServerFailure } from './powersync-upload-permanent-failure';
 
 export interface SupabaseSessionLike {
   access_token: string;
@@ -16,7 +17,10 @@ export interface SupabaseSessionLike {
  * Configure the PowerSync Service to validate Supabase-issued tokens for your project.
  *
  * **Uploads:** Queued local writes on replicated tables are applied with the same Supabase client
- * (RLS) via {@link uploadPowerSyncCrudBatchToSupabase}.
+ * (RLS) via {@link uploadPowerSyncCrudBatchToSupabase}. **Transient** failures (network, 5xx,
+ * JWT/session) keep the batch pending for retry. **Permanent** rejections (RLS, FK, constraints,
+ * other 4xx / PostgREST client errors) call `batch.complete()` so the queue does not block forever
+ * on the same bad payload (see {@link isPowerSyncUploadPermanentServerFailure}).
  *
  * @param options.powerSyncUrl PowerSync Service WebSocket HTTP endpoint (e.g. from dashboard).
  * @param options.getSession Resolves the active Supabase session or null when signed out.
@@ -54,6 +58,26 @@ export function createSupabaseJwtPowerSyncConnector(options: {
         try {
           await uploadPowerSyncCrudBatchToSupabase(client, batch);
         } catch (e) {
+          if (isPowerSyncUploadPermanentServerFailure(e)) {
+            console.warn(
+              '[PowerSync] Upload batch rejected by server (dequeuing; local row may diverge until next sync):',
+              e instanceof Error ? e.message : e,
+            );
+            try {
+              await batch.complete();
+            } catch (completeErr) {
+              console.warn(
+                '[PowerSync] batch.complete after permanent upload failure:',
+                completeErr instanceof Error
+                  ? completeErr.message
+                  : completeErr,
+              );
+            }
+            if (!batch.haveMore) {
+              return;
+            }
+            continue;
+          }
           console.warn(
             '[PowerSync] Upload batch failed (will retry when online):',
             e instanceof Error ? e.message : e,

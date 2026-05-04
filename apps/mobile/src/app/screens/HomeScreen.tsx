@@ -1,14 +1,28 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import type { EpisodeRow } from '@abstrack/types';
-import { healthCheckProfilesLimit1, signOut } from '@abstrack/supabase';
+import {
+  getActiveEpisodeForUser,
+  healthCheckProfilesLimit1,
+  signOut,
+} from '@abstrack/supabase';
 import { useMobileAuthUserId } from '../../lib/auth/use-mobile-auth-user-id';
 import { PowerSyncActiveEpisodeSubscription } from '../../lib/powersync/PowerSyncActiveEpisodeSubscription';
 import {
   powerSyncOfflineReplicaReadsEnabled,
   usePowerSyncBridgeState,
 } from '../../lib/powersync/PowerSyncSessionBridge';
-import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
+import {
+  getMobileAuthSessionSafe,
+  getMobileSupabaseClient,
+} from '../../lib/supabase-wiring';
 import { mapAuthError } from '../auth-helpers';
 import {
   EpisodeStartHomeCta,
@@ -48,6 +62,10 @@ export function HomeScreen({
   const [healthCheck, setHealthCheck] = useState<HealthCheckResult | null>(
     null,
   );
+  /** When `EXPO_PUBLIC_POWERSYNC_URL` is unset only: online Supabase resume row (see README). */
+  const [networkResumeEpisode, setNetworkResumeEpisode] =
+    useState<ActiveEpisodeHomeSummary | null>(null);
+  const [networkResumeLoading, setNetworkResumeLoading] = useState(false);
 
   const userId = useMobileAuthUserId();
   const psBridge = usePowerSyncBridgeState();
@@ -62,34 +80,135 @@ export function HomeScreen({
     }
   }, [psBridge.database]);
 
-  /**
-   * Episode CTA loading: only while PowerSync is configured, we have a user id, and local SQLite
-   * has not finished `init` yet. After that, the home row is driven purely from
-   * {@link PowerSyncActiveEpisodeSubscription} snapshot updates (no Supabase episode fetch).
-   */
-  const activeEpisodeLoading = useMemo(
-    () =>
-      Boolean(
-        psBridge.powerSyncUrlConfigured &&
-          userId &&
-          !psBridge.localSqliteInitialized,
-      ),
-    [psBridge.powerSyncUrlConfigured, psBridge.localSqliteInitialized, userId],
+  useEffect(() => {
+    if (!userId) {
+      setNetworkResumeEpisode(null);
+      setNetworkResumeLoading(false);
+    }
+  }, [userId]);
+
+  useEffect(() => {
+    if (psBridge.powerSyncUrlConfigured) {
+      setNetworkResumeEpisode(null);
+      setNetworkResumeLoading(false);
+    }
+  }, [psBridge.powerSyncUrlConfigured]);
+
+  const loadNetworkResumeEpisode = useCallback(
+    async (cancel?: { cancelled: boolean }) => {
+      const stale = () => cancel?.cancelled === true;
+      if (!userId || psBridge.powerSyncUrlConfigured) {
+        if (!stale()) {
+          setNetworkResumeLoading(false);
+        }
+        return;
+      }
+      setNetworkResumeLoading(true);
+      try {
+        const mobileSupabase = getMobileSupabaseClient();
+        const {
+          data: { session },
+          error: sessionError,
+        } = await getMobileAuthSessionSafe();
+        if (stale()) {
+          return;
+        }
+        if (sessionError || !session?.user?.id) {
+          setNetworkResumeEpisode(null);
+          return;
+        }
+        const result = await getActiveEpisodeForUser(
+          mobileSupabase,
+          session.user.id,
+        );
+        if (stale()) {
+          return;
+        }
+        if (!result.ok || !result.data) {
+          setNetworkResumeEpisode(null);
+          return;
+        }
+        setNetworkResumeEpisode(
+          episodeRowToActiveHomeSummary(result.data) ?? null,
+        );
+      } catch {
+        if (!stale()) {
+          setNetworkResumeEpisode(null);
+        }
+      } finally {
+        if (!stale()) {
+          setNetworkResumeLoading(false);
+        }
+      }
+    },
+    [userId, psBridge.powerSyncUrlConfigured],
   );
+
+  useFocusEffect(
+    useCallback(() => {
+      if (psBridge.powerSyncUrlConfigured || !userId) {
+        return;
+      }
+      const cancel = { cancelled: false };
+      void loadNetworkResumeEpisode(cancel);
+      return () => {
+        cancel.cancelled = true;
+      };
+    }, [loadNetworkResumeEpisode, psBridge.powerSyncUrlConfigured, userId]),
+  );
+
+  useEffect(() => {
+    if (psBridge.powerSyncUrlConfigured) {
+      return;
+    }
+    const supabase = getMobileSupabaseClient();
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
+        void loadNetworkResumeEpisode();
+      }
+    });
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [loadNetworkResumeEpisode, psBridge.powerSyncUrlConfigured]);
+
+  /**
+   * Episode CTA loading: with PowerSync configured, until local SQLite `init` completes; without
+   * PowerSync URL, while the optional online resume fetch runs.
+   */
+  const activeEpisodeLoading = useMemo(() => {
+    if (!userId) {
+      return false;
+    }
+    if (psBridge.powerSyncUrlConfigured) {
+      return !psBridge.localSqliteInitialized;
+    }
+    return networkResumeLoading;
+  }, [
+    userId,
+    psBridge.powerSyncUrlConfigured,
+    psBridge.localSqliteInitialized,
+    networkResumeLoading,
+  ]);
 
   const homeActiveEpisode = useMemo((): ActiveEpisodeHomeSummary | null => {
     if (!userId) {
       return null;
     }
-    if (!powerSyncOfflineReplicaReadsEnabled(psBridge)) {
+    if (powerSyncOfflineReplicaReadsEnabled(psBridge)) {
+      const row = psEpisodeSnap.episode;
+      if (!row) {
+        return null;
+      }
+      return episodeRowToActiveHomeSummary(row);
+    }
+    if (psBridge.powerSyncUrlConfigured) {
       return null;
     }
-    const row = psEpisodeSnap.episode;
-    if (!row) {
-      return null;
-    }
-    return episodeRowToActiveHomeSummary(row);
-  }, [userId, psBridge, psEpisodeSnap.episode]);
+    return networkResumeEpisode;
+  }, [userId, psBridge, psEpisodeSnap.episode, networkResumeEpisode]);
 
   useEffect(() => {
     isMountedRef.current = true;

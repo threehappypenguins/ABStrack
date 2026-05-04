@@ -6,7 +6,7 @@
 
 1. When `EXPO_PUBLIC_POWERSYNC_URL` is set **and** the user has a Supabase `access_token`, the bridge resolves a SQLCipher key, opens the shared encrypted DB (`createEncryptedAbstrackPowerSyncDatabase`), calls `init()` → `connect(createSupabaseJwtPowerSyncConnector(...))` → `waitForFirstSync()`.
 2. When the session loses `access_token` (sign-out), the bridge calls `disconnectAndClear()` so **no sync connection stays open with stale JWTs** and replicated PHI in SQLite is wiped. `fetchCredentials` already returns `null` when signed out; disconnect is defense in depth.
-3. If `EXPO_PUBLIC_POWERSYNC_URL` is empty, the DB is not opened and all reads remain Supabase/network-only.
+3. If `EXPO_PUBLIC_POWERSYNC_URL` is empty, the encrypted replica is **not** opened — **offline episode continuity on Home is unavailable**. Supabase remains required for auth and for practitioner/web parity; patient mobile should **always set** this URL for offline-first PHI. **Home** still performs a **narrow online-only** `getActiveEpisodeForUser` fallback when the URL is unset so dev installs without PowerSync are usable.
 
 ## SQLCipher key
 
@@ -14,10 +14,10 @@
 
 ## Read paths (this issue)
 
-| Surface                         | PowerSync-backed behavior                                                                                                                                     |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Home** — continue episode CTA | [`PowerSyncActiveEpisodeSubscription`](./PowerSyncActiveEpisodeSubscription.tsx) + replicated `episodes` row only (**no** `getActiveEpisodeForUser` on Home). |
-| **Manage → Episodes**           | Falls back to SQLite for active + completed lists when Supabase list calls **error** (replica subscriptions + mirror state).                                  |
+| Surface                         | PowerSync-backed behavior                                                                                                                                                                                                                                                                                                  |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Home** — continue episode CTA | Primary: [`PowerSyncActiveEpisodeSubscription`](./PowerSyncActiveEpisodeSubscription.tsx) + replicated `episodes` when replica reads are enabled (**PowerSync is required for offline**). If `EXPO_PUBLIC_POWERSYNC_URL` is **unset**, Home falls back to **online** `getActiveEpisodeForUser` only (not offline-capable). |
+| **Manage → Episodes**           | Falls back to SQLite for active + completed lists when Supabase list calls **error** (replica subscriptions + mirror state).                                                                                                                                                                                               |
 
 SQL lives in [`episode-powersync-read.ts`](./episode-powersync-read.ts). Offline completed history is capped at `POWERSYNC_OFFLINE_EPISODE_PAGE_SIZE` and respects the same inclusive **`ended_at`** bounds as the network list when Manage passes `endedAtOrAfter` / `endedAtOrBefore` (see [`PowerSyncEpisodeReadSubscriptions`](./PowerSyncEpisodeReadSubscriptions.tsx)).
 
