@@ -32,7 +32,10 @@ import {
   listFoodDiaryEntriesForUser,
   listStandaloneHealthMarkersForUser,
 } from '@abstrack/supabase';
-import { usePullToResyncPowerSync } from '../../lib/powersync/use-pull-to-resync-powersync';
+import {
+  usePullToResyncPowerSync,
+  type UsePullToResyncPowerSyncOptions,
+} from '../../lib/powersync/use-pull-to-resync-powersync';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { ScreenShell } from '../components/ScreenShell';
 import type { MainStackParamList, MainTabParamList } from '../navigation/types';
@@ -42,8 +45,15 @@ import {
   EpisodesManagementPanel,
   type EpisodesManagementNav,
 } from './EpisodesManagementPanel';
-
 const PAGE_SIZE = 30;
+
+/**
+ * Health and Food Manage lists load only via Supabase — do not await PowerSync manual resync on
+ * pull-to-refresh (offline `waitForFirstSync` can block ~60s before the list reload runs).
+ */
+const MANAGE_SUPABASE_ONLY_PULL_OPTIONS: UsePullToResyncPowerSyncOptions = {
+  skipPowerSyncManualResync: true,
+};
 
 type ManageTabSegment = 'episodes' | 'health' | 'food';
 
@@ -381,7 +391,10 @@ function StandaloneHealthMarkersManageList({
   const loadInitialRef = useRef(loadInitial);
   loadInitialRef.current = loadInitial;
   const { refreshing: syncPullRefreshing, onRefresh: onSyncPullRefresh } =
-    usePullToResyncPowerSync(() => loadInitialRef.current());
+    usePullToResyncPowerSync(
+      () => loadInitialRef.current(),
+      MANAGE_SUPABASE_ONLY_PULL_OPTIONS,
+    );
 
   useFocusEffect(
     useCallback(() => {
@@ -671,7 +684,10 @@ function StandaloneFoodDiaryManageList({
   const {
     refreshing: foodSyncPullRefreshing,
     onRefresh: onFoodSyncPullRefresh,
-  } = usePullToResyncPowerSync(() => loadInitialRef.current());
+  } = usePullToResyncPowerSync(
+    () => loadInitialRef.current(),
+    MANAGE_SUPABASE_ONLY_PULL_OPTIONS,
+  );
 
   useFocusEffect(
     useCallback(() => {

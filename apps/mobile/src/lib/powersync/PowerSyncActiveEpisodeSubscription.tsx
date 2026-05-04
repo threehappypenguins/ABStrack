@@ -12,7 +12,7 @@ import { usePowerSyncActiveEpisodeQuery } from './use-episode-powersync-reads';
  * handle; gating avoids that and keeps hooks order stable.
  *
  * @param props.userId - Auth user id for SQL.
- * @param props.onChange - Latest row + loading flag.
+ * @param props.onChange - Latest row, loading flag, and watched-query error (if any).
  * @returns Renders nothing.
  */
 export function PowerSyncActiveEpisodeSubscription({
@@ -20,11 +20,19 @@ export function PowerSyncActiveEpisodeSubscription({
   onChange,
 }: {
   userId: string | null;
-  onChange: (snap: { episode: EpisodeRow | null; isLoading: boolean }) => void;
+  onChange: (snap: {
+    episode: EpisodeRow | null;
+    isLoading: boolean;
+    error: Error | undefined;
+  }) => void;
 }) {
   const ps = usePowerSyncActiveEpisodeQuery(userId);
   useEffect(() => {
-    onChange({ episode: ps.episode, isLoading: ps.isLoading });
-  }, [onChange, ps.episode, ps.isLoading]);
+    onChange({
+      episode: ps.episode,
+      isLoading: ps.isLoading,
+      error: ps.error,
+    });
+  }, [onChange, ps.episode, ps.error, ps.isLoading]);
   return null;
 }

@@ -115,7 +115,7 @@ export {
   uploadConfirmedEpisodeMedia,
 } from './lib/episode-media-data.js';
 export {
-  buildHealthMarkerInsertRowForEpisodeLine,
+  buildHealthMarkerInsertRowForPresetLine,
   createStandaloneHealthMarkerForLine,
   deleteHealthMarkerById,
   insertEpisodeHealthMarkerForLine,

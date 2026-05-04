@@ -61,6 +61,7 @@ export function EpisodeTemplateEditorScreen() {
   const navigation = useNavigation<EditorNav>();
   const { colors } = useAppTheme();
   const psBridge = usePowerSyncBridgeState();
+  const replicaMirrorReads = powerSyncOfflineReplicaReadsEnabled(psBridge);
 
   const [status, setStatus] = useState<'loading' | 'error' | 'ready'>(
     'loading',
@@ -79,7 +80,7 @@ export function EpisodeTemplateEditorScreen() {
     setErrorMessage(null);
     const offlineRead = {
       database: psBridge.database,
-      replicationReady: powerSyncOfflineReplicaReadsEnabled(psBridge),
+      replicationReady: replicaMirrorReads,
     };
     const [tRes, sRes, mRes] = await Promise.all([
       fetchEpisodeTemplateById(templateId, {
@@ -117,7 +118,10 @@ export function EpisodeTemplateEditorScreen() {
     setSymptomId(t.symptom_preset_id);
     setMarkerId(t.health_marker_preset_id);
     setStatus('ready');
-  }, [templateId, psBridge]);
+    // Only re-run when offline reads could change shape (DB handle or mirror readiness), like
+    // {@link EpisodeTemplateCreateScreen} — not the whole bridge (syncConnecting/syncError would
+    // wipe in-progress edits).
+  }, [templateId, psBridge.database, replicaMirrorReads]);
 
   useEffect(() => {
     void load();

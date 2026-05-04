@@ -94,11 +94,16 @@ export function HomeScreen({
   const [psEpisodeSnap, setPsEpisodeSnap] = useState<{
     episode: EpisodeRow | null;
     isLoading: boolean;
-  }>({ episode: null, isLoading: false });
+    error: Error | undefined;
+  }>({ episode: null, isLoading: false, error: undefined });
 
   useEffect(() => {
     if (!psBridge.database) {
-      setPsEpisodeSnap({ episode: null, isLoading: false });
+      setPsEpisodeSnap({
+        episode: null,
+        isLoading: false,
+        error: undefined,
+      });
     }
   }, [psBridge.database]);
 
@@ -118,9 +123,19 @@ export function HomeScreen({
   }, [replicaMirrorHomeReads]);
 
   const loadNetworkResumeEpisode = useCallback(
-    async (cancel?: { cancelled: boolean }) => {
+    async (
+      cancel?: { cancelled: boolean },
+      options?: { bypassReplicaMirrorGate?: boolean },
+    ) => {
       const stale = () => cancel?.cancelled === true;
-      if (!userId || replicaMirrorHomeReads) {
+      if (!userId) {
+        if (!stale()) {
+          setNetworkResumeLoading(false);
+          setNetworkResumeSkippedOffline(false);
+        }
+        return;
+      }
+      if (replicaMirrorHomeReads && !options?.bypassReplicaMirrorGate) {
         if (!stale()) {
           setNetworkResumeLoading(false);
           setNetworkResumeSkippedOffline(false);
@@ -179,22 +194,68 @@ export function HomeScreen({
     [userId, replicaMirrorHomeReads],
   );
 
+  /** When the watched SQLite query fails, fetch Supabase resume as a fallback (same user, online). */
+  useEffect(() => {
+    if (!userId || !replicaMirrorHomeReads || !psEpisodeSnap.error) {
+      return;
+    }
+    const cancel = { cancelled: false };
+    void loadNetworkResumeEpisode(cancel, { bypassReplicaMirrorGate: true });
+    return () => {
+      cancel.cancelled = true;
+    };
+  }, [
+    userId,
+    replicaMirrorHomeReads,
+    psEpisodeSnap.error,
+    loadNetworkResumeEpisode,
+  ]);
+
+  /** Drop stale online fallback once local reads work again. */
+  useEffect(() => {
+    if (!replicaMirrorHomeReads || psEpisodeSnap.error) {
+      return;
+    }
+    setNetworkResumeEpisode(null);
+    setNetworkResumeLoading(false);
+    setNetworkResumeSkippedOffline(false);
+  }, [replicaMirrorHomeReads, psEpisodeSnap.error]);
+
   const loadNetworkResumeEpisodeRef = useRef(loadNetworkResumeEpisode);
   loadNetworkResumeEpisodeRef.current = loadNetworkResumeEpisode;
+  const psEpisodeQueryErrorRef = useRef<Error | undefined>(undefined);
+  psEpisodeQueryErrorRef.current = psEpisodeSnap.error;
+
   const { refreshing: syncPullRefreshing, onRefresh: onSyncPullRefresh } =
-    usePullToResyncPowerSync(() => loadNetworkResumeEpisodeRef.current());
+    usePullToResyncPowerSync(() => {
+      void loadNetworkResumeEpisodeRef.current(undefined, {
+        bypassReplicaMirrorGate: Boolean(psEpisodeQueryErrorRef.current),
+      });
+    });
 
   useFocusEffect(
     useCallback(() => {
-      if (!userId || replicaMirrorHomeReads) {
+      if (!userId) {
+        return;
+      }
+      const bypass = replicaMirrorHomeReads && Boolean(psEpisodeSnap.error);
+      if (replicaMirrorHomeReads && !bypass) {
         return;
       }
       const cancel = { cancelled: false };
-      void loadNetworkResumeEpisode(cancel);
+      void loadNetworkResumeEpisode(
+        cancel,
+        bypass ? { bypassReplicaMirrorGate: true } : undefined,
+      );
       return () => {
         cancel.cancelled = true;
       };
-    }, [loadNetworkResumeEpisode, replicaMirrorHomeReads, userId]),
+    }, [
+      loadNetworkResumeEpisode,
+      replicaMirrorHomeReads,
+      userId,
+      psEpisodeSnap.error,
+    ]),
   );
 
   useEffect(() => {
@@ -222,6 +283,9 @@ export function HomeScreen({
    * can surface Supabase. When the replica is mirror-ready, keep loading while first sync is still
    * connecting without completion. If NetInfo is explicitly offline before that fetch, stay in
    * loading so an empty local DB is not mistaken for “no active episode.”
+   *
+   * When mirror reads are enabled but the active-episode watched query errors, treat loading like
+   * the online resume path until {@link loadNetworkResumeEpisode} finishes (or skips offline).
    */
   const activeEpisodeLoading = useMemo(() => {
     if (!userId) {
@@ -236,6 +300,9 @@ export function HomeScreen({
         return true;
       }
       if (replicaMirrorHomeReads) {
+        if (psEpisodeSnap.error) {
+          return networkResumeLoading || networkResumeSkippedOffline;
+        }
         return !psBridge.firstSyncCompleted && psBridge.syncConnecting;
       }
       return networkResumeLoading || networkResumeSkippedOffline;
@@ -250,6 +317,7 @@ export function HomeScreen({
     psBridge.syncConnecting,
     psBridge.syncError,
     replicaMirrorHomeReads,
+    psEpisodeSnap.error,
     networkResumeLoading,
     networkResumeSkippedOffline,
   ]);
@@ -259,6 +327,9 @@ export function HomeScreen({
       return null;
     }
     if (replicaMirrorHomeReads) {
+      if (psEpisodeSnap.error) {
+        return networkResumeEpisode;
+      }
       const row = psEpisodeSnap.episode;
       if (!row) {
         return null;
@@ -270,7 +341,23 @@ export function HomeScreen({
     userId,
     replicaMirrorHomeReads,
     psEpisodeSnap.episode,
+    psEpisodeSnap.error,
     networkResumeEpisode,
+  ]);
+
+  const activeEpisodeQueryError = useMemo(() => {
+    if (!replicaMirrorHomeReads || !psEpisodeSnap.error) {
+      return null;
+    }
+    if (activeEpisodeLoading || homeActiveEpisode) {
+      return null;
+    }
+    return `Could not read episode status from the copy stored on this device. ${psEpisodeSnap.error.message}`;
+  }, [
+    replicaMirrorHomeReads,
+    psEpisodeSnap.error,
+    activeEpisodeLoading,
+    homeActiveEpisode,
   ]);
 
   useEffect(() => {
@@ -396,6 +483,7 @@ export function HomeScreen({
           onResumeEpisode={onResumeEpisode}
           activeEpisode={homeActiveEpisode}
           activeEpisodeLoading={activeEpisodeLoading}
+          activeEpisodeQueryError={activeEpisodeQueryError}
         />
 
         <Pressable

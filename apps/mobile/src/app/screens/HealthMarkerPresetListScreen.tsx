@@ -37,6 +37,7 @@ export function HealthMarkerPresetListScreen() {
   const navigation = useNavigation<ListNav>();
   const { colors } = useAppTheme();
   const psBridge = usePowerSyncBridgeState();
+  const replicaMirrorReads = powerSyncOfflineReplicaReadsEnabled(psBridge);
   const [status, setStatus] = useState<'loading' | 'error' | 'ready'>(
     'loading',
   );
@@ -68,7 +69,7 @@ export function HealthMarkerPresetListScreen() {
       const result = await fetchHealthMarkerPresets({
         powerSyncOfflineRead: {
           database: psBridge.database,
-          replicationReady: powerSyncOfflineReplicaReadsEnabled(psBridge),
+          replicationReady: replicaMirrorReads,
         },
       });
       if (stale()) {
@@ -82,7 +83,9 @@ export function HealthMarkerPresetListScreen() {
       setRows(result.data);
       setStatus('ready');
     },
-    [psBridge],
+    // Only re-run when offline preset reads could change shape — not the whole bridge
+    // (`syncConnecting` / `syncError` / first-sync flags would reset list state on every transition).
+    [psBridge.database, replicaMirrorReads],
   );
 
   useFocusEffect(

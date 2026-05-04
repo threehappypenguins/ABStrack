@@ -12,8 +12,12 @@ import {
 export type PowerSyncEpisodeReadSnapshots = {
   activeEpisode: EpisodeRow | null;
   activeLoading: boolean;
+  /** Set when the watched active-episode SQL fails (distinct from empty result). */
+  activeQueryError: Error | undefined;
   completedEpisodes: EpisodeRow[];
   completedLoading: boolean;
+  /** Set when the watched completed-episodes SQL fails. */
+  completedQueryError: Error | undefined;
 };
 
 /**
@@ -51,14 +55,18 @@ export function PowerSyncEpisodeReadSubscriptions({
     onSnapshots({
       activeEpisode: psActive.episode,
       activeLoading: psActive.isLoading,
+      activeQueryError: psActive.error,
       completedEpisodes: psCompleted.episodes,
       completedLoading: psCompleted.isLoading,
+      completedQueryError: psCompleted.error,
     });
   }, [
     onSnapshots,
     psActive.episode,
+    psActive.error,
     psActive.isLoading,
     psCompleted.episodes,
+    psCompleted.error,
     psCompleted.isLoading,
   ]);
 

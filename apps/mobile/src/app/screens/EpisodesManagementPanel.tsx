@@ -117,8 +117,10 @@ export function EpisodesManagementPanel({
   const [psMirror, setPsMirror] = useState<PowerSyncEpisodeReadSnapshots>({
     activeEpisode: null,
     activeLoading: false,
+    activeQueryError: undefined,
     completedEpisodes: [],
     completedLoading: false,
+    completedQueryError: undefined,
   });
 
   useEffect(() => {
@@ -127,8 +129,10 @@ export function EpisodesManagementPanel({
       setPsMirror({
         activeEpisode: null,
         activeLoading: false,
+        activeQueryError: undefined,
         completedEpisodes: [],
         completedLoading: false,
+        completedQueryError: undefined,
       });
     }
   }, [psBridge.database, psBridge.localSqliteInitialized]);
@@ -169,35 +173,59 @@ export function EpisodesManagementPanel({
     if (!activeError) {
       return active;
     }
-    if (psReplicaReadsEnabled && psMirror.activeEpisode) {
+    if (
+      psReplicaReadsEnabled &&
+      !psMirror.activeQueryError &&
+      psMirror.activeEpisode
+    ) {
       return psMirror.activeEpisode;
     }
     return null;
-  }, [active, activeError, psMirror.activeEpisode, psReplicaReadsEnabled]);
+  }, [
+    active,
+    activeError,
+    psMirror.activeEpisode,
+    psMirror.activeQueryError,
+    psReplicaReadsEnabled,
+  ]);
 
   const recentDisplay = useMemo((): EpisodeRow[] => {
     if (!recentError) {
       return recent;
     }
-    if (psReplicaReadsEnabled) {
+    if (psReplicaReadsEnabled && !psMirror.completedQueryError) {
       return psMirror.completedEpisodes;
     }
     return [];
-  }, [psMirror.completedEpisodes, psReplicaReadsEnabled, recent, recentError]);
+  }, [
+    psMirror.completedEpisodes,
+    psMirror.completedQueryError,
+    psReplicaReadsEnabled,
+    recent,
+    recentError,
+  ]);
 
   /**
    * When Supabase list calls fail but this install has a local replica, explain that Manage uses
-   * synced SQLite (same rows upload when online again via PowerSync).
+   * synced SQLite (same rows upload when online again via PowerSync). Omit when the matching
+   * watched query also failed so we do not imply the device copy is authoritative.
    */
   const showOfflineReplicaCallout =
-    psReplicaReadsEnabled && (activeError != null || recentError != null);
+    psReplicaReadsEnabled &&
+    (activeError != null || recentError != null) &&
+    !(activeError != null && psMirror.activeQueryError) &&
+    !(recentError != null && psMirror.completedQueryError);
 
-  /** When SQLite is available, never show the harsh Supabase error for active/recent headers. */
+  /** When SQLite reads succeed, soften the Supabase header error in favor of local rows. */
   const suppressActiveServerError =
-    Boolean(activeError) && psReplicaReadsEnabled;
+    Boolean(activeError) &&
+    psReplicaReadsEnabled &&
+    psMirror.activeQueryError == null;
 
   const suppressRecentServerError =
-    Boolean(recentError) && psReplicaReadsEnabled;
+    Boolean(recentError) &&
+    psReplicaReadsEnabled &&
+    psMirror.completedQueryError == null;
 
   const showActiveReplicaLoadingHint =
     Boolean(activeError) &&
@@ -668,6 +696,16 @@ export function EpisodesManagementPanel({
               Loading active episode from this device…
             </Text>
           ) : null}
+          {!loading && psMirror.activeQueryError && !psMirror.activeLoading ? (
+            <Text
+              className={`mt-2 text-sm ${nw.textError}`}
+              accessibilityRole="alert"
+              maxFontSizeMultiplier={2}
+            >
+              Could not read the active episode from the copy on this device.{' '}
+              {psMirror.activeQueryError.message}
+            </Text>
+          ) : null}
           {!loading && activeDisplay === null ? (
             <Text className={`mt-2 text-sm ${nw.textMuted}`}>
               No episode in progress.
@@ -769,9 +807,22 @@ export function EpisodesManagementPanel({
             </Text>
           ) : null}
           {!loading &&
+          psMirror.completedQueryError &&
+          !psMirror.completedLoading ? (
+            <Text
+              className={`mt-2 text-sm ${nw.textError}`}
+              accessibilityRole="alert"
+              maxFontSizeMultiplier={2}
+            >
+              Could not read recent episodes from the copy on this device.{' '}
+              {psMirror.completedQueryError.message}
+            </Text>
+          ) : null}
+          {!loading &&
           recentDisplay.length === 0 &&
           (!recentError || suppressRecentServerError) &&
-          !showRecentReplicaLoadingHint ? (
+          !showRecentReplicaLoadingHint &&
+          !psMirror.completedQueryError ? (
             <Text className={`mt-2 text-sm ${nw.textMuted}`}>
               No ended episodes in your history yet.
             </Text>

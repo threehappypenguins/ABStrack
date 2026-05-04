@@ -5,7 +5,9 @@ import {
   deleteFoodDiaryEntry,
   listFoodDiaryEntriesForEpisode,
   listFoodDiaryEntriesForUser,
+  normalizeFoodDiaryEntryUpdate,
   updateFoodDiaryEntry,
+  validateAndNormalizeFoodDiaryCreateCore,
 } from './food-diary-data.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
 
@@ -19,6 +21,156 @@ const baseRow: FoodDiaryEntryRow = {
   created_at: '2026-04-22T10:00:00.000Z',
   updated_at: '2026-04-22T10:00:00.000Z',
 };
+
+describe('validateAndNormalizeFoodDiaryCreateCore', () => {
+  it('rejects invalid meal_tag', () => {
+    const r = validateAndNormalizeFoodDiaryCreateCore({
+      meal_tag: 'Brunch' as never,
+      food_note: 'Toast',
+      logged_at: '2026-04-22T12:00:00.000Z',
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('validation_error');
+      expect(r.error.message).toContain('valid meal tag');
+    }
+  });
+
+  it('rejects empty or whitespace-only food_note', () => {
+    for (const food_note of ['', '   ', '\t\n']) {
+      const r = validateAndNormalizeFoodDiaryCreateCore({
+        meal_tag: 'Breakfast',
+        food_note,
+        logged_at: '2026-04-22T12:00:00.000Z',
+      });
+      expect(r.ok).toBe(false);
+      if (!r.ok) {
+        expect(r.error.code).toBe('validation_error');
+        expect(r.error.message).toContain('Enter what you ate');
+      }
+    }
+  });
+
+  it('rejects logged_at without clock or timezone (date-only)', () => {
+    const r = validateAndNormalizeFoodDiaryCreateCore({
+      meal_tag: 'Lunch',
+      food_note: 'Salad',
+      logged_at: '2026-04-22',
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.message).toContain('valid date and time');
+    }
+  });
+
+  it('rejects logged_at with local time but no Z or numeric offset', () => {
+    const r = validateAndNormalizeFoodDiaryCreateCore({
+      meal_tag: 'Lunch',
+      food_note: 'Salad',
+      logged_at: '2026-04-22T12:30',
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.message).toContain('valid date and time');
+    }
+  });
+
+  it('rejects non-existent calendar dates in logged_at', () => {
+    const r = validateAndNormalizeFoodDiaryCreateCore({
+      meal_tag: 'Dinner',
+      food_note: 'Soup',
+      logged_at: '2026-02-30T12:00:00.000Z',
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.message).toContain('valid date and time');
+    }
+  });
+
+  it('returns normalized food_note and UTC logged_at on success', () => {
+    const r = validateAndNormalizeFoodDiaryCreateCore({
+      meal_tag: 'Snack',
+      food_note: '  Apple  ',
+      logged_at: '2026-04-22T10:05:00-04:00',
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.food_note).toBe('Apple');
+      expect(r.logged_at).toBe('2026-04-22T14:05:00.000Z');
+    }
+  });
+});
+
+describe('normalizeFoodDiaryEntryUpdate', () => {
+  it('accepts an empty patch', () => {
+    const r = normalizeFoodDiaryEntryUpdate({});
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.data).toEqual({});
+    }
+  });
+
+  it('passes through keys it does not validate (e.g. episode_id)', () => {
+    const r = normalizeFoodDiaryEntryUpdate({ episode_id: null });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.data).toEqual({ episode_id: null });
+    }
+  });
+
+  it('rejects invalid meal_tag in patch', () => {
+    const r = normalizeFoodDiaryEntryUpdate({
+      meal_tag: 'TeaTime' as never,
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('validation_error');
+      expect(r.error.message).toContain('valid meal tag');
+    }
+  });
+
+  it('rejects blank food_note when updating note', () => {
+    const r = normalizeFoodDiaryEntryUpdate({ food_note: '  \n  ' });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.message).toContain('Enter what you ate');
+    }
+  });
+
+  it('rejects invalid logged_at in patch', () => {
+    const r = normalizeFoodDiaryEntryUpdate({ logged_at: 'yesterday' });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.message).toContain('valid date and time');
+    }
+  });
+
+  it('rejects date-only logged_at in patch', () => {
+    const r = normalizeFoodDiaryEntryUpdate({ logged_at: '2026-05-01' });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.message).toContain('valid date and time');
+    }
+  });
+
+  it('normalizes food_note and logged_at and leaves other patch fields intact', () => {
+    const r = normalizeFoodDiaryEntryUpdate({
+      meal_tag: 'Other',
+      food_note: '  Shake  ',
+      logged_at: '2026-04-22T15:15:00-05:00',
+      episode_id: null,
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.data).toEqual({
+        meal_tag: 'Other',
+        food_note: 'Shake',
+        logged_at: '2026-04-22T20:15:00.000Z',
+        episode_id: null,
+      });
+    }
+  });
+});
 
 describe('listFoodDiaryEntriesForUser', () => {
   it('orders by logged_at desc, created_at desc, id desc and applies default range', async () => {

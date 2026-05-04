@@ -28,7 +28,7 @@ import type {
 } from '@abstrack/supabase';
 import {
   PresetDataError,
-  buildHealthMarkerInsertRowForEpisodeLine,
+  buildHealthMarkerInsertRowForPresetLine,
   validateHealthMarkerNumericPayload,
 } from '@abstrack/supabase';
 import type { PowerSyncDatabase } from '@powersync/react-native';
@@ -298,7 +298,7 @@ export async function insertEpisodeHealthMarkerLineIntoPowerSyncDb(
     };
   }
 
-  const insert = buildHealthMarkerInsertRowForEpisodeLine({
+  const insert = buildHealthMarkerInsertRowForPresetLine({
     userId,
     episodeId,
     line,

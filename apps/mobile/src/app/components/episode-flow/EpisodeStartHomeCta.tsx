@@ -32,6 +32,11 @@ export type EpisodeStartHomeCtaProps = {
   activeEpisode: ActiveEpisodeHomeSummary | null;
   /** Whether an active-episode check is still running. */
   activeEpisodeLoading: boolean;
+  /**
+   * Shown when the local replica query failed (e.g. broken SQLite) so the UI is not identical to
+   * “no active episode” while offline fallback or retry is in play.
+   */
+  activeEpisodeQueryError?: string | null;
 };
 
 /**
@@ -70,6 +75,7 @@ export function episodeRowToActiveHomeSummary(
  * duplicated. Shows **Continue this episode** when {@link ActiveEpisodeHomeSummary} is provided.
  *
  * @param props - Props.
+ * @param props.activeEpisodeQueryError - Optional local-replica query failure message.
  * @returns Episode CTA section for the home screen.
  */
 export function EpisodeStartHomeCta({
@@ -77,6 +83,7 @@ export function EpisodeStartHomeCta({
   onResumeEpisode,
   activeEpisode,
   activeEpisodeLoading,
+  activeEpisodeQueryError = null,
 }: EpisodeStartHomeCtaProps) {
   const prevResumeRef = useRef<boolean | null>(null);
 
@@ -109,6 +116,8 @@ export function EpisodeStartHomeCta({
   }, [activeEpisode, activeEpisodeLoading]);
 
   const showResume = !activeEpisodeLoading && activeEpisode !== null;
+  const showQueryError =
+    Boolean(activeEpisodeQueryError) && !activeEpisodeLoading;
 
   return (
     <View
@@ -123,6 +132,15 @@ export function EpisodeStartHomeCta({
       >
         Episode logging
       </Text>
+      {showQueryError ? (
+        <Text
+          accessibilityRole="alert"
+          className={`text-base leading-relaxed ${nw.textError}`}
+          maxFontSizeMultiplier={2}
+        >
+          {activeEpisodeQueryError}
+        </Text>
+      ) : null}
       <Text
         className={`text-base leading-relaxed ${nw.textMuted}`}
         maxFontSizeMultiplier={2}

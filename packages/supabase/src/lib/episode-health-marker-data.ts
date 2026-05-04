@@ -247,7 +247,7 @@ export async function insertEpisodeHealthMarkerForLine(
   }
 
   return wrap(async () => {
-    const row: HealthMarkersInsert = buildHealthMarkerInsertRowForEpisodeLine({
+    const row: HealthMarkersInsert = buildHealthMarkerInsertRowForPresetLine({
       userId,
       episodeId,
       line,
@@ -273,12 +273,14 @@ export async function insertEpisodeHealthMarkerForLine(
 }
 
 /**
- * Builds the PostgREST / PowerSync insert payload for an episode-bound or standalone health marker
- * line (same shape as {@link insertEpisodeHealthMarkerForLine} / {@link createStandaloneHealthMarkerForLine}).
+ * Builds the PostgREST / PowerSync insert payload for a **preset health marker line** observation:
+ * episode-bound when `episode_id` is set, standalone when `episode_id` is `null` (same shape as
+ * {@link insertEpisodeHealthMarkerForLine} / {@link createStandaloneHealthMarkerForLine}).
  *
  * @param args - Normalized custom fields and numeric measurements after validation.
+ * @param args.episodeId - `episodes.id` for episode markers, or `null` for standalone markers.
  */
-export function buildHealthMarkerInsertRowForEpisodeLine(args: {
+export function buildHealthMarkerInsertRowForPresetLine(args: {
   userId: Uuid;
   episodeId: Uuid | null;
   line: PresetHealthMarkerRow;
@@ -379,7 +381,7 @@ export async function createStandaloneHealthMarkerForLine(
     };
   }
   return wrap(async () => {
-    const row = buildHealthMarkerInsertRowForEpisodeLine({
+    const row = buildHealthMarkerInsertRowForPresetLine({
       userId,
       episodeId: null,
       line,

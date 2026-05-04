@@ -45,16 +45,17 @@ export async function markPowerSyncFirstSyncLandedForUser(
 
 /**
  * Removes the persisted first-sync marker for this user (e.g. after logout clears the local replica).
- * Idempotent if the key is already absent.
+ * Idempotent if the key is already absent (Expo SecureStore treats missing keys as a no-op).
+ *
+ * **Sign-out:** Callers must handle rejection — if the replica is cleared but this delete fails, a
+ * later login could otherwise re-hydrate `firstSyncLandedOnDevice` from stale SecureStore while the
+ * replica is empty, and offline reads would trust that mirror incorrectly.
  *
  * @param userId - `session.user.id` from the session that is signing out.
+ * @throws When `SecureStore.deleteItemAsync` fails (keychain / keystore errors, etc.).
  */
 export async function clearPowerSyncFirstSyncLandedForUser(
   userId: string,
 ): Promise<void> {
-  try {
-    await SecureStore.deleteItemAsync(landingKeyForUser(userId));
-  } catch {
-    /* non-fatal */
-  }
+  await SecureStore.deleteItemAsync(landingKeyForUser(userId));
 }
