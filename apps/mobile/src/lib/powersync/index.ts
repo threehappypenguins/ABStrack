@@ -44,8 +44,12 @@ export {
   PowerSyncSessionBridge,
   powerSyncOfflineReplicaReadsEnabled,
   usePowerSyncBridgeState,
+  usePowerSyncManualResync,
   type PowerSyncBridgeState,
+  type PowerSyncManualResyncContextValue,
 } from './PowerSyncSessionBridge';
+export { usePowerSyncClientSyncStatus } from './use-power-sync-client-sync-status';
+export { usePullToResyncPowerSync } from './use-pull-to-resync-powersync';
 export { getOrCreateDeviceSqlcipherKey } from './powersync-sqlcipher-key';
 export { getSharedPowerSyncDatabase } from './powersync-shared-db';
 export {

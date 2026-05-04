@@ -1,6 +1,7 @@
 import type { Session } from '@abstrack/supabase';
 import React, {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -9,7 +10,10 @@ import React, {
 } from 'react';
 import type { AbstractPowerSyncDatabase } from '@powersync/common';
 import { PowerSyncContext } from '@powersync/react';
-import type { PowerSyncDatabase } from '@powersync/react-native';
+import type {
+  PowerSyncBackendConnector,
+  PowerSyncDatabase,
+} from '@powersync/react-native';
 
 import {
   getMobileAuthSessionSafe,
@@ -34,6 +38,11 @@ import { getSharedPowerSyncDatabase } from './powersync-shared-db';
  * Bridge status for UI and read-model hooks (first sync, errors, URL presence).
  */
 export type PowerSyncBridgeState = {
+  /**
+   * True when the user is signed in and `EXPO_PUBLIC_POWERSYNC_URL` is set — compact sync chrome
+   * (footer, pull-to-resync) may be shown even before the local DB handle exists.
+   */
+  syncChromeEnabled: boolean;
   /** True when `EXPO_PUBLIC_POWERSYNC_URL` is non-empty at bundle time. */
   powerSyncUrlConfigured: boolean;
   /** Local DB instance when replication is enabled for this install; `null` before first open. */
@@ -53,6 +62,7 @@ export type PowerSyncBridgeState = {
 };
 
 const defaultBridgeState: PowerSyncBridgeState = {
+  syncChromeEnabled: false,
   powerSyncUrlConfigured: false,
   database: null,
   firstSyncCompleted: false,
@@ -69,6 +79,34 @@ const PowerSyncBridgeContext =
  */
 export function usePowerSyncBridgeState(): PowerSyncBridgeState {
   return useContext(PowerSyncBridgeContext);
+}
+
+export type PowerSyncManualResyncContextValue = {
+  /**
+   * Disconnects and reconnects the PowerSync stream (upload + download), clears a stale
+   * {@link PowerSyncBridgeState.syncError} after a successful `connect`, and awaits first sync
+   * again when needed. Safe to call when the replica is disabled or the DB is not open — it no-ops.
+   */
+  requestManualResync: () => Promise<void>;
+  /** True while {@link requestManualResync} is running. */
+  manualResyncBusy: boolean;
+};
+
+const defaultManualResync: PowerSyncManualResyncContextValue = {
+  requestManualResync: async () => {
+    void 0;
+  },
+  manualResyncBusy: false,
+};
+
+const PowerSyncManualResyncContext =
+  createContext<PowerSyncManualResyncContextValue>(defaultManualResync);
+
+/**
+ * @returns Manual PowerSync reconnect controls for pull-to-refresh and the sync footer.
+ */
+export function usePowerSyncManualResync(): PowerSyncManualResyncContextValue {
+  return useContext(PowerSyncManualResyncContext);
 }
 
 /**
@@ -135,7 +173,103 @@ export function PowerSyncSessionBridge({
   const [syncConnecting, setSyncConnecting] = useState(false);
   const [syncError, setSyncError] = useState<Error | null>(null);
 
-  const mobileSupabase = useMemo(() => getMobileSupabaseClient(), []);
+  const buildConnector = useCallback((): PowerSyncBackendConnector => {
+    const baseConnector = createSupabaseJwtPowerSyncConnector({
+      powerSyncUrl,
+      getSession: async () => {
+        try {
+          const { data } = await getMobileAuthSessionSafe();
+          const next = data.session;
+          if (!next?.access_token) {
+            return null;
+          }
+          return { access_token: next.access_token };
+        } catch {
+          return null;
+        }
+      },
+      getSupabaseClient: () => getMobileSupabaseClient(),
+    });
+    return isPowerSyncReplicaDiagnosticsEnabled()
+      ? wrapPowerSyncBackendConnectorWithFetchDiagnostics(
+          baseConnector,
+          (jsonLine) => {
+            console.info('[PowerSyncReplicaDiag:fetch_credentials]', jsonLine);
+          },
+        )
+      : baseConnector;
+  }, [powerSyncUrl]);
+
+  const manualResyncBusyRef = useRef(false);
+  const [manualResyncBusy, setManualResyncBusy] = useState(false);
+
+  const requestManualResync = useCallback(async () => {
+    if (!db || !hasAuthSession || !urlConfigured) {
+      return;
+    }
+    if (manualResyncBusyRef.current) {
+      return;
+    }
+    manualResyncBusyRef.current = true;
+    setManualResyncBusy(true);
+    try {
+      const connector = buildConnector();
+      await db.disconnect();
+      if (!sessionRef.current?.access_token) {
+        return;
+      }
+      await db.connect(connector);
+      setSyncError(null);
+      try {
+        const ac = new AbortController();
+        await db.waitForFirstSync(ac.signal);
+        setFirstSyncCompleted(true);
+      } catch (waitErr) {
+        if (!isAbortError(waitErr)) {
+          setSyncError(
+            waitErr instanceof Error ? waitErr : new Error(String(waitErr)),
+          );
+        }
+      }
+    } catch (e) {
+      console.warn('[PowerSync] Manual resync failed.', e);
+      if (!isAbortError(e)) {
+        setSyncError(e instanceof Error ? e : new Error(String(e)));
+      }
+    } finally {
+      manualResyncBusyRef.current = false;
+      setManualResyncBusy(false);
+    }
+  }, [buildConnector, db, hasAuthSession, urlConfigured]);
+
+  /**
+   * If the stream recovers (e.g. device was offline during `waitForFirstSync`), PowerSync updates
+   * status while {@link syncError} can remain set from the earlier catch — the footer would stay
+   * red until a full effect re-run. Clear stale bridge errors when the client reports healthy.
+   */
+  useEffect(() => {
+    if (!db) {
+      return;
+    }
+    return db.registerListener({
+      statusChanged: (status) => {
+        const df = status.dataFlowStatus;
+        const healthy =
+          status.connected && !df?.uploadError && !df?.downloadError;
+        if (healthy) {
+          setSyncError((prev) => (prev ? null : prev));
+        }
+      },
+    });
+  }, [db]);
+
+  const manualResyncContextValue = useMemo(
+    (): PowerSyncManualResyncContextValue => ({
+      requestManualResync,
+      manualResyncBusy,
+    }),
+    [manualResyncBusy, requestManualResync],
+  );
 
   /** Latest session for connect-effect cleanup (skip redundant disconnect on sign-out). */
   const sessionRef = useRef(session);
@@ -177,30 +311,7 @@ export function PowerSyncSessionBridge({
       return;
     }
 
-    const baseConnector = createSupabaseJwtPowerSyncConnector({
-      powerSyncUrl,
-      getSession: async () => {
-        try {
-          const { data } = await getMobileAuthSessionSafe();
-          const next = data.session;
-          if (!next?.access_token) {
-            return null;
-          }
-          return { access_token: next.access_token };
-        } catch {
-          return null;
-        }
-      },
-      getSupabaseClient: () => getMobileSupabaseClient(),
-    });
-    const connector = isPowerSyncReplicaDiagnosticsEnabled()
-      ? wrapPowerSyncBackendConnectorWithFetchDiagnostics(
-          baseConnector,
-          (jsonLine) => {
-            console.info('[PowerSyncReplicaDiag:fetch_credentials]', jsonLine);
-          },
-        )
-      : baseConnector;
+    const connector = buildConnector();
 
     const ac = new AbortController();
     let cancelled = false;
@@ -351,7 +462,7 @@ export function PowerSyncSessionBridge({
       // `ConnectionManager.disconnectInternal()` before reconnecting. Calling `disconnect()` here
       // races with in-flight `connect()` / `performDisconnect()` and spams "Trying to close for the second time".
     };
-  }, [db, hasAuthSession, mobileSupabase, powerSyncUrl, urlConfigured]);
+  }, [buildConnector, db, hasAuthSession, powerSyncUrl, urlConfigured]);
 
   useEffect(() => {
     if (hasAuthSession) {
@@ -376,6 +487,7 @@ export function PowerSyncSessionBridge({
 
   const bridgeValue = useMemo(
     (): PowerSyncBridgeState => ({
+      syncChromeEnabled: urlConfigured && hasAuthSession,
       powerSyncUrlConfigured: urlConfigured,
       database: db,
       firstSyncCompleted,
@@ -386,6 +498,7 @@ export function PowerSyncSessionBridge({
     [
       db,
       firstSyncCompleted,
+      hasAuthSession,
       localSqliteInitialized,
       syncConnecting,
       syncError,
@@ -413,7 +526,9 @@ export function PowerSyncSessionBridge({
       value={db as unknown as AbstractPowerSyncDatabase}
     >
       <PowerSyncBridgeContext.Provider value={bridgeValue}>
-        {children}
+        <PowerSyncManualResyncContext.Provider value={manualResyncContextValue}>
+          {children}
+        </PowerSyncManualResyncContext.Provider>
       </PowerSyncBridgeContext.Provider>
     </PowerSyncContext.Provider>
   );

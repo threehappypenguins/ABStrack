@@ -6,7 +6,7 @@ import React, {
   useState,
 } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
-import { useIsFocused, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type {
   EpisodeRow,
@@ -22,6 +22,7 @@ import { clearSymptomPromptSession } from '../../lib/episodes/symptom-prompt-ses
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { endEpisodeIfStillActiveOfflineFirst } from '../../lib/episodes/mobile-offline-first-gateway';
 import { saveEpisodeWithTemplatePresets } from '../../lib/episodes/episode-start-service';
+import { humanizeUnexpectedScreenError } from '../../lib/network/humanize-unexpected-screen-error';
 import { getActiveEpisodeRowFromPowerSyncDb } from '../../lib/powersync/episode-powersync-local-read';
 import {
   powerSyncOfflineReplicaReadsEnabled,
@@ -101,157 +102,170 @@ export function EpisodeStartScreen() {
         (expectedGen !== undefined &&
           expectedGen !== loadGenerationRef.current);
 
-      setStatus('loading');
-      setErrorMessage(null);
-      setEpisodeStartError(null);
-      setBlockingActiveEpisode(null);
-      const authResult = await getCurrentUserId();
-      if (stale()) {
-        return;
-      }
-      if (!authResult.ok) {
-        setErrorMessage(authResult.error.message);
-        setStatus('error');
-        return;
-      }
-      if (authResult.data === null) {
-        setErrorMessage('You need to be signed in to start an episode.');
-        setStatus('error');
-        return;
-      }
-      const userId = authResult.data;
+      const loadTimeoutFallback =
+        'Starting this screen is taking too long. Check your connection, then tap Try again.';
 
-      const supabase = getMobileSupabaseClient();
-      const activeResult = await getActiveEpisodeForUser(supabase, userId);
-      if (stale()) {
-        return;
-      }
+      try {
+        setStatus('loading');
+        setErrorMessage(null);
+        setEpisodeStartError(null);
+        setBlockingActiveEpisode(null);
+        const authResult = await getCurrentUserId();
+        if (stale()) {
+          return;
+        }
+        if (!authResult.ok) {
+          setErrorMessage(authResult.error.message);
+          setStatus('error');
+          return;
+        }
+        if (authResult.data === null) {
+          setErrorMessage('You need to be signed in to start an episode.');
+          setStatus('error');
+          return;
+        }
+        const userId = authResult.data;
 
-      let activeEpisodeRow: EpisodeRow | null = null;
-      const bridgeForActiveRead = psBridgeRef.current;
-      if (activeResult.ok) {
-        activeEpisodeRow = activeResult.data;
-      } else {
-        const isNetwork =
-          activeResult.error instanceof PresetDataError &&
-          activeResult.error.code === 'network_error';
-        if (
-          isNetwork &&
-          powerSyncOfflineReplicaReadsEnabled(bridgeForActiveRead)
-        ) {
-          const db = bridgeForActiveRead.database;
-          if (db != null) {
-            try {
-              activeEpisodeRow = await getActiveEpisodeRowFromPowerSyncDb(
-                db,
-                userId,
-              );
-            } catch {
-              activeEpisodeRow = null;
+        const supabase = getMobileSupabaseClient();
+        const activeResult = await getActiveEpisodeForUser(supabase, userId);
+        if (stale()) {
+          return;
+        }
+
+        let activeEpisodeRow: EpisodeRow | null = null;
+        const bridgeForActiveRead = psBridgeRef.current;
+        if (activeResult.ok) {
+          activeEpisodeRow = activeResult.data;
+        } else {
+          const isNetwork =
+            activeResult.error instanceof PresetDataError &&
+            activeResult.error.code === 'network_error';
+          if (
+            isNetwork &&
+            powerSyncOfflineReplicaReadsEnabled(bridgeForActiveRead)
+          ) {
+            const db = bridgeForActiveRead.database;
+            if (db != null) {
+              try {
+                activeEpisodeRow = await getActiveEpisodeRowFromPowerSyncDb(
+                  db,
+                  userId,
+                );
+              } catch {
+                activeEpisodeRow = null;
+              }
             }
           }
-        }
-        if (!activeEpisodeRow) {
-          if (!isNetwork) {
-            setErrorMessage(activeResult.error.message);
-            setStatus('error');
-            return;
+          if (!activeEpisodeRow) {
+            if (!isNetwork) {
+              setErrorMessage(activeResult.error.message);
+              setStatus('error');
+              return;
+            }
+            // Network and no replicated active episode — try templates (may also be offline).
           }
-          // Network and no replicated active episode — try templates (may also be offline).
         }
-      }
 
-      if (activeEpisodeRow) {
-        setBlockingActiveEpisode(activeEpisodeRow);
-        setRows([]);
+        if (activeEpisodeRow) {
+          setBlockingActiveEpisode(activeEpisodeRow);
+          setRows([]);
+          setSubmitting(false);
+          setStatus('ready');
+          return;
+        }
+
+        const bridgeForTemplates = psBridgeRef.current;
+        const result = await fetchEpisodeTemplates({
+          powerSyncOfflineRead: {
+            database: bridgeForTemplates.database,
+            replicationReady:
+              powerSyncOfflineReplicaReadsEnabled(bridgeForTemplates),
+          },
+        });
+        if (stale()) {
+          return;
+        }
+        if (!result.ok) {
+          const offlineTemplates =
+            result.error instanceof PresetDataError &&
+            result.error.code === 'network_error';
+          setErrorMessage(
+            offlineTemplates
+              ? 'You are offline. Connect to the internet to load episode templates, or go back to Home to continue an episode that was already synced to this device.'
+              : result.error.message,
+          );
+          setStatus('error');
+          return;
+        }
+
+        setRows(result.data);
+
+        if (result.data.length === 1) {
+          const template = result.data[0];
+          setSubmitting(true);
+          let didNavigateToSymptomPrompt = false;
+          try {
+            const saveResult = await saveEpisodeWithTemplatePresets({
+              userId,
+              symptomPresetId: template.symptom_preset_id,
+              healthMarkerPresetId: template.health_marker_preset_id,
+              powerSyncDatabase: powerSyncOfflineReplicaReadsEnabled(
+                psBridgeRef.current,
+              )
+                ? psBridgeRef.current.database
+                : null,
+            });
+            if (stale()) {
+              return;
+            }
+            if (!saveResult.ok) {
+              setSelectedId(template.id);
+              setEpisodeStartError(saveResult.error.message);
+              announce(saveResult.error.message);
+              setStatus('ready');
+              return;
+            }
+            announce('Episode started.');
+            try {
+              navigation.replace('SymptomPrompt', {
+                episodeId: saveResult.data.id,
+                symptomPresetId: template.symptom_preset_id,
+              });
+              didNavigateToSymptomPrompt = true;
+            } catch (navErr) {
+              const msg =
+                navErr instanceof Error
+                  ? navErr.message
+                  : 'Could not open symptoms for this episode.';
+              setEpisodeStartError(msg);
+              announce(msg, { politeness: 'assertive' });
+              setStatus('ready');
+            }
+          } finally {
+            if (!stale() && !didNavigateToSymptomPrompt) {
+              setSubmitting(false);
+            }
+          }
+          return;
+        }
+
         setSubmitting(false);
+        setSelectedId((prev) => {
+          if (prev && result.data.some((r) => r.id === prev)) {
+            return prev;
+          }
+          return null;
+        });
         setStatus('ready');
-        return;
-      }
-
-      const bridgeForTemplates = psBridgeRef.current;
-      const result = await fetchEpisodeTemplates({
-        powerSyncOfflineRead: {
-          database: bridgeForTemplates.database,
-          replicationReady:
-            powerSyncOfflineReplicaReadsEnabled(bridgeForTemplates),
-        },
-      });
-      if (stale()) {
-        return;
-      }
-      if (!result.ok) {
-        const offlineTemplates =
-          result.error instanceof PresetDataError &&
-          result.error.code === 'network_error';
+      } catch (caught) {
+        if (stale()) {
+          return;
+        }
         setErrorMessage(
-          offlineTemplates
-            ? 'You are offline. Connect to the internet to load episode templates, or go back to Home to continue an episode that was already synced to this device.'
-            : result.error.message,
+          humanizeUnexpectedScreenError(caught, loadTimeoutFallback),
         );
         setStatus('error');
-        return;
       }
-
-      setRows(result.data);
-
-      if (result.data.length === 1) {
-        const template = result.data[0];
-        setSubmitting(true);
-        let didNavigateToSymptomPrompt = false;
-        try {
-          const saveResult = await saveEpisodeWithTemplatePresets({
-            userId,
-            symptomPresetId: template.symptom_preset_id,
-            healthMarkerPresetId: template.health_marker_preset_id,
-            powerSyncDatabase: powerSyncOfflineReplicaReadsEnabled(
-              psBridgeRef.current,
-            )
-              ? psBridgeRef.current.database
-              : null,
-          });
-          if (stale()) {
-            return;
-          }
-          if (!saveResult.ok) {
-            setSelectedId(template.id);
-            setEpisodeStartError(saveResult.error.message);
-            announce(saveResult.error.message);
-            setStatus('ready');
-            return;
-          }
-          announce('Episode started.');
-          try {
-            navigation.replace('SymptomPrompt', {
-              episodeId: saveResult.data.id,
-              symptomPresetId: template.symptom_preset_id,
-            });
-            didNavigateToSymptomPrompt = true;
-          } catch (navErr) {
-            const msg =
-              navErr instanceof Error
-                ? navErr.message
-                : 'Could not open symptoms for this episode.';
-            setEpisodeStartError(msg);
-            announce(msg, { politeness: 'assertive' });
-            setStatus('ready');
-          }
-        } finally {
-          if (!stale() && !didNavigateToSymptomPrompt) {
-            setSubmitting(false);
-          }
-        }
-        return;
-      }
-
-      setSubmitting(false);
-      setSelectedId((prev) => {
-        if (prev && result.data.some((r) => r.id === prev)) {
-          return prev;
-        }
-        return null;
-      });
-      setStatus('ready');
     },
     [navigation],
   );
@@ -259,59 +273,51 @@ export function EpisodeStartScreen() {
   const loadRef = useRef(load);
   loadRef.current = load;
 
-  const isFocused = useIsFocused();
+  useFocusEffect(
+    useCallback(() => {
+      loadGenerationRef.current += 1;
+      const generation = loadGenerationRef.current;
+      const focusCancel: FocusLoadCancel = { cancelled: false };
+      focusCancelRef.current = focusCancel;
 
-  useEffect(() => {
-    if (!isFocused) {
-      return;
-    }
-    loadGenerationRef.current += 1;
-    const generation = loadGenerationRef.current;
-    const focusCancel: FocusLoadCancel = { cancelled: false };
-    focusCancelRef.current = focusCancel;
+      void (async () => {
+        const loadTimeoutFallback =
+          'Starting this screen is taking too long. Check your connection, then tap Try again.';
+        try {
+          await Promise.race([
+            loadRef.current(focusCancel, generation),
+            new Promise<never>((_, reject) => {
+              episodeStartLoadTimeoutRef.current = setTimeout(
+                () => reject(new Error(loadTimeoutFallback)),
+                EPISODE_START_LOAD_TIMEOUT_MS,
+              );
+            }),
+          ]);
+        } catch (caught) {
+          focusCancel.cancelled = true;
+          loadGenerationRef.current += 1;
+          setErrorMessage(
+            humanizeUnexpectedScreenError(caught, loadTimeoutFallback),
+          );
+          setStatus('error');
+        } finally {
+          if (episodeStartLoadTimeoutRef.current != null) {
+            clearTimeout(episodeStartLoadTimeoutRef.current);
+            episodeStartLoadTimeoutRef.current = null;
+          }
+        }
+      })();
 
-    void (async () => {
-      try {
-        await Promise.race([
-          loadRef.current(focusCancel, generation),
-          new Promise<never>((_, reject) => {
-            episodeStartLoadTimeoutRef.current = setTimeout(
-              () =>
-                reject(
-                  new Error(
-                    'Starting this screen is taking too long. Check your connection, then tap Try again.',
-                  ),
-                ),
-              EPISODE_START_LOAD_TIMEOUT_MS,
-            );
-          }),
-        ]);
-      } catch (caught) {
-        focusCancel.cancelled = true;
-        loadGenerationRef.current += 1;
-        const msg =
-          caught instanceof Error
-            ? caught.message
-            : 'Starting this screen is taking too long. Check your connection, then tap Try again.';
-        setErrorMessage(msg);
-        setStatus('error');
-      } finally {
+      return () => {
         if (episodeStartLoadTimeoutRef.current != null) {
           clearTimeout(episodeStartLoadTimeoutRef.current);
           episodeStartLoadTimeoutRef.current = null;
         }
-      }
-    })();
-
-    return () => {
-      if (episodeStartLoadTimeoutRef.current != null) {
-        clearTimeout(episodeStartLoadTimeoutRef.current);
-        episodeStartLoadTimeoutRef.current = null;
-      }
-      focusCancel.cancelled = true;
-      loadGenerationRef.current += 1;
-    };
-  }, [isFocused]);
+        focusCancel.cancelled = true;
+        loadGenerationRef.current += 1;
+      };
+    }, []),
+  );
 
   const onSelectTemplate = (id: string) => {
     setSelectedId(id);

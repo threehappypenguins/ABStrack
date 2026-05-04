@@ -5,11 +5,13 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import type { Session } from '@abstrack/supabase';
+import { fetchMobileDeviceIsConnected } from '../lib/network/mobile-device-netinfo';
 import {
   getMobileAuthSessionSafe,
   getMobileSupabaseClient,
 } from '../lib/supabase-wiring';
 import { AppProviders } from './components/AppProviders';
+import { SyncHealthFooter } from './components/SyncHealthFooter';
 import { ForgotPasswordScreen } from './screens/ForgotPasswordScreen';
 import { MainTabNavigator } from './navigation/MainTabNavigator';
 import type { MainStackParamList } from './navigation/types';
@@ -106,6 +108,11 @@ function AppBootstrap() {
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const recoveryFlowActiveRef = useRef(false);
   const authRouteRef = useRef<AuthRoute>('Login');
+  /** Coalesces foreground `refreshSession` bursts (auto-refresh + resume) to reduce LogBox noise. */
+  const resumeRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const resumeRefreshInFlightRef = useRef(false);
 
   const stackScreenOptions = useMemo(
     () => ({
@@ -124,7 +131,11 @@ function AppBootstrap() {
       recoveryFlowActiveRef.current ||
       authRouteRef.current === 'UpdatePassword';
 
-    const enforceReauthIfNeeded = async () => {
+    const enforceReauthIfNeeded = async (options?: {
+      /** When false, session is read locally but server `signOut` is skipped (offline / unknown radio). */
+      allowServerSignOut?: boolean;
+    }) => {
+      const allowServerSignOut = options?.allowServerSignOut ?? true;
       try {
         if (isRecoveryFlowInProgress()) {
           return;
@@ -154,6 +165,10 @@ function AppBootstrap() {
         }
 
         if (!currentSession) {
+          return;
+        }
+
+        if (!allowServerSignOut) {
           return;
         }
 
@@ -251,7 +266,10 @@ function AppBootstrap() {
           await handleRecoveryLink(initialUrl);
         }
 
-        await enforceReauthIfNeeded();
+        const connectedAtBoot = await fetchMobileDeviceIsConnected();
+        await enforceReauthIfNeeded({
+          allowServerSignOut: connectedAtBoot === true,
+        });
       } catch (error) {
         /* Hermes LogBox: do not rethrow; still leave bootstrap so the UI is not stuck loading. */
         if (__DEV__) {
@@ -275,15 +293,38 @@ function AppBootstrap() {
     const appStateSubscription = AppState.addEventListener(
       'change',
       (nextState) => {
-        if (nextState === 'active') {
-          void enforceReauthIfNeeded();
-          const refresh = mobileSupabase.auth.refreshSession;
-          if (typeof refresh === 'function') {
-            void refresh.call(mobileSupabase.auth).catch(() => {
-              /* Offline / transient; best-effort wake refresh alongside SDK auto-refresh */
-            });
-          }
+        if (nextState !== 'active') {
+          return;
         }
+        void (async () => {
+          const connected = await fetchMobileDeviceIsConnected();
+          await enforceReauthIfNeeded({
+            allowServerSignOut: connected === true,
+          });
+          if (connected !== true) {
+            return;
+          }
+          if (resumeRefreshTimerRef.current !== null) {
+            clearTimeout(resumeRefreshTimerRef.current);
+          }
+          resumeRefreshTimerRef.current = setTimeout(() => {
+            resumeRefreshTimerRef.current = null;
+            if (resumeRefreshInFlightRef.current) {
+              return;
+            }
+            const refresh = mobileSupabase.auth.refreshSession;
+            if (typeof refresh !== 'function') {
+              return;
+            }
+            resumeRefreshInFlightRef.current = true;
+            void refresh
+              .call(mobileSupabase.auth)
+              .catch(() => undefined)
+              .finally(() => {
+                resumeRefreshInFlightRef.current = false;
+              });
+          }, 400);
+        })();
       },
     );
 
@@ -312,6 +353,10 @@ function AppBootstrap() {
       subscription.unsubscribe();
       urlSubscription?.remove?.();
       appStateSubscription?.remove?.();
+      if (resumeRefreshTimerRef.current !== null) {
+        clearTimeout(resumeRefreshTimerRef.current);
+        resumeRefreshTimerRef.current = null;
+      }
     };
   }, [mobileSupabase]);
 
@@ -398,64 +443,67 @@ function AppBootstrap() {
     <PowerSyncSessionBridge session={session}>
       <View className={`flex-1 ${nw.screenBg}`}>
         <StatusBar style={statusBarStyle} />
-        <NavigationContainer theme={navigationTheme}>
-          {showAuthStack ? (
-            authStack
-          ) : (
-            <MainStack.Navigator screenOptions={stackScreenOptions}>
-              <MainStack.Screen
-                name="MainTabs"
-                component={MainTabNavigator}
-                options={{ headerShown: false }}
-              />
-              <MainStack.Screen
-                name="EpisodeStart"
-                component={EpisodeStartScreen}
-                options={{
-                  title: '',
-                  headerBackTitle: 'Home',
-                }}
-              />
-              <MainStack.Screen
-                name="SymptomPrompt"
-                component={SymptomPromptScreen}
-                options={{
-                  title: 'Symptoms',
-                  headerBackTitle: 'Home',
-                }}
-              />
-              <MainStack.Screen
-                name="HealthMarkerPrompt"
-                component={HealthMarkerPromptScreen}
-                options={{
-                  title: 'Health markers',
-                  headerBackTitle: 'Home',
-                }}
-              />
-              <MainStack.Screen
-                name="FoodDiaryEntry"
-                component={FoodDiaryEntryScreen}
-                options={{
-                  title: 'Food diary',
-                  headerBackTitle: 'Home',
-                }}
-              />
-              <MainStack.Screen
-                name="StandaloneHealthMarkers"
-                component={StandaloneHealthMarkersScreen}
-                options={{
-                  title: 'Health markers',
-                  headerBackTitle: 'Home',
-                }}
-              />
-              <MainStack.Screen
-                name="Settings"
-                component={SettingsScreen}
-                options={{ title: 'Settings' }}
-              />
-            </MainStack.Navigator>
-          )}
-        </NavigationContainer>
+        <View className="min-h-0 flex-1">
+          <NavigationContainer theme={navigationTheme}>
+            {showAuthStack ? (
+              authStack
+            ) : (
+              <MainStack.Navigator screenOptions={stackScreenOptions}>
+                <MainStack.Screen
+                  name="MainTabs"
+                  component={MainTabNavigator}
+                  options={{ headerShown: false }}
+                />
+                <MainStack.Screen
+                  name="EpisodeStart"
+                  component={EpisodeStartScreen}
+                  options={{
+                    title: '',
+                    headerBackTitle: 'Home',
+                  }}
+                />
+                <MainStack.Screen
+                  name="SymptomPrompt"
+                  component={SymptomPromptScreen}
+                  options={{
+                    title: 'Symptoms',
+                    headerBackTitle: 'Home',
+                  }}
+                />
+                <MainStack.Screen
+                  name="HealthMarkerPrompt"
+                  component={HealthMarkerPromptScreen}
+                  options={{
+                    title: 'Health markers',
+                    headerBackTitle: 'Home',
+                  }}
+                />
+                <MainStack.Screen
+                  name="FoodDiaryEntry"
+                  component={FoodDiaryEntryScreen}
+                  options={{
+                    title: 'Food diary',
+                    headerBackTitle: 'Home',
+                  }}
+                />
+                <MainStack.Screen
+                  name="StandaloneHealthMarkers"
+                  component={StandaloneHealthMarkersScreen}
+                  options={{
+                    title: 'Health markers',
+                    headerBackTitle: 'Home',
+                  }}
+                />
+                <MainStack.Screen
+                  name="Settings"
+                  component={SettingsScreen}
+                  options={{ title: 'Settings' }}
+                />
+              </MainStack.Navigator>
+            )}
+          </NavigationContainer>
+        </View>
+        {!showAuthStack ? <SyncHealthFooter /> : null}
       </View>
     </PowerSyncSessionBridge>
   );

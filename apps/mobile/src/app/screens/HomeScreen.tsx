@@ -5,7 +5,13 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import {
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  Text,
+  View,
+} from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import type { EpisodeRow } from '@abstrack/types';
 import {
@@ -19,6 +25,8 @@ import {
   powerSyncOfflineReplicaReadsEnabled,
   usePowerSyncBridgeState,
 } from '../../lib/powersync/PowerSyncSessionBridge';
+import { usePullToResyncPowerSync } from '../../lib/powersync/use-pull-to-resync-powersync';
+import { fetchMobileDeviceIsConnected } from '../../lib/network/mobile-device-netinfo';
 import {
   getMobileAuthSessionSafe,
   getMobileSupabaseClient,
@@ -30,6 +38,7 @@ import {
   type ActiveEpisodeHomeSummary,
 } from '../components/episode-flow/EpisodeStartHomeCta';
 import { AppNavigationShell } from '../components/AppNavigationShell';
+import { useAppTheme } from '../theme/AppThemeContext';
 import { nw } from '../theme/app-nativewind-classes';
 
 interface HealthCheckResult {
@@ -53,6 +62,7 @@ export function HomeScreen({
   onStartEpisode,
   onResumeEpisode,
 }: HomeScreenProps) {
+  const { colors } = useAppTheme();
   const isTestEnv =
     typeof process !== 'undefined' && process.env.NODE_ENV === 'test';
   const showHealthCheck = __DEV__ && !isTestEnv;
@@ -103,6 +113,13 @@ export function HomeScreen({
         }
         return;
       }
+      const connected = await fetchMobileDeviceIsConnected();
+      if (connected === false) {
+        if (!stale()) {
+          setNetworkResumeLoading(false);
+        }
+        return;
+      }
       setNetworkResumeLoading(true);
       try {
         const mobileSupabase = getMobileSupabaseClient();
@@ -143,6 +160,11 @@ export function HomeScreen({
     },
     [userId, psBridge.powerSyncUrlConfigured],
   );
+
+  const loadNetworkResumeEpisodeRef = useRef(loadNetworkResumeEpisode);
+  loadNetworkResumeEpisodeRef.current = loadNetworkResumeEpisode;
+  const { refreshing: syncPullRefreshing, onRefresh: onSyncPullRefresh } =
+    usePullToResyncPowerSync(() => loadNetworkResumeEpisodeRef.current());
 
   useFocusEffect(
     useCallback(() => {
@@ -319,6 +341,14 @@ export function HomeScreen({
           justifyContent: 'flex-start',
         }}
         keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={syncPullRefreshing}
+            onRefresh={onSyncPullRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
       >
         <EpisodeStartHomeCta
           onStartEpisode={onStartEpisode}

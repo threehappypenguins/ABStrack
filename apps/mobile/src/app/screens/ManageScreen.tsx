@@ -5,7 +5,14 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Alert, FlatList, Pressable, Text, View } from 'react-native';
+import {
+  Alert,
+  FlatList,
+  Pressable,
+  RefreshControl,
+  Text,
+  View,
+} from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import type { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import {
@@ -25,9 +32,11 @@ import {
   listFoodDiaryEntriesForUser,
   listStandaloneHealthMarkersForUser,
 } from '@abstrack/supabase';
+import { usePullToResyncPowerSync } from '../../lib/powersync/use-pull-to-resync-powersync';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { ScreenShell } from '../components/ScreenShell';
 import type { MainStackParamList, MainTabParamList } from '../navigation/types';
+import { useAppTheme } from '../theme/AppThemeContext';
 import { nw } from '../theme/app-nativewind-classes';
 import {
   EpisodesManagementPanel,
@@ -308,6 +317,7 @@ function StandaloneHealthMarkersManageList({
   recordedAtOrAfter,
   recordedAtOrBefore,
 }: StandaloneHealthMarkersManageListProps) {
+  const { colors } = useAppTheme();
   const loadGenRef = useRef(0);
   const [rows, setRows] = useState<HealthMarkerRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -367,6 +377,11 @@ function StandaloneHealthMarkersManageList({
     },
     [recordedAtOrAfter, recordedAtOrBefore],
   );
+
+  const loadInitialRef = useRef(loadInitial);
+  loadInitialRef.current = loadInitial;
+  const { refreshing: syncPullRefreshing, onRefresh: onSyncPullRefresh } =
+    usePullToResyncPowerSync(() => loadInitialRef.current());
 
   useFocusEffect(
     useCallback(() => {
@@ -509,6 +524,14 @@ function StandaloneHealthMarkersManageList({
       keyExtractor={(item) => item.id}
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={{ paddingBottom: 24, gap: 12 }}
+      refreshControl={
+        <RefreshControl
+          refreshing={syncPullRefreshing}
+          onRefresh={onSyncPullRefresh}
+          tintColor={colors.primary}
+          colors={[colors.primary]}
+        />
+      }
       onEndReachedThreshold={0.4}
       onEndReached={() => {
         if (hasMore && !loadingMore && rows.length > 0) {
@@ -581,6 +604,7 @@ function StandaloneFoodDiaryManageList({
   loggedAtOrAfter,
   loggedAtOrBefore,
 }: StandaloneFoodDiaryManageListProps) {
+  const { colors } = useAppTheme();
   const loadGenRef = useRef(0);
   const [rows, setRows] = useState<FoodDiaryEntryRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -641,6 +665,13 @@ function StandaloneFoodDiaryManageList({
     },
     [loggedAtOrAfter, loggedAtOrBefore],
   );
+
+  const loadInitialRef = useRef(loadInitial);
+  loadInitialRef.current = loadInitial;
+  const {
+    refreshing: foodSyncPullRefreshing,
+    onRefresh: onFoodSyncPullRefresh,
+  } = usePullToResyncPowerSync(() => loadInitialRef.current());
 
   useFocusEffect(
     useCallback(() => {
@@ -774,6 +805,14 @@ function StandaloneFoodDiaryManageList({
       keyExtractor={(item) => item.id}
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={{ paddingBottom: 24, gap: 12 }}
+      refreshControl={
+        <RefreshControl
+          refreshing={foodSyncPullRefreshing}
+          onRefresh={onFoodSyncPullRefresh}
+          tintColor={colors.primary}
+          colors={[colors.primary]}
+        />
+      }
       onEndReachedThreshold={0.4}
       onEndReached={() => {
         if (hasMore && !loadingMore && rows.length > 0) {

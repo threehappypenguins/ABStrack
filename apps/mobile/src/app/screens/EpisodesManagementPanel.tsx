@@ -10,6 +10,7 @@ import {
   Alert,
   Image,
   Pressable,
+  RefreshControl,
   ScrollView,
   Text,
   View,
@@ -43,12 +44,14 @@ import {
   powerSyncOfflineReplicaReadsEnabled,
   usePowerSyncBridgeState,
 } from '../../lib/powersync/PowerSyncSessionBridge';
+import { usePullToResyncPowerSync } from '../../lib/powersync/use-pull-to-resync-powersync';
 import {
   getMobileAuthSessionSafe,
   getMobileSupabaseClient,
 } from '../../lib/supabase-wiring';
 import { ScreenShell } from '../components/ScreenShell';
 import type { MainStackParamList } from '../navigation/types';
+import { useAppTheme } from '../theme/AppThemeContext';
 import { nw } from '../theme/app-nativewind-classes';
 
 const RECENT_PAGE_SIZE = 25;
@@ -101,6 +104,7 @@ export function EpisodesManagementPanel({
   endedAtOrAfter = null,
   endedAtOrBefore = null,
 }: EpisodesManagementPanelProps) {
+  const { colors } = useAppTheme();
   const loadGenRef = useRef(0);
   const viewerUserId = useMobileAuthUserId();
   const psBridge = usePowerSyncBridgeState();
@@ -277,6 +281,11 @@ export function EpisodesManagementPanel({
     },
     [endedAtOrAfter, endedAtOrBefore],
   );
+
+  const loadInitialRef = useRef(loadInitial);
+  loadInitialRef.current = loadInitial;
+  const { refreshing: syncPullRefreshing, onRefresh: onSyncPullRefresh } =
+    usePullToResyncPowerSync(() => loadInitialRef.current());
 
   const loadMoreRecent = useCallback(async () => {
     if (loadingMoreRecent || !hasMoreRecent) {
@@ -577,6 +586,14 @@ export function EpisodesManagementPanel({
         className="min-h-0 flex-1"
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ paddingBottom: 24, gap: 16 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={syncPullRefreshing}
+            onRefresh={onSyncPullRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
       >
         {variant === 'standalone' ? (
           <>

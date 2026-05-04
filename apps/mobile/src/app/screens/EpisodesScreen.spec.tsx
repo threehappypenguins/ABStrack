@@ -18,6 +18,7 @@ import { announce } from '@abstrack/ui/native';
 
 import { clearSymptomPromptSession } from '../../lib/episodes/symptom-prompt-session-store';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
+import { AppThemeProvider } from '../theme/AppThemeContext';
 import { EpisodesScreen } from './EpisodesScreen';
 
 jest.mock('@react-navigation/native', () => {
@@ -79,6 +80,14 @@ function makeEpisodeRow(overrides: Partial<EpisodeRow> = {}): EpisodeRow {
   };
 }
 
+function renderEpisodesScreen() {
+  return render(
+    <AppThemeProvider>
+      <EpisodesScreen />
+    </AppThemeProvider>,
+  );
+}
+
 describe('EpisodesScreen', () => {
   const mockNavigate = jest.fn();
   const mockGetSession = jest.fn();
@@ -130,7 +139,7 @@ describe('EpisodesScreen', () => {
     });
     mockGetSession.mockReturnValue(getSessionPromise);
 
-    render(<EpisodesScreen />);
+    renderEpisodesScreen();
 
     expect(screen.getByText('Loading…')).toBeTruthy();
 
@@ -148,7 +157,7 @@ describe('EpisodesScreen', () => {
   it('shows empty signed-out-style copy when user is null', async () => {
     mockGetSession.mockResolvedValue({ data: { session: null } });
 
-    render(<EpisodesScreen />);
+    renderEpisodesScreen();
 
     expect(await screen.findByText('No episode in progress.')).toBeTruthy();
     expect(
@@ -166,7 +175,7 @@ describe('EpisodesScreen', () => {
       error: { message: 'Recent query failed' } as never,
     });
 
-    render(<EpisodesScreen />);
+    renderEpisodesScreen();
 
     expect(await screen.findByText('Active query failed')).toBeTruthy();
     expect(await screen.findByText('Recent query failed')).toBeTruthy();
@@ -175,7 +184,7 @@ describe('EpisodesScreen', () => {
   it('treats rejected getSession like no session when storage fallback is empty', async () => {
     mockGetSession.mockRejectedValue(new Error('network'));
 
-    render(<EpisodesScreen />);
+    renderEpisodesScreen();
 
     expect(await screen.findByText('No episode in progress.')).toBeTruthy();
     expect(
@@ -193,7 +202,7 @@ describe('EpisodesScreen', () => {
       data: active,
     });
 
-    render(<EpisodesScreen />);
+    renderEpisodesScreen();
 
     expect(await screen.findByLabelText('Resume this episode')).toBeTruthy();
 
@@ -217,7 +226,7 @@ describe('EpisodesScreen', () => {
       data: active,
     });
 
-    render(<EpisodesScreen />);
+    renderEpisodesScreen();
 
     expect(await screen.findByLabelText('Resume this episode')).toBeTruthy();
     fireEvent.press(screen.getByLabelText('Resume this episode'));
@@ -240,7 +249,7 @@ describe('EpisodesScreen', () => {
       data: [ended],
     });
 
-    render(<EpisodesScreen />);
+    renderEpisodesScreen();
 
     expect(await screen.findByText('ABS — Test label')).toBeTruthy();
     expect(screen.getByText('Ended')).toBeTruthy();
@@ -261,7 +270,7 @@ describe('EpisodesScreen', () => {
         data: [ended],
       });
 
-      render(<EpisodesScreen />);
+      renderEpisodesScreen();
 
       expect(await screen.findByText('ABS — History row')).toBeTruthy();
       fireEvent.press(screen.getByText('Delete episode'));
@@ -309,7 +318,7 @@ describe('EpisodesScreen', () => {
         data: active,
       });
 
-      render(<EpisodesScreen />);
+      renderEpisodesScreen();
 
       expect(await screen.findByLabelText('Cancel episode')).toBeTruthy();
       fireEvent.press(screen.getByLabelText('Cancel episode'));

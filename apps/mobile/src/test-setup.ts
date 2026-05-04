@@ -80,6 +80,19 @@ jest.mock('expo-video', () => {
 
 configure({ asyncUtilTimeout: 5000 });
 
+jest.mock('@react-native-community/netinfo', () => ({
+  __esModule: true,
+  default: {
+    fetch: jest.fn(() =>
+      Promise.resolve({
+        isConnected: true,
+        isInternetReachable: true,
+      }),
+    ),
+    addEventListener: jest.fn(() => jest.fn()),
+  },
+}));
+
 jest.mock('@powersync/react', () => {
   const React = require('react');
   return {
@@ -97,6 +110,7 @@ jest.mock('@powersync/react', () => {
 jest.mock('./lib/powersync/PowerSyncSessionBridge', () => {
   /** Stable reference so screen hooks that depend on `[psBridge]` do not thrash `useFocusEffect`. */
   const mockBridgeState = {
+    syncChromeEnabled: false,
     powerSyncUrlConfigured: false,
     database: null,
     firstSyncCompleted: false,
@@ -119,6 +133,10 @@ jest.mock('./lib/powersync/PowerSyncSessionBridge', () => {
           (bridge.firstSyncCompleted || bridge.localSqliteInitialized),
       ),
     usePowerSyncBridgeState: () => mockBridgeState,
+    usePowerSyncManualResync: () => ({
+      requestManualResync: jest.fn().mockResolvedValue(undefined),
+      manualResyncBusy: false,
+    }),
   };
 });
 
