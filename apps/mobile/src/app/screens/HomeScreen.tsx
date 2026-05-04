@@ -77,9 +77,20 @@ export function HomeScreen({
   const [networkResumeEpisode, setNetworkResumeEpisode] =
     useState<ActiveEpisodeHomeSummary | null>(null);
   const [networkResumeLoading, setNetworkResumeLoading] = useState(false);
+  /**
+   * True when the last network-resume attempt bailed before calling Supabase because NetInfo
+   * reported explicit offline. While PowerSync is configured but the replica is not mirror-ready,
+   * we must not treat a null resume row as authoritative (empty replica + no fetch).
+   */
+  const [networkResumeSkippedOffline, setNetworkResumeSkippedOffline] =
+    useState(false);
 
   const userId = useMobileAuthUserId();
   const psBridge = usePowerSyncBridgeState();
+  const replicaMirrorHomeReads = useMemo(
+    () => powerSyncOfflineReplicaReadsEnabled(psBridge),
+    [psBridge],
+  );
   const [psEpisodeSnap, setPsEpisodeSnap] = useState<{
     episode: EpisodeRow | null;
     isLoading: boolean;
@@ -99,27 +110,33 @@ export function HomeScreen({
   }, [userId]);
 
   useEffect(() => {
-    if (psBridge.powerSyncUrlConfigured) {
+    if (replicaMirrorHomeReads) {
       setNetworkResumeEpisode(null);
       setNetworkResumeLoading(false);
+      setNetworkResumeSkippedOffline(false);
     }
-  }, [psBridge.powerSyncUrlConfigured]);
+  }, [replicaMirrorHomeReads]);
 
   const loadNetworkResumeEpisode = useCallback(
     async (cancel?: { cancelled: boolean }) => {
       const stale = () => cancel?.cancelled === true;
-      if (!userId || psBridge.powerSyncUrlConfigured) {
+      if (!userId || replicaMirrorHomeReads) {
         if (!stale()) {
           setNetworkResumeLoading(false);
+          setNetworkResumeSkippedOffline(false);
         }
         return;
       }
       const connected = await fetchMobileDeviceIsConnected();
       if (connected === false) {
         if (!stale()) {
+          setNetworkResumeSkippedOffline(true);
           setNetworkResumeLoading(false);
         }
         return;
+      }
+      if (!stale()) {
+        setNetworkResumeSkippedOffline(false);
       }
       setNetworkResumeLoading(true);
       try {
@@ -159,7 +176,7 @@ export function HomeScreen({
         }
       }
     },
-    [userId, psBridge.powerSyncUrlConfigured],
+    [userId, replicaMirrorHomeReads],
   );
 
   const loadNetworkResumeEpisodeRef = useRef(loadNetworkResumeEpisode);
@@ -169,7 +186,7 @@ export function HomeScreen({
 
   useFocusEffect(
     useCallback(() => {
-      if (psBridge.powerSyncUrlConfigured || !userId) {
+      if (!userId || replicaMirrorHomeReads) {
         return;
       }
       const cancel = { cancelled: false };
@@ -177,11 +194,11 @@ export function HomeScreen({
       return () => {
         cancel.cancelled = true;
       };
-    }, [loadNetworkResumeEpisode, psBridge.powerSyncUrlConfigured, userId]),
+    }, [loadNetworkResumeEpisode, replicaMirrorHomeReads, userId]),
   );
 
   useEffect(() => {
-    if (psBridge.powerSyncUrlConfigured) {
+    if (replicaMirrorHomeReads) {
       return;
     }
     const supabase = getMobileSupabaseClient();
@@ -195,14 +212,15 @@ export function HomeScreen({
     return () => {
       subscription.unsubscribe();
     };
-  }, [loadNetworkResumeEpisode, psBridge.powerSyncUrlConfigured]);
+  }, [loadNetworkResumeEpisode, replicaMirrorHomeReads]);
 
   /**
-   * Episode CTA loading: with PowerSync configured, until local SQLite `init` completes **and**
-   * the first sync attempt has finished (`syncConnecting` false) or `firstSyncCompleted` is
-   * true — otherwise the replica can still be empty right after `init()` while the server already
-   * has an active episode (fresh install / after `disconnectAndClear`). Without PowerSync URL,
-   * while the optional online resume fetch runs.
+   * Episode CTA loading: with PowerSync configured, until local SQLite `init` completes. When the
+   * replica is mirror-ready ({@link powerSyncOfflineReplicaReadsEnabled}), keep loading while first
+   * sync is still connecting without completion. When the URL is set but the replica is **not**
+   * mirror-ready yet (fresh install before first sync / landing), follow the same online resume
+   * fetch as the no-PowerSync path; if NetInfo is explicitly offline before that fetch, stay in
+   * loading so an empty local DB is not mistaken for “no active episode.”
    */
   const activeEpisodeLoading = useMemo(() => {
     if (!userId) {
@@ -212,7 +230,10 @@ export function HomeScreen({
       if (!psBridge.localSqliteInitialized) {
         return true;
       }
-      return !psBridge.firstSyncCompleted && psBridge.syncConnecting;
+      if (replicaMirrorHomeReads) {
+        return !psBridge.firstSyncCompleted && psBridge.syncConnecting;
+      }
+      return networkResumeLoading || networkResumeSkippedOffline;
     }
     return networkResumeLoading;
   }, [
@@ -221,25 +242,29 @@ export function HomeScreen({
     psBridge.firstSyncCompleted,
     psBridge.localSqliteInitialized,
     psBridge.syncConnecting,
+    replicaMirrorHomeReads,
     networkResumeLoading,
+    networkResumeSkippedOffline,
   ]);
 
   const homeActiveEpisode = useMemo((): ActiveEpisodeHomeSummary | null => {
     if (!userId) {
       return null;
     }
-    if (powerSyncOfflineReplicaReadsEnabled(psBridge)) {
+    if (replicaMirrorHomeReads) {
       const row = psEpisodeSnap.episode;
       if (!row) {
         return null;
       }
       return episodeRowToActiveHomeSummary(row);
     }
-    if (psBridge.powerSyncUrlConfigured) {
-      return null;
-    }
     return networkResumeEpisode;
-  }, [userId, psBridge, psEpisodeSnap.episode, networkResumeEpisode]);
+  }, [
+    userId,
+    replicaMirrorHomeReads,
+    psEpisodeSnap.episode,
+    networkResumeEpisode,
+  ]);
 
   useEffect(() => {
     isMountedRef.current = true;

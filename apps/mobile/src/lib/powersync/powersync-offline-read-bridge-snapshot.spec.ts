@@ -61,6 +61,8 @@ describe('clarifyNetworkErrorWhenReplicaUnavailable', () => {
       firstSyncCompleted: false,
       localSqliteInitialized: false,
       powerSyncUrlConfigured: false,
+      firstSyncLandingHydrated: true,
+      firstSyncLandedOnDevice: false,
     });
   });
 
@@ -70,6 +72,8 @@ describe('clarifyNetworkErrorWhenReplicaUnavailable', () => {
       firstSyncCompleted: false,
       localSqliteInitialized: false,
       powerSyncUrlConfigured: true,
+      firstSyncLandingHydrated: true,
+      firstSyncLandedOnDevice: false,
     });
     const err = new PresetDataError(
       'unknown',
@@ -85,19 +89,42 @@ describe('clarifyNetworkErrorWhenReplicaUnavailable', () => {
     setPowerSyncOfflineReadBridgeSnapshot({
       database: {} as never,
       firstSyncCompleted: true,
-      localSqliteInitialized: false,
+      localSqliteInitialized: true,
       powerSyncUrlConfigured: true,
+      firstSyncLandingHydrated: true,
+      firstSyncLandedOnDevice: false,
     });
     const err = new PresetDataError('network_error', 'offline');
     expect(clarifyNetworkErrorWhenReplicaUnavailable(err)).toBeNull();
   });
 
-  it('returns null when local SQLite initialized but first sync incomplete', () => {
+  it('returns clearer message when SQLite is initialized but first sync never landed on device', () => {
     setPowerSyncOfflineReadBridgeSnapshot({
       database: {} as never,
       firstSyncCompleted: false,
       localSqliteInitialized: true,
       powerSyncUrlConfigured: true,
+      firstSyncLandingHydrated: true,
+      firstSyncLandedOnDevice: false,
+    });
+    const err = new PresetDataError(
+      'unknown',
+      'Network request failed',
+      new TypeError('Network request failed'),
+    );
+    const next = clarifyNetworkErrorWhenReplicaUnavailable(err);
+    expect(next).not.toBeNull();
+    expect(next?.message).toContain('online once');
+  });
+
+  it('returns null when first sync incomplete but persisted landing says replica was populated before', () => {
+    setPowerSyncOfflineReadBridgeSnapshot({
+      database: {} as never,
+      firstSyncCompleted: false,
+      localSqliteInitialized: true,
+      powerSyncUrlConfigured: true,
+      firstSyncLandingHydrated: true,
+      firstSyncLandedOnDevice: true,
     });
     const err = new PresetDataError(
       'unknown',

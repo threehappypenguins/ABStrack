@@ -8,6 +8,14 @@ import type {
 import { uploadPowerSyncCrudBatchToSupabase } from './powersync-supabase-upload';
 import { isPowerSyncUploadPermanentServerFailure } from './powersync-upload-permanent-failure';
 
+/**
+ * Maximum CRUD entries per {@link AbstractPowerSyncDatabase#getCrudBatch} call from this connector.
+ * Using `1` avoids multi-op batches where a mid-batch permanent failure would either dequeue unsent
+ * tail ops ({@link CrudBatch#complete} applies to the whole batch) or block the queue head if we
+ * skip `complete()`.
+ */
+export const SUPABASE_JWT_POWERSYNC_UPLOAD_CRUD_BATCH_LIMIT = 1 as const;
+
 export interface SupabaseSessionLike {
   access_token: string;
 }
@@ -17,13 +25,13 @@ export interface SupabaseSessionLike {
  * Configure the PowerSync Service to validate Supabase-issued tokens for your project.
  *
  * **Uploads:** Queued local writes on replicated tables are applied with the same Supabase client
- * (RLS) via {@link uploadPowerSyncCrudBatchToSupabase}. **Transient** failures (network, 5xx,
+ * (RLS) via {@link uploadPowerSyncCrudBatchToSupabase}. Batches are requested with
+ * {@link SUPABASE_JWT_POWERSYNC_UPLOAD_CRUD_BATCH_LIMIT} so each batch has at most one CRUD entry:
+ * a permanent rejection can safely call {@link CrudBatch#complete} without dropping unsent tail ops
+ * or leaving the upload queue stuck on the same head batch. **Transient** failures (network, 5xx,
  * JWT/session) keep the batch pending for retry. **Permanent** rejections (RLS, FK, constraints,
- * other 4xx / PostgREST client errors) call `batch.complete()` only for **single-op** batches so a
- * bad row does not block forever (see {@link isPowerSyncUploadPermanentServerFailure}). For
- * **multi-op** batches, completing after a mid-batch failure would dequeue operations that were never
- * sent to Supabase, so we skip `complete()` and **return** (same head batch would otherwise be
- * returned again immediately and spin). The next `uploadData` run retries after backoff / reconnect.
+ * other 4xx / PostgREST client errors) dequeue the offending op after {@link isPowerSyncUploadPermanentServerFailure}
+ * (local row may diverge until the next successful sync; see product docs).
  *
  * @param options.powerSyncUrl PowerSync Service WebSocket HTTP endpoint (e.g. from dashboard).
  * @param options.getSession Resolves the active Supabase session or null when signed out.
@@ -51,7 +59,9 @@ export function createSupabaseJwtPowerSyncConnector(options: {
     uploadData: async (database: AbstractPowerSyncDatabase): Promise<void> => {
       const client = options.getSupabaseClient();
       for (;;) {
-        const batch = await database.getCrudBatch();
+        const batch = await database.getCrudBatch(
+          SUPABASE_JWT_POWERSYNC_UPLOAD_CRUD_BATCH_LIMIT,
+        );
         if (!batch) return;
         if (batch.crud.length === 0) {
           await batch.complete();
@@ -62,16 +72,10 @@ export function createSupabaseJwtPowerSyncConnector(options: {
           await uploadPowerSyncCrudBatchToSupabase(client, batch);
         } catch (e) {
           if (isPowerSyncUploadPermanentServerFailure(e)) {
-            const multiOp = batch.crud.length > 1;
             console.warn(
-              multiOp
-                ? '[PowerSync] Permanent upload failure in a multi-op batch; not completing so queued tail ops are not dropped (yielding until next upload run):'
-                : '[PowerSync] Upload batch rejected by server (dequeuing; local row may diverge until next sync):',
+              '[PowerSync] Upload batch rejected by server (dequeuing; local row may diverge until next sync):',
               e instanceof Error ? e.message : e,
             );
-            if (multiOp) {
-              return;
-            }
             try {
               await batch.complete();
             } catch (completeErr) {

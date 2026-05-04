@@ -2,7 +2,10 @@ import type { AbstrackSupabaseClient } from '@abstrack/supabase';
 import type { AbstractPowerSyncDatabase } from '@powersync/react-native';
 
 import { uploadPowerSyncCrudBatchToSupabase } from './powersync-supabase-upload';
-import { createSupabaseJwtPowerSyncConnector } from './supabase-jwt-connector';
+import {
+  SUPABASE_JWT_POWERSYNC_UPLOAD_CRUD_BATCH_LIMIT,
+  createSupabaseJwtPowerSyncConnector,
+} from './supabase-jwt-connector';
 
 jest.mock('./powersync-supabase-upload', () => ({
   uploadPowerSyncCrudBatchToSupabase: jest.fn(
@@ -77,7 +80,8 @@ describe('createSupabaseJwtPowerSyncConnector', () => {
     } {
       const completeMocks: jest.Mock[] = [];
       let index = 0;
-      const getCrudBatch = jest.fn(async () => {
+      const getCrudBatch = jest.fn(async (limit?: number) => {
+        expect(limit).toBe(SUPABASE_JWT_POWERSYNC_UPLOAD_CRUD_BATCH_LIMIT);
         const spec = batches[index++];
         if (spec === null) {
           return null;
@@ -133,11 +137,15 @@ describe('createSupabaseJwtPowerSyncConnector', () => {
         haveMore: false,
         complete,
       };
+      const getCrudBatch = jest.fn().mockResolvedValue(batch);
       const db = {
-        getCrudBatch: jest.fn().mockResolvedValue(batch),
+        getCrudBatch,
       } as unknown as AbstractPowerSyncDatabase;
 
       await expect(connector.uploadData?.(db)).resolves.toBeUndefined();
+      expect(getCrudBatch).toHaveBeenCalledWith(
+        SUPABASE_JWT_POWERSYNC_UPLOAD_CRUD_BATCH_LIMIT,
+      );
       expect(uploadPowerSyncCrudBatchToSupabase).toHaveBeenCalledTimes(1);
       expect(uploadPowerSyncCrudBatchToSupabase).toHaveBeenCalledWith(
         mockSupabaseClient,
@@ -165,11 +173,15 @@ describe('createSupabaseJwtPowerSyncConnector', () => {
           haveMore: false,
           complete,
         };
+        const getCrudBatch = jest.fn().mockResolvedValue(batch);
         const db = {
-          getCrudBatch: jest.fn().mockResolvedValue(batch),
+          getCrudBatch,
         } as unknown as AbstractPowerSyncDatabase;
 
         await expect(connector.uploadData?.(db)).resolves.toBeUndefined();
+        expect(getCrudBatch).toHaveBeenCalledWith(
+          SUPABASE_JWT_POWERSYNC_UPLOAD_CRUD_BATCH_LIMIT,
+        );
         expect(complete).not.toHaveBeenCalled();
       } finally {
         warnSpy.mockRestore();
@@ -196,77 +208,45 @@ describe('createSupabaseJwtPowerSyncConnector', () => {
           haveMore: false,
           complete,
         };
-        const db = {
-          getCrudBatch: jest.fn().mockResolvedValue(batch),
-        } as unknown as AbstractPowerSyncDatabase;
-
-        await expect(connector.uploadData?.(db)).resolves.toBeUndefined();
-        expect(complete).toHaveBeenCalledTimes(1);
-      } finally {
-        warnSpy.mockRestore();
-      }
-    });
-
-    it('does not complete batch on permanent failure when batch has multiple CRUD ops', async () => {
-      const warnSpy = jest
-        .spyOn(console, 'warn')
-        .mockImplementation(() => undefined);
-      try {
-        jest.mocked(uploadPowerSyncCrudBatchToSupabase).mockRejectedValueOnce({
-          code: '23503',
-          message: 'violates foreign key constraint',
-        });
-        const connector = createSupabaseJwtPowerSyncConnector({
-          powerSyncUrl,
-          getSession: jest.fn(),
-          getSupabaseClient: () => mockSupabaseClient,
-        });
-        const complete = jest.fn().mockResolvedValue(undefined);
-        const batch = {
-          crud: [{ id: '1' }, { id: '2' }],
-          haveMore: false,
-          complete,
-        };
-        const db = {
-          getCrudBatch: jest.fn().mockResolvedValue(batch),
-        } as unknown as AbstractPowerSyncDatabase;
-
-        await expect(connector.uploadData?.(db)).resolves.toBeUndefined();
-        expect(complete).not.toHaveBeenCalled();
-      } finally {
-        warnSpy.mockRestore();
-      }
-    });
-
-    it('returns after permanent multi-op failure without re-querying the same batch when haveMore is true', async () => {
-      const warnSpy = jest
-        .spyOn(console, 'warn')
-        .mockImplementation(() => undefined);
-      try {
-        jest.mocked(uploadPowerSyncCrudBatchToSupabase).mockRejectedValueOnce({
-          code: '23503',
-          message: 'violates foreign key constraint',
-        });
-        const connector = createSupabaseJwtPowerSyncConnector({
-          powerSyncUrl,
-          getSession: jest.fn(),
-          getSupabaseClient: () => mockSupabaseClient,
-        });
-        const complete = jest.fn().mockResolvedValue(undefined);
-        const batch = {
-          crud: [{ id: '1' }, { id: '2' }],
-          haveMore: true,
-          complete,
-        };
         const getCrudBatch = jest.fn().mockResolvedValue(batch);
         const db = {
           getCrudBatch,
         } as unknown as AbstractPowerSyncDatabase;
 
         await expect(connector.uploadData?.(db)).resolves.toBeUndefined();
-        expect(getCrudBatch).toHaveBeenCalledTimes(1);
-        expect(uploadPowerSyncCrudBatchToSupabase).toHaveBeenCalledTimes(1);
-        expect(complete).not.toHaveBeenCalled();
+        expect(getCrudBatch).toHaveBeenCalledWith(
+          SUPABASE_JWT_POWERSYNC_UPLOAD_CRUD_BATCH_LIMIT,
+        );
+        expect(complete).toHaveBeenCalledTimes(1);
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it('fetches the next batch after permanent failure when the queue still has entries', async () => {
+      const warnSpy = jest
+        .spyOn(console, 'warn')
+        .mockImplementation(() => undefined);
+      try {
+        jest.mocked(uploadPowerSyncCrudBatchToSupabase).mockRejectedValueOnce({
+          code: '23503',
+          message: 'violates foreign key constraint',
+        });
+        const connector = createSupabaseJwtPowerSyncConnector({
+          powerSyncUrl,
+          getSession: jest.fn(),
+          getSupabaseClient: () => mockSupabaseClient,
+        });
+        const { db, getCrudBatch, completeMocks } = stubDatabaseSequence([
+          { crud: [{ id: '1' }], haveMore: true },
+          { crud: [{ id: '2' }], haveMore: false },
+        ]);
+
+        await expect(connector.uploadData?.(db)).resolves.toBeUndefined();
+        expect(getCrudBatch).toHaveBeenCalledTimes(2);
+        expect(uploadPowerSyncCrudBatchToSupabase).toHaveBeenCalledTimes(2);
+        expect(completeMocks[0]).toHaveBeenCalledTimes(1);
+        expect(completeMocks[1]).toHaveBeenCalledTimes(1);
       } finally {
         warnSpy.mockRestore();
       }

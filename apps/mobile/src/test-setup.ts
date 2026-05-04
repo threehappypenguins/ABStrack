@@ -117,6 +117,8 @@ jest.mock('./lib/powersync/PowerSyncSessionBridge', () => {
     localSqliteInitialized: false,
     syncConnecting: false,
     syncError: null,
+    firstSyncLandedOnDevice: false,
+    firstSyncLandingHydrated: true,
   };
   return {
     PowerSyncSessionBridge: ({ children }: { children: unknown }) => children,
@@ -126,12 +128,20 @@ jest.mock('./lib/powersync/PowerSyncSessionBridge', () => {
       database: unknown;
       firstSyncCompleted: boolean;
       localSqliteInitialized: boolean;
-    }) =>
-      Boolean(
+      firstSyncLandedOnDevice?: boolean;
+      firstSyncLandingHydrated?: boolean;
+    }) => {
+      const mirrorTrusted =
+        bridge.firstSyncCompleted ||
+        ((bridge.firstSyncLandingHydrated ?? true) &&
+          Boolean(bridge.firstSyncLandedOnDevice));
+      return Boolean(
         bridge.powerSyncUrlConfigured &&
           bridge.database &&
-          (bridge.firstSyncCompleted || bridge.localSqliteInitialized),
-      ),
+          bridge.localSqliteInitialized &&
+          mirrorTrusted,
+      );
+    },
     powerSyncReplicaSqliteReady: (bridge: {
       database: unknown;
       localSqliteInitialized: boolean;

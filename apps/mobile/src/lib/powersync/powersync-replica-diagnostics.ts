@@ -5,6 +5,8 @@ export type PowerSyncReplicaDiagnosticsBridgeSlice = {
   powerSyncUrlConfigured: boolean;
   localSqliteInitialized: boolean;
   firstSyncCompleted: boolean;
+  firstSyncLandedOnDevice: boolean;
+  firstSyncLandingHydrated: boolean;
   syncConnecting: boolean;
   syncError: Error | null;
 };
@@ -110,6 +112,8 @@ export function formatPowerSyncReplicaDiagnosticsMessage(
     `powerSyncUrlConfigured: ${bridge.powerSyncUrlConfigured}`,
     `localSqliteInitialized: ${bridge.localSqliteInitialized}`,
     `firstSyncCompleted: ${bridge.firstSyncCompleted}`,
+    `firstSyncLandedOnDevice: ${bridge.firstSyncLandedOnDevice}`,
+    `firstSyncLandingHydrated: ${bridge.firstSyncLandingHydrated}`,
     `syncConnecting: ${bridge.syncConnecting}`,
     `syncError: ${bridge.syncError?.message ?? 'none'}`,
     '--- table row counts ---',

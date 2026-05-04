@@ -22,6 +22,10 @@ import {
 import { createSupabaseJwtPowerSyncConnector } from './supabase-jwt-connector';
 import { getMobilePowerSyncUrl } from './powersync-env';
 import { getOrCreateDeviceSqlcipherKey } from './powersync-sqlcipher-key';
+import {
+  getPowerSyncFirstSyncLandedForUser,
+  markPowerSyncFirstSyncLandedForUser,
+} from './powersync-first-sync-landing-storage';
 import { setPowerSyncOfflineReadBridgeSnapshot } from './powersync-offline-read-bridge-snapshot';
 import {
   isPowerSyncReplicaDiagnosticsEnabled,
@@ -59,6 +63,17 @@ export type PowerSyncBridgeState = {
   syncConnecting: boolean;
   /** Set when connect or first sync fails (logged-out cleanup errors are ignored). */
   syncError: Error | null;
+  /**
+   * Persisted marker: this user has completed at least one {@link PowerSyncDatabase.waitForFirstSync}
+   * on this device. Survives restarts so offline reads work after a prior online session when
+   * {@link firstSyncCompleted} is still false on cold start.
+   */
+  firstSyncLandedOnDevice: boolean;
+  /**
+   * False while loading {@link firstSyncLandedOnDevice} from storage for the signed-in user.
+   * Signed-out bridge treats this as hydrated immediately.
+   */
+  firstSyncLandingHydrated: boolean;
 };
 
 const defaultBridgeState: PowerSyncBridgeState = {
@@ -69,6 +84,8 @@ const defaultBridgeState: PowerSyncBridgeState = {
   localSqliteInitialized: false,
   syncConnecting: false,
   syncError: null,
+  firstSyncLandedOnDevice: false,
+  firstSyncLandingHydrated: true,
 };
 
 const PowerSyncBridgeContext =
@@ -111,20 +128,24 @@ export function usePowerSyncManualResync(): PowerSyncManualResyncContextValue {
 }
 
 /**
- * Whether preset/template list screens may issue read-only SQL against the encrypted replica.
- * Uses {@link PowerSyncBridgeState.localSqliteInitialized} so **cold start offline** still reads
- * rows persisted from an earlier online session when {@link PowerSyncBridgeState.firstSyncCompleted}
- * is still false (because {@link PowerSyncDatabase.waitForFirstSync} cannot finish without network).
+ * Whether preset/template list screens may issue read-only SQL against the encrypted replica for
+ * server-mirror data. Requires SQLite init plus either first sync this session or a persisted
+ * {@link PowerSyncBridgeState.firstSyncLandedOnDevice} flag so a **fresh install offline** does not
+ * treat an empty replica as authoritative.
  *
  * @param bridge - Latest {@link usePowerSyncBridgeState} value.
  */
 export function powerSyncOfflineReplicaReadsEnabled(
   bridge: PowerSyncBridgeState,
 ): boolean {
+  const mirrorTrusted =
+    bridge.firstSyncCompleted ||
+    (bridge.firstSyncLandingHydrated && bridge.firstSyncLandedOnDevice);
   return Boolean(
     bridge.powerSyncUrlConfigured &&
       bridge.database &&
-      (bridge.firstSyncCompleted || bridge.localSqliteInitialized),
+      bridge.localSqliteInitialized &&
+      mirrorTrusted,
   );
 }
 
@@ -188,6 +209,9 @@ export function PowerSyncSessionBridge({
   const [db, setDb] = useState<PowerSyncDatabase | null>(null);
   const [firstSyncCompleted, setFirstSyncCompleted] = useState(false);
   const [localSqliteInitialized, setLocalSqliteInitialized] = useState(false);
+  const [firstSyncLandedOnDevice, setFirstSyncLandedOnDevice] = useState(false);
+  const [firstSyncLandingHydrated, setFirstSyncLandingHydrated] =
+    useState(true);
   const [syncConnecting, setSyncConnecting] = useState(false);
   const [syncError, setSyncError] = useState<Error | null>(null);
 
@@ -217,6 +241,49 @@ export function PowerSyncSessionBridge({
         )
       : baseConnector;
   }, [powerSyncUrl]);
+
+  /** Latest session for connect-effect cleanup (skip redundant disconnect on sign-out). */
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+
+  /** Latest URL flag: cleanup disconnects when replication is disabled while still signed in. */
+  const urlConfiguredRef = useRef(urlConfigured);
+  urlConfiguredRef.current = urlConfigured;
+
+  const recordFirstSyncLanded = useCallback(() => {
+    const userId = sessionRef.current?.user?.id;
+    if (!userId) {
+      return;
+    }
+    setFirstSyncLandedOnDevice(true);
+    void markPowerSyncFirstSyncLandedForUser(userId);
+  }, []);
+
+  useEffect(() => {
+    const userId = session?.user?.id;
+    if (!userId) {
+      setFirstSyncLandedOnDevice(false);
+      setFirstSyncLandingHydrated(true);
+      return;
+    }
+    let cancelled = false;
+    setFirstSyncLandingHydrated(false);
+    void (async () => {
+      try {
+        const landed = await getPowerSyncFirstSyncLandedForUser(userId);
+        if (!cancelled) {
+          setFirstSyncLandedOnDevice(landed);
+        }
+      } finally {
+        if (!cancelled) {
+          setFirstSyncLandingHydrated(true);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.user?.id]);
 
   const manualResyncBusyRef = useRef(false);
   const [manualResyncBusy, setManualResyncBusy] = useState(false);
@@ -248,6 +315,7 @@ export function PowerSyncSessionBridge({
         try {
           await db.waitForFirstSync(ac.signal);
           setFirstSyncCompleted(true);
+          recordFirstSyncLanded();
         } finally {
           clearTimeout(timeoutId);
         }
@@ -273,7 +341,13 @@ export function PowerSyncSessionBridge({
       manualResyncBusyRef.current = false;
       setManualResyncBusy(false);
     }
-  }, [buildConnector, db, hasAuthSession, urlConfigured]);
+  }, [
+    buildConnector,
+    db,
+    hasAuthSession,
+    recordFirstSyncLanded,
+    urlConfigured,
+  ]);
 
   /**
    * If the stream recovers (e.g. device was offline during `waitForFirstSync`), PowerSync updates
@@ -303,14 +377,6 @@ export function PowerSyncSessionBridge({
     }),
     [manualResyncBusy, requestManualResync],
   );
-
-  /** Latest session for connect-effect cleanup (skip redundant disconnect on sign-out). */
-  const sessionRef = useRef(session);
-  sessionRef.current = session;
-
-  /** Latest URL flag: cleanup disconnects when replication is disabled while still signed in. */
-  const urlConfiguredRef = useRef(urlConfigured);
-  urlConfiguredRef.current = urlConfigured;
 
   useEffect(() => {
     if (!hasAuthSession || !urlConfigured) {
@@ -427,6 +493,7 @@ export function PowerSyncSessionBridge({
         clearFirstSyncWatchdog();
         if (!cancelled) {
           setFirstSyncCompleted(true);
+          recordFirstSyncLanded();
         }
         if (!cancelled && isPowerSyncReplicaDiagnosticsEnabled()) {
           void runPowerSyncReplicaDiagnostics(db).then((diag) => {
@@ -495,7 +562,14 @@ export function PowerSyncSessionBridge({
       // `ConnectionManager.disconnectInternal()` before reconnecting. Calling `disconnect()` here
       // races with in-flight `connect()` / `performDisconnect()` and spams "Trying to close for the second time".
     };
-  }, [buildConnector, db, hasAuthSession, powerSyncUrl, urlConfigured]);
+  }, [
+    buildConnector,
+    db,
+    hasAuthSession,
+    powerSyncUrl,
+    recordFirstSyncLanded,
+    urlConfigured,
+  ]);
 
   useEffect(() => {
     if (hasAuthSession) {
@@ -513,6 +587,8 @@ export function PowerSyncSessionBridge({
       } finally {
         setFirstSyncCompleted(false);
         setLocalSqliteInitialized(false);
+        setFirstSyncLandedOnDevice(false);
+        setFirstSyncLandingHydrated(true);
         setSyncError(null);
       }
     })();
@@ -527,10 +603,14 @@ export function PowerSyncSessionBridge({
       localSqliteInitialized,
       syncConnecting,
       syncError,
+      firstSyncLandedOnDevice,
+      firstSyncLandingHydrated,
     }),
     [
       db,
       firstSyncCompleted,
+      firstSyncLandedOnDevice,
+      firstSyncLandingHydrated,
       hasAuthSession,
       localSqliteInitialized,
       syncConnecting,
@@ -551,6 +631,8 @@ export function PowerSyncSessionBridge({
     firstSyncCompleted: bridgeValue.firstSyncCompleted,
     localSqliteInitialized: bridgeValue.localSqliteInitialized,
     powerSyncUrlConfigured: bridgeValue.powerSyncUrlConfigured,
+    firstSyncLandingHydrated: bridgeValue.firstSyncLandingHydrated,
+    firstSyncLandedOnDevice: bridgeValue.firstSyncLandedOnDevice,
   });
 
   // PowerSync typings omit `null`, but hooks treat a missing DB like "not configured" at runtime.

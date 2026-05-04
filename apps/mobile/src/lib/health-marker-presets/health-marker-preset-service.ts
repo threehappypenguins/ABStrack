@@ -60,7 +60,12 @@ export async function getCurrentUserId(): Promise<
 
 /**
  * Lists the signed-in user’s health marker presets, falling back to the PowerSync replica when
- * Supabase is unreachable and replication has completed at least once.
+ * Supabase is unreachable and {@link resolvePowerSyncDatabaseForOfflineRead} returns a database
+ * handle. That resolver enforces {@link canUsePowerSyncReplicaForOfflineReads}; list screens should
+ * pass `replicationReady` from `powerSyncOfflineReplicaReadsEnabled(usePowerSyncBridgeState())` so an
+ * **init-only** replica without a completed first sync (or persisted landing for this user) does
+ * **not** yield SQLite here — avoiding an empty list that would mask the “sync once while online”
+ * path handled by {@link clarifyNetworkErrorWhenReplicaUnavailable}.
  *
  * @param options.powerSyncOfflineRead - From `usePowerSyncBridgeState()` when calling from UI.
  */
@@ -75,6 +80,7 @@ export async function fetchHealthMarkerPresets(options?: {
   if (!isPresetDataNetworkError(remote.error)) {
     return remote;
   }
+  // Same server-mirror gate as symptom presets: not init() alone (see bridge snapshot + landing storage).
   const db = resolvePowerSyncDatabaseForOfflineRead(
     options?.powerSyncOfflineRead ?? null,
   );

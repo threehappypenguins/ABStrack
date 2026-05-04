@@ -61,7 +61,8 @@ export async function getCurrentUserId(): Promise<
 
 /**
  * Lists the signed-in user’s symptom presets, falling back to the PowerSync replica when Supabase
- * is unreachable and replication has completed at least once.
+ * is unreachable and the bridge reports the replica is ready for server-mirror reads (first sync
+ * this session or a persisted first-sync landing for this user on device).
  *
  * @param options.powerSyncOfflineRead - Prefer passing `usePowerSyncBridgeState()` fields from the
  *   screen so reads use the same DB instance as `PowerSyncContext` (PowerSync SDK lifecycle).

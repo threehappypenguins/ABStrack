@@ -39,9 +39,22 @@ function readErrorProbe(error: unknown): { code?: string; message: string } {
 type Snapshot = {
   database: PowerSyncDatabase | null;
   firstSyncCompleted: boolean;
-  /** True after {@link PowerSyncDatabase.init} on the open handle (cold start offline may never finish first sync). */
+  /**
+   * True after {@link PowerSyncDatabase.init} on the open handle. Required before SQL runs, but not
+   * sufficient alone to treat server-mirror tables as populated (see {@link firstSyncLandedOnDevice}).
+   */
   localSqliteInitialized: boolean;
   powerSyncUrlConfigured: boolean;
+  /**
+   * True once {@link getPowerSyncFirstSyncLandedForUser} has resolved for the signed-in user (or
+   * immediately when signed out). Until then, offline preset/template fallbacks stay conservative.
+   */
+  firstSyncLandingHydrated: boolean;
+  /**
+   * Persisted: this user has completed at least one first sync on this device. Survives process restarts
+   * so cold start offline still allows SQLite reads after a prior online session.
+   */
+  firstSyncLandedOnDevice: boolean;
 };
 
 const snapshot: Snapshot = {
@@ -49,6 +62,8 @@ const snapshot: Snapshot = {
   firstSyncCompleted: false,
   localSqliteInitialized: false,
   powerSyncUrlConfigured: false,
+  firstSyncLandingHydrated: true,
+  firstSyncLandedOnDevice: false,
 };
 
 /**
@@ -62,17 +77,24 @@ export function setPowerSyncOfflineReadBridgeSnapshot(next: Snapshot): void {
   snapshot.firstSyncCompleted = next.firstSyncCompleted;
   snapshot.localSqliteInitialized = next.localSqliteInitialized;
   snapshot.powerSyncUrlConfigured = next.powerSyncUrlConfigured;
+  snapshot.firstSyncLandingHydrated = next.firstSyncLandingHydrated;
+  snapshot.firstSyncLandedOnDevice = next.firstSyncLandedOnDevice;
 }
 
 /**
- * @returns `true` when read-only SQL may use the encrypted replica: URL configured, DB open, and either
- *   first sync completed **or** local SQLite initialized after {@link PowerSyncDatabase.init} (offline cold start).
+ * @returns `true` when read-only SQL may treat server-mirror replica content as trustworthy for
+ *   offline fallbacks: URL configured, DB open, SQLite initialized, landing hydration done, and either
+ *   first sync finished this session or a prior run persisted first-sync landing for this user.
  */
 export function canUsePowerSyncReplicaForOfflineReads(): boolean {
+  const mirrorDataTrusted =
+    snapshot.firstSyncCompleted ||
+    (snapshot.firstSyncLandingHydrated && snapshot.firstSyncLandedOnDevice);
   return Boolean(
     snapshot.database &&
       snapshot.powerSyncUrlConfigured &&
-      (snapshot.firstSyncCompleted || snapshot.localSqliteInitialized),
+      snapshot.localSqliteInitialized &&
+      mirrorDataTrusted,
   );
 }
 
@@ -92,8 +114,8 @@ export function getPowerSyncDatabaseForOfflineReads(): PowerSyncDatabase | null 
 export type PowerSyncOfflineReadContext = {
   database: PowerSyncDatabase | null;
   /**
-   * True when `EXPO_PUBLIC_POWERSYNC_URL` is configured, {@link PowerSyncDatabase} is open, and either
-   * first sync finished or local SQLite finished `init` (same rule as `powerSyncOfflineReplicaReadsEnabled`).
+   * True when the same conditions as {@link canUsePowerSyncReplicaForOfflineReads} hold for the
+   * current bridge snapshot (URL, DB, SQLite init, and first-sync landing / session completion).
    */
   replicationReady: boolean;
 };
@@ -139,8 +161,9 @@ export function isPresetDataNetworkError(error: unknown): boolean {
 
 /**
  * When a list read failed with a transport-style error (see {@link isPresetDataNetworkError}) but the
- * encrypted replica is not readable yet (PowerSync URL is set but first sync never finished, or the
- * DB is not open), returns clearer copy so users do not think the app is only “broken offline.”
+ * encrypted replica is not usable for server-mirror reads yet (PowerSync URL is set but the DB is not
+ * open, SQLite is not initialized, landing flags say first sync never completed on this device, etc.),
+ * returns clearer copy so users do not think the app is only “broken offline.”
  * Otherwise `null` and callers should keep the original error.
  *
  * @param remoteError - Error from a failed Supabase-backed list fetch.
