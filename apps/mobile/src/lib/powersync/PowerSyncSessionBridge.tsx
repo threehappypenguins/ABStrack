@@ -4,6 +4,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -187,11 +188,18 @@ function isAbortError(error: unknown): boolean {
  * Supabase JWT connector, awaits first sync, and clears replicated data on sign-out via
  * {@link PowerSyncDatabase.disconnectAndClear}.
  *
- * **Logout:** When `session` loses **identity** (`session.user`), runs `disconnectAndClear` so the
- * replica is wiped for a true sign-out. A persisted session with an **expired** JWT may have
+ * **Logout / account switch:** When `session` loses **identity** (`session.user`), the bridge clears
+ * the prior user’s first-sync landing marker and runs `disconnectAndClear` on the shared DB. If
+ * another account signs in while that async cleanup is still running, cleanup **still** completes
+ * the wipe when the current `session.user.id` differs from the user being cleared (so the new
+ * account never reads the previous user’s replica). A direct **A→B** switch (without a `null`
+ * session frame) runs the same wipe via a dedicated `session.user.id` transition effect.
+ * A persisted session with an **expired** JWT may have
  * `access_token: ''` while `user` remains — that is still signed-in for offline UI; the connector
  * withholds the bearer until refresh. `fetchCredentials` returns `null` without a live token;
- * `connect` / `waitForFirstSync` run only when `access_token` is non-empty.
+ * `connect` / `waitForFirstSync` run only when `access_token` is non-empty. When the token is
+ * redacted after a live connection, the bridge calls `disconnect()` (not `disconnectAndClear`) so
+ * the old websocket does not keep syncing PHI with a stale bearer.
  *
  * @param props.session - Current Supabase session or `null`.
  * @param props.children - Authenticated app tree (also wraps auth stack so logout effects run).
@@ -230,6 +238,12 @@ export function PowerSyncSessionBridge({
       lastSignedInUserIdRef.current = uid;
     }
   }, [session?.user?.id]);
+
+  /**
+   * Tracks prior `session.user.id` to detect in-session account switches (no `null` frame).
+   * Updated after a successful wipe or on effect cleanup to match {@link sessionRef}.
+   */
+  const accountSwitchPrevUserIdRef = useRef<string | null>(null);
 
   const [db, setDb] = useState<PowerSyncDatabase | null>(null);
   const [firstSyncCompleted, setFirstSyncCompleted] = useState(false);
@@ -283,6 +297,21 @@ export function PowerSyncSessionBridge({
     setFirstSyncLandedOnDevice(true);
     void markPowerSyncFirstSyncLandedForUser(userId);
   }, []);
+
+  /**
+   * Before paint (and before other `useEffect` hooks), quarantine offline-read trust when the
+   * auth user id changes while the DB handle already exists — avoids a one-frame read of the prior
+   * user’s replica while the async wipe is scheduled.
+   */
+  useLayoutEffect(() => {
+    const next = session?.user?.id ?? null;
+    const prev = accountSwitchPrevUserIdRef.current;
+    if (db && urlConfigured && prev != null && next != null && prev !== next) {
+      setFirstSyncCompleted(false);
+      setFirstSyncLandedOnDevice(false);
+      setFirstSyncLandingHydrated(false);
+    }
+  }, [session?.user?.id, db, urlConfigured]);
 
   useEffect(() => {
     const userId = session?.user?.id;
@@ -598,8 +627,13 @@ export function PowerSyncSessionBridge({
       ac.abort();
       disposeSyncStatusDiag?.();
       disposeSyncStatusDiag = undefined;
-      // Sign-out: `disconnectAndClear` runs in the following effect — do not disconnect here.
+      // No bearer: tear down the stream if identity remains (redacted/offline token). Full sign-out
+      // (`user` gone) uses `disconnectAndClear` in a separate effect — skip `disconnect()` there
+      // so we do not race replica wipe.
       if (!sessionRef.current?.access_token) {
+        if (sessionRef.current?.user?.id) {
+          void db.disconnect();
+        }
         return;
       }
       // PowerSync URL removed while signed in — tear down sync; DB stays open for local reads.
@@ -618,14 +652,139 @@ export function PowerSyncSessionBridge({
     hasAuthSession,
     powerSyncUrl,
     recordFirstSyncLanded,
+    session?.user?.id,
     urlConfigured,
   ]);
 
   /**
+   * In-session account switch (user A → user B without `session.user` going null): wipe the shared
+   * replica immediately so B cannot read A’s SQLite mirror. Quarantines offline-read flags until
+   * first-sync landing is reloaded for B.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    const next = session?.user?.id ?? null;
+    const prev = accountSwitchPrevUserIdRef.current;
+
+    const syncPrevRefToCurrentSession = () => {
+      accountSwitchPrevUserIdRef.current = sessionRef.current?.user?.id ?? null;
+    };
+
+    if (
+      !db ||
+      !urlConfigured ||
+      prev == null ||
+      next == null ||
+      prev === next
+    ) {
+      syncPrevRefToCurrentSession();
+      return () => {
+        cancelled = true;
+        syncPrevRefToCurrentSession();
+      };
+    }
+
+    void (async () => {
+      const shouldContinueReplicaWipeForLandingUser = () => {
+        if (cancelled) {
+          return false;
+        }
+        const uid = sessionRef.current?.user?.id ?? null;
+        if (!uid) {
+          return true;
+        }
+        return uid !== prev;
+      };
+
+      const failures: unknown[] = [];
+      try {
+        await clearPowerSyncFirstSyncLandedForUser(prev);
+      } catch (e) {
+        if (!shouldContinueReplicaWipeForLandingUser()) {
+          return;
+        }
+        failures.push(e);
+        console.warn(
+          '[PowerSync] account-switch prior-user landing clear failed',
+          e,
+        );
+      }
+      if (!shouldContinueReplicaWipeForLandingUser()) {
+        return;
+      }
+      try {
+        await db.disconnectAndClear();
+      } catch (e) {
+        if (!shouldContinueReplicaWipeForLandingUser()) {
+          return;
+        }
+        failures.push(e);
+        console.warn('[PowerSync] account-switch replica wipe failed', e);
+      }
+      if (!shouldContinueReplicaWipeForLandingUser()) {
+        return;
+      }
+
+      setFirstSyncCompleted(false);
+      setLocalSqliteInitialized(false);
+      setSyncError(null);
+
+      const uidAfter = sessionRef.current?.user?.id;
+      if (!uidAfter) {
+        setFirstSyncLandedOnDevice(false);
+        setFirstSyncLandingHydrated(true);
+      } else {
+        setFirstSyncLandingHydrated(false);
+        try {
+          const landed = await getPowerSyncFirstSyncLandedForUser(uidAfter);
+          if (!shouldContinueReplicaWipeForLandingUser()) {
+            return;
+          }
+          setFirstSyncLandedOnDevice(landed);
+        } catch (e) {
+          console.warn(
+            '[PowerSync] account-switch first-sync landing reload failed',
+            e,
+          );
+          if (shouldContinueReplicaWipeForLandingUser()) {
+            setFirstSyncLandedOnDevice(false);
+          }
+        } finally {
+          if (shouldContinueReplicaWipeForLandingUser()) {
+            setFirstSyncLandingHydrated(true);
+          }
+        }
+      }
+
+      const cleanupError =
+        failures.length === 0
+          ? null
+          : new Error(
+              [
+                'Account switch could not finish clearing the prior user’s encrypted copy on this device.',
+                `Detail: ${failures
+                  .map((f) => (f instanceof Error ? f.message : String(f)))
+                  .join('; ')}`,
+              ].join(' '),
+            );
+      if (cleanupError && shouldContinueReplicaWipeForLandingUser()) {
+        setSyncError(cleanupError);
+      }
+
+      accountSwitchPrevUserIdRef.current = next;
+    })();
+
+    return () => {
+      cancelled = true;
+      syncPrevRefToCurrentSession();
+    };
+  }, [session?.user?.id, db, urlConfigured]);
+
+  /**
    * Sign-out replica wipe: runs when **identity** is gone (`session.user`), not merely when the
-   * access JWT is empty. Must not run `disconnectAndClear` or reset bridge flags if the user signs
-   * back in (or this effect is superseded) before awaits finish — that would clear the shared DB
-   * under the new session.
+   * access JWT is empty. If another account signs in while this async cleanup runs, the wipe still
+   * completes when the current `session.user.id` differs from the user being cleared (same shared
+   * DB file for all accounts).
    */
   useEffect(() => {
     if (hasAuthIdentity) {
@@ -635,8 +794,16 @@ export function PowerSyncSessionBridge({
     const landingUserId = lastSignedInUserIdRef.current;
     lastSignedInUserIdRef.current = null;
 
-    const stillSignOutReplicaCleanup = () =>
-      !cancelled && !sessionRef.current?.user?.id;
+    const shouldFinishLandingUserReplicaWipe = () => {
+      if (cancelled) {
+        return false;
+      }
+      const uid = sessionRef.current?.user?.id ?? null;
+      if (!uid) {
+        return true;
+      }
+      return uid !== landingUserId;
+    };
 
     void (async () => {
       const failures: unknown[] = [];
@@ -644,7 +811,7 @@ export function PowerSyncSessionBridge({
         try {
           await clearPowerSyncFirstSyncLandedForUser(landingUserId);
         } catch (e) {
-          if (!stillSignOutReplicaCleanup()) {
+          if (!shouldFinishLandingUserReplicaWipe()) {
             return;
           }
           failures.push(e);
@@ -654,21 +821,21 @@ export function PowerSyncSessionBridge({
           );
         }
       }
-      if (!stillSignOutReplicaCleanup()) {
+      if (!shouldFinishLandingUserReplicaWipe()) {
         return;
       }
       if (db) {
         try {
           await db.disconnectAndClear();
         } catch (e) {
-          if (!stillSignOutReplicaCleanup()) {
+          if (!shouldFinishLandingUserReplicaWipe()) {
             return;
           }
           failures.push(e);
           console.warn('[PowerSync] sign-out replica cleanup failed', e);
         }
       }
-      if (!stillSignOutReplicaCleanup()) {
+      if (!shouldFinishLandingUserReplicaWipe()) {
         return;
       }
 
@@ -687,9 +854,35 @@ export function PowerSyncSessionBridge({
 
       setFirstSyncCompleted(false);
       setLocalSqliteInitialized(false);
-      setFirstSyncLandedOnDevice(false);
-      setFirstSyncLandingHydrated(true);
-      setSyncError(cleanupError);
+
+      const uidAfter = sessionRef.current?.user?.id;
+      if (!uidAfter) {
+        setFirstSyncLandedOnDevice(false);
+        setFirstSyncLandingHydrated(true);
+        setSyncError(cleanupError);
+      } else {
+        setFirstSyncLandingHydrated(false);
+        try {
+          const landed = await getPowerSyncFirstSyncLandedForUser(uidAfter);
+          if (!shouldFinishLandingUserReplicaWipe()) {
+            return;
+          }
+          setFirstSyncLandedOnDevice(landed);
+        } catch (e) {
+          console.warn(
+            '[PowerSync] sign-out interrupted: first-sync landing reload failed',
+            e,
+          );
+          if (shouldFinishLandingUserReplicaWipe()) {
+            setFirstSyncLandedOnDevice(false);
+          }
+        } finally {
+          if (shouldFinishLandingUserReplicaWipe()) {
+            setFirstSyncLandingHydrated(true);
+          }
+        }
+        setSyncError(cleanupError);
+      }
     })();
 
     return () => {

@@ -60,12 +60,12 @@ export async function getCurrentUserId(): Promise<
  * Lists episode templates with nested preset names, falling back to the PowerSync replica when
  * Supabase fails with a transport-style error, or substitutes SQLite when Supabase returns a
  * successful empty list — some paths yield `{ data: [], error: null }` without a transport error.
- * **SQLite** substitutes that empty list only when NetInfo **`isConnected === false`** (definitively
- * offline) and {@link resolvePowerSyncDatabaseForOfflineRead} returns a handle, so an unknown
- * NetInfo `null` cannot resurrect stale rows after a real server-side empty response. If the replica
- * is not mirror-ready and NetInfo is not definitively online, {@link clarifyNetworkErrorWhenReplicaUnavailable}
- * may still surface the “open online once” copy when there is no DB handle. When NetInfo reports
- * online (`true`), an empty successful list stays authoritative.
+ * **SQLite** substitutes that empty list only when NetInfo reports **definitively offline**
+ * (`fetchMobileDeviceIsConnected() === false`) and {@link resolvePowerSyncDatabaseForOfflineRead}
+ * returns a handle, so unknown NetInfo (`null`, including after a failed fetch) never resurrects
+ * stale rows after a real server-side empty response. The “open online once” replica-unavailable
+ * message applies only when the device is **explicitly offline** and there is no DB handle; a
+ * successful remote empty list stays authoritative when connectivity is unknown or online.
  *
  * @param options.powerSyncOfflineRead - From `usePowerSyncBridgeState()` when calling from UI.
  * @returns {@link PresetDataResult} of template rows or an error.
@@ -124,7 +124,7 @@ export async function fetchEpisodeTemplates(options?: {
         /* keep remote */
       }
     }
-    if (!db && connected !== true) {
+    if (!db && connected === false) {
       const alt = clarifyNetworkErrorWhenReplicaUnavailable(
         new PresetDataError('network_error', 'Network request failed'),
       );

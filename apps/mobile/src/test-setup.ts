@@ -61,12 +61,17 @@ jest.mock('expo-file-system', () => ({
 }));
 
 /** `getMobileAuthSessionSafe` falls back to SecureStore when GoTrue rejects; real native calls can hang Jest. */
-jest.mock('expo-secure-store', () => ({
-  __esModule: true,
-  getItemAsync: jest.fn(async () => null),
-  setItemAsync: jest.fn(async () => undefined),
-  deleteItemAsync: jest.fn(async () => undefined),
-}));
+jest.mock('expo-secure-store', () => {
+  /** Stable numeric stand-in for `expo-secure-store` `WHEN_UNLOCKED_THIS_DEVICE_ONLY` in Jest. */
+  const WHEN_UNLOCKED_THIS_DEVICE_ONLY = 6;
+  return {
+    __esModule: true,
+    WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+    getItemAsync: jest.fn(async () => null),
+    setItemAsync: jest.fn(async () => undefined),
+    deleteItemAsync: jest.fn(async () => undefined),
+  };
+});
 
 jest.mock('expo-video', () => {
   return {
