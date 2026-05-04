@@ -29,9 +29,10 @@ export interface SupabaseSessionLike {
  * {@link SUPABASE_JWT_POWERSYNC_UPLOAD_CRUD_BATCH_LIMIT} so each batch has at most one CRUD entry:
  * a permanent rejection can safely call {@link CrudBatch#complete} without dropping unsent tail ops
  * or leaving the upload queue stuck on the same head batch. **Transient** failures (network, 5xx,
- * JWT/session) keep the batch pending for retry. **Permanent** rejections (RLS, FK, constraints,
- * other 4xx / PostgREST client errors) dequeue the offending op after {@link isPowerSyncUploadPermanentServerFailure}
- * (local row may diverge until the next successful sync; see product docs).
+ * HTTP **401** / **429**, JWT/session) keep the batch pending for retry. **Permanent** rejections
+ * (RLS, FK, constraints, other 4xx / PostgREST client errors) dequeue the offending op after
+ * {@link isPowerSyncUploadPermanentServerFailure} (local row may diverge until the next successful
+ * sync; see product docs).
  *
  * @param options.powerSyncUrl PowerSync Service WebSocket HTTP endpoint (e.g. from dashboard).
  * @param options.getSession Resolves the active Supabase session or null when signed out.

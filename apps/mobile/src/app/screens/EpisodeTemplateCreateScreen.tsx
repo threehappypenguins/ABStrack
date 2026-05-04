@@ -42,6 +42,7 @@ export function EpisodeTemplateCreateScreen() {
   const navigation = useNavigation<CreateNav>();
   const { colors } = useAppTheme();
   const psBridge = usePowerSyncBridgeState();
+  const replicaMirrorReads = powerSyncOfflineReplicaReadsEnabled(psBridge);
   const [name, setName] = useState('');
   const [symptomId, setSymptomId] = useState<string | null>(null);
   const [markerId, setMarkerId] = useState<string | null>(null);
@@ -68,7 +69,7 @@ export function EpisodeTemplateCreateScreen() {
       setListsError(null);
       const offlineRead = {
         database: psBridge.database,
-        replicationReady: powerSyncOfflineReplicaReadsEnabled(psBridge),
+        replicationReady: replicaMirrorReads,
       };
       const [sRes, mRes] = await Promise.all([
         fetchSymptomPresets({ powerSyncOfflineRead: offlineRead }),
@@ -105,7 +106,9 @@ export function EpisodeTemplateCreateScreen() {
     return () => {
       cancelled = true;
     };
-  }, [psBridge]);
+    // Only re-run when offline preset reads could change shape (DB handle or mirror readiness).
+    // Do not depend on the whole bridge — syncConnecting/syncError updates would reset form state.
+  }, [psBridge.database, replicaMirrorReads]);
 
   const nameOk = useMemo(() => validateEpisodeTemplateName(name).ok, [name]);
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, Linking, View } from 'react-native';
+import { ActivityIndicator, AppState, Linking, Text, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -24,7 +24,10 @@ import { SymptomPromptScreen } from './screens/SymptomPromptScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { SignupScreen } from './screens/SignupScreen';
 import { UpdatePasswordScreen } from './screens/UpdatePasswordScreen';
-import { PowerSyncSessionBridge } from '../lib/powersync/PowerSyncSessionBridge';
+import {
+  PowerSyncSessionBridge,
+  usePowerSyncBridgeState,
+} from '../lib/powersync/PowerSyncSessionBridge';
 import { getRequireReauthOnOpenPreference } from './reauth-preference';
 import { useAppTheme } from './theme/AppThemeContext';
 import { nw } from './theme/app-nativewind-classes';
@@ -40,6 +43,32 @@ const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const MainStack = createNativeStackNavigator<MainStackParamList>();
 
 type AuthRoute = keyof AuthStackParamList;
+
+/**
+ * When sign-out replica wipe fails, the PowerSync bridge sets `syncError` but
+ * `SyncHealthFooter` is not mounted on the auth stack — surface the message here.
+ *
+ * @param props.session - Current session; banner hidden while any session exists.
+ */
+function SignOutReplicaCleanupBanner({ session }: { session: Session | null }) {
+  const { syncError } = usePowerSyncBridgeState();
+  if (session || !syncError) {
+    return null;
+  }
+  return (
+    <View
+      accessibilityRole="alert"
+      className={`border-b border-app-health-failure-border bg-app-health-failure-bg px-4 py-3 dark:border-app-health-failure-border-dark dark:bg-app-health-failure-bg-dark`}
+    >
+      <Text
+        className={`${nw.healthFailureBody} text-sm`}
+        accessibilityLabel={syncError.message}
+      >
+        {syncError.message}
+      </Text>
+    </View>
+  );
+}
 
 function parseDeepLink(url: string): {
   params: URLSearchParams;
@@ -113,6 +142,8 @@ function AppBootstrap() {
     null,
   );
   const resumeRefreshInFlightRef = useRef(false);
+  /** Prevents resume handler `setInitializing(false)` from racing cold start `bootstrap` `finally`. */
+  const bootstrapCompleteRef = useRef(false);
 
   const stackScreenOptions = useMemo(
     () => ({
@@ -257,14 +288,12 @@ function AppBootstrap() {
 
     const bootstrap = async () => {
       try {
-        const [{ data }, initialUrl] = await Promise.all([
+        // Prime session read in parallel with deep link; do not `setSession` until after
+        // `enforceReauthIfNeeded` so PowerSync never opens the replica for a session we will clear.
+        const [, initialUrl] = await Promise.all([
           getMobileAuthSessionSafe(),
           Linking.getInitialURL(),
         ]);
-
-        if (mounted) {
-          setSession(data.session ?? null);
-        }
 
         if (initialUrl) {
           await handleRecoveryLink(initialUrl);
@@ -274,12 +303,18 @@ function AppBootstrap() {
         await enforceReauthIfNeeded({
           allowServerSignOut: connectedAtBoot === true,
         });
+
+        const { data: afterReauth } = await getMobileAuthSessionSafe();
+        if (mounted) {
+          setSession(afterReauth.session ?? null);
+        }
       } catch (error) {
         /* Hermes LogBox: do not rethrow; still leave bootstrap so the UI is not stuck loading. */
         if (__DEV__) {
           console.warn('[AppBootstrap] Startup failed', error);
         }
       } finally {
+        bootstrapCompleteRef.current = true;
         if (mounted) {
           setInitializing(false);
         }
@@ -301,33 +336,42 @@ function AppBootstrap() {
           return;
         }
         void (async () => {
-          const connected = await fetchMobileDeviceIsConnected();
-          await enforceReauthIfNeeded({
-            allowServerSignOut: connected === true,
-          });
-          if (connected !== true) {
-            return;
+          if (mounted) {
+            setInitializing(true);
           }
-          if (resumeRefreshTimerRef.current !== null) {
-            clearTimeout(resumeRefreshTimerRef.current);
-          }
-          resumeRefreshTimerRef.current = setTimeout(() => {
-            resumeRefreshTimerRef.current = null;
-            if (resumeRefreshInFlightRef.current) {
+          try {
+            const connected = await fetchMobileDeviceIsConnected();
+            await enforceReauthIfNeeded({
+              allowServerSignOut: connected === true,
+            });
+            if (connected !== true) {
               return;
             }
-            const refresh = mobileSupabase.auth.refreshSession;
-            if (typeof refresh !== 'function') {
-              return;
+            if (resumeRefreshTimerRef.current !== null) {
+              clearTimeout(resumeRefreshTimerRef.current);
             }
-            resumeRefreshInFlightRef.current = true;
-            void refresh
-              .call(mobileSupabase.auth)
-              .catch(() => undefined)
-              .finally(() => {
-                resumeRefreshInFlightRef.current = false;
-              });
-          }, 400);
+            resumeRefreshTimerRef.current = setTimeout(() => {
+              resumeRefreshTimerRef.current = null;
+              if (resumeRefreshInFlightRef.current) {
+                return;
+              }
+              const refresh = mobileSupabase.auth.refreshSession;
+              if (typeof refresh !== 'function') {
+                return;
+              }
+              resumeRefreshInFlightRef.current = true;
+              void refresh
+                .call(mobileSupabase.auth)
+                .catch(() => undefined)
+                .finally(() => {
+                  resumeRefreshInFlightRef.current = false;
+                });
+            }, 400);
+          } finally {
+            if (mounted && bootstrapCompleteRef.current) {
+              setInitializing(false);
+            }
+          }
         })();
       },
     );
@@ -450,7 +494,10 @@ function AppBootstrap() {
         <View className="min-h-0 flex-1">
           <NavigationContainer theme={navigationTheme}>
             {showAuthStack ? (
-              authStack
+              <>
+                <SignOutReplicaCleanupBanner session={session} />
+                {authStack}
+              </>
             ) : (
               <MainStack.Navigator screenOptions={stackScreenOptions}>
                 <MainStack.Screen

@@ -215,11 +215,12 @@ export function HomeScreen({
   }, [loadNetworkResumeEpisode, replicaMirrorHomeReads]);
 
   /**
-   * Episode CTA loading: with PowerSync configured, until local SQLite `init` completes. When the
-   * replica is mirror-ready ({@link powerSyncOfflineReplicaReadsEnabled}), keep loading while first
-   * sync is still connecting without completion. When the URL is set but the replica is **not**
-   * mirror-ready yet (fresh install before first sync / landing), follow the same online resume
-   * fetch as the no-PowerSync path; if NetInfo is explicitly offline before that fetch, stay in
+   * Episode CTA loading: with PowerSync configured, wait on SQLite **only** while init/connect may
+   * still succeed (`syncConnecting`, or an open DB handle with no terminal {@link PowerSyncBridgeState.syncError}).
+   * If `init`/`connect` fails (SQLCipher, schema, etc.), do **not** spin forever — the same online
+   * resume path as when the replica is not mirror-ready drives loading so {@link loadNetworkResumeEpisode}
+   * can surface Supabase. When the replica is mirror-ready, keep loading while first sync is still
+   * connecting without completion. If NetInfo is explicitly offline before that fetch, stay in
    * loading so an empty local DB is not mistaken for “no active episode.”
    */
   const activeEpisodeLoading = useMemo(() => {
@@ -227,7 +228,11 @@ export function HomeScreen({
       return false;
     }
     if (psBridge.powerSyncUrlConfigured) {
-      if (!psBridge.localSqliteInitialized) {
+      const maybeStillOpeningSqlite =
+        !psBridge.localSqliteInitialized &&
+        (psBridge.syncConnecting ||
+          (psBridge.database != null && psBridge.syncError == null));
+      if (maybeStillOpeningSqlite) {
         return true;
       }
       if (replicaMirrorHomeReads) {
@@ -238,10 +243,12 @@ export function HomeScreen({
     return networkResumeLoading;
   }, [
     userId,
+    psBridge.database,
     psBridge.powerSyncUrlConfigured,
     psBridge.firstSyncCompleted,
     psBridge.localSqliteInitialized,
     psBridge.syncConnecting,
+    psBridge.syncError,
     replicaMirrorHomeReads,
     networkResumeLoading,
     networkResumeSkippedOffline,

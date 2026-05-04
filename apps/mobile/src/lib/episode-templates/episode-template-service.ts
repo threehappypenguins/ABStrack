@@ -59,14 +59,13 @@ export async function getCurrentUserId(): Promise<
 /**
  * Lists episode templates with nested preset names, falling back to the PowerSync replica when
  * Supabase fails with a transport-style error, or substitutes SQLite when Supabase returns a
- * successful empty list **while the device is not definitively online** (NetInfo
- * `isConnected !== true`) — some offline paths yield `{ data: [], error: null }` instead of a
- * network error. SQLite is used only when {@link resolvePowerSyncDatabaseForOfflineRead} returns a
- * handle (same first-sync / landing gate as other preset lists). If the list is still empty and the
- * replica is not mirror-ready, {@link clarifyNetworkErrorWhenReplicaUnavailable} surfaces the
- * “open online once” copy instead of masking with an empty success. When NetInfo reports online, an
- * empty successful list is treated as authoritative so stale SQLite is not shown after server-side
- * deletes or access changes.
+ * successful empty list — some paths yield `{ data: [], error: null }` without a transport error.
+ * **SQLite** substitutes that empty list only when NetInfo **`isConnected === false`** (definitively
+ * offline) and {@link resolvePowerSyncDatabaseForOfflineRead} returns a handle, so an unknown
+ * NetInfo `null` cannot resurrect stale rows after a real server-side empty response. If the replica
+ * is not mirror-ready and NetInfo is not definitively online, {@link clarifyNetworkErrorWhenReplicaUnavailable}
+ * may still surface the “open online once” copy when there is no DB handle. When NetInfo reports
+ * online (`true`), an empty successful list stays authoritative.
  *
  * @param options.powerSyncOfflineRead - From `usePowerSyncBridgeState()` when calling from UI.
  * @returns {@link PresetDataResult} of template rows or an error.
@@ -108,28 +107,29 @@ export async function fetchEpisodeTemplates(options?: {
     }
   }
 
-  // Supabase sometimes yields `{ data: [], error: null }` without a transport error when offline;
-  // do not override a successful empty response while NetInfo says online (authoritative []).
+  // Supabase sometimes yields `{ data: [], error: null }` without a transport error when offline.
+  // Only override a successful empty response from SQLite when NetInfo definitively reports offline.
   if (remote.ok && remote.data.length === 0) {
     const connected = await fetchMobileDeviceIsConnected();
-    if (connected !== true) {
-      if (db) {
-        try {
-          const localRows =
-            await listEpisodeTemplatesWithPresetsFromPowerSyncDb(db, userId);
-          if (localRows.length > 0) {
-            return { ok: true, data: localRows };
-          }
-        } catch {
-          /* keep remote */
-        }
-      } else {
-        const alt = clarifyNetworkErrorWhenReplicaUnavailable(
-          new PresetDataError('network_error', 'Network request failed'),
+    if (db && connected === false) {
+      try {
+        const localRows = await listEpisodeTemplatesWithPresetsFromPowerSyncDb(
+          db,
+          userId,
         );
-        if (alt) {
-          return { ok: false, error: alt };
+        if (localRows.length > 0) {
+          return { ok: true, data: localRows };
         }
+      } catch {
+        /* keep remote */
+      }
+    }
+    if (!db && connected !== true) {
+      const alt = clarifyNetworkErrorWhenReplicaUnavailable(
+        new PresetDataError('network_error', 'Network request failed'),
+      );
+      if (alt) {
+        return { ok: false, error: alt };
       }
     }
   }

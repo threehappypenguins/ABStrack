@@ -246,7 +246,8 @@ export async function updateFoodDiaryEntryOfflineFirst(
 }
 
 /**
- * Deletes a food diary entry offline-first.
+ * Deletes a food diary entry offline-first. The PowerSync path returns `data: false` when no row
+ * matched (same contract as {@link deleteFoodDiaryEntry} with `maybeSingle()`).
  */
 export async function deleteFoodDiaryEntryOfflineFirst(
   client: AbstrackSupabaseClient,

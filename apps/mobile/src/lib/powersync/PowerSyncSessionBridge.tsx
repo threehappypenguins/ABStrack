@@ -23,6 +23,7 @@ import { createSupabaseJwtPowerSyncConnector } from './supabase-jwt-connector';
 import { getMobilePowerSyncUrl } from './powersync-env';
 import { getOrCreateDeviceSqlcipherKey } from './powersync-sqlcipher-key';
 import {
+  clearPowerSyncFirstSyncLandedForUser,
   getPowerSyncFirstSyncLandedForUser,
   markPowerSyncFirstSyncLandedForUser,
 } from './powersync-first-sync-landing-storage';
@@ -61,7 +62,11 @@ export type PowerSyncBridgeState = {
   localSqliteInitialized: boolean;
   /** True while `init` / `connect` / first sync are in flight. */
   syncConnecting: boolean;
-  /** Set when connect or first sync fails (logged-out cleanup errors are ignored). */
+  /**
+   * Set when connect or first sync fails, or when sign-out replica cleanup
+   * (`disconnectAndClear` / landing storage) fails — in the latter case the user is signed out
+   * but local PHI may still exist until cleanup succeeds.
+   */
   syncError: Error | null;
   /**
    * Persisted marker: this user has completed at least one {@link PowerSyncDatabase.waitForFirstSync}
@@ -205,6 +210,18 @@ export function PowerSyncSessionBridge({
    * second time" warnings). Connector `getSession` already reads the latest JWT from Supabase.
    */
   const hasAuthSession = Boolean(session?.access_token);
+
+  /**
+   * Last signed-in `session.user.id` so we can clear persisted first-sync landing on logout after
+   * `session` is already null (SecureStore must align with `disconnectAndClear`).
+   */
+  const lastSignedInUserIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const uid = session?.user?.id;
+    if (uid) {
+      lastSignedInUserIdRef.current = uid;
+    }
+  }, [session?.user?.id]);
 
   const [db, setDb] = useState<PowerSyncDatabase | null>(null);
   const [firstSyncCompleted, setFirstSyncCompleted] = useState(false);
@@ -355,7 +372,7 @@ export function PowerSyncSessionBridge({
    * red until a full effect re-run. Clear stale bridge errors when the client reports healthy.
    */
   useEffect(() => {
-    if (!db) {
+    if (!db || !hasAuthSession) {
       return;
     }
     return db.registerListener({
@@ -368,7 +385,7 @@ export function PowerSyncSessionBridge({
         }
       },
     });
-  }, [db]);
+  }, [db, hasAuthSession]);
 
   const manualResyncContextValue = useMemo(
     (): PowerSyncManualResyncContextValue => ({
@@ -575,22 +592,49 @@ export function PowerSyncSessionBridge({
     if (hasAuthSession) {
       return;
     }
-    if (!db) {
-      return;
-    }
+    const landingUserId = lastSignedInUserIdRef.current;
+    lastSignedInUserIdRef.current = null;
 
     void (async () => {
-      try {
-        await db.disconnectAndClear();
-      } catch (e) {
-        console.warn('[PowerSync] disconnectAndClear after sign-out', e);
-      } finally {
-        setFirstSyncCompleted(false);
-        setLocalSqliteInitialized(false);
-        setFirstSyncLandedOnDevice(false);
-        setFirstSyncLandingHydrated(true);
-        setSyncError(null);
+      const failures: unknown[] = [];
+      if (landingUserId) {
+        try {
+          await clearPowerSyncFirstSyncLandedForUser(landingUserId);
+        } catch (e) {
+          failures.push(e);
+          console.warn(
+            '[PowerSync] sign-out first-sync landing clear failed',
+            e,
+          );
+        }
       }
+      if (db) {
+        try {
+          await db.disconnectAndClear();
+        } catch (e) {
+          failures.push(e);
+          console.warn('[PowerSync] sign-out replica cleanup failed', e);
+        }
+      }
+
+      const cleanupError =
+        failures.length === 0
+          ? null
+          : new Error(
+              [
+                'Sign-out could not finish clearing the encrypted health copy on this device.',
+                'You are signed out; local data may remain until this succeeds or you reinstall the app.',
+                `Detail: ${failures
+                  .map((f) => (f instanceof Error ? f.message : String(f)))
+                  .join('; ')}`,
+              ].join(' '),
+            );
+
+      setFirstSyncCompleted(false);
+      setLocalSqliteInitialized(false);
+      setFirstSyncLandedOnDevice(false);
+      setFirstSyncLandingHydrated(true);
+      setSyncError(cleanupError);
     })();
   }, [hasAuthSession, db]);
 

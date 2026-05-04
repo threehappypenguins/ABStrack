@@ -42,3 +42,19 @@ export async function markPowerSyncFirstSyncLandedForUser(
     /* non-fatal: offline replica reads stay gated until next successful persist */
   }
 }
+
+/**
+ * Removes the persisted first-sync marker for this user (e.g. after logout clears the local replica).
+ * Idempotent if the key is already absent.
+ *
+ * @param userId - `session.user.id` from the session that is signing out.
+ */
+export async function clearPowerSyncFirstSyncLandedForUser(
+  userId: string,
+): Promise<void> {
+  try {
+    await SecureStore.deleteItemAsync(landingKeyForUser(userId));
+  } catch {
+    /* non-fatal */
+  }
+}

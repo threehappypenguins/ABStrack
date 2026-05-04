@@ -668,12 +668,21 @@ export async function updateFoodDiaryEntryPowerSyncDb(
  *
  * @param db - Initialized PowerSync database.
  * @param entryId - Row id.
+ * @returns Same boolean contract as {@link deleteFoodDiaryEntry}: `data: true` when a row was
+ *   present and removed, `data: false` when no matching row (already deleted or never existed).
  */
 export async function deleteFoodDiaryEntryPowerSyncDb(
   db: PowerSyncDatabase,
   entryId: Uuid,
 ): Promise<PresetDataResult<boolean>> {
   try {
+    const existing = await db.getOptional<{ id: string }>(
+      `SELECT id FROM food_diary_entries WHERE id = ?`,
+      [entryId],
+    );
+    if (!existing) {
+      return { ok: true, data: false };
+    }
     await db.execute(`DELETE FROM food_diary_entries WHERE id = ?`, [entryId]);
     return { ok: true, data: true };
   } catch (e) {

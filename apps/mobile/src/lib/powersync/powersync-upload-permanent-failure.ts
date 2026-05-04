@@ -4,9 +4,9 @@
  * `CrudBatch.complete()` and dequeue, avoiding an infinite retry loop that blocks later writes.
  *
  * **Conservative:** unknown or transport-shaped errors return `false` so the connector keeps the
- * transient “retry when online” behavior. HTTP **401** is never permanent here (even without a
- * PostgREST `code`), so expired JWTs can refresh and the upload can retry instead of
- * `batch.complete()` dropping the queue.
+ * transient “retry when online” behavior. HTTP **401** and **429** are never permanent here (even
+ * without a PostgREST `code`): JWT refresh and gateway / Supabase rate limits should retry with
+ * backoff instead of `batch.complete()` dropping the queue.
  *
  * @param error - Value thrown from Supabase `.from().upsert/update/delete` or similar.
  * @returns `true` when the batch should be completed to unblock the queue despite upload failure.
@@ -30,6 +30,10 @@ export function isPowerSyncUploadPermanentServerFailure(
   // Must run before the generic 4xx bucket: Supabase often surfaces auth as `{ status: 401 }`
   // without `code`; those are retryable after token refresh (same intent as PGRST301 / code 401).
   if (status === 401) {
+    return false;
+  }
+  // Throttling / rate limits from Supabase or an upstream gateway — retry later, do not dequeue.
+  if (status === 429) {
     return false;
   }
   if (status != null && status >= 400 && status < 500) {

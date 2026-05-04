@@ -453,7 +453,11 @@ describe('mobile auth state sync', () => {
       user: { id: 'user-1' },
     } as unknown as Session;
 
+    /** After `signOut`, bootstrap’s post–re-auth `getSession` must see null (matches real GoTrue). */
+    let persistedSession: Session | null = signedInSession;
+
     const signOut = jest.fn(async () => {
+      persistedSession = null;
       authStateListener?.('SIGNED_OUT', null);
       return { error: null };
     });
@@ -461,7 +465,7 @@ describe('mobile auth state sync', () => {
     const mockClient = {
       auth: {
         getSession: jest.fn(async () => ({
-          data: { session: signedInSession },
+          data: { session: persistedSession },
         })),
         signOut,
         onAuthStateChange: jest.fn((callback) => {

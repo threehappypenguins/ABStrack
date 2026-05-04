@@ -66,7 +66,7 @@ describe('isPowerSyncUploadPermanentServerFailure', () => {
     ).toBe(true);
   });
 
-  it('is true for 4xx HTTP status without Postgres code (except 401)', () => {
+  it('is true for 4xx HTTP status without Postgres code (except 401 and 429)', () => {
     expect(
       isPowerSyncUploadPermanentServerFailure({
         message: 'Bad Request',
@@ -77,6 +77,12 @@ describe('isPowerSyncUploadPermanentServerFailure', () => {
       isPowerSyncUploadPermanentServerFailure({
         message: 'Unauthorized',
         status: 401,
+      }),
+    ).toBe(false);
+    expect(
+      isPowerSyncUploadPermanentServerFailure({
+        message: 'Too Many Requests',
+        status: 429,
       }),
     ).toBe(false);
   });
