@@ -3,6 +3,16 @@ import * as SecureStore from 'expo-secure-store';
 const SECURE_STORE_KEY_PREFIX =
   'abstrack_powersync_first_sync_landed_v1_' as const;
 
+/** Persisted when first sync has landed at least once for this user on this device. */
+const LANDED_VALUE = '1' as const;
+
+/**
+ * Written when {@link clearPowerSyncFirstSyncLandedForUser} cannot delete the key (e.g. Keychain
+ * quirks) so {@link getPowerSyncFirstSyncLandedForUser} never reads a stale `1` after the replica
+ * was wiped — only {@link LANDED_VALUE} enables mirror trust for offline reads.
+ */
+const INVALIDATED_VALUE = '0' as const;
+
 function landingKeyForUser(userId: string): string {
   return `${SECURE_STORE_KEY_PREFIX}${userId}`;
 }
@@ -20,7 +30,7 @@ export async function getPowerSyncFirstSyncLandedForUser(
 ): Promise<boolean> {
   try {
     const v = await SecureStore.getItemAsync(landingKeyForUser(userId));
-    return v === '1';
+    return v === LANDED_VALUE;
   } catch {
     return false;
   }
@@ -35,7 +45,7 @@ export async function markPowerSyncFirstSyncLandedForUser(
   userId: string,
 ): Promise<void> {
   try {
-    await SecureStore.setItemAsync(landingKeyForUser(userId), '1', {
+    await SecureStore.setItemAsync(landingKeyForUser(userId), LANDED_VALUE, {
       keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
     });
   } catch {
@@ -45,17 +55,38 @@ export async function markPowerSyncFirstSyncLandedForUser(
 
 /**
  * Removes the persisted first-sync marker for this user (e.g. after logout clears the local replica).
- * Idempotent if the key is already absent (Expo SecureStore treats missing keys as a no-op).
+ * Idempotent if the key is already absent.
  *
- * **Sign-out:** Callers must handle rejection — if the replica is cleared but this delete fails, a
- * later login could otherwise re-hydrate `firstSyncLandedOnDevice` from stale SecureStore while the
- * replica is empty, and offline reads would trust that mirror incorrectly.
+ * **Sign-out:** Tries `deleteItemAsync` first. If delete fails (Keychain / Keystore), overwrites the
+ * value with {@link INVALIDATED_VALUE} so {@link getPowerSyncFirstSyncLandedForUser} never returns
+ * `true` from a stale {@link LANDED_VALUE} after `disconnectAndClear` has wiped SQLite — avoiding
+ * offline reads that treat an empty replica as already synced.
  *
  * @param userId - `session.user.id` from the session that is signing out.
- * @throws When `SecureStore.deleteItemAsync` fails (keychain / keystore errors, etc.).
+ * @throws When both delete and overwrite fail.
  */
 export async function clearPowerSyncFirstSyncLandedForUser(
   userId: string,
 ): Promise<void> {
-  await SecureStore.deleteItemAsync(landingKeyForUser(userId));
+  const key = landingKeyForUser(userId);
+  const storeOpts = {
+    keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+  } as const;
+
+  try {
+    await SecureStore.deleteItemAsync(key);
+    return;
+  } catch (deleteError) {
+    try {
+      await SecureStore.setItemAsync(key, INVALIDATED_VALUE, storeOpts);
+      return;
+    } catch (overwriteError) {
+      throw new Error(
+        'PowerSync first-sync landing marker could not be cleared (delete and overwrite both failed).',
+        {
+          cause: { deleteError, overwriteError },
+        },
+      );
+    }
+  }
 }

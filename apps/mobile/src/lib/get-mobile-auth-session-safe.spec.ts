@@ -2,7 +2,9 @@ import type { AbstrackSupabaseClient, Session } from '@abstrack/supabase';
 
 import {
   getMobileAuthSessionSafe,
+  hasUsableSupabaseAccessTokenForNetwork,
   isPersistedSupabaseSessionAccessExpired,
+  persistedSessionIdentityWithRedactedAccessJwt,
 } from './get-mobile-auth-session-safe';
 import {
   getMobileSupabaseClient,
@@ -85,6 +87,58 @@ describe('isPersistedSupabaseSessionAccessExpired', () => {
   });
 });
 
+describe('hasUsableSupabaseAccessTokenForNetwork', () => {
+  const nowSec = 1_700_000_000;
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    jest.setSystemTime(nowSec * 1000);
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('returns false when access_token is empty', () => {
+    const session = {
+      access_token: '',
+      user: { id: 'u1' },
+    } as Session;
+    expect(hasUsableSupabaseAccessTokenForNetwork(session)).toBe(false);
+  });
+
+  it('returns false when JWT is expired', () => {
+    const session = {
+      access_token: jwtWithExp(nowSec - 1),
+      user: { id: 'u1' },
+    } as Session;
+    expect(hasUsableSupabaseAccessTokenForNetwork(session)).toBe(false);
+  });
+
+  it('returns true when JWT is not expired', () => {
+    const session = {
+      access_token: jwtWithExp(nowSec + 60),
+      user: { id: 'u1' },
+    } as Session;
+    expect(hasUsableSupabaseAccessTokenForNetwork(session)).toBe(true);
+  });
+});
+
+describe('persistedSessionIdentityWithRedactedAccessJwt', () => {
+  it('clears access_token and preserves user', () => {
+    const session = {
+      access_token: 'secret',
+      refresh_token: 'r',
+      user: { id: 'u1' } as Session['user'],
+    } as Session;
+    const next = persistedSessionIdentityWithRedactedAccessJwt(session);
+    expect(next.access_token).toBe('');
+    expect(next.user.id).toBe('u1');
+    expect(next.refresh_token).toBe('r');
+    expect(session.access_token).toBe('secret');
+  });
+});
+
 describe('getMobileAuthSessionSafe', () => {
   const storageKey = 'sb-test-auth-token';
   const nowSec = 1_800_000_000;
@@ -100,26 +154,29 @@ describe('getMobileAuthSessionSafe', () => {
     jest.useRealTimers();
   });
 
-  it('returns null session from storage fallback when persisted JWT exp is already past', async () => {
+  it('returns identity session with redacted access_token when persisted JWT exp is already past', async () => {
     jest.mocked(getMobileSupabaseClient).mockReturnValue({
       auth: {
         storageKey,
         getSession: jest.fn().mockRejectedValue(new Error('offline')),
       },
     } as unknown as AbstrackSupabaseClient);
-    jest.mocked(mobileAuthStorage.getItem).mockResolvedValue(
-      JSON.stringify({
-        access_token: jwtWithExp(nowSec - 1),
-        refresh_token: 'r',
-        expires_in: 3600,
-        expires_at: nowSec + 10,
-        token_type: 'bearer',
-        user: { id: 'u1' },
-      } as Session),
-    );
+    const persisted = {
+      access_token: jwtWithExp(nowSec - 1),
+      refresh_token: 'r',
+      expires_in: 3600,
+      expires_at: nowSec + 10,
+      token_type: 'bearer',
+      user: { id: 'u1' },
+    } as Session;
+    jest
+      .mocked(mobileAuthStorage.getItem)
+      .mockResolvedValue(JSON.stringify(persisted));
 
     await expect(getMobileAuthSessionSafe()).resolves.toEqual({
-      data: { session: null },
+      data: {
+        session: persistedSessionIdentityWithRedactedAccessJwt(persisted),
+      },
       error: null,
     });
     expect(mobileAuthStorage.getItem).toHaveBeenCalledWith(storageKey);

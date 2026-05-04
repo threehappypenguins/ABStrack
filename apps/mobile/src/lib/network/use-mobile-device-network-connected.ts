@@ -11,9 +11,10 @@ import {
  * **online-but-sync-errors** (PowerSync upload/download failures).
  *
  * Initial {@link fetchMobileDeviceIsConnected} runs alongside {@link NetInfo.addEventListener}. If
- * any listener snapshot is delivered before fetch settles (including an initial synchronous callback),
- * the fetch result is ignored so a slower {@link NetInfo.fetch} cannot overwrite fresher connectivity
- * (e.g. sync footer right after mount).
+ * a listener snapshot with **resolved** online/offline ({@link mapNetInfoStateToAppOnline} not
+ * `null`) arrives before fetch settles, the fetch result is ignored so a slower
+ * {@link NetInfo.fetch} cannot overwrite fresher connectivity. Initial callbacks that are still
+ * unknown (`null`) do not block fetch, so the hook is not stuck at `null` until the next transition.
  *
  * @returns `isConnected` is `null` until the first snapshot, then `true` / `false` using the same
  * rules as {@link mapNetInfoStateToAppOnline} (not raw NetInfo `isConnected` alone).
@@ -27,12 +28,11 @@ export function useMobileDeviceNetworkConnected(): {
     let active = true;
 
     /**
-     * Increments on every {@link NetInfo.addEventListener} callback. When {@link fetchMobileDeviceIsConnected}
-     * finishes, its result is applied only if this is still `0` — i.e. no listener snapshot has been
-     * delivered yet. Otherwise the fetch snapshot can be older than the last listener update (including
-     * the initial synchronous callback some platforms emit on subscribe).
+     * Increments when the listener delivers a **non-null** {@link mapNetInfoStateToAppOnline} value.
+     * Unknown snapshots (`null`) do not increment so an initial “still resolving” callback does not
+     * suppress {@link fetchMobileDeviceIsConnected} when fetch has a definite result.
      */
-    let listenerSnapshotCount = 0;
+    let listenerResolvedConnectivityCount = 0;
 
     const apply = (connected: boolean | null) => {
       if (active) {
@@ -41,8 +41,11 @@ export function useMobileDeviceNetworkConnected(): {
     };
 
     const unsubscribe = NetInfo.addEventListener((state) => {
-      listenerSnapshotCount += 1;
-      apply(mapNetInfoStateToAppOnline(state));
+      const mapped = mapNetInfoStateToAppOnline(state);
+      if (mapped !== null) {
+        listenerResolvedConnectivityCount += 1;
+      }
+      apply(mapped);
     });
 
     void (async () => {
@@ -55,7 +58,7 @@ export function useMobileDeviceNetworkConnected(): {
       if (!active) {
         return;
       }
-      if (listenerSnapshotCount > 0) {
+      if (listenerResolvedConnectivityCount > 0) {
         return;
       }
       apply(fetched);

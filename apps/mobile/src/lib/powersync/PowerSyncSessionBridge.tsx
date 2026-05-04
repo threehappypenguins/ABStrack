@@ -65,7 +65,8 @@ export type PowerSyncBridgeState = {
   /**
    * Set when connect or first sync fails, or when sign-out replica cleanup
    * (`disconnectAndClear` / landing storage) fails — in the latter case the user is signed out
-   * but local PHI may still exist until cleanup succeeds.
+   * but local PHI may still exist until cleanup succeeds. Landing clear uses delete with an
+   * overwrite fallback so a cleared empty replica is not paired with a stale “landed” flag.
    */
   syncError: Error | null;
   /**
@@ -588,12 +589,21 @@ export function PowerSyncSessionBridge({
     urlConfigured,
   ]);
 
+  /**
+   * Sign-out replica wipe: runs when `hasAuthSession` becomes false. Must not run
+   * `disconnectAndClear` or reset bridge flags if the user signs back in (or this effect is
+   * superseded) before awaits finish — that would clear the shared DB under the new session.
+   */
   useEffect(() => {
     if (hasAuthSession) {
       return;
     }
+    let cancelled = false;
     const landingUserId = lastSignedInUserIdRef.current;
     lastSignedInUserIdRef.current = null;
+
+    const stillSignOutReplicaCleanup = () =>
+      !cancelled && !sessionRef.current?.access_token;
 
     void (async () => {
       const failures: unknown[] = [];
@@ -601,6 +611,9 @@ export function PowerSyncSessionBridge({
         try {
           await clearPowerSyncFirstSyncLandedForUser(landingUserId);
         } catch (e) {
+          if (!stillSignOutReplicaCleanup()) {
+            return;
+          }
           failures.push(e);
           console.warn(
             '[PowerSync] sign-out first-sync landing clear failed',
@@ -608,13 +621,22 @@ export function PowerSyncSessionBridge({
           );
         }
       }
+      if (!stillSignOutReplicaCleanup()) {
+        return;
+      }
       if (db) {
         try {
           await db.disconnectAndClear();
         } catch (e) {
+          if (!stillSignOutReplicaCleanup()) {
+            return;
+          }
           failures.push(e);
           console.warn('[PowerSync] sign-out replica cleanup failed', e);
         }
+      }
+      if (!stillSignOutReplicaCleanup()) {
+        return;
       }
 
       const cleanupError =
@@ -636,6 +658,10 @@ export function PowerSyncSessionBridge({
       setFirstSyncLandingHydrated(true);
       setSyncError(cleanupError);
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [hasAuthSession, db]);
 
   const bridgeValue = useMemo(

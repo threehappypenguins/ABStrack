@@ -41,15 +41,54 @@ export function isPersistedSupabaseSessionAccessExpired(
 }
 
 /**
+ * True when `session.access_token` is non-empty **and** not past JWT `exp` / numeric
+ * {@link Session.expires_at} per {@link isPersistedSupabaseSessionAccessExpired}.
+ *
+ * Use before attaching the bearer to network requests. Identity-only callers may still use
+ * {@link Session.user} when this is false (e.g. after offline redaction in
+ * {@link getMobileAuthSessionSafe}).
+ *
+ * @param session - Current session from Supabase or {@link getMobileAuthSessionSafe}.
+ * @returns Whether the access token should be treated as a live JWT for API/PowerSync.
+ */
+export function hasUsableSupabaseAccessTokenForNetwork(
+  session: Session | null | undefined,
+): boolean {
+  if (!session?.access_token || session.access_token.length === 0) {
+    return false;
+  }
+  return !isPersistedSupabaseSessionAccessExpired(session);
+}
+
+/**
+ * Persisted session shaped for app state when the stored access JWT is already expired: keeps
+ * {@link Session.user} (and other fields) but clears `access_token` so nothing treats it as a
+ * live bearer until refresh succeeds.
+ *
+ * @param session - Parsed session from storage.
+ * @returns A new session object with `access_token` set to empty string.
+ */
+export function persistedSessionIdentityWithRedactedAccessJwt(
+  session: Session,
+): Session {
+  return {
+    ...session,
+    access_token: '',
+  };
+}
+
+/**
  * Mobile `auth.getSession()` wrapper: GoTrue may **reject** (e.g. Hermes
  * `TypeError: Network request failed`) when the access JWT is inside the library’s expiry margin
  * and a refresh attempt fails offline — it does not always return `{ data, error }`.
  *
  * On rejection, reads the persisted session JSON from {@link mobileAuthStorage} using the
  * client’s internal `storageKey`, so offline flows (Home, Manage, PowerSync JWT) still see the
- * last saved session instead of surfacing an unhandled rejection. Sessions whose access token is
- * already past JWT `exp` or past numeric {@link Session.expires_at} are **not** returned — callers
- * would otherwise keep using an expired JWT until a separate refresh succeeds.
+ * last saved session instead of surfacing an unhandled rejection. When the persisted access token
+ * is already past JWT `exp` or past numeric {@link Session.expires_at}, returns
+ * {@link persistedSessionIdentityWithRedactedAccessJwt} so {@link Session.user} remains available
+ * for replica reads and local identity — the empty `access_token` must not be used as a bearer;
+ * use {@link hasUsableSupabaseAccessTokenForNetwork} before network use.
  *
  * Resolves the Supabase client via {@link getMobileSupabaseClient} from `./supabase-wiring-core`
  * (not the `supabase-wiring` barrel) so Jest tests can `jest.mock('../../lib/supabase-wiring-core',
@@ -83,7 +122,12 @@ export async function getMobileAuthSessionSafe(): Promise<MobileAuthGetSessionRe
         return { data: { session: null }, error: null };
       }
       if (isPersistedSupabaseSessionAccessExpired(session)) {
-        return { data: { session: null }, error: null };
+        return {
+          data: {
+            session: persistedSessionIdentityWithRedactedAccessJwt(session),
+          },
+          error: null,
+        };
       }
       return { data: { session }, error: null };
     } catch {
