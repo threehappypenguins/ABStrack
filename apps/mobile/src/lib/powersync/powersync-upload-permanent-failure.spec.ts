@@ -87,6 +87,33 @@ describe('isPowerSyncUploadPermanentServerFailure', () => {
     ).toBe(false);
   });
 
+  it('is false for retryable Postgres codes even when HTTP status is 4xx (e.g. 409)', () => {
+    expect(
+      isPowerSyncUploadPermanentServerFailure({
+        code: '40001',
+        message: 'could not serialize access due to concurrent update',
+        status: 409,
+      }),
+    ).toBe(false);
+    expect(
+      isPowerSyncUploadPermanentServerFailure({
+        code: '40P01',
+        message: 'deadlock detected',
+        status: 409,
+      }),
+    ).toBe(false);
+  });
+
+  it('is false for PGRST301 when HTTP status is also a client 4xx', () => {
+    expect(
+      isPowerSyncUploadPermanentServerFailure({
+        code: 'PGRST301',
+        message: 'JWT expired',
+        status: 403,
+      }),
+    ).toBe(false);
+  });
+
   it('is false when there is no machine-readable code', () => {
     expect(
       isPowerSyncUploadPermanentServerFailure(new Error('Something broke')),

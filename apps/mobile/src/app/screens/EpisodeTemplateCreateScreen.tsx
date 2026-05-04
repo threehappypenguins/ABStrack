@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -43,6 +49,17 @@ export function EpisodeTemplateCreateScreen() {
   const { colors } = useAppTheme();
   const psBridge = usePowerSyncBridgeState();
   const replicaMirrorReads = powerSyncOfflineReplicaReadsEnabled(psBridge);
+
+  /** Latest offline-read knobs; preset list load runs once on mount (see effect deps). */
+  const offlineReadRef = useRef({
+    database: psBridge.database,
+    replicationReady: replicaMirrorReads,
+  });
+  offlineReadRef.current = {
+    database: psBridge.database,
+    replicationReady: replicaMirrorReads,
+  };
+
   const [name, setName] = useState('');
   const [symptomId, setSymptomId] = useState<string | null>(null);
   const [markerId, setMarkerId] = useState<string | null>(null);
@@ -67,10 +84,7 @@ export function EpisodeTemplateCreateScreen() {
     void (async () => {
       setListsLoading(true);
       setListsError(null);
-      const offlineRead = {
-        database: psBridge.database,
-        replicationReady: replicaMirrorReads,
-      };
+      const offlineRead = offlineReadRef.current;
       const [sRes, mRes] = await Promise.all([
         fetchSymptomPresets({ powerSyncOfflineRead: offlineRead }),
         fetchHealthMarkerPresets({ powerSyncOfflineRead: offlineRead }),
@@ -106,9 +120,9 @@ export function EpisodeTemplateCreateScreen() {
     return () => {
       cancelled = true;
     };
-    // Only re-run when offline preset reads could change shape (DB handle or mirror readiness).
-    // Do not depend on the whole bridge — syncConnecting/syncError updates would reset form state.
-  }, [psBridge.database, replicaMirrorReads]);
+    // Run only on mount: rerunning this initialization after PowerSync becomes ready can
+    // overwrite in-progress user selections and reset the dirty-state baseline.
+  }, []);
 
   const nameOk = useMemo(() => validateEpisodeTemplateName(name).ok, [name]);
 

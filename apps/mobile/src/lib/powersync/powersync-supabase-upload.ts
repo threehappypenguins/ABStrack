@@ -25,8 +25,9 @@ export function normalizePowerSyncRowForSupabase(
 /**
  * Applies one PowerSync CRUD entry to Supabase REST (RLS). Caller completes the batch after success.
  *
- * PATCH uses PostgREST `select('id').single()` after `update` so zero-row updates (deleted row, RLS
- * hiding the row) return an error instead of succeeding silently before {@link CrudBatch#complete}.
+ * PATCH and DELETE use PostgREST `select('id').single()` after `update` / `delete` so zero-row
+ * effects (deleted row, RLS hiding the row, predicate mismatch) return an error instead of succeeding
+ * silently before {@link CrudBatch#complete}.
  *
  * @param client - Authenticated Supabase client (user JWT).
  * @param entry - Local change from {@link CrudBatch}.
@@ -70,10 +71,13 @@ export async function applyPowerSyncCrudEntryToSupabase(
     const { error } = await client
       .from(table as never)
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .select('id')
+      .single();
     if (error) {
       throw error;
     }
+    return;
   }
 }
 

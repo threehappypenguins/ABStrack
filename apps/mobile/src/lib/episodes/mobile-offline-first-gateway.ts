@@ -19,6 +19,7 @@ import type {
   CancelActiveEpisodeByIdResult,
   DeleteEpisodeByIdResult,
   EpisodePostMarkerStepWrite,
+  PresetDataError,
 } from '@abstrack/supabase';
 import type { PresetDataResult } from '@abstrack/supabase';
 import {
@@ -34,7 +35,6 @@ import {
   listEpisodeHealthMarkersForEpisode,
   listFoodDiaryEntriesForEpisode,
   normalizeFoodDiaryEntryUpdate,
-  toPresetDataError,
   updateFoodDiaryEntry,
   validateAndNormalizeFoodDiaryCreateCore,
 } from '@abstrack/supabase';
@@ -54,6 +54,19 @@ import {
   updateFoodDiaryEntryPowerSyncDb,
 } from '../powersync/episode-flow-powersync-writes';
 import { listEpisodeHealthMarkersForEpisodeFromPowerSyncDb } from '../powersync/powersync-episode-flow-reads';
+
+/**
+ * Result of {@link listEpisodeHealthMarkersForEpisodeOfflineFirst}, including whether rows were
+ * served from local SQLite (so callers can avoid redundant remote-only reads when offline).
+ */
+export type ListEpisodeHealthMarkersOfflineFirstResult =
+  | {
+      ok: true;
+      data: HealthMarkerRow[];
+      /** `true` when `data` was read from PowerSync SQLite, not the Supabase fallback. */
+      markersReadFromLocalReplica: boolean;
+    }
+  | { ok: false; error: PresetDataError };
 
 function powerSyncWritesEnabled(
   db: PowerSyncDatabase | null | undefined,
@@ -112,7 +125,11 @@ export async function insertEpisodeHealthMarkerLineOfflineFirst(
 /**
  * Lists episode health markers from the PowerSync replica when `powerSyncDb` is open, otherwise via Supabase REST.
  *
- * @param client - Mobile Supabase client (used when the replica is not used).
+ * When the replica is used, a broken local query throws — this falls back to
+ * {@link listEpisodeHealthMarkersForEpisode} so online Supabase reads still work (same pattern as
+ * Home/Manage local-read failure handling).
+ *
+ * @param client - Mobile Supabase client (used when the replica is not used or local read throws).
  * @param powerSyncDb - Open PowerSync DB when offline-first writes are active.
  * @param episodeId - Target episode id.
  * @param options - Optional `limit` (same semantics as {@link listEpisodeHealthMarkersForEpisode}).
@@ -122,7 +139,7 @@ export async function listEpisodeHealthMarkersForEpisodeOfflineFirst(
   powerSyncDb: PowerSyncDatabase | null | undefined,
   episodeId: Uuid,
   options: { limit?: number } = {},
-): Promise<PresetDataResult<HealthMarkerRow[]>> {
+): Promise<ListEpisodeHealthMarkersOfflineFirstResult> {
   if (powerSyncWritesEnabled(powerSyncDb)) {
     try {
       const data = await listEpisodeHealthMarkersForEpisodeFromPowerSyncDb(
@@ -130,12 +147,40 @@ export async function listEpisodeHealthMarkersForEpisodeOfflineFirst(
         episodeId,
         options.limit,
       );
-      return { ok: true, data };
-    } catch (caught) {
-      return { ok: false, error: toPresetDataError(caught) };
+      return {
+        ok: true,
+        data,
+        markersReadFromLocalReplica: true,
+      };
+    } catch {
+      const remote = await listEpisodeHealthMarkersForEpisode(
+        client,
+        episodeId,
+        options,
+      );
+      if (!remote.ok) {
+        return remote;
+      }
+      return {
+        ok: true,
+        data: remote.data,
+        markersReadFromLocalReplica: false,
+      };
     }
   }
-  return listEpisodeHealthMarkersForEpisode(client, episodeId, options);
+  const remote = await listEpisodeHealthMarkersForEpisode(
+    client,
+    episodeId,
+    options,
+  );
+  if (!remote.ok) {
+    return remote;
+  }
+  return {
+    ok: true,
+    data: remote.data,
+    markersReadFromLocalReplica: false,
+  };
 }
 
 /**
@@ -180,6 +225,10 @@ export async function endEpisodeIfStillActiveOfflineFirst(
 
 /**
  * Lists food diary entries for an episode offline-first.
+ *
+ * When PowerSync is used, a failed local list (`ok: false` from SQLite, or an unexpected throw)
+ * falls back to {@link listFoodDiaryEntriesForEpisode} so online Supabase reads still work, matching
+ * {@link listEpisodeHealthMarkersForEpisodeOfflineFirst}.
  */
 export async function listFoodDiaryEntriesForEpisodeOfflineFirst(
   client: AbstrackSupabaseClient,
@@ -188,11 +237,19 @@ export async function listFoodDiaryEntriesForEpisodeOfflineFirst(
   options: { limit?: number } = {},
 ): Promise<PresetDataResult<FoodDiaryEntryRow[]>> {
   if (powerSyncWritesEnabled(powerSyncDb)) {
-    return listFoodDiaryEntriesForEpisodePowerSyncDb(
-      powerSyncDb,
-      episodeId,
-      options.limit ?? 50,
-    );
+    try {
+      const local = await listFoodDiaryEntriesForEpisodePowerSyncDb(
+        powerSyncDb,
+        episodeId,
+        options.limit ?? 50,
+      );
+      if (local.ok) {
+        return local;
+      }
+    } catch {
+      /* fall through to Supabase */
+    }
+    return listFoodDiaryEntriesForEpisode(client, episodeId, options);
   }
   return listFoodDiaryEntriesForEpisode(client, episodeId, options);
 }

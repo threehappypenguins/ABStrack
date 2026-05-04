@@ -336,9 +336,6 @@ function AppBootstrap() {
           return;
         }
         void (async () => {
-          if (mounted) {
-            setInitializing(true);
-          }
           try {
             const connected = await fetchMobileDeviceIsConnected();
             await enforceReauthIfNeeded({

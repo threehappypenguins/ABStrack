@@ -270,6 +270,14 @@ export function HealthMarkerPromptScreen() {
       powerSyncOfflineReplicaReadsEnabled(psBridge) ? psBridge.database : null,
     [psBridge],
   );
+  /**
+   * Latest write DB for offline-first calls inside `load` without listing `powerSyncDbForWrites` in
+   * `load` deps — when first sync lands, the DB handle appears and would otherwise rerun the mount
+   * effect and wipe phase/drafts/food-diary state mid-edit.
+   */
+  const powerSyncDbForWritesRef = useRef(powerSyncDbForWrites);
+  powerSyncDbForWritesRef.current = powerSyncDbForWrites;
+
   /** Bumps when the screen unmounts or `load` deps change so stale async work does not setState. */
   const loadGenerationRef = useRef(0);
 
@@ -305,6 +313,9 @@ export function HealthMarkerPromptScreen() {
     onBack: onBackToHealthMarkersFromFoodDiaryBody,
   });
   const resetFoodDiaryState = foodDiary.reset;
+  /** Lets `load` omit `resetFoodDiaryState` from deps so hook churn cannot rerun mount load. */
+  const resetFoodDiaryStateRef = useRef(resetFoodDiaryState);
+  resetFoodDiaryStateRef.current = resetFoodDiaryState;
 
   useEffect(() => {
     setPersistFeedback(null);
@@ -334,7 +345,7 @@ export function HealthMarkerPromptScreen() {
     setPhase('prompting');
     postFormInitRef.current = false;
     setPostFeedback(null);
-    resetFoodDiaryState();
+    resetFoodDiaryStateRef.current();
     setEndFeedback(null);
     setEndedSummary(null);
     setObservationTimeline([]);
@@ -438,7 +449,7 @@ export function HealthMarkerPromptScreen() {
 
     let markerRows = await listEpisodeHealthMarkersForEpisodeOfflineFirst(
       supabase,
-      powerSyncDbForWrites,
+      powerSyncDbForWritesRef.current,
       episodeId,
     );
     if (stale()) {
@@ -455,6 +466,7 @@ export function HealthMarkerPromptScreen() {
           psDb,
           episodeId,
         ),
+        markersReadFromLocalReplica: true,
       };
       usedPowerSyncReplicaReads = true;
     }
@@ -462,6 +474,9 @@ export function HealthMarkerPromptScreen() {
       setErrorMessage(markerRows.error.message);
       setStatus('error');
       return;
+    }
+    if (markerRows.markersReadFromLocalReplica) {
+      usedPowerSyncReplicaReads = true;
     }
 
     setLines(presetLines.data);
@@ -513,23 +528,29 @@ export function HealthMarkerPromptScreen() {
         setObservationTimeline([]);
       }
     }
-  }, [
-    episodeId,
-    hub,
-    powerSyncDbForWrites,
-    resetFoodDiaryState,
-    resume,
-    supabase,
-  ]);
+  }, [episodeId, hub, resume, supabase]);
+
+  const loadRef = useRef(load);
+  loadRef.current = load;
 
   useEffect(() => {
-    void load().catch(() => {
-      /* load() should not reject; absorb to avoid LogBox on RN getSession / transport throws */
+    let cancelled = false;
+    void loadRef.current().catch((error: unknown) => {
+      if (cancelled) {
+        return;
+      }
+      console.error(
+        'HealthMarkerPromptScreen load() rejected unexpectedly',
+        error,
+      );
+      setStatus('error');
+      setErrorMessage('Unable to load this screen. Please try again.');
     });
     return () => {
+      cancelled = true;
       loadGenerationRef.current += 1;
     };
-  }, [load]);
+  }, [episodeId, hub, resume]);
 
   const currentLine = lines[activeIndex] ?? null;
   const currentDraft = currentLine

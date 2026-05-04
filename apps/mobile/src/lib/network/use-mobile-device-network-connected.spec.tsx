@@ -1,0 +1,80 @@
+import type { NetInfoState } from '@react-native-community/netinfo';
+import NetInfo from '@react-native-community/netinfo';
+import React from 'react';
+import { Text } from 'react-native';
+import { render, waitFor } from '@testing-library/react-native';
+
+import { useMobileDeviceNetworkConnected } from './use-mobile-device-network-connected';
+
+function wifiOnline(): NetInfoState {
+  return {
+    type: 'wifi',
+    isConnected: true,
+    isInternetReachable: true,
+    details: {},
+  } as NetInfoState;
+}
+
+function noneOffline(): NetInfoState {
+  return {
+    type: 'none',
+    isConnected: false,
+    isInternetReachable: false,
+    details: null,
+  } as unknown as NetInfoState;
+}
+
+function Host() {
+  const { isConnected } = useMobileDeviceNetworkConnected();
+  return (
+    <Text testID="net">
+      {isConnected === null ? 'null' : String(isConnected)}
+    </Text>
+  );
+}
+
+describe('useMobileDeviceNetworkConnected', () => {
+  beforeEach(() => {
+    jest.mocked(NetInfo.addEventListener).mockReset();
+    jest.mocked(NetInfo.fetch).mockReset();
+  });
+
+  it('does not let a stale fetch overwrite a newer listener snapshot', async () => {
+    let resolveFetch!: (state: NetInfoState) => void;
+    const fetchPromise = new Promise<NetInfoState>((resolve) => {
+      resolveFetch = resolve;
+    });
+
+    jest.mocked(NetInfo.fetch).mockImplementation(() => fetchPromise);
+    jest.mocked(NetInfo.addEventListener).mockImplementation((callback) => {
+      callback(wifiOnline());
+      return jest.fn();
+    });
+
+    const { getByTestId } = render(<Host />);
+
+    await waitFor(() => {
+      expect(getByTestId('net').props.children).toBe('true');
+    });
+
+    resolveFetch(noneOffline());
+    await waitFor(() => Promise.resolve());
+
+    expect(getByTestId('net').props.children).toBe('true');
+  });
+
+  it('applies fetch when no listener snapshot arrived during fetch', async () => {
+    jest
+      .mocked(NetInfo.fetch)
+      .mockResolvedValue(
+        wifiOnline() as Awaited<ReturnType<typeof NetInfo.fetch>>,
+      );
+    jest.mocked(NetInfo.addEventListener).mockImplementation(() => jest.fn());
+
+    const { getByTestId } = render(<Host />);
+
+    await waitFor(() => {
+      expect(getByTestId('net').props.children).toBe('true');
+    });
+  });
+});

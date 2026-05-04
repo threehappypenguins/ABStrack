@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   Alert,
   Pressable,
@@ -63,6 +69,16 @@ export function EpisodeTemplateEditorScreen() {
   const psBridge = usePowerSyncBridgeState();
   const replicaMirrorReads = powerSyncOfflineReplicaReadsEnabled(psBridge);
 
+  /** Latest offline-read knobs for fetches without redefining `load` when PowerSync opens (would rerun the effect and wipe in-progress edits). */
+  const offlineReadRef = useRef({
+    database: psBridge.database,
+    replicationReady: replicaMirrorReads,
+  });
+  offlineReadRef.current = {
+    database: psBridge.database,
+    replicationReady: replicaMirrorReads,
+  };
+
   const [status, setStatus] = useState<'loading' | 'error' | 'ready'>(
     'loading',
   );
@@ -78,10 +94,7 @@ export function EpisodeTemplateEditorScreen() {
   const load = useCallback(async () => {
     setStatus('loading');
     setErrorMessage(null);
-    const offlineRead = {
-      database: psBridge.database,
-      replicationReady: replicaMirrorReads,
-    };
+    const offlineRead = offlineReadRef.current;
     const [tRes, sRes, mRes] = await Promise.all([
       fetchEpisodeTemplateById(templateId, {
         powerSyncOfflineRead: offlineRead,
@@ -118,14 +131,14 @@ export function EpisodeTemplateEditorScreen() {
     setSymptomId(t.symptom_preset_id);
     setMarkerId(t.health_marker_preset_id);
     setStatus('ready');
-    // Only re-run when offline reads could change shape (DB handle or mirror readiness), like
-    // {@link EpisodeTemplateCreateScreen} — not the whole bridge (syncConnecting/syncError would
-    // wipe in-progress edits).
-  }, [templateId, psBridge.database, replicaMirrorReads]);
+  }, [templateId]);
+
+  const loadRef = useRef(load);
+  loadRef.current = load;
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void loadRef.current();
+  }, [templateId]);
 
   const isDirty = useMemo(() => {
     if (!row) {

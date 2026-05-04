@@ -123,6 +123,16 @@ export function SyncHealthFooter() {
       };
     }
     if (!psBridge.database) {
+      if (psBridge.syncError) {
+        return {
+          line: psBridge.firstSyncCompleted
+            ? 'Sync issue — tap for details'
+            : "Couldn't finish first sync — tap for details",
+          tone: 'error',
+          showSpinner: false,
+          detailRecommended: true,
+        };
+      }
       return {
         line: 'Preparing replica…',
         tone: 'ink',
@@ -229,9 +239,15 @@ export function SyncHealthFooter() {
   ]);
 
   const onSyncNow = useCallback(async () => {
+    if (!psBridge.database) {
+      await announce('Sync is unavailable until the local database is ready.', {
+        politeness: 'polite',
+      });
+      return;
+    }
     await requestManualResync();
     await announce('Sync requested.', { politeness: 'polite' });
-  }, [requestManualResync]);
+  }, [psBridge.database, requestManualResync]);
 
   if (!psBridge.syncChromeEnabled) {
     return null;

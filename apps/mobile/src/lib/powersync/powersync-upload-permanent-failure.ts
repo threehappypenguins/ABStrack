@@ -8,6 +8,10 @@
  * without a PostgREST `code`): JWT refresh and gateway / Supabase rate limits should retry with
  * backoff instead of `batch.complete()` dropping the queue.
  *
+ * Postgres SQLSTATE **40001** / **40P01** / **57014** and connection-class **08\*** codes are
+ * evaluated **before** the generic HTTP **4xx** bucket so Supabase errors that carry both `status`
+ * (often **409**) and a retryable `code` are not dequeued as permanent.
+ *
  * @param error - Value thrown from Supabase `.from().upsert/update/delete` or similar.
  * @returns `true` when the batch should be completed to unblock the queue despite upload failure.
  */
@@ -36,22 +40,25 @@ export function isPowerSyncUploadPermanentServerFailure(
   if (status === 429) {
     return false;
   }
+
+  const code = extractPostgrestCode(error);
+  if (code) {
+    if (code.startsWith('08')) {
+      return false;
+    }
+    if (code === '40001' || code === '40P01' || code === '57014') {
+      return false;
+    }
+    if (code === 'PGRST301' || code === '401') {
+      return false;
+    }
+  }
+
   if (status != null && status >= 400 && status < 500) {
     return true;
   }
 
-  const code = extractPostgrestCode(error);
   if (!code) {
-    return false;
-  }
-
-  if (code.startsWith('08')) {
-    return false;
-  }
-  if (code === '40001' || code === '40P01' || code === '57014') {
-    return false;
-  }
-  if (code === 'PGRST301' || code === '401') {
     return false;
   }
 

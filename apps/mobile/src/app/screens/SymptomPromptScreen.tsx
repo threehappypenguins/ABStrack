@@ -398,7 +398,6 @@ export function SymptomPromptScreen() {
    * across `episodeId` changes while this screen stays mounted.
    */
   const lineWriteQueueRef = useRef<Map<string, Promise<void>>>(new Map());
-  const userIdRef = useRef<string | null>(null);
   /** Bumps on each `load()` start and on effect cleanup so in-flight loads ignore stale results after unmount, retry, or param change. */
   const loadGenRef = useRef(0);
   /**
@@ -428,20 +427,16 @@ export function SymptomPromptScreen() {
   );
 
   /**
-   * Caches the auth user id on {@link userIdRef}. Called from {@link load} before `ready`, and
-   * from {@link executeServerPersist} so writes never depend on a separate mount-only `getUser()`.
+   * Reads the signed-in user id from {@link getMobileAuthSessionSafe} on every call (no ref cache).
+   * Queued symptom writes can flush after sign-out / during replica teardown; a stale cached id
+   * could otherwise insert PHI into a DB being cleared.
    */
   const resolveSessionUserId = useCallback(async (): Promise<string | null> => {
-    if (userIdRef.current) {
-      return userIdRef.current;
-    }
     try {
       const {
         data: { session },
       } = await getMobileAuthSessionSafe();
-      const id = session?.user?.id ?? null;
-      userIdRef.current = id;
-      return id;
+      return session?.user?.id ?? null;
     } catch {
       return null;
     }
