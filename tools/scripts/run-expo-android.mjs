@@ -2,6 +2,9 @@
  * Runs `pnpm expo run:android` from `apps/mobile`, forwards stdout/stderr line-by-line, and drops
  * a known noisy PowerSync log line. Replaces `… | grep -v …` so the process exit code matches
  * Expo (portable; works without `grep` on Windows).
+ *
+ * On Windows, `pnpm` is typically a `.cmd` shim; `child_process.spawn('pnpm', …)` without a shell
+ * often cannot start it. We set `shell: true` on win32 so the same script works there.
  */
 
 import { spawn } from 'node:child_process';
@@ -15,10 +18,13 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(scriptDir, '..', '..');
 const mobileRoot = join(repoRoot, 'apps', 'mobile');
 
+const isWindows = process.platform === 'win32';
+
 const child = spawn('pnpm', ['expo', 'run:android'], {
   cwd: mobileRoot,
   env: process.env,
   stdio: ['inherit', 'pipe', 'pipe'],
+  shell: isWindows,
 });
 
 /**

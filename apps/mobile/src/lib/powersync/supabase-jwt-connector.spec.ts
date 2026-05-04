@@ -206,5 +206,36 @@ describe('createSupabaseJwtPowerSyncConnector', () => {
         warnSpy.mockRestore();
       }
     });
+
+    it('does not complete batch on permanent failure when batch has multiple CRUD ops', async () => {
+      const warnSpy = jest
+        .spyOn(console, 'warn')
+        .mockImplementation(() => undefined);
+      try {
+        jest.mocked(uploadPowerSyncCrudBatchToSupabase).mockRejectedValueOnce({
+          code: '23503',
+          message: 'violates foreign key constraint',
+        });
+        const connector = createSupabaseJwtPowerSyncConnector({
+          powerSyncUrl,
+          getSession: jest.fn(),
+          getSupabaseClient: () => mockSupabaseClient,
+        });
+        const complete = jest.fn().mockResolvedValue(undefined);
+        const batch = {
+          crud: [{ id: '1' }, { id: '2' }],
+          haveMore: false,
+          complete,
+        };
+        const db = {
+          getCrudBatch: jest.fn().mockResolvedValue(batch),
+        } as unknown as AbstractPowerSyncDatabase;
+
+        await expect(connector.uploadData?.(db)).resolves.toBeUndefined();
+        expect(complete).not.toHaveBeenCalled();
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
   });
 });
