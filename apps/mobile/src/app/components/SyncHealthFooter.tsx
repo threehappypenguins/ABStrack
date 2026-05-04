@@ -37,9 +37,10 @@ type FooterPresentation = {
 
 /**
  * Signed-in sync strip **only** when the device is offline, replication reports an error, the
- * stream is disconnected, or a manual reconnect is in progress. Hidden when online and healthy
- * (no “Up to date” row). Tap opens a sheet with details and **Sync now** (pull-to-refresh uses the
- * same reconnect path).
+ * stream is disconnected, or a manual reconnect is in progress **while offline** (online
+ * pull-to-refresh already shows a list spinner; omitting the strip avoids tab-bar layout jump).
+ * Hidden when online and healthy (no “Up to date” row). Tap opens a sheet with details and
+ * **Sync now** (pull-to-refresh uses the same reconnect path).
  *
  * @returns Footer + optional details modal, or `null` when PowerSync chrome is disabled or there
  * is nothing to surface.
@@ -60,7 +61,7 @@ export function SyncHealthFooter() {
     if (psBridge.syncError) {
       return true;
     }
-    if (manualResyncBusy) {
+    if (manualResyncBusy && deviceNetConnected === false) {
       return true;
     }
     if (!psBridge.database) {
@@ -114,7 +115,7 @@ export function SyncHealthFooter() {
         detailRecommended: false,
       };
     }
-    if (manualResyncBusy) {
+    if (manualResyncBusy && deviceNetConnected === false) {
       return {
         line: 'Reconnecting…',
         tone: 'primary',

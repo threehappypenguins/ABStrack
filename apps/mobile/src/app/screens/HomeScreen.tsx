@@ -28,6 +28,7 @@ import {
 } from '../../lib/powersync/PowerSyncSessionBridge';
 import { usePullToResyncPowerSync } from '../../lib/powersync/use-pull-to-resync-powersync';
 import { fetchMobileDeviceIsConnected } from '../../lib/network/mobile-device-netinfo';
+import { useMobileDeviceNetworkConnected } from '../../lib/network/use-mobile-device-network-connected';
 import {
   getMobileAuthSessionSafe,
   getMobileSupabaseClient,
@@ -86,6 +87,7 @@ export function HomeScreen({
     useState(false);
 
   const userId = useMobileAuthUserId();
+  const { isConnected: deviceNetConnected } = useMobileDeviceNetworkConnected();
   const psBridge = usePowerSyncBridgeState();
   const replicaMirrorHomeReads = useMemo(
     () => powerSyncOfflineReplicaReadsEnabled(psBridge),
@@ -225,16 +227,23 @@ export function HomeScreen({
   loadNetworkResumeEpisodeRef.current = loadNetworkResumeEpisode;
   const psEpisodeQueryErrorRef = useRef<Error | undefined>(undefined);
   psEpisodeQueryErrorRef.current = psEpisodeSnap.error;
+  const runDevHealthCheckRef = useRef<() => Promise<void>>(() =>
+    Promise.resolve(),
+  );
 
   const { refreshing: syncPullRefreshing, onRefresh: onSyncPullRefresh } =
     usePullToResyncPowerSync(() => {
       void loadNetworkResumeEpisodeRef.current(undefined, {
         bypassReplicaMirrorGate: Boolean(psEpisodeQueryErrorRef.current),
       });
+      void runDevHealthCheckRef.current();
     });
 
   useFocusEffect(
     useCallback(() => {
+      if (showHealthCheck) {
+        void runDevHealthCheckRef.current();
+      }
       if (!userId) {
         return;
       }
@@ -251,6 +260,7 @@ export function HomeScreen({
         cancel.cancelled = true;
       };
     }, [
+      showHealthCheck,
       loadNetworkResumeEpisode,
       replicaMirrorHomeReads,
       userId,
@@ -360,6 +370,65 @@ export function HomeScreen({
     homeActiveEpisode,
   ]);
 
+  const runDevHealthCheck = useCallback(async () => {
+    if (!showHealthCheck) {
+      return;
+    }
+    try {
+      const mobileSupabase = getMobileSupabaseClient();
+      const {
+        data: { session },
+        error: sessionError,
+      } = await mobileSupabase.auth.getSession();
+
+      if (sessionError || !session?.user) {
+        if (isMountedRef.current) {
+          setHealthCheck({
+            success: false,
+            message: 'Health check failed',
+            error: sessionError?.message ?? 'No authenticated user found',
+          });
+        }
+        return;
+      }
+
+      const result = await healthCheckProfilesLimit1(mobileSupabase);
+
+      if (result.error) {
+        if (isMountedRef.current) {
+          setHealthCheck({
+            success: false,
+            message: 'Health check failed',
+            error: result.error.message,
+          });
+        }
+      } else {
+        if (isMountedRef.current) {
+          setHealthCheck({
+            success: true,
+            message:
+              'Health check passed: authenticated user found and profiles query executed without API error (empty rows may still indicate no profile or restrictive RLS).',
+          });
+        }
+      }
+    } catch (err) {
+      // getSession may still attempt a token refresh offline; suppress network errors silently.
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      const isNetworkError =
+        message.includes('Network request failed') ||
+        message.includes('Failed to fetch');
+      if (isMountedRef.current && !isNetworkError) {
+        setHealthCheck({
+          success: false,
+          message: 'Health check error',
+          error: message,
+        });
+      }
+    }
+  }, [showHealthCheck]);
+
+  runDevHealthCheckRef.current = runDevHealthCheck;
+
   useEffect(() => {
     isMountedRef.current = true;
 
@@ -369,66 +438,12 @@ export function HomeScreen({
       };
     }
 
-    const runHealthCheck = async () => {
-      try {
-        const mobileSupabase = getMobileSupabaseClient();
-        const {
-          data: { session },
-          error: sessionError,
-        } = await mobileSupabase.auth.getSession();
-
-        if (sessionError || !session?.user) {
-          if (isMountedRef.current) {
-            setHealthCheck({
-              success: false,
-              message: 'Health check failed',
-              error: sessionError?.message ?? 'No authenticated user found',
-            });
-          }
-          return;
-        }
-
-        const result = await healthCheckProfilesLimit1(mobileSupabase);
-
-        if (result.error) {
-          if (isMountedRef.current) {
-            setHealthCheck({
-              success: false,
-              message: 'Health check failed',
-              error: result.error.message,
-            });
-          }
-        } else {
-          if (isMountedRef.current) {
-            setHealthCheck({
-              success: true,
-              message:
-                'Health check passed: authenticated user found and profiles query executed without API error (empty rows may still indicate no profile or restrictive RLS).',
-            });
-          }
-        }
-      } catch (err) {
-        // getSession may still attempt a token refresh offline; suppress network errors silently.
-        const message = err instanceof Error ? err.message : 'Unknown error';
-        const isNetworkError =
-          message.includes('Network request failed') ||
-          message.includes('Failed to fetch');
-        if (isMountedRef.current && !isNetworkError) {
-          setHealthCheck({
-            success: false,
-            message: 'Health check error',
-            error: message,
-          });
-        }
-      }
-    };
-
-    void runHealthCheck();
+    void runDevHealthCheck();
 
     return () => {
       isMountedRef.current = false;
     };
-  }, [showHealthCheck]);
+  }, [showHealthCheck, deviceNetConnected, runDevHealthCheck]);
 
   const handleSignOut = async () => {
     const mobileSupabase = getMobileSupabaseClient();

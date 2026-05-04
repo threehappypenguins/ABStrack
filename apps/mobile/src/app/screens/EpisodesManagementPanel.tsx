@@ -170,14 +170,22 @@ export function EpisodesManagementPanel({
   const psReplicaReadsEnabled = powerSyncOfflineReplicaReadsEnabled(psBridge);
 
   const activeDisplay = useMemo((): EpisodeRow | null => {
+    if (psReplicaReadsEnabled && !psMirror.activeQueryError) {
+      if (psMirror.activeLoading) {
+        // First mirror snapshot: keep Supabase header until the watched query settles.
+        if (!activeError) {
+          return active;
+        }
+        return psMirror.activeEpisode;
+      }
+      // Local replica is authoritative for active row (e.g. cancel deletes SQLite before upload
+      // removes the row server-side; Supabase `getActiveEpisodeForUser` can still return it once).
+      return psMirror.activeEpisode;
+    }
     if (!activeError) {
       return active;
     }
-    if (
-      psReplicaReadsEnabled &&
-      !psMirror.activeQueryError &&
-      psMirror.activeEpisode
-    ) {
+    if (psReplicaReadsEnabled && psMirror.activeEpisode) {
       return psMirror.activeEpisode;
     }
     return null;
@@ -185,6 +193,7 @@ export function EpisodesManagementPanel({
     active,
     activeError,
     psMirror.activeEpisode,
+    psMirror.activeLoading,
     psMirror.activeQueryError,
     psReplicaReadsEnabled,
   ]);
