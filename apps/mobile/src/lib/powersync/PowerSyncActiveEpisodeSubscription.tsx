@@ -6,9 +6,10 @@ import { usePowerSyncActiveEpisodeQuery } from './use-episode-powersync-reads';
 /**
  * Subscribes to the replicated active-episode query and notifies the parent.
  *
- * **Mount only when the PowerSync database is open** (see `PowerSyncSessionBridge` /
- * `usePowerSyncBridgeState().database`). Upstream `useQuery` violates rules of hooks if the
- * context flips from null to a DB mid-mount; gating this component avoids that.
+ * **Mount only when the replica is opened for SQL** — gate with
+ * `powerSyncReplicaSqliteReady` from `PowerSyncSessionBridge` (`database` is assigned before
+ * `init()` finishes on cold start). Upstream `useQuery` must not run against an uninitialized
+ * handle; gating avoids that and keeps hooks order stable.
  *
  * @param props.userId - Auth user id for SQL.
  * @param props.onChange - Latest row + loading flag.

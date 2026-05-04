@@ -19,9 +19,9 @@ export type PowerSyncEpisodeReadSnapshots = {
 /**
  * Subscribes to PowerSync episode queries and pushes snapshots to the parent.
  *
- * **Must only mount when `usePowerSyncBridgeState().database` is non-null.** The upstream
- * `useQuery` hook calls fewer internal hooks when PowerSync is not configured; mounting this only
- * after the DB exists keeps the hook order stable (React rules of hooks).
+ * **Must only mount when `powerSyncReplicaSqliteReady(usePowerSyncBridgeState())` is true** (see
+ * `PowerSyncSessionBridge`: `database` is non-null before `init()` completes). The upstream
+ * `useQuery` hooks must not run against an uninitialized replica; gating keeps hook order stable.
  *
  * @param props.userId - Current auth user id for SQL filters.
  * @param props.endedAtOrAfter - Optional inclusive lower bound on `ended_at` for completed-episode SQL (Manage day filter).

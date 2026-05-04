@@ -43,6 +43,7 @@ export { getMobilePowerSyncUrl } from './powersync-env';
 export {
   PowerSyncSessionBridge,
   powerSyncOfflineReplicaReadsEnabled,
+  powerSyncReplicaSqliteReady,
   usePowerSyncBridgeState,
   usePowerSyncManualResync,
   type PowerSyncBridgeState,

@@ -42,6 +42,7 @@ import {
 } from '../../lib/powersync/PowerSyncEpisodeReadSubscriptions';
 import {
   powerSyncOfflineReplicaReadsEnabled,
+  powerSyncReplicaSqliteReady,
   usePowerSyncBridgeState,
 } from '../../lib/powersync/PowerSyncSessionBridge';
 import { usePullToResyncPowerSync } from '../../lib/powersync/use-pull-to-resync-powersync';
@@ -121,7 +122,8 @@ export function EpisodesManagementPanel({
   });
 
   useEffect(() => {
-    if (!psBridge.database) {
+    // Same gate as `powerSyncReplicaSqliteReady` — depend on fields only (exhaustive-deps).
+    if (!psBridge.database || !psBridge.localSqliteInitialized) {
       setPsMirror({
         activeEpisode: null,
         activeLoading: false,
@@ -129,7 +131,7 @@ export function EpisodesManagementPanel({
         completedLoading: false,
       });
     }
-  }, [psBridge.database]);
+  }, [psBridge.database, psBridge.localSqliteInitialized]);
 
   const [loading, setLoading] = useState(true);
   const [loadingMoreRecent, setLoadingMoreRecent] = useState(false);
@@ -574,7 +576,7 @@ export function EpisodesManagementPanel({
 
   const body = (
     <>
-      {psBridge.database ? (
+      {powerSyncReplicaSqliteReady(psBridge) ? (
         <PowerSyncEpisodeReadSubscriptions
           userId={viewerUserId}
           endedAtOrAfter={endedAtOrAfter}

@@ -67,6 +67,7 @@ jest.mock('../../lib/powersync/PowerSyncSessionBridge', () => ({
     manualResyncBusy: false,
   })),
   powerSyncOfflineReplicaReadsEnabled: jest.fn(() => false),
+  powerSyncReplicaSqliteReady: jest.fn(() => false),
 }));
 
 jest.mock('../../lib/supabase-wiring-core', () => {

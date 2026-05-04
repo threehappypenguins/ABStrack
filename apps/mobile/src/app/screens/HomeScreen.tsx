@@ -23,6 +23,7 @@ import { useMobileAuthUserId } from '../../lib/auth/use-mobile-auth-user-id';
 import { PowerSyncActiveEpisodeSubscription } from '../../lib/powersync/PowerSyncActiveEpisodeSubscription';
 import {
   powerSyncOfflineReplicaReadsEnabled,
+  powerSyncReplicaSqliteReady,
   usePowerSyncBridgeState,
 } from '../../lib/powersync/PowerSyncSessionBridge';
 import { usePullToResyncPowerSync } from '../../lib/powersync/use-pull-to-resync-powersync';
@@ -326,7 +327,7 @@ export function HomeScreen({
 
   return (
     <AppNavigationShell title="Home">
-      {psBridge.database ? (
+      {powerSyncReplicaSqliteReady(psBridge) ? (
         <PowerSyncActiveEpisodeSubscription
           userId={userId}
           onChange={setPsEpisodeSnap}

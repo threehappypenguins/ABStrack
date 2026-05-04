@@ -85,7 +85,8 @@ export type PowerSyncManualResyncContextValue = {
   /**
    * Disconnects and reconnects the PowerSync stream (upload + download), clears a stale
    * {@link PowerSyncBridgeState.syncError} after a successful `connect`, and awaits first sync
-   * again when needed. Safe to call when the replica is disabled or the DB is not open — it no-ops.
+   * again when needed, with a **60s** cap on `waitForFirstSync` so the UI cannot hang indefinitely
+   * offline. Safe to call when the replica is disabled or the DB is not open — it no-ops.
    */
   requestManualResync: () => Promise<void>;
   /** True while {@link requestManualResync} is running. */
@@ -126,6 +127,23 @@ export function powerSyncOfflineReplicaReadsEnabled(
       (bridge.firstSyncCompleted || bridge.localSqliteInitialized),
   );
 }
+
+/**
+ * True when the replica handle exists and {@link PowerSyncBridgeState.localSqliteInitialized} is
+ * set (i.e. {@link PowerSyncDatabase.init} has finished). Mount PowerSync `useQuery` read subscriptions
+ * only when this is true: {@link PowerSyncSessionBridge} assigns `database` before `init()`
+ * completes, so `database` alone is not enough on cold start.
+ *
+ * @param bridge - Latest {@link usePowerSyncBridgeState} value.
+ */
+export function powerSyncReplicaSqliteReady(
+  bridge: PowerSyncBridgeState,
+): boolean {
+  return Boolean(bridge.database && bridge.localSqliteInitialized);
+}
+
+/** Caps {@link PowerSyncDatabase.waitForFirstSync} during manual resync so pull-to-refresh / Sync now cannot spin forever offline. */
+const MANUAL_RESYNC_WAIT_FOR_FIRST_SYNC_MS = 60_000;
 
 function isAbortError(error: unknown): boolean {
   return (
@@ -220,12 +238,27 @@ export function PowerSyncSessionBridge({
       }
       await db.connect(connector);
       setSyncError(null);
+      let firstSyncWaitTimedOut = false;
       try {
         const ac = new AbortController();
-        await db.waitForFirstSync(ac.signal);
-        setFirstSyncCompleted(true);
+        const timeoutId = setTimeout(() => {
+          firstSyncWaitTimedOut = true;
+          ac.abort();
+        }, MANUAL_RESYNC_WAIT_FOR_FIRST_SYNC_MS);
+        try {
+          await db.waitForFirstSync(ac.signal);
+          setFirstSyncCompleted(true);
+        } finally {
+          clearTimeout(timeoutId);
+        }
       } catch (waitErr) {
-        if (!isAbortError(waitErr)) {
+        if (isAbortError(waitErr) && firstSyncWaitTimedOut) {
+          setSyncError(
+            new Error(
+              'First sync is taking longer than expected (often no network). Try again when online.',
+            ),
+          );
+        } else if (!isAbortError(waitErr)) {
           setSyncError(
             waitErr instanceof Error ? waitErr : new Error(String(waitErr)),
           );
