@@ -10,9 +10,13 @@
  *
  * Listens for `error` on the child (e.g. `ENOENT` if `pnpm` is not on `PATH`) so startup failures
  * exit with code `1` after removing signal forwarders instead of throwing unhandled.
+ *
+ * Before `process.exit`, the script waits for forwarded readline streams to close and drains
+ * `stdout`/`stderr` so buffered Expo lines are not truncated (Node does not flush stdio on exit).
  */
 
 import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { createInterface } from 'node:readline';
 import { constants as osConstants } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -26,6 +30,48 @@ const mobileRoot = join(repoRoot, 'apps', 'mobile');
 
 const isWindows = process.platform === 'win32';
 
+/**
+ * Best-effort drain of a writable so buffered chunks reach the terminal before `process.exit`.
+ *
+ * @param {NodeJS.WriteStream} stream
+ * @returns {Promise<void>}
+ */
+async function flushWritable(stream) {
+  if (!stream || stream.destroyed) {
+    return;
+  }
+  for (;;) {
+    const len =
+      typeof stream.writableLength === 'number' ? stream.writableLength : 0;
+    const needDrain = stream.writableNeedDrain === true || len > 0;
+    if (!needDrain) {
+      return;
+    }
+    try {
+      await once(stream, 'drain');
+    } catch {
+      return;
+    }
+  }
+}
+
+/**
+ * Yields one turn of the event loop, drains stdio, then exits with `code`.
+ *
+ * @param {number} code
+ * @returns {Promise<void>}
+ */
+async function flushAndExit(code) {
+  await new Promise((resolve) => setImmediate(resolve));
+  try {
+    await flushWritable(process.stdout);
+    await flushWritable(process.stderr);
+  } catch {
+    // ignore
+  }
+  process.exit(code);
+}
+
 const child = spawn('pnpm', ['expo', 'run:android'], {
   cwd: mobileRoot,
   env: process.env,
@@ -34,12 +80,16 @@ const child = spawn('pnpm', ['expo', 'run:android'], {
 });
 
 /**
+ * Forwards lines to `out`, filtering noise. Resolves when the readline interface closes (child
+ * stream ended and trailing line processed).
+ *
  * @param {import('node:stream').Readable | null} stream
  * @param {NodeJS.WriteStream} out
+ * @returns {Promise<void>}
  */
 function pipeFilteredLines(stream, out) {
   if (!stream) {
-    return;
+    return Promise.resolve();
   }
   const rl = createInterface({ input: stream, crlfDelay: Infinity });
   rl.on('line', (line) => {
@@ -48,10 +98,11 @@ function pipeFilteredLines(stream, out) {
     }
     out.write(`${line}\n`);
   });
+  return once(rl, 'close').then(() => undefined);
 }
 
-pipeFilteredLines(child.stdout, process.stdout);
-pipeFilteredLines(child.stderr, process.stderr);
+const stdoutClosed = pipeFilteredLines(child.stdout, process.stdout);
+const stderrClosed = pipeFilteredLines(child.stderr, process.stderr);
 
 const forwardSignal = (/** @type {NodeJS.Signals} */ sig) => {
   try {
@@ -94,7 +145,9 @@ child.on('error', (err) => {
   }
   childSettled = true;
   removeSignalForwarders();
-  process.exit(1);
+  void Promise.all([stdoutClosed, stderrClosed])
+    .catch(() => undefined)
+    .then(() => flushAndExit(1));
 });
 
 child.on('close', (code, signal) => {
@@ -103,8 +156,12 @@ child.on('close', (code, signal) => {
   }
   childSettled = true;
   removeSignalForwarders();
-  if (signal) {
-    process.exit(exitCodeForSignal(signal));
-  }
-  process.exit(code === null || code === undefined ? 1 : code);
+  const exitCode = signal
+    ? exitCodeForSignal(signal)
+    : code === null || code === undefined
+      ? 1
+      : code;
+  void Promise.all([stdoutClosed, stderrClosed])
+    .catch(() => undefined)
+    .then(() => flushAndExit(exitCode));
 });

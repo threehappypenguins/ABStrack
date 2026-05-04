@@ -378,9 +378,11 @@ export function PowerSyncSessionBridge({
   ]);
 
   /**
-   * If the stream recovers (e.g. device was offline during `waitForFirstSync`), PowerSync updates
-   * status while {@link syncError} can remain set from the earlier catch — the footer would stay
-   * red until a full effect re-run. Clear stale bridge errors when the client reports healthy.
+   * If the stream recovers after `waitForFirstSync` rejected (e.g. offline timeout), PowerSync can
+   * later report `hasSynced` while {@link syncError} still reflects the old failure. Only clear
+   * {@link syncError} and mark {@link firstSyncCompleted} / persisted landing once
+   * **`status.hasSynced === true`** so Home/Manage do not trust the mirror before first sync is
+   * actually complete, and offline replica reads are not gated forever without another reconnect.
    */
   useEffect(() => {
     if (!db || !hasAuthIdentity) {
@@ -389,14 +391,27 @@ export function PowerSyncSessionBridge({
     return db.registerListener({
       statusChanged: (status) => {
         const df = status.dataFlowStatus;
-        const healthy =
-          status.connected && !df?.uploadError && !df?.downloadError;
-        if (healthy) {
+        const transportOk =
+          status.connected &&
+          !status.connecting &&
+          !df?.uploadError &&
+          !df?.downloadError;
+        const firstSyncTrusted = transportOk && status.hasSynced === true;
+        if (firstSyncTrusted) {
           setSyncError((prev) => (prev ? null : prev));
+          setFirstSyncCompleted((done) => {
+            if (done) {
+              return done;
+            }
+            queueMicrotask(() => {
+              recordFirstSyncLanded();
+            });
+            return true;
+          });
         }
       },
     });
-  }, [db, hasAuthIdentity]);
+  }, [db, hasAuthIdentity, recordFirstSyncLanded]);
 
   const manualResyncContextValue = useMemo(
     (): PowerSyncManualResyncContextValue => ({

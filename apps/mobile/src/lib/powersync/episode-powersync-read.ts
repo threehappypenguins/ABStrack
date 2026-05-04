@@ -1,8 +1,11 @@
 import type { EpisodeRow, EpisodeType } from '@abstrack/types';
 import { isEpisodeType } from '@abstrack/types';
 
-/** Upper bound for SQLite reads used when the Supabase network path fails (offline). */
-export const POWERSYNC_OFFLINE_EPISODE_PAGE_SIZE = 50;
+/**
+ * Default page size for offline completed-episode SQLite reads (aligned with Manage’s
+ * `listCompletedEpisodesForUser` first page).
+ */
+export const POWERSYNC_OFFLINE_EPISODE_PAGE_SIZE = 25;
 
 /**
  * Inclusive `ended_at` lower bound placeholder when the UI does not pass `endedAtOrAfter`
@@ -85,10 +88,12 @@ LIMIT 1
 `.trim();
 
 /**
- * Completed episodes for offline Manage list. Bind `[userId, endedAtOrAfter, endedAtOrBefore]`:
+ * Completed episodes for offline Manage list. Bind
+ * `[userId, endedAtOrAfter, endedAtOrBefore, limit]`:
  * use {@link POWERSYNC_COMPLETED_ENDED_AT_MIN} / {@link POWERSYNC_COMPLETED_ENDED_AT_MAX} when the
  * UI has no date filter so the range is effectively unbounded (matches `listCompletedEpisodesForUser`
- * inclusive `gte` / `lte`).
+ * inclusive `gte` / `lte`). The fourth bind is **`LIMIT ?`** (grow it to page offline history when
+ * the network list is unavailable).
  */
 export const POWERSYNC_SQL_COMPLETED_EPISODES = `
 SELECT ${EPISODE_COLUMNS}
@@ -98,5 +103,5 @@ WHERE user_id = ?
   AND ended_at >= ?
   AND ended_at <= ?
 ORDER BY ended_at DESC, id DESC
-LIMIT ${POWERSYNC_OFFLINE_EPISODE_PAGE_SIZE}
+LIMIT ?
 `.trim();

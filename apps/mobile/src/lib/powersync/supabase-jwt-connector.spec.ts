@@ -7,6 +7,7 @@ import {
   createSupabaseJwtPowerSyncConnector,
 } from './supabase-jwt-connector';
 
+// Connector tests mock the uploader; see powersync-supabase-upload.spec.ts for REST shapes.
 jest.mock('./powersync-supabase-upload', () => ({
   uploadPowerSyncCrudBatchToSupabase: jest.fn(
     async (_client: unknown, batch: { complete: () => Promise<void> }) => {

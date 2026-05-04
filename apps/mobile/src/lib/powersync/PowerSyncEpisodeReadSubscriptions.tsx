@@ -1,6 +1,7 @@
 import type { EpisodeRow } from '@abstrack/types';
 import { useEffect } from 'react';
 
+import { POWERSYNC_OFFLINE_EPISODE_PAGE_SIZE } from './episode-powersync-read';
 import {
   usePowerSyncActiveEpisodeQuery,
   usePowerSyncCompletedEpisodesQuery,
@@ -30,6 +31,8 @@ export type PowerSyncEpisodeReadSnapshots = {
  * @param props.userId - Current auth user id for SQL filters.
  * @param props.endedAtOrAfter - Optional inclusive lower bound on `ended_at` for completed-episode SQL (Manage day filter).
  * @param props.endedAtOrBefore - Optional inclusive upper bound on `ended_at` for completed-episode SQL.
+ * @param props.completedEpisodesFetchLimit - SQLite `LIMIT` for completed history; defaults to
+ *   {@link POWERSYNC_OFFLINE_EPISODE_PAGE_SIZE} when omitted (Manage passes a growing limit for offline paging).
  * @param props.onSnapshots - Called when query outputs change.
  * @returns Renders nothing (subscription-only).
  */
@@ -37,11 +40,14 @@ export function PowerSyncEpisodeReadSubscriptions({
   userId,
   endedAtOrAfter = null,
   endedAtOrBefore = null,
+  completedEpisodesFetchLimit,
   onSnapshots,
 }: {
   userId: string | null;
   endedAtOrAfter?: string | null;
   endedAtOrBefore?: string | null;
+  /** SQLite `LIMIT` for completed history (Manage increases while paging offline). */
+  completedEpisodesFetchLimit?: number;
   onSnapshots: (snapshots: PowerSyncEpisodeReadSnapshots) => void;
 }) {
   const psActive = usePowerSyncActiveEpisodeQuery(userId);
@@ -49,6 +55,7 @@ export function PowerSyncEpisodeReadSubscriptions({
     userId,
     endedAtOrAfter,
     endedAtOrBefore,
+    completedEpisodesFetchLimit ?? POWERSYNC_OFFLINE_EPISODE_PAGE_SIZE,
   );
 
   useEffect(() => {
@@ -68,6 +75,7 @@ export function PowerSyncEpisodeReadSubscriptions({
     psCompleted.episodes,
     psCompleted.error,
     psCompleted.isLoading,
+    completedEpisodesFetchLimit,
   ]);
 
   return null;

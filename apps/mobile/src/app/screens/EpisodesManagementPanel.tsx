@@ -36,6 +36,7 @@ import {
   deleteEpisodeByIdOfflineFirst,
 } from '../../lib/episodes/mobile-offline-first-gateway';
 import { clearSymptomPromptSession } from '../../lib/episodes/symptom-prompt-session-store';
+import { POWERSYNC_OFFLINE_EPISODE_PAGE_SIZE } from '../../lib/powersync/episode-powersync-read';
 import {
   PowerSyncEpisodeReadSubscriptions,
   type PowerSyncEpisodeReadSnapshots,
@@ -55,7 +56,8 @@ import type { MainStackParamList } from '../navigation/types';
 import { useAppTheme } from '../theme/AppThemeContext';
 import { nw } from '../theme/app-nativewind-classes';
 
-const RECENT_PAGE_SIZE = 25;
+/** Matches Supabase `listCompletedEpisodesForUser` first page and default SQLite `LIMIT`. */
+const RECENT_PAGE_SIZE = POWERSYNC_OFFLINE_EPISODE_PAGE_SIZE;
 
 export type EpisodesManagementNav =
   NativeStackNavigationProp<MainStackParamList>;
@@ -144,6 +146,9 @@ export function EpisodesManagementPanel({
   const [active, setActive] = useState<EpisodeRow | null>(null);
   const [recent, setRecent] = useState<EpisodeRow[]>([]);
   const [hasMoreRecent, setHasMoreRecent] = useState(false);
+  /** Grows the completed-episode SQLite `LIMIT` when Manage pages history without Supabase. */
+  const [psCompletedFetchLimit, setPsCompletedFetchLimit] =
+    useState(RECENT_PAGE_SIZE);
   const [cancelingActiveEpisode, setCancelingActiveEpisode] = useState(false);
   const [deletingEpisodeId, setDeletingEpisodeId] = useState<string | null>(
     null,
@@ -214,6 +219,30 @@ export function EpisodesManagementPanel({
     recentError,
   ]);
 
+  const recentMirrorPaging =
+    Boolean(recentError) &&
+    psReplicaReadsEnabled &&
+    psMirror.completedQueryError == null;
+
+  const hasMoreRecentEffective = useMemo(() => {
+    if (recentMirrorPaging) {
+      if (psMirror.completedLoading) {
+        return false;
+      }
+      return psMirror.completedEpisodes.length === psCompletedFetchLimit;
+    }
+    return hasMoreRecent;
+  }, [
+    hasMoreRecent,
+    psCompletedFetchLimit,
+    psMirror.completedEpisodes.length,
+    psMirror.completedLoading,
+    recentMirrorPaging,
+  ]);
+
+  const showLoadMoreRecent =
+    hasMoreRecentEffective && (!recentError || recentMirrorPaging);
+
   /**
    * When Supabase list calls fail but this install has a local replica, explain that Manage uses
    * synced SQLite (same rows upload when online again via PowerSync). Omit when the matching
@@ -257,6 +286,7 @@ export function EpisodesManagementPanel({
       setLoading(true);
       setActiveError(null);
       setRecentError(null);
+      setPsCompletedFetchLimit(RECENT_PAGE_SIZE);
 
       try {
         const client = getMobileSupabaseClient();
@@ -327,7 +357,18 @@ export function EpisodesManagementPanel({
     usePullToResyncPowerSync(() => loadInitialRef.current());
 
   const loadMoreRecent = useCallback(async () => {
-    if (loadingMoreRecent || !hasMoreRecent) {
+    if (loadingMoreRecent || !hasMoreRecentEffective) {
+      return;
+    }
+    if (
+      recentError &&
+      psReplicaReadsEnabled &&
+      psMirror.completedQueryError == null
+    ) {
+      if (psMirror.completedLoading) {
+        return;
+      }
+      setPsCompletedFetchLimit((n) => n + RECENT_PAGE_SIZE);
       return;
     }
     const generation = loadGenRef.current;
@@ -373,9 +414,13 @@ export function EpisodesManagementPanel({
   }, [
     endedAtOrAfter,
     endedAtOrBefore,
-    hasMoreRecent,
+    hasMoreRecentEffective,
     loadingMoreRecent,
+    psMirror.completedLoading,
+    psMirror.completedQueryError,
+    psReplicaReadsEnabled,
     recent.length,
+    recentError,
   ]);
 
   useFocusEffect(
@@ -618,6 +663,7 @@ export function EpisodesManagementPanel({
           userId={viewerUserId}
           endedAtOrAfter={endedAtOrAfter}
           endedAtOrBefore={endedAtOrBefore}
+          completedEpisodesFetchLimit={psCompletedFetchLimit}
           onSnapshots={setPsMirror}
         />
       ) : null}
@@ -1027,7 +1073,7 @@ export function EpisodesManagementPanel({
               ))}
             </View>
           ) : null}
-          {hasMoreRecent && !recentError ? (
+          {showLoadMoreRecent ? (
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Load more episodes"

@@ -7,6 +7,7 @@ import {
   mapSqliteRowToEpisodeRow,
   POWERSYNC_COMPLETED_ENDED_AT_MAX,
   POWERSYNC_COMPLETED_ENDED_AT_MIN,
+  POWERSYNC_OFFLINE_EPISODE_PAGE_SIZE,
   POWERSYNC_SQL_ACTIVE_EPISODE,
   POWERSYNC_SQL_COMPLETED_EPISODES,
 } from './episode-powersync-read';
@@ -51,11 +52,13 @@ export function usePowerSyncActiveEpisodeQuery(userId: string | null) {
  * @param userId - Patient user id; when `null`, the query is inert.
  * @param endedAtOrAfter - Inclusive lower bound on `ended_at`, or null/undefined for no lower filter.
  * @param endedAtOrBefore - Inclusive upper bound on `ended_at`, or null/undefined for no upper filter.
+ * @param fetchLimit - `LIMIT` bind (grow to load more offline rows; defaults to {@link POWERSYNC_OFFLINE_EPISODE_PAGE_SIZE}).
  */
 export function usePowerSyncCompletedEpisodesQuery(
   userId: string | null,
   endedAtOrAfter?: string | null,
   endedAtOrBefore?: string | null,
+  fetchLimit: number = POWERSYNC_OFFLINE_EPISODE_PAGE_SIZE,
 ) {
   const params = useMemo(
     () => [
@@ -66,8 +69,9 @@ export function usePowerSyncCompletedEpisodesQuery(
       endedAtOrBefore != null && String(endedAtOrBefore).trim() !== ''
         ? String(endedAtOrBefore).trim()
         : POWERSYNC_COMPLETED_ENDED_AT_MAX,
+      Math.max(1, Math.floor(fetchLimit)),
     ],
-    [userId, endedAtOrAfter, endedAtOrBefore],
+    [userId, endedAtOrAfter, endedAtOrBefore, fetchLimit],
   );
   const result = useQuery(POWERSYNC_SQL_COMPLETED_EPISODES, params);
   const episodes = useMemo(() => mapEpisodeRows(result.data), [result.data]);
