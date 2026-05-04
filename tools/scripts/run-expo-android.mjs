@@ -7,6 +7,9 @@
  *
  * On Windows, `pnpm` is typically a `.cmd` shim; `child_process.spawn('pnpm', …)` without a shell
  * often cannot start it. We set `shell: true` on win32 so the same script works there.
+ *
+ * Listens for `error` on the child (e.g. `ENOENT` if `pnpm` is not on `PATH`) so startup failures
+ * exit with code `1` after removing signal forwarders instead of throwing unhandled.
  */
 
 import { spawn } from 'node:child_process';
@@ -72,10 +75,34 @@ function exitCodeForSignal(signal) {
   return typeof n === 'number' ? 128 + n : 1;
 }
 
-child.on('close', (code, signal) => {
+/** Ensures we exit once and drop SIGINT/SIGTERM forwarders (spawn may never emit `close`). */
+let childSettled = false;
+
+function removeSignalForwarders() {
   for (const sig of ['SIGINT', 'SIGTERM']) {
     process.removeListener(sig, forwardSignal);
   }
+}
+
+child.on('error', (err) => {
+  console.error(
+    '[run-expo-android] Failed to start child process:',
+    err instanceof Error ? err.message : String(err),
+  );
+  if (childSettled) {
+    return;
+  }
+  childSettled = true;
+  removeSignalForwarders();
+  process.exit(1);
+});
+
+child.on('close', (code, signal) => {
+  if (childSettled) {
+    return;
+  }
+  childSettled = true;
+  removeSignalForwarders();
   if (signal) {
     process.exit(exitCodeForSignal(signal));
   }

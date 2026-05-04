@@ -187,9 +187,11 @@ function isAbortError(error: unknown): boolean {
  * Supabase JWT connector, awaits first sync, and clears replicated data on sign-out via
  * {@link PowerSyncDatabase.disconnectAndClear}.
  *
- * **Logout:** When `session` loses `access_token`, runs `disconnectAndClear` so stale JWTs are not
- * used and local PHI replica is wiped. `fetchCredentials` already returns `null` when signed out;
- * disconnect ensures no lingering sync connection.
+ * **Logout:** When `session` loses **identity** (`session.user`), runs `disconnectAndClear` so the
+ * replica is wiped for a true sign-out. A persisted session with an **expired** JWT may have
+ * `access_token: ''` while `user` remains — that is still signed-in for offline UI; the connector
+ * withholds the bearer until refresh. `fetchCredentials` returns `null` without a live token;
+ * `connect` / `waitForFirstSync` run only when `access_token` is non-empty.
  *
  * @param props.session - Current Supabase session or `null`.
  * @param props.children - Authenticated app tree (also wraps auth stack so logout effects run).
@@ -206,10 +208,14 @@ export function PowerSyncSessionBridge({
   const urlConfigured = powerSyncUrl.length > 0;
 
   /**
-   * Boolean session gate for effects: Supabase emits multiple auth events at cold start and on
-   * refresh; `session.access_token` changes often while still signed in. Depending on the raw token
-   * retriggers connect teardown/reconnect and stresses PowerSync (`Deferred` "Trying to close for the
-   * second time" warnings). Connector `getSession` already reads the latest JWT from Supabase.
+   * Persisted Supabase user is present (including identity-only sessions where the access JWT is
+   * redacted offline). Drives DB open, sync chrome, and **not** sign-out replica cleanup.
+   */
+  const hasAuthIdentity = Boolean(session?.user?.id);
+
+  /**
+   * Non-empty access token — drives PowerSync `connect` / `waitForFirstSync` and manual resync so
+   * token churn does not constantly reconnect the stream (connector reads the latest JWT).
    */
   const hasAuthSession = Boolean(session?.access_token);
 
@@ -377,7 +383,7 @@ export function PowerSyncSessionBridge({
    * red until a full effect re-run. Clear stale bridge errors when the client reports healthy.
    */
   useEffect(() => {
-    if (!db || !hasAuthSession) {
+    if (!db || !hasAuthIdentity) {
       return;
     }
     return db.registerListener({
@@ -390,7 +396,7 @@ export function PowerSyncSessionBridge({
         }
       },
     });
-  }, [db, hasAuthSession]);
+  }, [db, hasAuthIdentity]);
 
   const manualResyncContextValue = useMemo(
     (): PowerSyncManualResyncContextValue => ({
@@ -401,7 +407,7 @@ export function PowerSyncSessionBridge({
   );
 
   useEffect(() => {
-    if (!hasAuthSession || !urlConfigured) {
+    if (!hasAuthIdentity || !urlConfigured) {
       return;
     }
 
@@ -425,10 +431,10 @@ export function PowerSyncSessionBridge({
     return () => {
       cancelled = true;
     };
-  }, [hasAuthSession, urlConfigured]);
+  }, [hasAuthIdentity, urlConfigured]);
 
   useEffect(() => {
-    if (!db || !hasAuthSession || !urlConfigured) {
+    if (!db || !hasAuthIdentity || !urlConfigured) {
       return;
     }
 
@@ -465,6 +471,12 @@ export function PowerSyncSessionBridge({
               JSON.stringify(diag),
             );
           });
+        }
+        if (!sessionRef.current?.access_token) {
+          if (!cancelled) {
+            setSyncConnecting(false);
+          }
+          return;
         }
         await db.connect(connector);
         if (!cancelled && isPowerSyncReplicaDiagnosticsEnabled()) {
@@ -587,6 +599,7 @@ export function PowerSyncSessionBridge({
   }, [
     buildConnector,
     db,
+    hasAuthIdentity,
     hasAuthSession,
     powerSyncUrl,
     recordFirstSyncLanded,
@@ -594,12 +607,13 @@ export function PowerSyncSessionBridge({
   ]);
 
   /**
-   * Sign-out replica wipe: runs when `hasAuthSession` becomes false. Must not run
-   * `disconnectAndClear` or reset bridge flags if the user signs back in (or this effect is
-   * superseded) before awaits finish — that would clear the shared DB under the new session.
+   * Sign-out replica wipe: runs when **identity** is gone (`session.user`), not merely when the
+   * access JWT is empty. Must not run `disconnectAndClear` or reset bridge flags if the user signs
+   * back in (or this effect is superseded) before awaits finish — that would clear the shared DB
+   * under the new session.
    */
   useEffect(() => {
-    if (hasAuthSession) {
+    if (hasAuthIdentity) {
       return;
     }
     let cancelled = false;
@@ -607,7 +621,7 @@ export function PowerSyncSessionBridge({
     lastSignedInUserIdRef.current = null;
 
     const stillSignOutReplicaCleanup = () =>
-      !cancelled && !sessionRef.current?.access_token;
+      !cancelled && !sessionRef.current?.user?.id;
 
     void (async () => {
       const failures: unknown[] = [];
@@ -666,11 +680,11 @@ export function PowerSyncSessionBridge({
     return () => {
       cancelled = true;
     };
-  }, [hasAuthSession, db]);
+  }, [hasAuthIdentity, db]);
 
   const bridgeValue = useMemo(
     (): PowerSyncBridgeState => ({
-      syncChromeEnabled: urlConfigured && hasAuthSession,
+      syncChromeEnabled: urlConfigured && hasAuthIdentity,
       powerSyncUrlConfigured: urlConfigured,
       database: db,
       firstSyncCompleted,
@@ -685,7 +699,7 @@ export function PowerSyncSessionBridge({
       firstSyncCompleted,
       firstSyncLandedOnDevice,
       firstSyncLandingHydrated,
-      hasAuthSession,
+      hasAuthIdentity,
       localSqliteInitialized,
       syncConnecting,
       syncError,
