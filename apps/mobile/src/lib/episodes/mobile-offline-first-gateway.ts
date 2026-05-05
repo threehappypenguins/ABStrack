@@ -127,7 +127,9 @@ export async function insertEpisodeHealthMarkerLineOfflineFirst(
  *
  * When the replica is used, a broken local query throws — this falls back to
  * {@link listEpisodeHealthMarkersForEpisode} so online Supabase reads still work (same pattern as
- * Home/Manage local-read failure handling).
+ * Home/Manage local-read failure handling). If the local read succeeds but returns an empty list,
+ * this performs a Supabase verification read and prefers remote rows when available; that avoids
+ * treating an initialized-but-not-yet-synced replica as authoritative.
  *
  * @param client - Mobile Supabase client (used when the replica is not used or local read throws).
  * @param powerSyncDb - Open PowerSync DB when offline-first writes are active.
@@ -147,6 +149,27 @@ export async function listEpisodeHealthMarkersForEpisodeOfflineFirst(
         episodeId,
         options.limit,
       );
+      if (data.length === 0) {
+        const remote = await listEpisodeHealthMarkersForEpisode(
+          client,
+          episodeId,
+          options,
+        );
+        if (remote.ok && remote.data.length > 0) {
+          return {
+            ok: true,
+            data: remote.data,
+            markersReadFromLocalReplica: false,
+          };
+        }
+        if (!remote.ok) {
+          return {
+            ok: true,
+            data,
+            markersReadFromLocalReplica: true,
+          };
+        }
+      }
       return {
         ok: true,
         data,
@@ -228,7 +251,9 @@ export async function endEpisodeIfStillActiveOfflineFirst(
  *
  * When PowerSync is used, a failed local list (`ok: false` from SQLite, or an unexpected throw)
  * falls back to {@link listFoodDiaryEntriesForEpisode} so online Supabase reads still work, matching
- * {@link listEpisodeHealthMarkersForEpisodeOfflineFirst}.
+ * {@link listEpisodeHealthMarkersForEpisodeOfflineFirst}. If the local read succeeds but is empty,
+ * this verifies with Supabase and prefers remote rows when available (avoids treating a
+ * pre-first-sync replica as authoritative).
  */
 export async function listFoodDiaryEntriesForEpisodeOfflineFirst(
   client: AbstrackSupabaseClient,
@@ -244,6 +269,19 @@ export async function listFoodDiaryEntriesForEpisodeOfflineFirst(
         options.limit ?? 50,
       );
       if (local.ok) {
+        if (local.data.length === 0) {
+          const remote = await listFoodDiaryEntriesForEpisode(
+            client,
+            episodeId,
+            options,
+          );
+          if (remote.ok && remote.data.length > 0) {
+            return remote;
+          }
+          if (!remote.ok) {
+            return local;
+          }
+        }
         return local;
       }
     } catch {
