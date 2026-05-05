@@ -71,6 +71,8 @@ export async function getCurrentUserId(): Promise<
  * When the replica is already trusted for offline reads and NetInfo reports **explicitly offline**
  * (`fetchMobileDeviceIsConnected() === false`), reads SQLite immediately instead of waiting for a
  * Supabase list timeout (same pattern as `fetchSymptomPresets` in `symptom-preset-service.ts`).
+ * If that SQLite read throws, the returned error is the mapped local failure (not a masked Supabase
+ * network result).
  *
  * @param options.powerSyncOfflineRead - From `usePowerSyncBridgeState()` when calling from UI.
  */
@@ -98,16 +100,8 @@ export async function fetchHealthMarkerPresets(options?: {
           auth.data,
         );
         return { ok: true, data };
-      } catch {
-        const remote = await listHealthMarkerPresets(client);
-        if (remote.ok) {
-          return remote;
-        }
-        if (!isPresetDataNetworkError(remote.error)) {
-          return remote;
-        }
-        const alt = clarifyNetworkErrorWhenReplicaUnavailable(remote.error);
-        return alt ? { ok: false, error: alt } : remote;
+      } catch (caught) {
+        return { ok: false, error: toPresetDataError(caught) };
       }
     }
   }
@@ -134,8 +128,8 @@ export async function fetchHealthMarkerPresets(options?: {
       auth.data,
     );
     return { ok: true, data };
-  } catch {
-    return remote;
+  } catch (caught) {
+    return { ok: false, error: toPresetDataError(caught) };
   }
 }
 

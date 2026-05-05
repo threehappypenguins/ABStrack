@@ -13,6 +13,11 @@
  * (often **409**) and a retryable `code` are not dequeued as permanent. HTTP **408** is excluded
  * from that bucket so gateway timeouts are not dequeued as validation-style failures.
  *
+ * PostgREST **`PGRST*`** codes are **not** broadly permanent: connection (**PGRST000–003**), schema
+ * cache (**PGRST200–205**), and JWT (**PGRST301–303**, **PGRST300**) failures often recover after
+ * pool/schema/auth settles; only **group‑1 API request** codes in `PERMANENT_PGRST_API_CODES` dequeue
+ * as permanent. Unknown `PGRST…` values stay retryable.
+ *
  * @param error - Value thrown from Supabase `.from().upsert/update/delete` or similar.
  * @returns `true` when the batch should be completed to unblock the queue despite upload failure.
  */
@@ -54,12 +59,19 @@ export function isPowerSyncUploadPermanentServerFailure(
     if (code === '40001' || code === '40P01' || code === '57014') {
       return false;
     }
-    if (code === 'PGRST301' || code === '401') {
+    if (RETRYABLE_PGRST_CODES.has(code) || code === '401') {
       return false;
     }
   }
 
   if (status != null && status >= 400 && status < 500) {
+    if (
+      code != null &&
+      code.startsWith('PGRST') &&
+      !PERMANENT_PGRST_API_CODES.has(code)
+    ) {
+      return false;
+    }
     return true;
   }
 
@@ -76,12 +88,67 @@ export function isPowerSyncUploadPermanentServerFailure(
   if (code.startsWith('42')) {
     return true;
   }
-  if (code.startsWith('PGRST') && code !== 'PGRST301') {
+  if (PERMANENT_PGRST_API_CODES.has(code)) {
     return true;
   }
 
   return false;
 }
+
+/**
+ * PostgREST codes that should **not** dequeue: connection (**PGRST000–003**), schema cache
+ * (**PGRST200–205**), JWT / config (**PGRST300–303**), internal **500**-class API errors (**PGRST111**,
+ * **PGRST112**, **PGRST121**, **PGRSTX00**). See [PostgREST errors](https://postgrest.org/en/stable/references/errors.html).
+ */
+const RETRYABLE_PGRST_CODES = new Set([
+  'PGRST000',
+  'PGRST001',
+  'PGRST002',
+  'PGRST003',
+  'PGRST200',
+  'PGRST201',
+  'PGRST202',
+  'PGRST203',
+  'PGRST204',
+  'PGRST205',
+  'PGRST300',
+  'PGRST301',
+  'PGRST302',
+  'PGRST303',
+  'PGRST111',
+  'PGRST112',
+  'PGRST121',
+  'PGRSTX00',
+]);
+
+/**
+ * PostgREST [group 1 — API request](https://postgrest.org/en/stable/references/errors.html#group-1-api-request)
+ * **4xx-class** codes only (bad query params, body, range, verb, etc.). **500**-class group‑1 codes
+ * live in `RETRYABLE_PGRST_CODES`.
+ */
+const PERMANENT_PGRST_API_CODES = new Set([
+  'PGRST100',
+  'PGRST101',
+  'PGRST102',
+  'PGRST103',
+  'PGRST105',
+  'PGRST106',
+  'PGRST107',
+  'PGRST108',
+  'PGRST114',
+  'PGRST115',
+  'PGRST116',
+  'PGRST117',
+  'PGRST118',
+  'PGRST120',
+  'PGRST122',
+  'PGRST123',
+  'PGRST124',
+  'PGRST125',
+  'PGRST126',
+  'PGRST127',
+  'PGRST128',
+]);
 
 function extractPostgrestCode(error: unknown): string | null {
   if (typeof error !== 'object' || error === null) {

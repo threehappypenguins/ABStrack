@@ -23,6 +23,18 @@ describe('isPowerSyncUploadPermanentServerFailure', () => {
     ).toBe(false);
     expect(
       isPowerSyncUploadPermanentServerFailure({
+        code: 'PGRST302',
+        message: 'Anonymous disabled',
+      }),
+    ).toBe(false);
+    expect(
+      isPowerSyncUploadPermanentServerFailure({
+        code: 'PGRST303',
+        message: 'JWT claims validation failed',
+      }),
+    ).toBe(false);
+    expect(
+      isPowerSyncUploadPermanentServerFailure({
         code: '401',
         message: 'Unauthorized',
       }),
@@ -38,7 +50,7 @@ describe('isPowerSyncUploadPermanentServerFailure', () => {
     ).toBe(false);
   });
 
-  it('is true for integrity / RLS / PostgREST client errors', () => {
+  it('is true for integrity / RLS / allowlisted PostgREST API client errors', () => {
     expect(
       isPowerSyncUploadPermanentServerFailure({
         code: '23503',
@@ -54,8 +66,8 @@ describe('isPowerSyncUploadPermanentServerFailure', () => {
     ).toBe(true);
     expect(
       isPowerSyncUploadPermanentServerFailure({
-        code: 'PGRST204',
-        message: 'Could not find the table',
+        code: 'PGRST100',
+        message: 'Parsing error in the query string parameter',
       }),
     ).toBe(true);
     expect(
@@ -64,6 +76,30 @@ describe('isPowerSyncUploadPermanentServerFailure', () => {
         message: 'undefined_table',
       }),
     ).toBe(true);
+  });
+
+  it('is false for connection / schema-cache PostgREST codes (retry after service recovers)', () => {
+    expect(
+      isPowerSyncUploadPermanentServerFailure({
+        code: 'PGRST002',
+        message: 'Could not connect when building the Schema Cache',
+        status: 503,
+      }),
+    ).toBe(false);
+    expect(
+      isPowerSyncUploadPermanentServerFailure({
+        code: 'PGRST204',
+        message: 'Column not found (may be stale schema cache)',
+        status: 400,
+      }),
+    ).toBe(false);
+    expect(
+      isPowerSyncUploadPermanentServerFailure({
+        code: 'PGRST999',
+        message: 'Hypothetical future PostgREST code',
+        status: 400,
+      }),
+    ).toBe(false);
   });
 
   it('is true for 4xx HTTP status without Postgres code (except 401, 408, and 429)', () => {

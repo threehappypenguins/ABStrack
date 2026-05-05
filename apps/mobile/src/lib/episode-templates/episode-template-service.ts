@@ -70,7 +70,8 @@ export async function getCurrentUserId(): Promise<
  * When {@link resolvePowerSyncDatabaseForOfflineRead} returns a handle and NetInfo reports
  * **explicitly offline** (`fetchMobileDeviceIsConnected() === false`), reads SQLite first so a cold
  * offline open does not wait for `listEpisodeTemplates` to time out (same pattern as
- * `fetchSymptomPresets` / `fetchHealthMarkerPresets`).
+ * `fetchSymptomPresets` / `fetchHealthMarkerPresets`). If a SQLite read throws while the device is
+ * already known offline, the mapped local error is returned (not a masked Supabase network result).
  *
  * @param options.powerSyncOfflineRead - From `usePowerSyncBridgeState()` when calling from UI.
  * @returns {@link PresetDataResult} of template rows or an error.
@@ -99,16 +100,8 @@ export async function fetchEpisodeTemplates(options?: {
           auth.data,
         );
         return { ok: true, data };
-      } catch {
-        const remote = await listEpisodeTemplates(client);
-        if (remote.ok) {
-          return remote;
-        }
-        if (!isPresetDataNetworkError(remote.error)) {
-          return remote;
-        }
-        const alt = clarifyNetworkErrorWhenReplicaUnavailable(remote.error);
-        return alt ? { ok: false, error: alt } : remote;
+      } catch (caught) {
+        return { ok: false, error: toPresetDataError(caught) };
       }
     }
   }
@@ -136,9 +129,8 @@ export async function fetchEpisodeTemplates(options?: {
         userId,
       );
       return { ok: true, data };
-    } catch {
-      const alt = clarifyNetworkErrorWhenReplicaUnavailable(remote.error);
-      return alt ? { ok: false, error: alt } : remote;
+    } catch (caught) {
+      return { ok: false, error: toPresetDataError(caught) };
     }
   }
 
@@ -155,8 +147,8 @@ export async function fetchEpisodeTemplates(options?: {
         if (localRows.length > 0) {
           return { ok: true, data: localRows };
         }
-      } catch {
-        /* keep remote */
+      } catch (caught) {
+        return { ok: false, error: toPresetDataError(caught) };
       }
     }
     if (!db && connected === false) {
@@ -182,6 +174,8 @@ export async function fetchEpisodeTemplates(options?: {
  * When {@link resolvePowerSyncDatabaseForOfflineRead} returns a handle and NetInfo reports **explicitly
  * offline**, reads SQLite **before** `getEpisodeTemplateById` when a matching local row exists so
  * offline edit flows avoid a remote timeout (same idea as {@link fetchEpisodeTemplates} list fast path).
+ * SQLite failures in those offline paths return `toPresetDataError` instead of masking with the
+ * remote result.
  *
  * @param id - Template row id.
  * @param options.powerSyncOfflineRead - From `usePowerSyncBridgeState()` when calling from UI.
@@ -211,8 +205,8 @@ export async function fetchEpisodeTemplateById(
           if (localRow != null) {
             return { ok: true, data: localRow };
           }
-        } catch {
-          /* fall through to remote */
+        } catch (caught) {
+          return { ok: false, error: toPresetDataError(caught) };
         }
       }
     }
@@ -244,9 +238,8 @@ export async function fetchEpisodeTemplateById(
         userId,
       );
       return { ok: true, data };
-    } catch {
-      const alt = clarifyNetworkErrorWhenReplicaUnavailable(remote.error);
-      return alt ? { ok: false, error: alt } : remote;
+    } catch (caught) {
+      return { ok: false, error: toPresetDataError(caught) };
     }
   }
 
@@ -264,8 +257,8 @@ export async function fetchEpisodeTemplateById(
         if (localRow != null) {
           return { ok: true, data: localRow };
         }
-      } catch {
-        /* keep remote */
+      } catch (caught) {
+        return { ok: false, error: toPresetDataError(caught) };
       }
     }
   }

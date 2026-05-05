@@ -68,6 +68,8 @@ export async function getCurrentUserId(): Promise<
  * When the replica is already trusted for offline reads and NetInfo reports **explicitly offline**
  * (`fetchMobileDeviceIsConnected() === false`), reads SQLite immediately instead of waiting for a
  * Supabase list timeout (same idea as `HomeScreen` skipping the network resume fetch when offline).
+ * If that SQLite read throws, the returned error is the mapped local failure (not a masked Supabase
+ * network result).
  *
  * @param options.powerSyncOfflineRead - Prefer passing `usePowerSyncBridgeState()` fields from the
  *   screen so reads use the same DB instance as `PowerSyncContext` (PowerSync SDK lifecycle).
@@ -97,16 +99,8 @@ export async function fetchSymptomPresets(options?: {
           auth.data,
         );
         return { ok: true, data };
-      } catch {
-        const remote = await listSymptomPresets(client);
-        if (remote.ok) {
-          return remote;
-        }
-        if (!isPresetDataNetworkError(remote.error)) {
-          return remote;
-        }
-        const alt = clarifyNetworkErrorWhenReplicaUnavailable(remote.error);
-        return alt ? { ok: false, error: alt } : remote;
+      } catch (caught) {
+        return { ok: false, error: toPresetDataError(caught) };
       }
     }
   }
@@ -129,8 +123,8 @@ export async function fetchSymptomPresets(options?: {
   try {
     const data = await listSymptomPresetsForUserFromPowerSyncDb(db, auth.data);
     return { ok: true, data };
-  } catch {
-    return remote;
+  } catch (caught) {
+    return { ok: false, error: toPresetDataError(caught) };
   }
 }
 

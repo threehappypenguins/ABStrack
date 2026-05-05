@@ -17,6 +17,10 @@ import { useMobileDeviceNetworkConnected } from '../../lib/network/use-mobile-de
 import { usePowerSyncClientSyncStatus } from '../../lib/powersync/use-power-sync-client-sync-status';
 import { useAppTheme } from '../theme/AppThemeContext';
 import { nw } from '../theme/app-nativewind-classes';
+import {
+  userFacingSyncHealthBridgeOrClientError,
+  userFacingSyncHealthStatusLine,
+} from './sync-health-footer-user-messages';
 
 function formatLastSyncedAt(value: Date | undefined): string {
   if (!value) {
@@ -40,7 +44,8 @@ type FooterPresentation = {
  * stream is disconnected, or a manual reconnect is in progress **while offline** (online
  * pull-to-refresh already shows a list spinner; omitting the strip avoids tab-bar layout jump).
  * Hidden when online and healthy (no “Up to date” row). Tap opens a sheet with details and
- * **Sync now** (pull-to-refresh uses the same reconnect path).
+ * **Sync now** (pull-to-refresh uses the same reconnect path). The detail sheet maps bridge /
+ * PowerSync / upload / download errors to user-facing copy (raw SDK messages are not shown).
  *
  * @returns Footer + optional details modal, or `null` when PowerSync chrome is disabled or there
  * is nothing to surface.
@@ -239,6 +244,10 @@ export function SyncHealthFooter() {
     presentation.tone,
   ]);
 
+  const detailStatusLine = userFacingSyncHealthStatusLine(
+    client?.statusMessage,
+  );
+
   const onSyncNow = useCallback(async () => {
     if (!psBridge.database) {
       await announce('Sync is unavailable until the local database is ready.', {
@@ -351,39 +360,46 @@ export function SyncHealthFooter() {
             >
               Last full sync: {formatLastSyncedAt(client?.lastSyncedAt)}
             </Text>
-            {client?.statusMessage ? (
+            {detailStatusLine ? (
               <Text
                 className={`mb-2 text-xs ${nw.textMuted}`}
                 maxFontSizeMultiplier={2}
               >
-                {client.statusMessage}
+                {detailStatusLine}
               </Text>
             ) : null}
             {psBridge.syncError ? (
               <Text
                 className={`mb-2 text-sm ${nw.textError}`}
                 accessibilityRole="alert"
+                accessibilityLabel={userFacingSyncHealthBridgeOrClientError(
+                  psBridge.syncError,
+                )}
                 maxFontSizeMultiplier={2}
               >
-                {psBridge.syncError.message}
+                {userFacingSyncHealthBridgeOrClientError(psBridge.syncError)}
               </Text>
             ) : null}
             {client?.uploadError ? (
               <Text
                 className={`mb-1 text-sm ${nw.textError}`}
                 accessibilityRole="alert"
+                accessibilityLabel={`Upload: ${userFacingSyncHealthBridgeOrClientError(client.uploadError)}`}
                 maxFontSizeMultiplier={2}
               >
-                Upload: {client.uploadError.message}
+                Upload:{' '}
+                {userFacingSyncHealthBridgeOrClientError(client.uploadError)}
               </Text>
             ) : null}
             {client?.downloadError ? (
               <Text
                 className={`mb-3 text-sm ${nw.textError}`}
                 accessibilityRole="alert"
+                accessibilityLabel={`Download: ${userFacingSyncHealthBridgeOrClientError(client.downloadError)}`}
                 maxFontSizeMultiplier={2}
               >
-                Download: {client.downloadError.message}
+                Download:{' '}
+                {userFacingSyncHealthBridgeOrClientError(client.downloadError)}
               </Text>
             ) : null}
 
