@@ -184,6 +184,33 @@ function isAbortError(error: unknown): boolean {
 }
 
 /**
+ * Heuristic for SQLCipher/open-key failures after secure storage reset (for example, keychain wipe
+ * while the encrypted SQLite file still exists).
+ *
+ * @param error - Error from `db.init()`.
+ * @returns `true` when the local replica likely cannot be opened with the current key.
+ */
+function looksLikeSqlcipherOpenKeyError(error: unknown): boolean {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'string'
+        ? error
+        : '';
+  if (!message) {
+    return false;
+  }
+  const m = message.toLowerCase();
+  return (
+    m.includes('sqlite_notadb') ||
+    m.includes('file is encrypted') ||
+    m.includes('not a database') ||
+    m.includes('wrong key') ||
+    m.includes('sqlcipher')
+  );
+}
+
+/**
  * Opens the encrypted PowerSync DB when a session and PowerSync URL exist, connects with the
  * Supabase JWT connector, awaits first sync, and clears replicated data on sign-out via
  * {@link PowerSyncDatabase.disconnectAndClear}.
@@ -530,7 +557,26 @@ export function PowerSyncSessionBridge({
         setSyncConnecting(true);
         setFirstSyncCompleted(false);
         setLocalSqliteInitialized(false);
-        await db.init();
+        try {
+          await db.init();
+        } catch (initError) {
+          if (!looksLikeSqlcipherOpenKeyError(initError)) {
+            throw initError;
+          }
+          console.warn(
+            '[PowerSync] SQLite init failed with encrypted-file/key mismatch; attempting one-time local replica reset',
+            initError instanceof Error ? initError.message : initError,
+          );
+          try {
+            await db.disconnectAndClear();
+          } catch (clearError) {
+            throw new Error(
+              'PowerSync local replica reset failed after encrypted-file/key mismatch.',
+              { cause: { initError, clearError } },
+            );
+          }
+          await db.init();
+        }
         if (!cancelled) {
           setLocalSqliteInitialized(true);
         }

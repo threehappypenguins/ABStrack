@@ -9,12 +9,19 @@ import { uploadPowerSyncCrudBatchToSupabase } from './powersync-supabase-upload'
 import { isPowerSyncUploadPermanentServerFailure } from './powersync-upload-permanent-failure';
 
 /**
- * Maximum CRUD entries per {@link AbstractPowerSyncDatabase#getCrudBatch} call from this connector.
- * Using `1` avoids multi-op batches where a mid-batch permanent failure would either dequeue unsent
- * tail ops ({@link CrudBatch#complete} applies to the whole batch) or block the queue head if we
- * skip `complete()`.
+ * Default CRUD entries per {@link AbstractPowerSyncDatabase#getCrudBatch} call from this connector.
+ * Larger batches reduce reconnect drain time on high-latency links by avoiding one HTTP round-trip
+ * per local mutation.
  */
-export const SUPABASE_JWT_POWERSYNC_UPLOAD_CRUD_BATCH_LIMIT = 1 as const;
+export const SUPABASE_JWT_POWERSYNC_UPLOAD_CRUD_BATCH_LIMIT = 25 as const;
+
+/**
+ * Fallback batch size used after a permanent server rejection has been observed.
+ *
+ * Single-entry dequeue ensures {@link CrudBatch#complete} can drop only the offending head op
+ * instead of acknowledging unsent tail entries in a larger batch.
+ */
+const SUPABASE_JWT_POWERSYNC_UPLOAD_SINGLE_OP_BATCH_LIMIT = 1 as const;
 
 export interface SupabaseSessionLike {
   access_token: string;
@@ -25,14 +32,14 @@ export interface SupabaseSessionLike {
  * Configure the PowerSync Service to validate Supabase-issued tokens for your project.
  *
  * **Uploads:** Queued local writes on replicated tables are applied with the same Supabase client
- * (RLS) via {@link uploadPowerSyncCrudBatchToSupabase}. Batches are requested with
- * {@link SUPABASE_JWT_POWERSYNC_UPLOAD_CRUD_BATCH_LIMIT} so each batch has at most one CRUD entry:
- * a permanent rejection can safely call {@link CrudBatch#complete} without dropping unsent tail ops
- * or leaving the upload queue stuck on the same head batch. **Transient** failures (network, 5xx,
+ * (RLS) via {@link uploadPowerSyncCrudBatchToSupabase}. Starts with
+ * {@link SUPABASE_JWT_POWERSYNC_UPLOAD_CRUD_BATCH_LIMIT} to drain reconnect bursts quickly, then
+ * falls back to single-op batches after a permanent rejection so dequeue uses
+ * {@link CrudBatch#complete} on one head op at a time. **Transient** failures (network, 5xx,
  * HTTP **401** / **429**, JWT/session) keep the batch pending for retry. **Permanent** rejections
- * (RLS, FK, constraints, other 4xx / PostgREST client errors) dequeue the offending op after
- * {@link isPowerSyncUploadPermanentServerFailure} (local row may diverge until the next successful
- * sync; see product docs).
+ * (RLS, FK, constraints, other 4xx / PostgREST client errors) either trigger that single-op
+ * fallback or dequeue directly when already single-op (local row may diverge until the next
+ * successful sync; see product docs).
  *
  * @param options.powerSyncUrl PowerSync Service WebSocket HTTP endpoint (e.g. from dashboard).
  * @param options.getSession Resolves the active Supabase session or null when signed out.
@@ -43,6 +50,8 @@ export function createSupabaseJwtPowerSyncConnector(options: {
   getSession: () => Promise<SupabaseSessionLike | null>;
   getSupabaseClient: () => AbstrackSupabaseClient;
 }): PowerSyncBackendConnector {
+  let uploadBatchLimit: number = SUPABASE_JWT_POWERSYNC_UPLOAD_CRUD_BATCH_LIMIT;
+
   return {
     fetchCredentials: async (): Promise<PowerSyncCredentials | null> => {
       try {
@@ -60,9 +69,7 @@ export function createSupabaseJwtPowerSyncConnector(options: {
     uploadData: async (database: AbstractPowerSyncDatabase): Promise<void> => {
       const client = options.getSupabaseClient();
       for (;;) {
-        const batch = await database.getCrudBatch(
-          SUPABASE_JWT_POWERSYNC_UPLOAD_CRUD_BATCH_LIMIT,
-        );
+        const batch = await database.getCrudBatch(uploadBatchLimit);
         if (!batch) return;
         if (batch.crud.length === 0) {
           await batch.complete();
@@ -77,6 +84,18 @@ export function createSupabaseJwtPowerSyncConnector(options: {
               '[PowerSync] Upload batch rejected by server (dequeuing; local row may diverge until next sync):',
               e instanceof Error ? e.message : e,
             );
+            if (
+              uploadBatchLimit !==
+                SUPABASE_JWT_POWERSYNC_UPLOAD_SINGLE_OP_BATCH_LIMIT &&
+              batch.crud.length > 1
+            ) {
+              uploadBatchLimit =
+                SUPABASE_JWT_POWERSYNC_UPLOAD_SINGLE_OP_BATCH_LIMIT;
+              console.warn(
+                '[PowerSync] Falling back to single-op upload batches after permanent rejection.',
+              );
+              return;
+            }
             let completeSucceeded = false;
             try {
               await batch.complete();

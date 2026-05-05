@@ -82,7 +82,7 @@ describe('createSupabaseJwtPowerSyncConnector', () => {
       const completeMocks: jest.Mock[] = [];
       let index = 0;
       const getCrudBatch = jest.fn(async (limit?: number) => {
-        expect(limit).toBe(SUPABASE_JWT_POWERSYNC_UPLOAD_CRUD_BATCH_LIMIT);
+        void limit;
         const spec = batches[index++];
         if (spec === null) {
           return null;
@@ -291,6 +291,49 @@ describe('createSupabaseJwtPowerSyncConnector', () => {
         expect(getCrudBatch).toHaveBeenCalledTimes(1);
         expect(uploadPowerSyncCrudBatchToSupabase).toHaveBeenCalledTimes(1);
         expect(completeMocks[0]).toHaveBeenCalledTimes(1);
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it('switches to single-op batches after permanent rejection in a multi-entry batch', async () => {
+      const warnSpy = jest
+        .spyOn(console, 'warn')
+        .mockImplementation(() => undefined);
+      try {
+        jest.mocked(uploadPowerSyncCrudBatchToSupabase).mockRejectedValueOnce({
+          code: '23503',
+          message: 'violates foreign key constraint',
+        });
+        const connector = createSupabaseJwtPowerSyncConnector({
+          powerSyncUrl,
+          getSession: jest.fn(),
+          getSupabaseClient: () => mockSupabaseClient,
+        });
+        const completeA = jest.fn().mockResolvedValue(undefined);
+        const completeB = jest.fn().mockResolvedValue(undefined);
+        const getCrudBatch = jest
+          .fn()
+          .mockResolvedValueOnce({
+            crud: [{ id: '1' }, { id: '2' }],
+            haveMore: true,
+            complete: completeA,
+          })
+          .mockResolvedValueOnce({
+            crud: [{ id: '1' }],
+            haveMore: false,
+            complete: completeB,
+          });
+        const db = { getCrudBatch } as unknown as AbstractPowerSyncDatabase;
+
+        await expect(connector.uploadData?.(db)).resolves.toBeUndefined();
+        await expect(connector.uploadData?.(db)).resolves.toBeUndefined();
+
+        expect(getCrudBatch).toHaveBeenNthCalledWith(
+          1,
+          SUPABASE_JWT_POWERSYNC_UPLOAD_CRUD_BATCH_LIMIT,
+        );
+        expect(getCrudBatch).toHaveBeenNthCalledWith(2, 1);
       } finally {
         warnSpy.mockRestore();
       }

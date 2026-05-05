@@ -23,6 +23,8 @@ function randomBytes32(): Uint8Array {
  * accounts on the same install reuses the same file key; replicated PHI is cleared on logout via
  * `PowerSyncDatabase.disconnectAndClear`. For stricter threat models (per-user file
  * keys, hardware-backed keys), replace this helper — see `apps/mobile/src/lib/powersync/README.md`.
+ * If secure storage is reset while the encrypted file remains, `PowerSyncSessionBridge` performs a
+ * one-time local replica reset on SQLCipher key-mismatch open errors before retrying init.
  *
  * @returns UTF-8 key string passed to OP-SQLite SQLCipher.
  */

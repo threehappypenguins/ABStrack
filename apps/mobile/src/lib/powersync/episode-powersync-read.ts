@@ -18,7 +18,7 @@ export const POWERSYNC_COMPLETED_ENDED_AT_MIN = '1970-01-01T00:00:00.000Z';
  */
 export const POWERSYNC_COMPLETED_ENDED_AT_MAX = '9999-12-31T23:59:59.999Z';
 
-function optionalUuid(value: unknown): string | null {
+function optionalText(value: unknown): string | null {
   if (value == null) {
     return null;
   }
@@ -26,8 +26,8 @@ function optionalUuid(value: unknown): string | null {
   return s === '' ? null : s;
 }
 
-function requiredUuid(value: unknown): string | null {
-  const s = optionalUuid(value);
+function requiredText(value: unknown): string | null {
+  const s = optionalText(value);
   return s;
 }
 
@@ -40,8 +40,8 @@ function requiredUuid(value: unknown): string | null {
 export function mapSqliteRowToEpisodeRow(
   row: Record<string, unknown>,
 ): EpisodeRow | null {
-  const id = requiredUuid(row.id);
-  const user_id = requiredUuid(row.user_id);
+  const id = requiredText(row.id);
+  const user_id = requiredText(row.user_id);
   const started_at =
     row.started_at != null ? String(row.started_at).trim() : '';
   const created_at =
@@ -58,15 +58,15 @@ export function mapSqliteRowToEpisodeRow(
   return {
     id,
     user_id,
-    symptom_preset_id: optionalUuid(row.symptom_preset_id),
-    health_marker_preset_id: optionalUuid(row.health_marker_preset_id),
+    symptom_preset_id: optionalText(row.symptom_preset_id),
+    health_marker_preset_id: optionalText(row.health_marker_preset_id),
     episode_type,
-    episode_label: optionalUuid(row.episode_label),
-    additional_notes: optionalUuid(row.additional_notes),
-    note: optionalUuid(row.note),
+    episode_label: optionalText(row.episode_label),
+    additional_notes: optionalText(row.additional_notes),
+    note: optionalText(row.note),
     started_at,
-    ended_at: optionalUuid(row.ended_at),
-    post_marker_step_completed_at: optionalUuid(
+    ended_at: optionalText(row.ended_at),
+    post_marker_step_completed_at: optionalText(
       row.post_marker_step_completed_at,
     ),
     created_at,
