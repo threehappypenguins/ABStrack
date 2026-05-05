@@ -344,7 +344,9 @@ export function EpisodesManagementPanel({
           setHasMoreRecent(false);
         }
       } finally {
-        if (!stale()) {
+        // Drop spinner when this invocation is still the latest (`useFocusEffect` cleanup bumps
+        // `loadGenRef` without awaiting the next load — `stale()` would stay true for cancelled runs).
+        if (generation === loadGenRef.current) {
           setLoading(false);
         }
       }

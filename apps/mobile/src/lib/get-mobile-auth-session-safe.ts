@@ -14,11 +14,19 @@ type MobileAuthGetSessionError = NonNullable<
   MobileAuthGetSessionResult['error']
 >;
 
-function sessionRecoveryError(
-  message: string,
-  cause?: unknown,
-): MobileAuthGetSessionError {
-  const err = new Error(message, cause === undefined ? undefined : { cause });
+/**
+ * Text for {@link getMobileAuthSessionSafe} `error.message` when GoTrue rejects and persisted-session
+ * recovery cannot complete. Safe for end-user UI and screen readers; low-level diagnostics are on
+ * `error.cause` (and the original failure remains nested there).
+ */
+export const MOBILE_AUTH_SESSION_RECOVERY_USER_MESSAGE =
+  "We couldn't verify your sign-in. Try again in a moment, or sign out and sign back in.";
+
+function sessionRecoveryError(cause?: unknown): MobileAuthGetSessionError {
+  const err =
+    cause === undefined
+      ? new Error(MOBILE_AUTH_SESSION_RECOVERY_USER_MESSAGE)
+      : new Error(MOBILE_AUTH_SESSION_RECOVERY_USER_MESSAGE, { cause });
   err.name = 'AuthSessionRecoveryError';
   return Object.assign(err, {
     status: 0,
@@ -101,7 +109,9 @@ export function persistedSessionIdentityWithRedactedAccessJwt(
  *
  * On rejection, reads the persisted session JSON from {@link mobileAuthStorage} using the
  * client’s internal `storageKey`, so offline flows (Home, Manage, PowerSync JWT) still see the
- * last saved session instead of surfacing an unhandled rejection. When the persisted access token
+ * last saved session instead of surfacing an unhandled rejection. When recovery fails, `error.message`
+ * is always {@link MOBILE_AUTH_SESSION_RECOVERY_USER_MESSAGE} (safe for UI); inspect `error.cause`
+ * for diagnostics. When the persisted access token
  * is already past JWT `exp` or past numeric {@link Session.expires_at}, returns
  * {@link persistedSessionIdentityWithRedactedAccessJwt} so {@link Session.user} remains available
  * for replica reads and local identity — the empty `access_token` must not be used as a bearer;
@@ -124,10 +134,10 @@ export async function getMobileAuthSessionSafe(): Promise<MobileAuthGetSessionRe
     if (!storageKey) {
       return {
         data: { session: null },
-        error: sessionRecoveryError(
-          'Auth session check failed and no storage key was available for persisted-session recovery.',
+        error: sessionRecoveryError({
+          recoveryReason: 'missing_auth_storage_key',
           getSessionError,
-        ),
+        }),
       };
     }
     try {
@@ -144,10 +154,10 @@ export async function getMobileAuthSessionSafe(): Promise<MobileAuthGetSessionRe
       ) {
         return {
           data: { session: null },
-          error: sessionRecoveryError(
-            'Auth session check failed and persisted session data was invalid.',
+          error: sessionRecoveryError({
+            recoveryReason: 'invalid_persisted_session',
             getSessionError,
-          ),
+          }),
         };
       }
       if (isPersistedSupabaseSessionAccessExpired(session)) {
@@ -162,10 +172,11 @@ export async function getMobileAuthSessionSafe(): Promise<MobileAuthGetSessionRe
     } catch (persistedReadError) {
       return {
         data: { session: null },
-        error: sessionRecoveryError(
-          'Auth session check failed and persisted session could not be read from storage.',
-          { getSessionError, persistedReadError },
-        ),
+        error: sessionRecoveryError({
+          recoveryReason: 'persisted_session_read_failed',
+          getSessionError,
+          persistedReadError,
+        }),
       };
     }
   }

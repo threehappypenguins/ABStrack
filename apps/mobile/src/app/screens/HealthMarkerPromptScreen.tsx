@@ -60,6 +60,7 @@ import {
   isPresetDataNetworkError,
 } from '../../lib/powersync/powersync-offline-read-bridge-snapshot';
 import {
+  powerSyncOfflineReplicaReadsEnabled,
   powerSyncReplicaSqliteReady,
   usePowerSyncBridgeState,
 } from '../../lib/powersync/PowerSyncSessionBridge';
@@ -269,6 +270,10 @@ export function HealthMarkerPromptScreen() {
     () => (powerSyncReplicaSqliteReady(psBridge) ? psBridge.database : null),
     [psBridge],
   );
+  const trustEmptyLocalFoodDiaryList = useMemo(
+    () => powerSyncOfflineReplicaReadsEnabled(psBridge),
+    [psBridge],
+  );
   /**
    * Latest write DB for offline-first calls inside `load` without listing `powerSyncDbForWrites` in
    * `load` deps — when first sync lands, the DB handle appears and would otherwise rerun the mount
@@ -306,6 +311,7 @@ export function HealthMarkerPromptScreen() {
     episodeId,
     supabase,
     powerSyncDatabase: powerSyncDbForWrites,
+    trustEmptyLocalFoodDiaryList,
     enabled: phase === 'foodDiary',
     onLeaveFoodDiary,
     onBack: onBackToHealthMarkersFromFoodDiaryBody,

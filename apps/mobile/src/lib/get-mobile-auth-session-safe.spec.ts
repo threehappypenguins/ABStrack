@@ -4,6 +4,7 @@ import {
   getMobileAuthSessionSafe,
   hasUsableSupabaseAccessTokenForNetwork,
   isPersistedSupabaseSessionAccessExpired,
+  MOBILE_AUTH_SESSION_RECOVERY_USER_MESSAGE,
   persistedSessionIdentityWithRedactedAccessJwt,
 } from './get-mobile-auth-session-safe';
 import {
@@ -198,9 +199,12 @@ describe('getMobileAuthSessionSafe', () => {
     const result = await getMobileAuthSessionSafe();
     expect(result.data.session).toBeNull();
     expect(result.error).toBeInstanceOf(Error);
-    expect(result.error?.message).toContain(
-      'persisted session could not be read from storage',
+    expect(result.error?.message).toBe(
+      MOBILE_AUTH_SESSION_RECOVERY_USER_MESSAGE,
     );
+    expect((result.error as Error).cause).toMatchObject({
+      recoveryReason: 'persisted_session_read_failed',
+    });
   });
 
   it('surfaces an error when persisted session JSON is invalid', async () => {
@@ -215,8 +219,34 @@ describe('getMobileAuthSessionSafe', () => {
     const result = await getMobileAuthSessionSafe();
     expect(result.data.session).toBeNull();
     expect(result.error).toBeInstanceOf(Error);
-    expect(result.error?.message).toContain(
-      'persisted session could not be read from storage',
+    expect(result.error?.message).toBe(
+      MOBILE_AUTH_SESSION_RECOVERY_USER_MESSAGE,
     );
+    expect((result.error as Error).cause).toMatchObject({
+      recoveryReason: 'persisted_session_read_failed',
+    });
+  });
+
+  it('surfaces an error when persisted session payload fails validation', async () => {
+    jest.mocked(getMobileSupabaseClient).mockReturnValue({
+      auth: {
+        storageKey,
+        getSession: jest.fn().mockRejectedValue(new Error('offline')),
+      },
+    } as unknown as AbstrackSupabaseClient);
+    jest
+      .mocked(mobileAuthStorage.getItem)
+      .mockResolvedValue(
+        JSON.stringify({ access_token: '', user: { id: 'u1' } }),
+      );
+
+    const result = await getMobileAuthSessionSafe();
+    expect(result.data.session).toBeNull();
+    expect(result.error?.message).toBe(
+      MOBILE_AUTH_SESSION_RECOVERY_USER_MESSAGE,
+    );
+    expect((result.error as Error).cause).toMatchObject({
+      recoveryReason: 'invalid_persisted_session',
+    });
   });
 });

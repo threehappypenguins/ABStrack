@@ -261,16 +261,22 @@ export async function endEpisodeIfStillActiveOfflineFirst(
  * falls back to {@link listFoodDiaryEntriesForEpisode} so online Supabase reads still work, matching
  * {@link listEpisodeHealthMarkersForEpisodeOfflineFirst}. If the local read succeeds but is empty,
  * this verifies with Supabase and prefers remote rows when available (avoids treating a
- * pre-first-sync replica as authoritative). Failed verification returns the remote error, not empty
- * local success; thrown verification errors do too (they must not hit the outer SQLite fallback,
- * which could return empty success).
+ * pre-first-sync replica as authoritative). When `trustEmptyLocalReplica` is true (caller should
+ * align this with `powerSyncOfflineReplicaReadsEnabled` on the session bridge), skip that verification so a
+ * legitimately empty episode does not fail offline. Failed verification returns the remote error,
+ * not empty local success; thrown verification errors do too (they must not hit the outer SQLite
+ * fallback, which could return empty success).
  */
 export async function listFoodDiaryEntriesForEpisodeOfflineFirst(
   client: AbstrackSupabaseClient,
   powerSyncDb: PowerSyncDatabase | null | undefined,
   episodeId: Uuid,
-  options: { limit?: number } = {},
+  options: { limit?: number; trustEmptyLocalReplica?: boolean } = {},
 ): Promise<PresetDataResult<FoodDiaryEntryRow[]>> {
+  const trustEmptyLocalReplica = options.trustEmptyLocalReplica === true;
+  const listOptions =
+    options.limit != null ? { limit: options.limit } : undefined;
+
   if (powerSyncWritesEnabled(powerSyncDb)) {
     try {
       const local = await listFoodDiaryEntriesForEpisodePowerSyncDb(
@@ -279,9 +285,16 @@ export async function listFoodDiaryEntriesForEpisodeOfflineFirst(
         options.limit ?? 50,
       );
       if (!local.ok) {
-        return await listFoodDiaryEntriesForEpisode(client, episodeId, options);
+        return await listFoodDiaryEntriesForEpisode(
+          client,
+          episodeId,
+          listOptions ?? {},
+        );
       }
       if (local.data.length > 0) {
+        return local;
+      }
+      if (trustEmptyLocalReplica) {
         return local;
       }
       let remote: PresetDataResult<FoodDiaryEntryRow[]>;
@@ -289,7 +302,7 @@ export async function listFoodDiaryEntriesForEpisodeOfflineFirst(
         remote = await listFoodDiaryEntriesForEpisode(
           client,
           episodeId,
-          options,
+          listOptions ?? {},
         );
       } catch (caught) {
         return { ok: false, error: toPresetDataError(caught) };
@@ -302,10 +315,14 @@ export async function listFoodDiaryEntriesForEpisodeOfflineFirst(
       }
       return remote;
     } catch {
-      return await listFoodDiaryEntriesForEpisode(client, episodeId, options);
+      return await listFoodDiaryEntriesForEpisode(
+        client,
+        episodeId,
+        listOptions ?? {},
+      );
     }
   }
-  return listFoodDiaryEntriesForEpisode(client, episodeId, options);
+  return listFoodDiaryEntriesForEpisode(client, episodeId, listOptions ?? {});
 }
 
 /**
