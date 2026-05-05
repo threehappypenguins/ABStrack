@@ -7,8 +7,8 @@ import { nw } from '../../theme/app-nativewind-classes';
 /**
  * Active episode resume summary for the home CTA.
  *
- * - `resumeAtHealthMarkers: true` means the episode is at the explicit end step; symptom preset is
- *   optional/irrelevant for this resume path.
+ * - `resumeAtHealthMarkers: true` means the episode is at the explicit end step **and** the row has
+ *   `health_marker_preset_id` (required by the health-marker resume screen).
  * - Otherwise, resume enters symptom prompts and requires `symptomPresetId`.
  */
 export type ActiveEpisodeHomeSummary =
@@ -41,6 +41,26 @@ export type EpisodeStartHomeCtaProps = {
 };
 
 /**
+ * True when the episode row is far enough along to open the health-marker prompt in resume mode:
+ * post–marker step is done **and** a health marker preset is linked (the screen errors if
+ * `health_marker_preset_id` is missing).
+ *
+ * @param row - Subset of {@link EpisodeRow} fields used for routing.
+ */
+export function episodeRowEligibleForHealthMarkerResume(
+  row: Pick<
+    EpisodeRow,
+    'post_marker_step_completed_at' | 'health_marker_preset_id'
+  >,
+): boolean {
+  return (
+    row.post_marker_step_completed_at != null &&
+    row.health_marker_preset_id != null &&
+    row.health_marker_preset_id !== ''
+  );
+}
+
+/**
  * Builds the home continue-episode summary from a replicated {@link EpisodeRow} (same rules as
  * {@link HomeScreen} uses when reading the active episode from PowerSync SQLite).
  *
@@ -51,7 +71,7 @@ export function episodeRowToActiveHomeSummary(
   row: EpisodeRow,
 ): ActiveEpisodeHomeSummary | null {
   const hasSymptomResumePath = !!row.symptom_preset_id;
-  const hasEndStepResumePath = row.post_marker_step_completed_at != null;
+  const hasEndStepResumePath = episodeRowEligibleForHealthMarkerResume(row);
   if (!hasSymptomResumePath && !hasEndStepResumePath) {
     return null;
   }

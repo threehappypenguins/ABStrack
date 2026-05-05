@@ -219,6 +219,7 @@ describe('EpisodesScreen', () => {
     const active = makeEpisodeRow({
       id: 'ep-end-step',
       symptom_preset_id: null,
+      health_marker_preset_id: 'hm-end-step',
       post_marker_step_completed_at: '2026-04-20T12:00:00.000Z',
     });
     jest.mocked(getActiveEpisodeForUser).mockResolvedValue({

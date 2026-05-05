@@ -12,7 +12,11 @@ import {
   listFoodDiaryEntriesForEpisodeOfflineFirst,
   updateFoodDiaryEntryOfflineFirst,
 } from '../../lib/episodes/mobile-offline-first-gateway';
-import { getMobileAuthSessionSafe } from '../../lib/get-mobile-auth-session-safe';
+import {
+  getMobileAuthSessionSafe,
+  isAuthSessionRecoveryFailure,
+  readPersistedMobileAuthUserId,
+} from '../../lib/get-mobile-auth-session-safe';
 import {
   currentLocalDate,
   currentLocalTime,
@@ -127,7 +131,9 @@ export type HealthMarkerFoodDiaryHookResult = {
  * **Creates:** {@link onSaveFoodDiary} resolves {@link getMobileAuthSessionSafe} for **new** entries
  * and passes that `user_id` into offline-first creates — queued SQLite writes have no RLS, so a
  * caller-supplied id from mount would be unsafe across sign-out / account switches (same pattern as
- * symptom persists on {@link SymptomPromptScreen}). **Edits** skip that session check and call
+ * symptom persists on {@link SymptomPromptScreen}). On `auth_session_recovery_failed`, falls back to
+ * {@link readPersistedMobileAuthUserId} so transient secure-store hiccups do not block offline creates.
+ * **Edits** skip that session check and call
  * {@link updateFoodDiaryEntryOfflineFirst} by row id only so local updates still apply when persisted-session
  * recovery fails after sync.
  */
@@ -350,7 +356,18 @@ export function useHealthMarkerFoodDiary({
         data: { session },
         error: sessionError,
       } = await getMobileAuthSessionSafe();
-      if (sessionError || session?.user?.id == null || session.user.id === '') {
+      let userId: string | null =
+        session?.user?.id != null && session.user.id !== ''
+          ? session.user.id
+          : null;
+      if (
+        userId == null &&
+        sessionError != null &&
+        isAuthSessionRecoveryFailure(sessionError)
+      ) {
+        userId = await readPersistedMobileAuthUserId();
+      }
+      if (userId == null || userId === '') {
         const message =
           sessionError?.message ??
           'Your session could not be verified. Try signing in again.';
@@ -363,7 +380,7 @@ export function useHealthMarkerFoodDiary({
         supabase,
         powerSyncDatabase,
         {
-          user_id: session.user.id,
+          user_id: userId,
           episode_id: episodeId,
           meal_tag: mealTag,
           food_note: foodNote,

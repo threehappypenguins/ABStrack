@@ -1,6 +1,9 @@
 import { useCallback, useRef, useState } from 'react';
 
-import { usePowerSyncManualResync } from './PowerSyncSessionBridge';
+import {
+  usePowerSyncBridgeState,
+  usePowerSyncManualResync,
+} from './PowerSyncSessionBridge';
 
 export type UsePullToResyncPowerSyncOptions = {
   /**
@@ -15,6 +18,11 @@ export type UsePullToResyncPowerSyncOptions = {
  * Pull-to-refresh helper: runs {@link usePowerSyncManualResync} then an optional follow-up (e.g.
  * reload screen data). Uses a ref for the follow-up so callers are not forced to memoize callbacks.
  *
+ * Skips `requestManualResync` while {@link PowerSyncBridgeState.syncConnecting} is true (initial
+ * `init` / `connect` / `waitForFirstSync` in `PowerSyncSessionBridge`) or while `manualResyncBusy`
+ * is true, so pull-to-refresh cannot issue a concurrent `disconnect()` that races the bridge’s
+ * in-flight connect.
+ *
  * @param onAfterResync - Invoked after manual resync completes (success or failure), or alone when
  * {@link UsePullToResyncPowerSyncOptions.skipPowerSyncManualResync} is true.
  * @param options - Optional behavior flags.
@@ -27,6 +35,7 @@ export function usePullToResyncPowerSync(
   refreshing: boolean;
   onRefresh: () => Promise<void>;
 } {
+  const psBridge = usePowerSyncBridgeState();
   const { requestManualResync, manualResyncBusy } = usePowerSyncManualResync();
   const afterRef = useRef(onAfterResync);
   afterRef.current = onAfterResync;
@@ -41,13 +50,17 @@ export function usePullToResyncPowerSync(
     setExtraBusy(true);
     try {
       if (!skipPowerSyncRef.current) {
-        await requestManualResync();
+        const bridgeOwnsConnectLifecycle =
+          psBridge.syncConnecting || manualResyncBusy;
+        if (!bridgeOwnsConnectLifecycle) {
+          await requestManualResync();
+        }
       }
       await afterRef.current?.();
     } finally {
       setExtraBusy(false);
     }
-  }, [requestManualResync]);
+  }, [manualResyncBusy, psBridge.syncConnecting, requestManualResync]);
 
   return { refreshing, onRefresh };
 }

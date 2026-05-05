@@ -32,6 +32,7 @@ import {
   usePowerSyncBridgeState,
 } from '../../lib/powersync/PowerSyncSessionBridge';
 import { AsyncScreenContainer } from '../components/AsyncScreenContainer';
+import { episodeRowEligibleForHealthMarkerResume } from '../components/episode-flow/EpisodeStartHomeCta';
 import { ScreenShell } from '../components/ScreenShell';
 import type { MainStackParamList } from '../navigation/types';
 import { nw } from '../theme/app-nativewind-classes';
@@ -489,7 +490,7 @@ export function EpisodeStartScreen() {
     if (!row) {
       return;
     }
-    if (row.post_marker_step_completed_at) {
+    if (episodeRowEligibleForHealthMarkerResume(row)) {
       navigation.replace('HealthMarkerPrompt', {
         episodeId: row.id,
         resume: true,
@@ -558,7 +559,8 @@ export function EpisodeStartScreen() {
 
   const gatePresetId = blockingActiveEpisode?.symptom_preset_id;
   const gateAtEndStep =
-    blockingActiveEpisode?.post_marker_step_completed_at != null;
+    blockingActiveEpisode != null &&
+    episodeRowEligibleForHealthMarkerResume(blockingActiveEpisode);
   const canResumeFromGate =
     gateAtEndStep ||
     (typeof gatePresetId === 'string' && gatePresetId.length > 0);

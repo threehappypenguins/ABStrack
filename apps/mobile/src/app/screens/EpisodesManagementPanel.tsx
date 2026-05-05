@@ -51,6 +51,7 @@ import {
   getMobileAuthSessionSafe,
   getMobileSupabaseClient,
 } from '../../lib/supabase-wiring';
+import { episodeRowEligibleForHealthMarkerResume } from '../components/episode-flow/EpisodeStartHomeCta';
 import { ScreenShell } from '../components/ScreenShell';
 import type { MainStackParamList } from '../navigation/types';
 import { useAppTheme } from '../theme/AppThemeContext';
@@ -207,8 +208,7 @@ export function EpisodesManagementPanel({
   }, [
     active,
     activeError,
-    psBridge.database,
-    psBridge.localSqliteInitialized,
+    psBridge,
     psMirror.activeEpisode,
     psMirror.activeLoading,
     psMirror.activeQueryError,
@@ -496,7 +496,7 @@ export function EpisodesManagementPanel({
   );
 
   const onResume = (episode: EpisodeRow) => {
-    if (episode.post_marker_step_completed_at) {
+    if (episodeRowEligibleForHealthMarkerResume(episode)) {
       navigation.navigate('HealthMarkerPrompt', {
         episodeId: episode.id,
         resume: true,
@@ -856,7 +856,7 @@ export function EpisodesManagementPanel({
               >
                 Ended —
               </Text>
-              {activeDisplay.post_marker_step_completed_at ||
+              {episodeRowEligibleForHealthMarkerResume(activeDisplay) ||
               activeDisplay.symptom_preset_id ? (
                 <Pressable
                   accessibilityRole="button"
@@ -870,8 +870,10 @@ export function EpisodesManagementPanel({
                 </Pressable>
               ) : (
                 <Text className={`mt-1 text-sm ${nw.textMuted}`}>
-                  No symptom preset linked yet. Start or configure an episode
-                  from the episode start screen.
+                  {activeDisplay.post_marker_step_completed_at != null &&
+                  !episodeRowEligibleForHealthMarkerResume(activeDisplay)
+                    ? 'This episode finished the marker step but has no health marker preset linked, so it cannot be resumed. Cancel this episode or start over from the episode start screen.'
+                    : 'No symptom preset linked yet. Start or configure an episode from the episode start screen.'}
                 </Text>
               )}
               <Pressable

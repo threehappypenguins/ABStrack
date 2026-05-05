@@ -40,6 +40,7 @@ import {
   type ActiveEpisodeHomeSummary,
 } from '../components/episode-flow/EpisodeStartHomeCta';
 import { AppNavigationShell } from '../components/AppNavigationShell';
+import { userFacingSyncHealthBridgeOrClientError } from '../components/sync-health-footer-user-messages';
 import { useAppTheme } from '../theme/AppThemeContext';
 import { nw } from '../theme/app-nativewind-classes';
 
@@ -373,8 +374,7 @@ export function HomeScreen({
     psEpisodeSnap.episode,
     psEpisodeSnap.error,
     networkResumeEpisode,
-    psBridge.database,
-    psBridge.localSqliteInitialized,
+    psBridge,
   ]);
 
   const activeEpisodeQueryError = useMemo(() => {
@@ -384,7 +384,7 @@ export function HomeScreen({
     if (activeEpisodeLoading || homeActiveEpisode) {
       return null;
     }
-    return `Could not read episode status from the copy stored on this device. ${psEpisodeSnap.error.message}`;
+    return `Could not read episode status from the copy stored on this device. ${userFacingSyncHealthBridgeOrClientError(psEpisodeSnap.error)}`;
   }, [
     replicaMirrorHomeReads,
     psEpisodeSnap.error,
