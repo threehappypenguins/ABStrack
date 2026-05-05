@@ -23,6 +23,7 @@ import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { endEpisodeIfStillActiveOfflineFirst } from '../../lib/episodes/mobile-offline-first-gateway';
 import { saveEpisodeWithTemplatePresets } from '../../lib/episodes/episode-start-service';
 import { humanizeUnexpectedScreenError } from '../../lib/network/humanize-unexpected-screen-error';
+import { fetchMobileDeviceIsConnected } from '../../lib/network/mobile-device-netinfo';
 import { getActiveEpisodeRowFromPowerSyncDb } from '../../lib/powersync/episode-powersync-local-read';
 import {
   powerSyncOfflineReplicaReadsEnabled,
@@ -126,43 +127,64 @@ export function EpisodeStartScreen() {
         }
         const userId = authResult.data;
 
-        const supabase = getMobileSupabaseClient();
-        const activeResult = await getActiveEpisodeForUser(supabase, userId);
-        if (stale()) {
-          return;
-        }
-
         let activeEpisodeRow: EpisodeRow | null = null;
         const bridgeForActiveRead = psBridgeRef.current;
-        if (activeResult.ok) {
-          activeEpisodeRow = activeResult.data;
-        } else {
-          const isNetwork =
-            activeResult.error instanceof PresetDataError &&
-            activeResult.error.code === 'network_error';
-          if (
-            isNetwork &&
-            powerSyncOfflineReplicaReadsEnabled(bridgeForActiveRead)
-          ) {
-            const db = bridgeForActiveRead.database;
-            if (db != null) {
+        const activeReplicaDb = powerSyncOfflineReplicaReadsEnabled(
+          bridgeForActiveRead,
+        )
+          ? bridgeForActiveRead.database
+          : null;
+        const canUseReplicaForActiveRead = activeReplicaDb != null;
+        let shouldQuerySupabaseForActive = true;
+        if (canUseReplicaForActiveRead) {
+          const connected = await fetchMobileDeviceIsConnected();
+          if (stale()) {
+            return;
+          }
+          if (connected === false) {
+            shouldQuerySupabaseForActive = false;
+            try {
+              activeEpisodeRow = await getActiveEpisodeRowFromPowerSyncDb(
+                activeReplicaDb,
+                userId,
+              );
+            } catch {
+              activeEpisodeRow = null;
+            }
+          }
+        }
+
+        if (!activeEpisodeRow && shouldQuerySupabaseForActive) {
+          const supabase = getMobileSupabaseClient();
+          const activeResult = await getActiveEpisodeForUser(supabase, userId);
+          if (stale()) {
+            return;
+          }
+
+          if (activeResult.ok) {
+            activeEpisodeRow = activeResult.data;
+          } else {
+            const isNetwork =
+              activeResult.error instanceof PresetDataError &&
+              activeResult.error.code === 'network_error';
+            if (isNetwork && canUseReplicaForActiveRead) {
               try {
                 activeEpisodeRow = await getActiveEpisodeRowFromPowerSyncDb(
-                  db,
+                  activeReplicaDb,
                   userId,
                 );
               } catch {
                 activeEpisodeRow = null;
               }
             }
-          }
-          if (!activeEpisodeRow) {
-            if (!isNetwork) {
-              setErrorMessage(activeResult.error.message);
-              setStatus('error');
-              return;
+            if (!activeEpisodeRow) {
+              if (!isNetwork) {
+                setErrorMessage(activeResult.error.message);
+                setStatus('error');
+                return;
+              }
+              // Network and no replicated active episode — try templates (may also be offline).
             }
-            // Network and no replicated active episode — try templates (may also be offline).
           }
         }
 

@@ -60,7 +60,6 @@ import {
   isPresetDataNetworkError,
 } from '../../lib/powersync/powersync-offline-read-bridge-snapshot';
 import {
-  powerSyncOfflineReplicaReadsEnabled,
   powerSyncReplicaSqliteReady,
   usePowerSyncBridgeState,
 } from '../../lib/powersync/PowerSyncSessionBridge';
@@ -351,14 +350,19 @@ export function HealthMarkerPromptScreen() {
     setObservationTimeline([]);
 
     let sessionUserId: string | null = null;
-    try {
-      const {
-        data: { session },
-      } = await getMobileAuthSessionSafe();
-      sessionUserId = session?.user?.id ?? null;
-    } catch {
-      sessionUserId = null;
+    const {
+      data: { session },
+      error: sessionError,
+    } = await getMobileAuthSessionSafe();
+    if (sessionError) {
+      if (stale()) {
+        return;
+      }
+      setErrorMessage(sessionError.message);
+      setStatus('error');
+      return;
     }
+    sessionUserId = session?.user?.id ?? null;
     if (stale()) {
       return;
     }

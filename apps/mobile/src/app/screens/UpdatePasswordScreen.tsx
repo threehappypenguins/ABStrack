@@ -66,7 +66,14 @@ export function UpdatePasswordScreen({
     try {
       const {
         data: { session },
+        error: sessionError,
       } = await getMobileAuthSessionSafe();
+
+      if (sessionError) {
+        setErrorMessage(mapAuthError(sessionError.message));
+        setStatusMessage(null);
+        return;
+      }
 
       // `getMobileAuthSessionSafe` can return identity with `access_token: ''` after offline refresh
       // failure — not a usable recovery JWT for `updatePassword`.

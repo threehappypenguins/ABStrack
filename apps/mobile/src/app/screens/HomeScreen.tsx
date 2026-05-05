@@ -294,8 +294,9 @@ export function HomeScreen({
    * connecting without completion. If NetInfo is explicitly offline before that fetch, stay in
    * loading so an empty local DB is not mistaken for “no active episode.”
    *
-   * When mirror reads are enabled but the active-episode watched query errors, treat loading like
-   * the online resume path until {@link loadNetworkResumeEpisode} finishes (or skips offline).
+   * When mirror reads are enabled but the active-episode watched query errors, keep loading only
+   * while the online resume attempt is actively running. If it skips for explicit offline
+   * (`networkResumeSkippedOffline`), stop loading so the local-query error can surface.
    */
   const activeEpisodeLoading = useMemo(() => {
     if (!userId) {
@@ -311,7 +312,7 @@ export function HomeScreen({
       }
       if (replicaMirrorHomeReads) {
         if (psEpisodeSnap.error) {
-          return networkResumeLoading || networkResumeSkippedOffline;
+          return networkResumeLoading;
         }
         return !psBridge.firstSyncCompleted && psBridge.syncConnecting;
       }

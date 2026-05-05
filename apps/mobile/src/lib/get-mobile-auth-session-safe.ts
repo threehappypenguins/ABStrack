@@ -10,6 +10,23 @@ type MobileAuthGetSessionResult = Awaited<
   ReturnType<AbstrackSupabaseClient['auth']['getSession']>
 >;
 
+type MobileAuthGetSessionError = NonNullable<
+  MobileAuthGetSessionResult['error']
+>;
+
+function sessionRecoveryError(
+  message: string,
+  cause?: unknown,
+): MobileAuthGetSessionError {
+  const err = new Error(message, cause === undefined ? undefined : { cause });
+  err.name = 'AuthSessionRecoveryError';
+  return Object.assign(err, {
+    status: 0,
+    code: 'auth_session_recovery_failed' as const,
+    __isAuthError: true as const,
+  }) as unknown as MobileAuthGetSessionError;
+}
+
 /**
  * Whether a persisted Supabase session’s access token should be treated as expired **now**
  * (so callers must not use it as a live JWT — e.g. PowerSync after an offline refresh failure).
@@ -101,11 +118,17 @@ export async function getMobileAuthSessionSafe(): Promise<MobileAuthGetSessionRe
   const client = getMobileSupabaseClient();
   try {
     return await client.auth.getSession();
-  } catch {
+  } catch (getSessionError) {
     const storageKey = (client.auth as unknown as { storageKey?: string })
       .storageKey;
     if (!storageKey) {
-      return { data: { session: null }, error: null };
+      return {
+        data: { session: null },
+        error: sessionRecoveryError(
+          'Auth session check failed and no storage key was available for persisted-session recovery.',
+          getSessionError,
+        ),
+      };
     }
     try {
       const raw = await mobileAuthStorage.getItem(storageKey);
@@ -119,7 +142,13 @@ export async function getMobileAuthSessionSafe(): Promise<MobileAuthGetSessionRe
         typeof session.access_token !== 'string' ||
         session.access_token.length === 0
       ) {
-        return { data: { session: null }, error: null };
+        return {
+          data: { session: null },
+          error: sessionRecoveryError(
+            'Auth session check failed and persisted session data was invalid.',
+            getSessionError,
+          ),
+        };
       }
       if (isPersistedSupabaseSessionAccessExpired(session)) {
         return {
@@ -130,8 +159,14 @@ export async function getMobileAuthSessionSafe(): Promise<MobileAuthGetSessionRe
         };
       }
       return { data: { session }, error: null };
-    } catch {
-      return { data: { session: null }, error: null };
+    } catch (persistedReadError) {
+      return {
+        data: { session: null },
+        error: sessionRecoveryError(
+          'Auth session check failed and persisted session could not be read from storage.',
+          { getSessionError, persistedReadError },
+        ),
+      };
     }
   }
 }

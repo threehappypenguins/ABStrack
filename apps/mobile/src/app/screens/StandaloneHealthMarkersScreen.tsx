@@ -78,10 +78,16 @@ export function StandaloneHealthMarkersScreen() {
     let cancelled = false;
     void (async () => {
       try {
-        const { data } = await getMobileAuthSessionSafe();
+        const { data, error } = await getMobileAuthSessionSafe();
         if (cancelled) {
           return;
         }
+        if (error) {
+          setAuthUserId(null);
+          setLoadError(error.message || 'Unable to read your sign-in session.');
+          return;
+        }
+        setLoadError(null);
         setAuthUserId(data.session?.user?.id ?? null);
       } finally {
         if (!cancelled) {

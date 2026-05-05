@@ -64,7 +64,6 @@ import {
   isPresetDataNetworkError,
 } from '../../lib/powersync/powersync-offline-read-bridge-snapshot';
 import {
-  powerSyncOfflineReplicaReadsEnabled,
   powerSyncReplicaSqliteReady,
   usePowerSyncBridgeState,
 } from '../../lib/powersync/PowerSyncSessionBridge';

@@ -181,4 +181,42 @@ describe('getMobileAuthSessionSafe', () => {
     });
     expect(mobileAuthStorage.getItem).toHaveBeenCalledWith(storageKey);
   });
+
+  it('surfaces an error when persisted session cannot be read', async () => {
+    jest.mocked(getMobileSupabaseClient).mockReturnValue({
+      auth: {
+        storageKey,
+        getSession: jest
+          .fn()
+          .mockRejectedValue(new TypeError('Network request failed')),
+      },
+    } as unknown as AbstrackSupabaseClient);
+    jest
+      .mocked(mobileAuthStorage.getItem)
+      .mockRejectedValue(new Error('secure storage unavailable'));
+
+    const result = await getMobileAuthSessionSafe();
+    expect(result.data.session).toBeNull();
+    expect(result.error).toBeInstanceOf(Error);
+    expect(result.error?.message).toContain(
+      'persisted session could not be read from storage',
+    );
+  });
+
+  it('surfaces an error when persisted session JSON is invalid', async () => {
+    jest.mocked(getMobileSupabaseClient).mockReturnValue({
+      auth: {
+        storageKey,
+        getSession: jest.fn().mockRejectedValue(new Error('offline')),
+      },
+    } as unknown as AbstrackSupabaseClient);
+    jest.mocked(mobileAuthStorage.getItem).mockResolvedValue('{bad json');
+
+    const result = await getMobileAuthSessionSafe();
+    expect(result.data.session).toBeNull();
+    expect(result.error).toBeInstanceOf(Error);
+    expect(result.error?.message).toContain(
+      'persisted session could not be read from storage',
+    );
+  });
 });

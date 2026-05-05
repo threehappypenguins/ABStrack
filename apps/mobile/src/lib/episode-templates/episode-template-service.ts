@@ -237,7 +237,10 @@ export async function fetchEpisodeTemplateById(
         id,
         userId,
       );
-      return { ok: true, data };
+      if (data != null) {
+        return { ok: true, data };
+      }
+      return remote;
     } catch (caught) {
       return { ok: false, error: toPresetDataError(caught) };
     }
