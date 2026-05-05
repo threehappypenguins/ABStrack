@@ -1,7 +1,9 @@
 /**
- * Runs `pnpm expo run:android` from `apps/mobile`, forwards stdout/stderr line-by-line, and drops
- * a known noisy PowerSync log line. Replaces `… | grep -v …` so the process exit code matches
- * Expo (portable; works without `grep` on Windows). If the child exits because of a signal
+ * Runs `pnpm expo run:android` from `apps/mobile`, appending `process.argv.slice(2)` so
+ * `pnpm android -- --device …`, `--variant`, `--port`, etc. reach Expo like a direct
+ * `expo run:android` script. Forwards stdout/stderr line-by-line
+ * and drops a known noisy PowerSync log line. Replaces `… | grep -v …` so the process exit code
+ * matches Expo (portable; works without `grep` on Windows). If the child exits because of a signal
  * (e.g. Ctrl+C / SIGINT), the wrapper exits with **128 + signal number** so shells and CI match
  * `pnpm expo run:android` instead of always using `1`.
  *
@@ -69,7 +71,9 @@ async function flushAndExit(code) {
   process.exit(code);
 }
 
-const child = spawn('pnpm', ['expo', 'run:android'], {
+const expoArgs = ['expo', 'run:android', ...process.argv.slice(2)];
+
+const child = spawn('pnpm', expoArgs, {
   cwd: mobileRoot,
   env: process.env,
   stdio: ['inherit', 'pipe', 'pipe'],

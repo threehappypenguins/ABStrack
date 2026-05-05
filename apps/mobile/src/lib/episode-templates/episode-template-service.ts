@@ -67,6 +67,11 @@ export async function getCurrentUserId(): Promise<
  * message applies only when the device is **explicitly offline** and there is no DB handle; a
  * successful remote empty list stays authoritative when connectivity is unknown or online.
  *
+ * When {@link resolvePowerSyncDatabaseForOfflineRead} returns a handle and NetInfo reports
+ * **explicitly offline** (`fetchMobileDeviceIsConnected() === false`), reads SQLite first so a cold
+ * offline open does not wait for `listEpisodeTemplates` to time out (same pattern as
+ * `fetchSymptomPresets` / `fetchHealthMarkerPresets`).
+ *
  * @param options.powerSyncOfflineRead - From `usePowerSyncBridgeState()` when calling from UI.
  * @returns {@link PresetDataResult} of template rows or an error.
  */
@@ -74,15 +79,45 @@ export async function fetchEpisodeTemplates(options?: {
   powerSyncOfflineRead?: PowerSyncOfflineReadContext | null;
 }): Promise<PresetDataResult<EpisodeTemplateWithPresetsRow[]>> {
   const client = getMobileSupabaseClient();
+  const db = resolvePowerSyncDatabaseForOfflineRead(
+    options?.powerSyncOfflineRead ?? null,
+  );
+
+  if (db) {
+    const connected = await fetchMobileDeviceIsConnected();
+    if (connected === false) {
+      const auth = await getCurrentUserId();
+      if (!auth.ok) {
+        return auth;
+      }
+      if (auth.data == null) {
+        return listEpisodeTemplates(client);
+      }
+      try {
+        const data = await listEpisodeTemplatesWithPresetsFromPowerSyncDb(
+          db,
+          auth.data,
+        );
+        return { ok: true, data };
+      } catch {
+        const remote = await listEpisodeTemplates(client);
+        if (remote.ok) {
+          return remote;
+        }
+        if (!isPresetDataNetworkError(remote.error)) {
+          return remote;
+        }
+        const alt = clarifyNetworkErrorWhenReplicaUnavailable(remote.error);
+        return alt ? { ok: false, error: alt } : remote;
+      }
+    }
+  }
+
   const remote = await listEpisodeTemplates(client);
 
   if (remote.ok && remote.data.length > 0) {
     return remote;
   }
-
-  const db = resolvePowerSyncDatabaseForOfflineRead(
-    options?.powerSyncOfflineRead ?? null,
-  );
 
   const auth = await getCurrentUserId();
   if (!auth.ok || auth.data == null) {
@@ -144,6 +179,10 @@ export async function fetchEpisodeTemplates(options?: {
  * SQLite while online or when connectivity is unknown (`null`); that avoids reopening a stale row
  * for edit after server delete or RLS loss.
  *
+ * When {@link resolvePowerSyncDatabaseForOfflineRead} returns a handle and NetInfo reports **explicitly
+ * offline**, reads SQLite **before** `getEpisodeTemplateById` when a matching local row exists so
+ * offline edit flows avoid a remote timeout (same idea as {@link fetchEpisodeTemplates} list fast path).
+ *
  * @param id - Template row id.
  * @param options.powerSyncOfflineRead - From `usePowerSyncBridgeState()` when calling from UI.
  */
@@ -152,21 +191,46 @@ export async function fetchEpisodeTemplateById(
   options?: { powerSyncOfflineRead?: PowerSyncOfflineReadContext | null },
 ): Promise<PresetDataResult<EpisodeTemplateWithPresetsRow | null>> {
   const client = getMobileSupabaseClient();
+  const db = resolvePowerSyncDatabaseForOfflineRead(
+    options?.powerSyncOfflineRead ?? null,
+  );
+  let userId: string | null = null;
+  if (db) {
+    const auth = await getCurrentUserId();
+    if (auth.ok && auth.data != null) {
+      userId = auth.data;
+      const connected = await fetchMobileDeviceIsConnected();
+      if (connected === false) {
+        try {
+          const localRow =
+            await getEpisodeTemplateWithPresetsByIdFromPowerSyncDb(
+              db,
+              id,
+              userId,
+            );
+          if (localRow != null) {
+            return { ok: true, data: localRow };
+          }
+        } catch {
+          /* fall through to remote */
+        }
+      }
+    }
+  }
+
   const remote = await getEpisodeTemplateById(client, id);
 
   if (remote.ok && remote.data != null) {
     return remote;
   }
 
-  const db = resolvePowerSyncDatabaseForOfflineRead(
-    options?.powerSyncOfflineRead ?? null,
-  );
-
-  const auth = await getCurrentUserId();
-  if (!auth.ok || auth.data == null) {
-    return remote;
+  if (userId == null) {
+    const auth = await getCurrentUserId();
+    if (!auth.ok || auth.data == null) {
+      return remote;
+    }
+    userId = auth.data;
   }
-  const userId = auth.data;
 
   if (!remote.ok && isPresetDataNetworkError(remote.error)) {
     if (!db) {

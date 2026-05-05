@@ -78,6 +78,29 @@ describe('useMobileDeviceNetworkConnected', () => {
     });
   });
 
+  it('applies fetch when the only pre-fetch listener snapshots map to unknown-reachability (wifi connected)', async () => {
+    jest
+      .mocked(NetInfo.fetch)
+      .mockResolvedValue(
+        wifiOnline() as Awaited<ReturnType<typeof NetInfo.fetch>>,
+      );
+    jest.mocked(NetInfo.addEventListener).mockImplementation((callback) => {
+      callback({
+        type: 'wifi',
+        isConnected: true,
+        isInternetReachable: null,
+        details: {},
+      } as NetInfoState);
+      return jest.fn();
+    });
+
+    const { getByTestId } = render(<Host />);
+
+    await waitFor(() => {
+      expect(getByTestId('net').props.children).toBe('true');
+    });
+  });
+
   it('applies fetch when the only pre-fetch listener snapshots map to unknown (null)', async () => {
     jest
       .mocked(NetInfo.fetch)

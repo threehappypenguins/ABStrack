@@ -23,6 +23,7 @@ import {
   updatePresetSymptom,
   updateSymptomPreset,
 } from '@abstrack/supabase';
+import { fetchMobileDeviceIsConnected } from '../network/mobile-device-netinfo';
 import { listSymptomPresetsForUserFromPowerSyncDb } from '../powersync/powersync-episode-flow-reads';
 import {
   clarifyNetworkErrorWhenReplicaUnavailable,
@@ -64,6 +65,10 @@ export async function getCurrentUserId(): Promise<
  * is unreachable and the bridge reports the replica is ready for server-mirror reads (first sync
  * this session or a persisted first-sync landing for this user on device).
  *
+ * When the replica is already trusted for offline reads and NetInfo reports **explicitly offline**
+ * (`fetchMobileDeviceIsConnected() === false`), reads SQLite immediately instead of waiting for a
+ * Supabase list timeout (same idea as `HomeScreen` skipping the network resume fetch when offline).
+ *
  * @param options.powerSyncOfflineRead - Prefer passing `usePowerSyncBridgeState()` fields from the
  *   screen so reads use the same DB instance as `PowerSyncContext` (PowerSync SDK lifecycle).
  * @returns {@link PresetDataResult} of preset rows or an error.
@@ -72,6 +77,40 @@ export async function fetchSymptomPresets(options?: {
   powerSyncOfflineRead?: PowerSyncOfflineReadContext | null;
 }): Promise<PresetDataResult<SymptomPresetRow[]>> {
   const client = getMobileSupabaseClient();
+  const db = resolvePowerSyncDatabaseForOfflineRead(
+    options?.powerSyncOfflineRead ?? null,
+  );
+
+  if (db) {
+    const connected = await fetchMobileDeviceIsConnected();
+    if (connected === false) {
+      const auth = await getCurrentUserId();
+      if (!auth.ok) {
+        return auth;
+      }
+      if (auth.data == null) {
+        return listSymptomPresets(client);
+      }
+      try {
+        const data = await listSymptomPresetsForUserFromPowerSyncDb(
+          db,
+          auth.data,
+        );
+        return { ok: true, data };
+      } catch {
+        const remote = await listSymptomPresets(client);
+        if (remote.ok) {
+          return remote;
+        }
+        if (!isPresetDataNetworkError(remote.error)) {
+          return remote;
+        }
+        const alt = clarifyNetworkErrorWhenReplicaUnavailable(remote.error);
+        return alt ? { ok: false, error: alt } : remote;
+      }
+    }
+  }
+
   const remote = await listSymptomPresets(client);
   if (remote.ok) {
     return remote;
@@ -79,9 +118,6 @@ export async function fetchSymptomPresets(options?: {
   if (!isPresetDataNetworkError(remote.error)) {
     return remote;
   }
-  const db = resolvePowerSyncDatabaseForOfflineRead(
-    options?.powerSyncOfflineRead ?? null,
-  );
   if (!db) {
     const alt = clarifyNetworkErrorWhenReplicaUnavailable(remote.error);
     return alt ? { ok: false, error: alt } : remote;

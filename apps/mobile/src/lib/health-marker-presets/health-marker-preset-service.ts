@@ -23,6 +23,7 @@ import {
   updateHealthMarkerPreset,
   updatePresetHealthMarker,
 } from '@abstrack/supabase';
+import { fetchMobileDeviceIsConnected } from '../network/mobile-device-netinfo';
 import { listHealthMarkerPresetsForUserFromPowerSyncDb } from '../powersync/powersync-episode-flow-reads';
 import {
   clarifyNetworkErrorWhenReplicaUnavailable,
@@ -67,12 +68,50 @@ export async function getCurrentUserId(): Promise<
  * **not** yield SQLite here — avoiding an empty list that would mask the “sync once while online”
  * path handled by {@link clarifyNetworkErrorWhenReplicaUnavailable}.
  *
+ * When the replica is already trusted for offline reads and NetInfo reports **explicitly offline**
+ * (`fetchMobileDeviceIsConnected() === false`), reads SQLite immediately instead of waiting for a
+ * Supabase list timeout (same pattern as `fetchSymptomPresets` in `symptom-preset-service.ts`).
+ *
  * @param options.powerSyncOfflineRead - From `usePowerSyncBridgeState()` when calling from UI.
  */
 export async function fetchHealthMarkerPresets(options?: {
   powerSyncOfflineRead?: PowerSyncOfflineReadContext | null;
 }): Promise<PresetDataResult<HealthMarkerPresetRow[]>> {
   const client = getMobileSupabaseClient();
+  const db = resolvePowerSyncDatabaseForOfflineRead(
+    options?.powerSyncOfflineRead ?? null,
+  );
+
+  if (db) {
+    const connected = await fetchMobileDeviceIsConnected();
+    if (connected === false) {
+      const auth = await getCurrentUserId();
+      if (!auth.ok) {
+        return auth;
+      }
+      if (auth.data == null) {
+        return listHealthMarkerPresets(client);
+      }
+      try {
+        const data = await listHealthMarkerPresetsForUserFromPowerSyncDb(
+          db,
+          auth.data,
+        );
+        return { ok: true, data };
+      } catch {
+        const remote = await listHealthMarkerPresets(client);
+        if (remote.ok) {
+          return remote;
+        }
+        if (!isPresetDataNetworkError(remote.error)) {
+          return remote;
+        }
+        const alt = clarifyNetworkErrorWhenReplicaUnavailable(remote.error);
+        return alt ? { ok: false, error: alt } : remote;
+      }
+    }
+  }
+
   const remote = await listHealthMarkerPresets(client);
   if (remote.ok) {
     return remote;
@@ -81,9 +120,6 @@ export async function fetchHealthMarkerPresets(options?: {
     return remote;
   }
   // Same server-mirror gate as symptom presets: not init() alone (see bridge snapshot + landing storage).
-  const db = resolvePowerSyncDatabaseForOfflineRead(
-    options?.powerSyncOfflineRead ?? null,
-  );
   if (!db) {
     const alt = clarifyNetworkErrorWhenReplicaUnavailable(remote.error);
     return alt ? { ok: false, error: alt } : remote;

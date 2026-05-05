@@ -34,7 +34,7 @@ describe('mapNetInfoStateToAppOnline', () => {
     ).toBe(true);
   });
 
-  it('returns true when connected and reachability is unknown', () => {
+  it('returns null when connected but reachability is still unknown', () => {
     expect(
       mapNetInfoStateToAppOnline({
         type: 'wifi',
@@ -42,6 +42,6 @@ describe('mapNetInfoStateToAppOnline', () => {
         isInternetReachable: null,
         details: {},
       } as never),
-    ).toBe(true);
+    ).toBeNull();
   });
 });
