@@ -1,5 +1,5 @@
 import type { EpisodeRow } from '@abstrack/types';
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 
 import { usePowerSyncActiveEpisodeQuery } from './use-episode-powersync-reads';
 
@@ -16,6 +16,8 @@ import { usePowerSyncActiveEpisodeQuery } from './use-episode-powersync-reads';
  *
  * @param props.userId - Auth user id for SQL.
  * @param props.onChange - Latest row, loading flag, and watched-query error (if any).
+ * Uses `useLayoutEffect` so the initial `isLoading` snapshot is delivered in the same commit before
+ * paint; parents do not briefly render a stale default while the query is already loading.
  * @returns Renders nothing.
  */
 export function PowerSyncActiveEpisodeSubscription({
@@ -33,13 +35,13 @@ export function PowerSyncActiveEpisodeSubscription({
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
-  useEffect(() => {
-    onChange({
+  useLayoutEffect(() => {
+    onChangeRef.current({
       episode: ps.episode,
       isLoading: ps.isLoading,
       error: ps.error,
     });
-  }, [onChange, ps.episode, ps.error, ps.isLoading]);
+  }, [ps.episode, ps.error, ps.isLoading]);
 
   useEffect(() => {
     return () => {

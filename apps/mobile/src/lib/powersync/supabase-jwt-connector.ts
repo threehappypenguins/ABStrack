@@ -77,8 +77,10 @@ export function createSupabaseJwtPowerSyncConnector(options: {
               '[PowerSync] Upload batch rejected by server (dequeuing; local row may diverge until next sync):',
               e instanceof Error ? e.message : e,
             );
+            let completeSucceeded = false;
             try {
               await batch.complete();
+              completeSucceeded = true;
             } catch (completeErr) {
               console.warn(
                 '[PowerSync] batch.complete after permanent upload failure:',
@@ -86,6 +88,9 @@ export function createSupabaseJwtPowerSyncConnector(options: {
                   ? completeErr.message
                   : completeErr,
               );
+            }
+            if (!completeSucceeded) {
+              return;
             }
             if (!batch.haveMore) {
               return;

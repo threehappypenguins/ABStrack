@@ -112,8 +112,11 @@ const forwardSignal = (/** @type {NodeJS.Signals} */ sig) => {
     // ignore
   }
 };
+const signalForwarders = new Map();
 for (const sig of /** @type {const} */ (['SIGINT', 'SIGTERM'])) {
-  process.on(sig, forwardSignal);
+  const listener = () => forwardSignal(sig);
+  signalForwarders.set(sig, listener);
+  process.on(sig, listener);
 }
 
 /**
@@ -132,7 +135,11 @@ let childSettled = false;
 
 function removeSignalForwarders() {
   for (const sig of ['SIGINT', 'SIGTERM']) {
-    process.removeListener(sig, forwardSignal);
+    const listener = signalForwarders.get(sig);
+    if (!listener) {
+      continue;
+    }
+    process.removeListener(sig, listener);
   }
 }
 

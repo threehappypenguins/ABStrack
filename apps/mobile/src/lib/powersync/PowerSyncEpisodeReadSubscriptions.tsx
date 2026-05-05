@@ -1,5 +1,5 @@
 import type { EpisodeRow } from '@abstrack/types';
-import { useEffect } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 
 import { POWERSYNC_OFFLINE_EPISODE_PAGE_SIZE } from './episode-powersync-read';
 import {
@@ -34,6 +34,8 @@ export type PowerSyncEpisodeReadSnapshots = {
  * @param props.completedEpisodesFetchLimit - SQLite `LIMIT` for completed history; defaults to
  *   {@link POWERSYNC_OFFLINE_EPISODE_PAGE_SIZE} when omitted (Manage passes a growing limit for offline paging).
  * @param props.onSnapshots - Called when query outputs change.
+ * Uses `useLayoutEffect` so initial loading flags are delivered before first paint (parents should
+ * not briefly treat mirror reads as settled while watched SQL is still resolving).
  * @returns Renders nothing (subscription-only).
  */
 export function PowerSyncEpisodeReadSubscriptions({
@@ -57,9 +59,11 @@ export function PowerSyncEpisodeReadSubscriptions({
     endedAtOrBefore,
     completedEpisodesFetchLimit ?? POWERSYNC_OFFLINE_EPISODE_PAGE_SIZE,
   );
+  const onSnapshotsRef = useRef(onSnapshots);
+  onSnapshotsRef.current = onSnapshots;
 
-  useEffect(() => {
-    onSnapshots({
+  useLayoutEffect(() => {
+    onSnapshotsRef.current({
       activeEpisode: psActive.episode,
       activeLoading: psActive.isLoading,
       activeQueryError: psActive.error,
@@ -68,7 +72,6 @@ export function PowerSyncEpisodeReadSubscriptions({
       completedQueryError: psCompleted.error,
     });
   }, [
-    onSnapshots,
     psActive.episode,
     psActive.error,
     psActive.isLoading,

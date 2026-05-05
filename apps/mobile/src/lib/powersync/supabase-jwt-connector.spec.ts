@@ -252,5 +252,48 @@ describe('createSupabaseJwtPowerSyncConnector', () => {
         warnSpy.mockRestore();
       }
     });
+
+    it('stops upload pass when batch.complete fails after permanent rejection', async () => {
+      const warnSpy = jest
+        .spyOn(console, 'warn')
+        .mockImplementation(() => undefined);
+      try {
+        jest.mocked(uploadPowerSyncCrudBatchToSupabase).mockRejectedValueOnce({
+          code: '23503',
+          message: 'violates foreign key constraint',
+        });
+        const connector = createSupabaseJwtPowerSyncConnector({
+          powerSyncUrl,
+          getSession: jest.fn(),
+          getSupabaseClient: () => mockSupabaseClient,
+        });
+        const { db, getCrudBatch, completeMocks } = stubDatabaseSequence([
+          { crud: [{ id: '1' }], haveMore: true },
+          { crud: [{ id: '2' }], haveMore: false },
+        ]);
+        completeMocks[0] = jest
+          .fn()
+          .mockRejectedValue(new Error('sqlite busy while dequeueing'));
+        jest
+          .mocked(getCrudBatch)
+          .mockResolvedValueOnce({
+            crud: [{ id: '1' }],
+            haveMore: true,
+            complete: completeMocks[0],
+          })
+          .mockResolvedValueOnce({
+            crud: [{ id: '2' }],
+            haveMore: false,
+            complete: jest.fn().mockResolvedValue(undefined),
+          });
+
+        await expect(connector.uploadData?.(db)).resolves.toBeUndefined();
+        expect(getCrudBatch).toHaveBeenCalledTimes(1);
+        expect(uploadPowerSyncCrudBatchToSupabase).toHaveBeenCalledTimes(1);
+        expect(completeMocks[0]).toHaveBeenCalledTimes(1);
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
   });
 });
