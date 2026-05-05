@@ -297,6 +297,11 @@ export function HomeScreen({
    * When mirror reads are enabled but the active-episode watched query errors, keep loading only
    * while the online resume attempt is actively running. If it skips for explicit offline
    * (`networkResumeSkippedOffline`), stop loading so the local-query error can surface.
+   *
+   * When mirror reads are **not** trusted yet (no first sync) but {@link powerSyncReplicaSqliteReady}
+   * is already true, do **not** keep spinning on skipped-offline alone — offline writes (episode
+   * start) are allowed on initialized SQLite; blocking the CTA would trap airplane-mode users after
+   * init without helping resume accuracy.
    */
   const activeEpisodeLoading = useMemo(() => {
     if (!userId) {
@@ -316,7 +321,14 @@ export function HomeScreen({
         }
         return !psBridge.firstSyncCompleted && psBridge.syncConnecting;
       }
-      return networkResumeLoading || networkResumeSkippedOffline;
+      // Same as {@link powerSyncReplicaSqliteReady}; inline so deps stay primitive bridge fields.
+      const replicaSqliteReady = Boolean(
+        psBridge.database && psBridge.localSqliteInitialized,
+      );
+      return (
+        networkResumeLoading ||
+        (!replicaSqliteReady && networkResumeSkippedOffline)
+      );
     }
     return networkResumeLoading;
   }, [

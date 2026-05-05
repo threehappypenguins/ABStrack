@@ -40,6 +40,10 @@ type FocusLoadCancel = { cancelled: boolean };
 
 const EPISODE_START_LOAD_TIMEOUT_MS = 45_000;
 
+/** Shown when SQLite active-episode verification throws — must not be treated as “no active episode”. */
+const ACTIVE_EPISODE_LOCAL_VERIFY_FAILED_MESSAGE =
+  'Could not verify whether you already have an episode in progress from this device. Open Home to continue an episode that is already synced, or connect online and try again.';
+
 type EpisodeStartNav = NativeStackNavigationProp<
   MainStackParamList,
   'EpisodeStart'
@@ -129,14 +133,21 @@ export function EpisodeStartScreen() {
 
         let activeEpisodeRow: EpisodeRow | null = null;
         const bridgeForActiveRead = psBridgeRef.current;
-        const activeReplicaDb = powerSyncOfflineReplicaReadsEnabled(
+        const trustedReplicaDb = powerSyncOfflineReplicaReadsEnabled(
           bridgeForActiveRead,
         )
           ? bridgeForActiveRead.database
           : null;
-        const canUseReplicaForActiveRead = activeReplicaDb != null;
+        const sqliteReadyReplicaDb = powerSyncReplicaSqliteReady(
+          bridgeForActiveRead,
+        )
+          ? bridgeForActiveRead.database
+          : null;
+        /** Prefer trusted mirror for reads; fall back to init-only SQLite after Supabase network errors. */
+        const replicaDbForNetworkFallback =
+          trustedReplicaDb ?? sqliteReadyReplicaDb;
         let shouldQuerySupabaseForActive = true;
-        if (canUseReplicaForActiveRead) {
+        if (trustedReplicaDb) {
           const connected = await fetchMobileDeviceIsConnected();
           if (stale()) {
             return;
@@ -145,11 +156,20 @@ export function EpisodeStartScreen() {
             shouldQuerySupabaseForActive = false;
             try {
               activeEpisodeRow = await getActiveEpisodeRowFromPowerSyncDb(
-                activeReplicaDb,
+                trustedReplicaDb,
                 userId,
               );
-            } catch {
-              activeEpisodeRow = null;
+            } catch (caught) {
+              if (!stale()) {
+                setErrorMessage(
+                  humanizeUnexpectedScreenError(
+                    caught,
+                    ACTIVE_EPISODE_LOCAL_VERIFY_FAILED_MESSAGE,
+                  ),
+                );
+                setStatus('error');
+              }
+              return;
             }
           }
         }
@@ -167,14 +187,23 @@ export function EpisodeStartScreen() {
             const isNetwork =
               activeResult.error instanceof PresetDataError &&
               activeResult.error.code === 'network_error';
-            if (isNetwork && canUseReplicaForActiveRead) {
+            if (isNetwork && replicaDbForNetworkFallback) {
               try {
                 activeEpisodeRow = await getActiveEpisodeRowFromPowerSyncDb(
-                  activeReplicaDb,
+                  replicaDbForNetworkFallback,
                   userId,
                 );
-              } catch {
-                activeEpisodeRow = null;
+              } catch (caught) {
+                if (!stale()) {
+                  setErrorMessage(
+                    humanizeUnexpectedScreenError(
+                      caught,
+                      ACTIVE_EPISODE_LOCAL_VERIFY_FAILED_MESSAGE,
+                    ),
+                  );
+                  setStatus('error');
+                }
+                return;
               }
             }
             if (!activeEpisodeRow) {

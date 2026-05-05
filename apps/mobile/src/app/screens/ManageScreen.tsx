@@ -48,6 +48,12 @@ import {
 const PAGE_SIZE = 30;
 
 /**
+ * Result of standalone Manage-tab initial loads (health markers / food diary). Pull-to-refresh uses
+ * this to restore prior rows after a fetch failure without masking a successful empty response.
+ */
+type ManageStandaloneListLoadOutcome = 'ok' | 'error' | 'no-user' | 'stale';
+
+/**
  * Health and Food Manage lists load only via Supabase — do not await PowerSync manual resync on
  * pull-to-refresh (offline `waitForFirstSync` can block ~60s before the list reload runs).
  */
@@ -337,7 +343,9 @@ function StandaloneHealthMarkersManageList({
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const loadInitial = useCallback(
-    async (cancel?: { cancelled: boolean }) => {
+    async (cancel?: {
+      cancelled: boolean;
+    }): Promise<ManageStandaloneListLoadOutcome> => {
       const generation = ++loadGenRef.current;
       const stale = () =>
         cancel?.cancelled === true || generation !== loadGenRef.current;
@@ -349,12 +357,12 @@ function StandaloneHealthMarkersManageList({
           data: { user },
         } = await client.auth.getUser();
         if (stale()) {
-          return;
+          return 'stale';
         }
         if (!user) {
           setRows([]);
           setHasMore(false);
-          return;
+          return 'no-user';
         }
         const res = await listStandaloneHealthMarkersForUser(client, user.id, {
           limit: PAGE_SIZE,
@@ -363,22 +371,25 @@ function StandaloneHealthMarkersManageList({
           recordedAtOrBefore: recordedAtOrBefore ?? undefined,
         });
         if (stale()) {
-          return;
+          return 'stale';
         }
         if (!res.ok) {
           setError(res.error.message);
           setRows([]);
           setHasMore(false);
-          return;
+          return 'error';
         }
         setRows(res.data);
         setHasMore(res.data.length === PAGE_SIZE);
+        return 'ok';
       } catch {
         if (!stale()) {
           setError('Unable to load health markers.');
           setRows([]);
           setHasMore(false);
+          return 'error';
         }
+        return 'stale';
       } finally {
         if (!stale()) {
           setLoading(false);
@@ -390,9 +401,32 @@ function StandaloneHealthMarkersManageList({
 
   const loadInitialRef = useRef(loadInitial);
   loadInitialRef.current = loadInitial;
+
+  const rowsRef = useRef(rows);
+  const hasMoreRef = useRef(hasMore);
+  useEffect(() => {
+    rowsRef.current = rows;
+    hasMoreRef.current = hasMore;
+  }, [hasMore, rows]);
+
+  /**
+   * Pull-to-refresh runs `loadInitial`; offline/network failures clear rows — restore the last
+   * successful snapshot when the reload outcome is `error`.
+   */
+  const refreshManageScreen = useCallback(async () => {
+    const previousRows = rowsRef.current;
+    const previousHasMore = hasMoreRef.current;
+    const outcome = await loadInitialRef.current();
+    if (outcome === 'error' && previousRows.length > 0) {
+      setRows(previousRows);
+      setHasMore(previousHasMore);
+      setError(null);
+    }
+  }, []);
+
   const { refreshing: syncPullRefreshing, onRefresh: onSyncPullRefresh } =
     usePullToResyncPowerSync(
-      () => loadInitialRef.current(),
+      refreshManageScreen,
       MANAGE_SUPABASE_ONLY_PULL_OPTIONS,
     );
 
@@ -627,7 +661,9 @@ function StandaloneFoodDiaryManageList({
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const loadInitial = useCallback(
-    async (cancel?: { cancelled: boolean }) => {
+    async (cancel?: {
+      cancelled: boolean;
+    }): Promise<ManageStandaloneListLoadOutcome> => {
       const generation = ++loadGenRef.current;
       const stale = () =>
         cancel?.cancelled === true || generation !== loadGenRef.current;
@@ -639,12 +675,12 @@ function StandaloneFoodDiaryManageList({
           data: { user },
         } = await client.auth.getUser();
         if (stale()) {
-          return;
+          return 'stale';
         }
         if (!user) {
           setRows([]);
           setHasMore(false);
-          return;
+          return 'no-user';
         }
         const res = await listFoodDiaryEntriesForUser(client, user.id, {
           limit: PAGE_SIZE,
@@ -654,22 +690,25 @@ function StandaloneFoodDiaryManageList({
           loggedAtOrBefore: loggedAtOrBefore ?? undefined,
         });
         if (stale()) {
-          return;
+          return 'stale';
         }
         if (!res.ok) {
           setError(res.error.message);
           setRows([]);
           setHasMore(false);
-          return;
+          return 'error';
         }
         setRows(res.data);
         setHasMore(res.data.length === PAGE_SIZE);
+        return 'ok';
       } catch {
         if (!stale()) {
           setError('Unable to load food diary entries.');
           setRows([]);
           setHasMore(false);
+          return 'error';
         }
+        return 'stale';
       } finally {
         if (!stale()) {
           setLoading(false);
@@ -681,11 +720,30 @@ function StandaloneFoodDiaryManageList({
 
   const loadInitialRef = useRef(loadInitial);
   loadInitialRef.current = loadInitial;
+
+  const rowsRef = useRef(rows);
+  const hasMoreRef = useRef(hasMore);
+  useEffect(() => {
+    rowsRef.current = rows;
+    hasMoreRef.current = hasMore;
+  }, [hasMore, rows]);
+
+  const refreshFoodManageScreen = useCallback(async () => {
+    const previousRows = rowsRef.current;
+    const previousHasMore = hasMoreRef.current;
+    const outcome = await loadInitialRef.current();
+    if (outcome === 'error' && previousRows.length > 0) {
+      setRows(previousRows);
+      setHasMore(previousHasMore);
+      setError(null);
+    }
+  }, []);
+
   const {
     refreshing: foodSyncPullRefreshing,
     onRefresh: onFoodSyncPullRefresh,
   } = usePullToResyncPowerSync(
-    () => loadInitialRef.current(),
+    refreshFoodManageScreen,
     MANAGE_SUPABASE_ONLY_PULL_OPTIONS,
   );
 

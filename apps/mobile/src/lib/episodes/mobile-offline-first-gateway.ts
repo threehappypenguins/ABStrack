@@ -35,6 +35,7 @@ import {
   listEpisodeHealthMarkersForEpisode,
   listFoodDiaryEntriesForEpisode,
   normalizeFoodDiaryEntryUpdate,
+  toPresetDataError,
   updateFoodDiaryEntry,
   validateAndNormalizeFoodDiaryCreateCore,
 } from '@abstrack/supabase';
@@ -129,7 +130,11 @@ export async function insertEpisodeHealthMarkerLineOfflineFirst(
  * {@link listEpisodeHealthMarkersForEpisode} so online Supabase reads still work (same pattern as
  * Home/Manage local-read failure handling). If the local read succeeds but returns an empty list,
  * this performs a Supabase verification read and prefers remote rows when available; that avoids
- * treating an initialized-but-not-yet-synced replica as authoritative.
+ * treating an initialized-but-not-yet-synced replica as authoritative. When verification fails (e.g.
+ * network), this returns that failure instead of `ok: true` with empty local rows — before first
+ * sync, empty SQLite cannot be told apart from truly empty without a successful remote read.
+ * Thrown verification failures (e.g. transport) return `ok: false` — they must not fall through to
+ * the outer fallback fetch, which could otherwise yield a misleading empty success.
  *
  * @param client - Mobile Supabase client (used when the replica is not used or local read throws).
  * @param powerSyncDb - Open PowerSync DB when offline-first writes are active.
@@ -150,11 +155,18 @@ export async function listEpisodeHealthMarkersForEpisodeOfflineFirst(
         options.limit,
       );
       if (data.length === 0) {
-        const remote = await listEpisodeHealthMarkersForEpisode(
-          client,
-          episodeId,
-          options,
-        );
+        let remote: Awaited<
+          ReturnType<typeof listEpisodeHealthMarkersForEpisode>
+        >;
+        try {
+          remote = await listEpisodeHealthMarkersForEpisode(
+            client,
+            episodeId,
+            options,
+          );
+        } catch (caught) {
+          return { ok: false, error: toPresetDataError(caught) };
+        }
         if (remote.ok && remote.data.length > 0) {
           return {
             ok: true,
@@ -163,11 +175,7 @@ export async function listEpisodeHealthMarkersForEpisodeOfflineFirst(
           };
         }
         if (!remote.ok) {
-          return {
-            ok: true,
-            data,
-            markersReadFromLocalReplica: true,
-          };
+          return remote;
         }
       }
       return {
@@ -253,7 +261,9 @@ export async function endEpisodeIfStillActiveOfflineFirst(
  * falls back to {@link listFoodDiaryEntriesForEpisode} so online Supabase reads still work, matching
  * {@link listEpisodeHealthMarkersForEpisodeOfflineFirst}. If the local read succeeds but is empty,
  * this verifies with Supabase and prefers remote rows when available (avoids treating a
- * pre-first-sync replica as authoritative).
+ * pre-first-sync replica as authoritative). Failed verification returns the remote error, not empty
+ * local success; thrown verification errors do too (they must not hit the outer SQLite fallback,
+ * which could return empty success).
  */
 export async function listFoodDiaryEntriesForEpisodeOfflineFirst(
   client: AbstrackSupabaseClient,
@@ -268,26 +278,32 @@ export async function listFoodDiaryEntriesForEpisodeOfflineFirst(
         episodeId,
         options.limit ?? 50,
       );
-      if (local.ok) {
-        if (local.data.length === 0) {
-          const remote = await listFoodDiaryEntriesForEpisode(
-            client,
-            episodeId,
-            options,
-          );
-          if (remote.ok && remote.data.length > 0) {
-            return remote;
-          }
-          if (!remote.ok) {
-            return local;
-          }
-        }
+      if (!local.ok) {
+        return await listFoodDiaryEntriesForEpisode(client, episodeId, options);
+      }
+      if (local.data.length > 0) {
         return local;
       }
+      let remote: PresetDataResult<FoodDiaryEntryRow[]>;
+      try {
+        remote = await listFoodDiaryEntriesForEpisode(
+          client,
+          episodeId,
+          options,
+        );
+      } catch (caught) {
+        return { ok: false, error: toPresetDataError(caught) };
+      }
+      if (remote.ok && remote.data.length > 0) {
+        return remote;
+      }
+      if (!remote.ok) {
+        return remote;
+      }
+      return remote;
     } catch {
-      /* fall through to Supabase */
+      return await listFoodDiaryEntriesForEpisode(client, episodeId, options);
     }
-    return listFoodDiaryEntriesForEpisode(client, episodeId, options);
   }
   return listFoodDiaryEntriesForEpisode(client, episodeId, options);
 }

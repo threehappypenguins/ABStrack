@@ -56,6 +56,12 @@ export function StandaloneHealthMarkersScreen() {
 
   const [authLoading, setAuthLoading] = useState(true);
   const [authUserId, setAuthUserId] = useState<string | null>(null);
+  /**
+   * Session read/recovery failed (e.g. SecureStore). Kept separate from preset `loadError` so the
+   * presets effect does not clear it when `authUserId` is still null.
+   */
+  const [authSessionError, setAuthSessionError] = useState<string | null>(null);
+  const [authRetryTick, setAuthRetryTick] = useState(0);
 
   const [phase, setPhase] = useState<'pickPreset' | 'prompting' | 'complete'>(
     'pickPreset',
@@ -77,6 +83,7 @@ export function StandaloneHealthMarkersScreen() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
+      setAuthLoading(true);
       try {
         const { data, error } = await getMobileAuthSessionSafe();
         if (cancelled) {
@@ -84,10 +91,12 @@ export function StandaloneHealthMarkersScreen() {
         }
         if (error) {
           setAuthUserId(null);
-          setLoadError(error.message || 'Unable to read your sign-in session.');
+          setAuthSessionError(
+            error.message || 'Unable to read your sign-in session.',
+          );
           return;
         }
-        setLoadError(null);
+        setAuthSessionError(null);
         setAuthUserId(data.session?.user?.id ?? null);
       } finally {
         if (!cancelled) {
@@ -96,13 +105,17 @@ export function StandaloneHealthMarkersScreen() {
       }
     })();
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      setAuthUserId(session?.user?.id ?? null);
+      const uid = session?.user?.id ?? null;
+      setAuthUserId(uid);
+      if (uid) {
+        setAuthSessionError(null);
+      }
     });
     return () => {
       cancelled = true;
       sub.subscription.unsubscribe();
     };
-  }, [supabase]);
+  }, [supabase, authRetryTick]);
 
   useEffect(() => {
     if (authLoading) {
@@ -323,6 +336,41 @@ export function StandaloneHealthMarkersScreen() {
             Loading…
           </Text>
         </View>
+      </ScreenShell>
+    );
+  }
+
+  if (authSessionError) {
+    const secondaryBtn =
+      'min-h-[56px] items-center justify-center rounded-xl border border-app-border bg-app-surface px-4 dark:border-app-border-dark dark:bg-app-surface-dark';
+    return (
+      <ScreenShell contentAlign="stretch">
+        <Text
+          className={`text-xl font-semibold ${nw.textInk}`}
+          maxFontSizeMultiplier={2}
+        >
+          Log health markers
+        </Text>
+        <Text
+          accessibilityRole="alert"
+          className={`mt-4 text-sm ${nw.textError}`}
+        >
+          {authSessionError}
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Try checking sign-in again"
+          onPress={() => {
+            setAuthRetryTick((n) => n + 1);
+          }}
+          className={`mt-6 ${secondaryBtn}`}
+        >
+          <Text
+            className={`text-center text-base font-semibold ${nw.textPrimary}`}
+          >
+            Try again
+          </Text>
+        </Pressable>
       </ScreenShell>
     );
   }
