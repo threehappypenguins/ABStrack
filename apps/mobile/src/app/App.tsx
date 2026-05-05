@@ -48,6 +48,9 @@ type AuthRoute = keyof AuthStackParamList;
  * When sign-out replica wipe fails, the PowerSync bridge sets `syncError` but
  * `SyncHealthFooter` is not mounted on the auth stack — surface the message here.
  *
+ * Uses the same top/side safe-area pattern as `ScreenShell` (`app/components/ScreenShell.tsx`);
+ * `edges` omit `bottom` so auth screens still own bottom inset via their own `ScreenShell`.
+ *
  * @param props.session - Current session; banner hidden while any session exists.
  */
 function SignOutReplicaCleanupBanner({ session }: { session: Session | null }) {
@@ -56,17 +59,19 @@ function SignOutReplicaCleanupBanner({ session }: { session: Session | null }) {
     return null;
   }
   return (
-    <View
-      accessibilityRole="alert"
-      className={`border-b border-app-health-failure-border bg-app-health-failure-bg px-4 py-3 dark:border-app-health-failure-border-dark dark:bg-app-health-failure-bg-dark`}
-    >
-      <Text
-        className={`${nw.healthFailureBody} text-sm`}
-        accessibilityLabel={syncError.message}
+    <SafeAreaView edges={['top', 'left', 'right']}>
+      <View
+        accessibilityRole="alert"
+        className={`border-b border-app-health-failure-border bg-app-health-failure-bg px-4 py-3 dark:border-app-health-failure-border-dark dark:bg-app-health-failure-bg-dark`}
       >
-        {syncError.message}
-      </Text>
-    </View>
+        <Text
+          className={`${nw.healthFailureBody} text-sm`}
+          accessibilityLabel={syncError.message}
+        >
+          {syncError.message}
+        </Text>
+      </View>
+    </SafeAreaView>
   );
 }
 
@@ -349,7 +354,10 @@ function AppBootstrap() {
             await enforceReauthIfNeeded({
               allowServerSignOut: connected === true,
             });
-            if (connected !== true) {
+            const { data: postReauthSession } =
+              await getMobileAuthSessionSafe();
+            // Re-auth may have signed the user out; do not debounce `refreshSession` with no session.
+            if (connected !== true || postReauthSession.session == null) {
               return;
             }
             if (resumeRefreshTimerRef.current !== null) {

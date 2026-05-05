@@ -3,6 +3,7 @@ import type {
   PowerSyncBackendConnector,
   PowerSyncCredentials,
 } from '@powersync/react-native';
+import { Base64 } from 'js-base64';
 
 function stripErrorStack(
   err:
@@ -25,6 +26,9 @@ function stripErrorStack(
 /**
  * Best-effort JWT payload decode for diagnostics only (no verification).
  *
+ * Uses `js-base64` `Base64.decode` (same approach as `ChunkingSecureStore` in
+ * `supabase-wiring-core.ts`) so decoding works on Hermes/RN where `atob` may be absent.
+ *
  * @param token - Supabase access token or other JWT-shaped string.
  * @returns Selected claims or `null` when not JWT-shaped / parse fails.
  */
@@ -41,10 +45,7 @@ export function decodeJwtPayloadUnsafeForDiagnostics(
     if (pad) {
       base64 += '='.repeat(4 - pad);
     }
-    if (typeof atob !== 'function') {
-      return null;
-    }
-    const json = atob(base64);
+    const json = Base64.decode(base64);
     return JSON.parse(json) as Record<string, unknown>;
   } catch {
     return null;
