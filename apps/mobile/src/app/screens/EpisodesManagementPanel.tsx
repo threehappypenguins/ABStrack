@@ -188,6 +188,15 @@ export function EpisodesManagementPanel({
       // removes the row server-side; Supabase `getActiveEpisodeForUser` can still return it once).
       return psMirror.activeEpisode;
     }
+    if (
+      !psReplicaReadsEnabled &&
+      powerSyncReplicaSqliteReady(psBridge) &&
+      !psMirror.activeQueryError &&
+      active == null &&
+      psMirror.activeEpisode != null
+    ) {
+      return psMirror.activeEpisode;
+    }
     if (!activeError) {
       return active;
     }
@@ -198,6 +207,8 @@ export function EpisodesManagementPanel({
   }, [
     active,
     activeError,
+    psBridge.database,
+    psBridge.localSqliteInitialized,
     psMirror.activeEpisode,
     psMirror.activeLoading,
     psMirror.activeQueryError,

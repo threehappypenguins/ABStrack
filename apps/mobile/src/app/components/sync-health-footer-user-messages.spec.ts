@@ -26,6 +26,16 @@ describe('userFacingSyncHealthBridgeOrClientError', () => {
     ).toMatch(/saved copy of your data/i);
   });
 
+  it('maps PowerSync bridge first-sync wait timeout copy', () => {
+    const msg = userFacingSyncHealthBridgeOrClientError(
+      new Error(
+        'First sync is taking longer than expected (often no network). Try again when online.',
+      ),
+    );
+    expect(msg).toMatch(/first sync is taking longer than usual/i);
+    expect(msg).not.toMatch(/sync hit a problem/i);
+  });
+
   it('returns generic copy for unknown technical messages', () => {
     expect(
       userFacingSyncHealthBridgeOrClientError(

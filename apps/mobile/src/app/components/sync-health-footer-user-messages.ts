@@ -3,6 +3,10 @@ import { messageLooksLikeFetchTransportFailure } from '../../lib/network/fetch-t
 const COPY_NETWORK =
   "We couldn't reach the sync service. Check your internet connection, then tap Sync now.";
 
+/** Same scenario as `PowerSyncSessionBridge` first-sync wait timeout (offline / slow connect). */
+const COPY_FIRST_SYNC_TAKING_LONG =
+  'First sync is taking longer than usual—often with no internet yet. Connect, then tap Sync now, or try again when you are online.';
+
 const COPY_SESSION =
   'Your sign-in may need a refresh. Connect to the internet, open the app again, then try Sync now.';
 
@@ -38,7 +42,8 @@ function readMessage(
 
 /**
  * Maps PowerSync bridge / client upload/download errors to user-facing copy for
- * {@link SyncHealthFooter}. Raw SDK or backend text is never shown.
+ * {@link SyncHealthFooter}. Raw SDK or backend text is never shown. Recognizes the bridge’s
+ * first-sync wait timeout message (offline / slow first sync) for tailored copy instead of generic.
  *
  * @param err - `syncError` from the bridge, or `uploadError` / `downloadError` from the client.
  * @returns Short, non-technical explanation.
@@ -52,6 +57,9 @@ export function userFacingSyncHealthBridgeOrClientError(
   }
   const lower = raw.toLowerCase();
 
+  if (lower.includes('first sync is taking longer than expected')) {
+    return COPY_FIRST_SYNC_TAKING_LONG;
+  }
   if (messageLooksLikeFetchTransportFailure(raw)) {
     return COPY_NETWORK;
   }

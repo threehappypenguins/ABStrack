@@ -34,10 +34,15 @@ import {
 import {
   getMobileAuthSessionSafe,
   getMobileSupabaseClient,
+  isAuthSessionRecoveryFailure,
+  readPersistedMobileAuthUserId,
 } from '../supabase-wiring';
 
 /**
  * Resolves the signed-in user id from the persisted session (offline-safe).
+ * When {@link getMobileAuthSessionSafe} returns `auth_session_recovery_failed`, falls back to
+ * {@link readPersistedMobileAuthUserId} (same as symptom presets) so offline replica reads survive
+ * transient secure-store / recovery failures.
  *
  * @returns `{ ok: true, data: id }` when signed in; `{ ok: true, data: null }` when signed out with
  * no auth error; `{ ok: false, error }` when the session read failed.
@@ -50,10 +55,17 @@ export async function getCurrentUserId(): Promise<
       data: { session },
       error,
     } = await getMobileAuthSessionSafe();
-    if (error) {
+    if (!error) {
+      return { ok: true, data: session?.user?.id ?? null };
+    }
+    if (!isAuthSessionRecoveryFailure(error)) {
       return { ok: false, error: toPresetDataError(error) };
     }
-    return { ok: true, data: session?.user?.id ?? null };
+    const persistedId = await readPersistedMobileAuthUserId();
+    if (persistedId != null) {
+      return { ok: true, data: persistedId };
+    }
+    return { ok: false, error: toPresetDataError(error) };
   } catch (caught) {
     return { ok: false, error: toPresetDataError(caught) };
   }

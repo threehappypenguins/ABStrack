@@ -358,6 +358,14 @@ export function HomeScreen({
       }
       return episodeRowToActiveHomeSummary(row);
     }
+    if (
+      powerSyncReplicaSqliteReady(psBridge) &&
+      !psEpisodeSnap.error &&
+      networkResumeEpisode == null &&
+      psEpisodeSnap.episode != null
+    ) {
+      return episodeRowToActiveHomeSummary(psEpisodeSnap.episode);
+    }
     return networkResumeEpisode;
   }, [
     userId,
@@ -365,6 +373,8 @@ export function HomeScreen({
     psEpisodeSnap.episode,
     psEpisodeSnap.error,
     networkResumeEpisode,
+    psBridge.database,
+    psBridge.localSqliteInitialized,
   ]);
 
   const activeEpisodeQueryError = useMemo(() => {

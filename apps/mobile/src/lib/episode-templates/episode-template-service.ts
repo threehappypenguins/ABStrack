@@ -30,12 +30,15 @@ import {
 import {
   getMobileAuthSessionSafe,
   getMobileSupabaseClient,
+  isAuthSessionRecoveryFailure,
+  readPersistedMobileAuthUserId,
 } from '../supabase-wiring';
 
 /**
  * Resolves the signed-in user id for template saves (same pattern as symptom preset service).
  * Uses {@link getMobileAuthSessionSafe} (local persisted session) rather than `getUser()` so airplane mode
  * does not fail: `auth.getUser()` validates with the server and throws `Network request failed`.
+ * On `auth_session_recovery_failed`, falls back to {@link readPersistedMobileAuthUserId} (see symptom presets).
  *
  * @returns User id, null when signed out, or an error when the session read fails.
  */
@@ -47,10 +50,17 @@ export async function getCurrentUserId(): Promise<
       data: { session },
       error,
     } = await getMobileAuthSessionSafe();
-    if (error) {
+    if (!error) {
+      return { ok: true, data: session?.user?.id ?? null };
+    }
+    if (!isAuthSessionRecoveryFailure(error)) {
       return { ok: false, error: toPresetDataError(error) };
     }
-    return { ok: true, data: session?.user?.id ?? null };
+    const persistedId = await readPersistedMobileAuthUserId();
+    if (persistedId != null) {
+      return { ok: true, data: persistedId };
+    }
+    return { ok: false, error: toPresetDataError(error) };
   } catch (caught) {
     return { ok: false, error: toPresetDataError(caught) };
   }

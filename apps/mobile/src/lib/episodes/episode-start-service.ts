@@ -16,8 +16,12 @@ import { getMobileSupabaseClient } from '../supabase-wiring';
  * Creates an episode row with `symptom_preset_id` and `health_marker_preset_id` set (typically the
  * pair taken from an episode template or an explicit picker).
  *
- * When {@link SaveEpisodeWithTemplatePresetsArgs.powerSyncDatabase} is set (encrypted replica open),
- * the row is inserted locally and queued for upload to Supabase when online.
+ * When {@link SaveEpisodeWithTemplatePresetsArgs.powerSyncDatabase} is set (encrypted replica open
+ * and SQLite initialized — same gate as `powerSyncReplicaSqliteReady` on the session bridge), the row is
+ * inserted locally and queued for upload to Supabase when online. Home and Manage gate **server-mirror
+ * list reads** on `powerSyncOfflineReplicaReadsEnabled`; those screens also read the watched active-episode
+ * row when the mirror is not trusted yet but Supabase has no active row, so a just-started offline episode
+ * stays visible after navigation.
  *
  * @param args - Insert payload.
  * @param args.userId - Authenticated user id for `episodes.user_id` (must satisfy RLS).

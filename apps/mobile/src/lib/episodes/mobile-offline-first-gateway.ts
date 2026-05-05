@@ -263,9 +263,12 @@ export async function endEpisodeIfStillActiveOfflineFirst(
  * this verifies with Supabase and prefers remote rows when available (avoids treating a
  * pre-first-sync replica as authoritative). When `trustEmptyLocalReplica` is true (caller should
  * align this with `powerSyncOfflineReplicaReadsEnabled` on the session bridge), skip that verification so a
- * legitimately empty episode does not fail offline. Failed verification returns the remote error,
- * not empty local success; thrown verification errors do too (they must not hit the outer SQLite
- * fallback, which could return empty success).
+ * legitimately empty episode does not fail offline. When `trustEmptyLocalReplica` is false and
+ * verification fails with {@link PresetDataError} code `network_error`, this still returns the empty
+ * local list so a just-created offline episode (empty diary, no server mirror yet) is usable; other
+ * verification failures return `{ ok: false, error }`. Thrown errors use the same `network_error`
+ * vs non-network split (they must not hit the outer SQLite fallback, which could return misleading
+ * empty success for a broken local query path).
  */
 export async function listFoodDiaryEntriesForEpisodeOfflineFirst(
   client: AbstrackSupabaseClient,
@@ -305,12 +308,19 @@ export async function listFoodDiaryEntriesForEpisodeOfflineFirst(
           listOptions ?? {},
         );
       } catch (caught) {
-        return { ok: false, error: toPresetDataError(caught) };
+        const err = toPresetDataError(caught);
+        if (err.code === 'network_error') {
+          return local;
+        }
+        return { ok: false, error: err };
       }
       if (remote.ok && remote.data.length > 0) {
         return remote;
       }
       if (!remote.ok) {
+        if (remote.error.code === 'network_error') {
+          return local;
+        }
         return remote;
       }
       return remote;

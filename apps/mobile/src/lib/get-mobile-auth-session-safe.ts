@@ -197,3 +197,46 @@ export async function getMobileAuthSessionSafe(): Promise<MobileAuthGetSessionRe
     }
   }
 }
+
+/**
+ * Reads `session.user.id` from persisted Supabase auth JSON **without** calling `getSession()`.
+ *
+ * Use when {@link getMobileAuthSessionSafe} returns `auth_session_recovery_failed` (e.g. transient
+ * secure-store failure while `getSession()` threw) so offline PowerSync reads can still scope by
+ * user. Accepts a persisted session whose `access_token` is empty (redacted / expired identity)
+ * as long as `user.id` is present — stricter validation stays on {@link getMobileAuthSessionSafe}.
+ *
+ * Performs up to two attempts with a short delay so a one-shot storage hiccup can succeed on retry.
+ *
+ * @returns Non-empty user id, or `null` when there is no storage key, no row, invalid JSON, or no usable `user.id`.
+ */
+export async function readPersistedMobileAuthUserId(): Promise<string | null> {
+  const client = getMobileSupabaseClient();
+  const storageKey = (client.auth as unknown as { storageKey?: string })
+    .storageKey;
+  if (!storageKey) {
+    return null;
+  }
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const raw = await mobileAuthStorage.getItem(storageKey);
+      if (!raw) {
+        return null;
+      }
+      const session = JSON.parse(raw) as Session;
+      if (!session || typeof session !== 'object') {
+        return null;
+      }
+      const id = session.user?.id;
+      if (typeof id === 'string' && id.length > 0) {
+        return id;
+      }
+      return null;
+    } catch {
+      if (attempt === 0) {
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    }
+  }
+  return null;
+}

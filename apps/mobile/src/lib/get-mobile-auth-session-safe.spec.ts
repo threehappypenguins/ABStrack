@@ -7,6 +7,7 @@ import {
   isPersistedSupabaseSessionAccessExpired,
   MOBILE_AUTH_SESSION_RECOVERY_USER_MESSAGE,
   persistedSessionIdentityWithRedactedAccessJwt,
+  readPersistedMobileAuthUserId,
 } from './get-mobile-auth-session-safe';
 import {
   getMobileSupabaseClient,
@@ -249,6 +250,55 @@ describe('getMobileAuthSessionSafe', () => {
     expect((result.error as Error).cause).toMatchObject({
       recoveryReason: 'invalid_persisted_session',
     });
+  });
+});
+
+describe('readPersistedMobileAuthUserId', () => {
+  const storageKey = 'sb-test-auth-token';
+
+  beforeEach(() => {
+    jest.mocked(mobileAuthStorage.getItem).mockReset();
+  });
+
+  it('returns null when auth storageKey is missing', async () => {
+    jest.mocked(getMobileSupabaseClient).mockReturnValue({
+      auth: {},
+    } as unknown as AbstrackSupabaseClient);
+    await expect(readPersistedMobileAuthUserId()).resolves.toBeNull();
+  });
+
+  it('returns user id from persisted JSON even when access_token is empty', async () => {
+    jest.mocked(getMobileSupabaseClient).mockReturnValue({
+      auth: { storageKey },
+    } as unknown as AbstrackSupabaseClient);
+    jest.mocked(mobileAuthStorage.getItem).mockResolvedValue(
+      JSON.stringify({
+        access_token: '',
+        refresh_token: 'r',
+        user: { id: 'user-offline-id' },
+      }),
+    );
+    await expect(readPersistedMobileAuthUserId()).resolves.toBe(
+      'user-offline-id',
+    );
+  });
+
+  it('retries once after getItem throws then returns user id', async () => {
+    jest.mocked(getMobileSupabaseClient).mockReturnValue({
+      auth: { storageKey },
+    } as unknown as AbstrackSupabaseClient);
+    const sessionJson = JSON.stringify({
+      access_token: 'tok',
+      refresh_token: 'r',
+      user: { id: 'u-retry' },
+    });
+    jest
+      .mocked(mobileAuthStorage.getItem)
+      .mockRejectedValueOnce(new Error('secure store busy'))
+      .mockResolvedValueOnce(sessionJson);
+
+    await expect(readPersistedMobileAuthUserId()).resolves.toBe('u-retry');
+    expect(mobileAuthStorage.getItem).toHaveBeenCalledTimes(2);
   });
 });
 

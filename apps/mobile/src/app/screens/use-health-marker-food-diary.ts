@@ -56,7 +56,10 @@ export type UseHealthMarkerFoodDiaryArgs = {
   powerSyncDatabase?: PowerSyncDatabase | null;
   /**
    * When true (caller should align with `powerSyncOfflineReplicaReadsEnabled` on the session bridge),
-   * an empty local PowerSync list skips Supabase verification so legitimately empty episodes work offline.
+   * an empty local PowerSync list skips Supabase verification so legitimately empty episodes work offline
+   * without a redundant remote read. When false, {@link listFoodDiaryEntriesForEpisodeOfflineFirst}
+   * still returns an empty local list if verification fails with a transport `network_error` (so a
+   * just-created offline episode is not blocked until mirror reads are trusted).
    */
   trustEmptyLocalFoodDiaryList?: boolean;
   enabled: boolean;
