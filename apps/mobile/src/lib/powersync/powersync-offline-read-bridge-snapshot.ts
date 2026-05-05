@@ -32,6 +32,17 @@ type Snapshot = {
    * sufficient alone to treat server-mirror tables as populated (see {@link firstSyncLandedOnDevice}).
    */
   localSqliteInitialized: boolean;
+  /**
+   * True while the PowerSync session bridge is running `init` / `connect` / first-sync wait (same flag as
+   * `PowerSyncBridgeState.syncConnecting` in `PowerSyncSessionBridge.tsx`).
+   */
+  syncConnecting: boolean;
+  /**
+   * Terminal lifecycle failure from the bridge (encrypted DB open, `init`, `connect`,
+   * `waitForFirstSync`, cleanup). Used to avoid onboarding-style “go online once” copy when the replica
+   * failed locally rather than lacking a first sync (same field as `PowerSyncBridgeState.syncError`).
+   */
+  syncError: Error | null;
   powerSyncUrlConfigured: boolean;
   /**
    * True once {@link getPowerSyncFirstSyncLandedForUser} has resolved for the signed-in user (or
@@ -49,6 +60,8 @@ const snapshot: Snapshot = {
   database: null,
   firstSyncCompleted: false,
   localSqliteInitialized: false,
+  syncConnecting: false,
+  syncError: null,
   powerSyncUrlConfigured: false,
   firstSyncLandingHydrated: true,
   firstSyncLandedOnDevice: false,
@@ -64,6 +77,8 @@ export function setPowerSyncOfflineReadBridgeSnapshot(next: Snapshot): void {
   snapshot.database = next.database;
   snapshot.firstSyncCompleted = next.firstSyncCompleted;
   snapshot.localSqliteInitialized = next.localSqliteInitialized;
+  snapshot.syncConnecting = next.syncConnecting;
+  snapshot.syncError = next.syncError;
   snapshot.powerSyncUrlConfigured = next.powerSyncUrlConfigured;
   snapshot.firstSyncLandingHydrated = next.firstSyncLandingHydrated;
   snapshot.firstSyncLandedOnDevice = next.firstSyncLandedOnDevice;
@@ -147,12 +162,53 @@ export function isPresetDataNetworkError(error: unknown): boolean {
   return false;
 }
 
+const LOCAL_OFFLINE_REPLICA_INFRA_USER_MESSAGE =
+  'This device couldn’t open or update its encrypted offline copy. Try restarting the app. If that doesn’t help, sign out and sign back in. Contact support if the problem continues.';
+
+function syncErrorLooksLikeOfflineConnectivityDelay(syncError: Error): boolean {
+  const msg = syncError.message;
+  return (
+    msg.includes('First sync is taking longer than expected') ||
+    msg.includes('often no network') ||
+    msg.includes('Try again when online')
+  );
+}
+
+/**
+ * True when `syncError` points at local SQLite / encrypted-store problems rather than a plain
+ * “get online” first-sync delay (matches messages emitted by `PowerSyncSessionBridge`).
+ */
+function syncErrorLooksLikeLocalReplicaInfrastructureFailure(
+  syncError: Error,
+): boolean {
+  if (syncErrorLooksLikeOfflineConnectivityDelay(syncError)) {
+    return false;
+  }
+  const m = syncError.message.toLowerCase();
+  if (
+    m.includes('unable to open encrypted database') ||
+    m.includes('sqlcipher') ||
+    m.includes('encrypted-file/key mismatch') ||
+    m.includes('local replica reset failed') ||
+    m.includes('powersync local replica reset failed')
+  ) {
+    return true;
+  }
+  return false;
+}
+
 /**
  * When a list read failed with a transport-style error (see {@link isPresetDataNetworkError}) but the
  * encrypted replica is not usable for server-mirror reads yet (PowerSync URL is set but the DB is not
  * open, SQLite is not initialized, landing flags say first sync never completed on this device, etc.),
  * returns clearer copy so users do not think the app is only “broken offline.”
- * Otherwise `null` and callers should keep the original error.
+ *
+ * If the bridge snapshot recorded a **local** replica failure (`PowerSyncBridgeState.syncError`)
+ * or SQLite never initialized while a handle exists, returns **restart / sign-out** guidance instead of the
+ * onboarding “open online once” line. While `PowerSyncBridgeState.syncConnecting` is true, returns
+ * `null` so transient startup races keep the original transport message.
+ *
+ * Otherwise `null` and callers should keep the original error when no clarification applies.
  *
  * @param remoteError - Error from a failed Supabase-backed list fetch.
  */
@@ -168,12 +224,37 @@ export function clarifyNetworkErrorWhenReplicaUnavailable(
   if (!snapshot.powerSyncUrlConfigured) {
     return null;
   }
+  if (snapshot.syncConnecting) {
+    return null;
+  }
   const cause =
     remoteError instanceof PresetDataError
       ? remoteError.cause
       : remoteError instanceof Error
         ? remoteError
         : undefined;
+
+  const syncErr = snapshot.syncError;
+  const initNeverSucceeded =
+    snapshot.database != null && !snapshot.localSqliteInitialized;
+  const openProbablyFailed =
+    snapshot.database == null &&
+    syncErr != null &&
+    !syncErrorLooksLikeOfflineConnectivityDelay(syncErr);
+
+  if (
+    syncErr != null &&
+    (syncErrorLooksLikeLocalReplicaInfrastructureFailure(syncErr) ||
+      initNeverSucceeded ||
+      openProbablyFailed)
+  ) {
+    return new PresetDataError(
+      'network_error',
+      LOCAL_OFFLINE_REPLICA_INFRA_USER_MESSAGE,
+      syncErr,
+    );
+  }
+
   return new PresetDataError(
     'network_error',
     'Open the app while online once so presets and templates sync to this device. Then you can use these tabs offline.',

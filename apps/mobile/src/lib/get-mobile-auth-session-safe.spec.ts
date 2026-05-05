@@ -3,6 +3,7 @@ import type { AbstrackSupabaseClient, Session } from '@abstrack/supabase';
 import {
   getMobileAuthSessionSafe,
   hasUsableSupabaseAccessTokenForNetwork,
+  isAuthSessionRecoveryFailure,
   isPersistedSupabaseSessionAccessExpired,
   MOBILE_AUTH_SESSION_RECOVERY_USER_MESSAGE,
   persistedSessionIdentityWithRedactedAccessJwt,
@@ -248,5 +249,21 @@ describe('getMobileAuthSessionSafe', () => {
     expect((result.error as Error).cause).toMatchObject({
       recoveryReason: 'invalid_persisted_session',
     });
+  });
+});
+
+describe('isAuthSessionRecoveryFailure', () => {
+  it('returns true for recovery error code', () => {
+    expect(
+      isAuthSessionRecoveryFailure({
+        code: 'auth_session_recovery_failed',
+        message: 'x',
+      }),
+    ).toBe(true);
+  });
+
+  it('returns false for null and unrelated codes', () => {
+    expect(isAuthSessionRecoveryFailure(null)).toBe(false);
+    expect(isAuthSessionRecoveryFailure({ code: 'invalid_grant' })).toBe(false);
   });
 });

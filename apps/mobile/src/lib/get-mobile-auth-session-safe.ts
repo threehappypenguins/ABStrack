@@ -22,6 +22,22 @@ type MobileAuthGetSessionError = NonNullable<
 export const MOBILE_AUTH_SESSION_RECOVERY_USER_MESSAGE =
   "We couldn't verify your sign-in. Try again in a moment, or sign out and sign back in.";
 
+/**
+ * Whether `error` was produced by persisted-session recovery inside {@link getMobileAuthSessionSafe}
+ * (distinct from an empty session after an ordinary {@link AbstrackSupabaseClient.auth.getSession}).
+ *
+ * @param error - Value from `getSession()` / {@link getMobileAuthSessionSafe} `error`.
+ * @returns True when callers should not treat the paired `session: null` as a definitive sign-out.
+ */
+export function isAuthSessionRecoveryFailure(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: string }).code === 'auth_session_recovery_failed'
+  );
+}
+
 function sessionRecoveryError(cause?: unknown): MobileAuthGetSessionError {
   const err =
     cause === undefined

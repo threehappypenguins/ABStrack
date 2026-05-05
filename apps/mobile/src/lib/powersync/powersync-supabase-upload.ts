@@ -12,10 +12,65 @@ type PowerSyncHandleCrudCheckpoint = (
 ) => Promise<void>;
 
 /**
+ * Exact `@powersync/react-native` version this upload path was last verified against. Must match
+ * `apps/mobile/package.json` — bump **with** {@link POWERSYNC_UPLOAD_RUNTIME_PIN_COMMON} in one PR after
+ * confirming `handleCrudCheckpoint` still exists at runtime (dev-time warning in this module when versions drift).
+ */
+export const POWERSYNC_UPLOAD_RUNTIME_PIN_REACT_NATIVE = '1.34.0';
+
+/**
+ * Exact `@powersync/common` peer used by the React Native SDK. Same bump rules as
+ * {@link POWERSYNC_UPLOAD_RUNTIME_PIN_REACT_NATIVE}.
+ */
+export const POWERSYNC_UPLOAD_RUNTIME_PIN_COMMON = '1.52.0';
+
+let uploadContractWarningEmitted = false;
+
+/**
+ * In Metro dev builds, logs once when installed PowerSync package versions differ from the pins above
+ * (no type-level signal when a private method disappears). Production stays quiet.
+ */
+function warnIfPowerSyncSdkDriftsFromUploadContract(): void {
+  const isDev = typeof __DEV__ !== 'undefined' && __DEV__;
+  if (!isDev || uploadContractWarningEmitted) {
+    return;
+  }
+  uploadContractWarningEmitted = true;
+  try {
+    const rnPkg = require('@powersync/react-native/package.json') as {
+      version?: string;
+    };
+    const commonPkg = require('@powersync/common/package.json') as {
+      version?: string;
+    };
+    const rn = rnPkg.version;
+    const common = commonPkg.version;
+    if (
+      rn !== POWERSYNC_UPLOAD_RUNTIME_PIN_REACT_NATIVE ||
+      common !== POWERSYNC_UPLOAD_RUNTIME_PIN_COMMON
+    ) {
+      console.warn(
+        '[PowerSync upload] Installed @powersync/react-native or @powersync/common differs from ABStrack upload pins. Incremental dequeue uses private `handleCrudCheckpoint`; verify uploads after bumping, then update POWERSYNC_UPLOAD_RUNTIME_PIN_* in powersync-supabase-upload.ts.',
+        {
+          reactNative: rn,
+          common,
+          expectedReactNative: POWERSYNC_UPLOAD_RUNTIME_PIN_REACT_NATIVE,
+          expectedCommon: POWERSYNC_UPLOAD_RUNTIME_PIN_COMMON,
+        },
+      );
+    }
+  } catch {
+    // Metro may omit package.json from the graph in some configs — skip quietly.
+  }
+}
+
+/**
  * Resolves PowerSync's internal CRUD dequeue helper used by {@link CrudBatch#complete}.
  *
  * The method is present at runtime on {@link AbstractPowerSyncDatabase} but not part of the public
- * `.d.ts` surface (private / omitted), so it is accessed via a narrow cast.
+ * `.d.ts` surface (private / omitted), so it is accessed via a narrow cast. Keep
+ * {@link POWERSYNC_UPLOAD_RUNTIME_PIN_REACT_NATIVE} / {@link POWERSYNC_UPLOAD_RUNTIME_PIN_COMMON} aligned with
+ * `apps/mobile/package.json` and re-verify uploads after any PowerSync upgrade.
  *
  * @param database - PowerSync DB passed into {@link PowerSyncBackendConnector#uploadData}.
  * @returns Function that deletes local CRUD queue rows through `lastClientId` (same as batch complete).
@@ -30,7 +85,10 @@ function resolvePowerSyncHandleCrudCheckpoint(
   ).handleCrudCheckpoint;
   if (typeof checkpoint !== 'function') {
     throw new Error(
-      'PowerSync database is missing handleCrudCheckpoint; cannot dequeue uploads after partial batch progress.',
+      `PowerSync database is missing handleCrudCheckpoint (private API on AbstractPowerSyncDatabase). ` +
+        `Incremental uploads cannot dequeue after partial batch progress. ` +
+        `Expected pins: @powersync/react-native ${POWERSYNC_UPLOAD_RUNTIME_PIN_REACT_NATIVE}, ` +
+        `@powersync/common ${POWERSYNC_UPLOAD_RUNTIME_PIN_COMMON} — bump those constants after you verify a newer SDK still exposes this method, or refactor uploads to a public checkpoint API if PowerSync adds one.`,
     );
   }
   return (lastClientId) => checkpoint.call(database, lastClientId);
@@ -133,6 +191,7 @@ export async function uploadPowerSyncCrudBatchToSupabase(
   batch: CrudBatch,
   database: AbstractPowerSyncDatabase,
 ): Promise<void> {
+  warnIfPowerSyncSdkDriftsFromUploadContract();
   const dequeueThrough = resolvePowerSyncHandleCrudCheckpoint(database);
   for (const entry of batch.crud) {
     await applyPowerSyncCrudEntryToSupabase(client, entry);

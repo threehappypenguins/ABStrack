@@ -16,11 +16,14 @@
  * Before `process.exit`, the script waits for forwarded readline streams to close and drains
  * `stdout`/`stderr` so buffered Expo lines are not truncated (Node does not flush stdio on exit).
  *
- * Stdio is always `stdin` inherited and `stdout`/`stderr` piped so this script can filter a known
- * noisy PowerSync line in every environment (interactive `pnpm android`, CI, redirection). Keeping
- * `stdin` inherited preserves interactive prompts that read the controlling terminal; piping the
- * child's `stdout`/`stderr` means they are not TTYs on the child side (Gradle may use plain console
- * output vs rich — same as the previous non-interactive path).
+ * When **stdin**, **stdout**, and **stderr** are all TTYs (typical local `pnpm android` in a
+ * terminal), the child uses **full inherited stdio** so Expo/Gradle keep `stdout.isTTY` / rich
+ * console behavior for device selection (`--device`) and similar prompts. A known noisy PowerSync
+ * line is **not** filtered in that mode.
+ *
+ * Otherwise `stdout`/`stderr` are piped through line filtering (CI, redirection, logs to files).
+ * Set **`ABSTRACK_EXPO_ANDROID_FILTER_LOGS=1`** to force piped filtering even when all stdio are TTYs
+ * (child loses TTY stdout/stderr; trade noisy logs vs prompt detection).
  */
 
 import { spawn } from 'node:child_process';
@@ -79,10 +82,20 @@ async function flushAndExit(code) {
 
 const expoArgs = ['expo', 'run:android', ...process.argv.slice(2)];
 
+const forceFilteredStdio =
+  process.env.ABSTRACK_EXPO_ANDROID_FILTER_LOGS === '1' ||
+  process.env.ABSTRACK_EXPO_ANDROID_FILTER_LOGS === 'true';
+
+const interactiveInheritStdio =
+  !forceFilteredStdio &&
+  process.stdin.isTTY === true &&
+  process.stdout.isTTY === true &&
+  process.stderr.isTTY === true;
+
 const child = spawn('pnpm', expoArgs, {
   cwd: mobileRoot,
   env: process.env,
-  stdio: ['inherit', 'pipe', 'pipe'],
+  stdio: interactiveInheritStdio ? 'inherit' : ['inherit', 'pipe', 'pipe'],
   shell: isWindows,
 });
 
@@ -108,8 +121,12 @@ function pipeFilteredLines(stream, out) {
   return once(rl, 'close').then(() => undefined);
 }
 
-const stdoutClosed = pipeFilteredLines(child.stdout, process.stdout);
-const stderrClosed = pipeFilteredLines(child.stderr, process.stderr);
+const stdoutClosed = interactiveInheritStdio
+  ? Promise.resolve()
+  : pipeFilteredLines(child.stdout, process.stdout);
+const stderrClosed = interactiveInheritStdio
+  ? Promise.resolve()
+  : pipeFilteredLines(child.stderr, process.stderr);
 
 const forwardSignal = (/** @type {NodeJS.Signals} */ sig) => {
   try {

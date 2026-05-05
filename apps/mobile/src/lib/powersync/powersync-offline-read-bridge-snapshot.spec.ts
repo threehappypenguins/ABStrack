@@ -60,6 +60,8 @@ describe('clarifyNetworkErrorWhenReplicaUnavailable', () => {
       database: null,
       firstSyncCompleted: false,
       localSqliteInitialized: false,
+      syncConnecting: false,
+      syncError: null,
       powerSyncUrlConfigured: false,
       firstSyncLandingHydrated: true,
       firstSyncLandedOnDevice: false,
@@ -71,6 +73,8 @@ describe('clarifyNetworkErrorWhenReplicaUnavailable', () => {
       database: null,
       firstSyncCompleted: false,
       localSqliteInitialized: false,
+      syncConnecting: false,
+      syncError: null,
       powerSyncUrlConfigured: true,
       firstSyncLandingHydrated: true,
       firstSyncLandedOnDevice: false,
@@ -90,6 +94,8 @@ describe('clarifyNetworkErrorWhenReplicaUnavailable', () => {
       database: {} as never,
       firstSyncCompleted: true,
       localSqliteInitialized: true,
+      syncConnecting: false,
+      syncError: null,
       powerSyncUrlConfigured: true,
       firstSyncLandingHydrated: true,
       firstSyncLandedOnDevice: false,
@@ -103,6 +109,8 @@ describe('clarifyNetworkErrorWhenReplicaUnavailable', () => {
       database: {} as never,
       firstSyncCompleted: false,
       localSqliteInitialized: true,
+      syncConnecting: false,
+      syncError: null,
       powerSyncUrlConfigured: true,
       firstSyncLandingHydrated: true,
       firstSyncLandedOnDevice: false,
@@ -122,6 +130,8 @@ describe('clarifyNetworkErrorWhenReplicaUnavailable', () => {
       database: {} as never,
       firstSyncCompleted: false,
       localSqliteInitialized: true,
+      syncConnecting: false,
+      syncError: null,
       powerSyncUrlConfigured: true,
       firstSyncLandingHydrated: true,
       firstSyncLandedOnDevice: true,
@@ -132,5 +142,91 @@ describe('clarifyNetworkErrorWhenReplicaUnavailable', () => {
       new TypeError('Network request failed'),
     );
     expect(clarifyNetworkErrorWhenReplicaUnavailable(err)).toBeNull();
+  });
+
+  it('returns null while syncConnecting so callers keep the raw transport error', () => {
+    setPowerSyncOfflineReadBridgeSnapshot({
+      database: {} as never,
+      firstSyncCompleted: false,
+      localSqliteInitialized: false,
+      syncConnecting: true,
+      syncError: null,
+      powerSyncUrlConfigured: true,
+      firstSyncLandingHydrated: true,
+      firstSyncLandedOnDevice: false,
+    });
+    const err = new PresetDataError(
+      'unknown',
+      'Network request failed',
+      new TypeError('Network request failed'),
+    );
+    expect(clarifyNetworkErrorWhenReplicaUnavailable(err)).toBeNull();
+  });
+
+  it('uses offline replica infrastructure copy when bridge recorded an encrypted DB open failure', () => {
+    setPowerSyncOfflineReadBridgeSnapshot({
+      database: null,
+      firstSyncCompleted: false,
+      localSqliteInitialized: false,
+      syncConnecting: false,
+      syncError: new Error('Unable to open encrypted database (mock)'),
+      powerSyncUrlConfigured: true,
+      firstSyncLandingHydrated: true,
+      firstSyncLandedOnDevice: false,
+    });
+    const err = new PresetDataError(
+      'unknown',
+      'Network request failed',
+      new TypeError('Network request failed'),
+    );
+    const next = clarifyNetworkErrorWhenReplicaUnavailable(err);
+    expect(next).not.toBeNull();
+    expect(next?.message).toContain('encrypted offline copy');
+    expect(next?.message).not.toContain('online once');
+    expect(next?.cause).toBeInstanceOf(Error);
+  });
+
+  it('keeps onboarding-style message when syncError is only the offline first-sync delay hint', () => {
+    setPowerSyncOfflineReadBridgeSnapshot({
+      database: {} as never,
+      firstSyncCompleted: false,
+      localSqliteInitialized: true,
+      syncConnecting: false,
+      syncError: new Error(
+        'First sync is taking longer than expected (often no network). Try again when online.',
+      ),
+      powerSyncUrlConfigured: true,
+      firstSyncLandingHydrated: true,
+      firstSyncLandedOnDevice: false,
+    });
+    const err = new PresetDataError(
+      'unknown',
+      'Network request failed',
+      new TypeError('Network request failed'),
+    );
+    const next = clarifyNetworkErrorWhenReplicaUnavailable(err);
+    expect(next).not.toBeNull();
+    expect(next?.message).toContain('online once');
+  });
+
+  it('uses infrastructure copy when SQLite never initialized but a DB handle exists', () => {
+    setPowerSyncOfflineReadBridgeSnapshot({
+      database: {} as never,
+      firstSyncCompleted: false,
+      localSqliteInitialized: false,
+      syncConnecting: false,
+      syncError: new Error('SQLite init failed (mock)'),
+      powerSyncUrlConfigured: true,
+      firstSyncLandingHydrated: true,
+      firstSyncLandedOnDevice: false,
+    });
+    const err = new PresetDataError(
+      'unknown',
+      'Network request failed',
+      new TypeError('Network request failed'),
+    );
+    const next = clarifyNetworkErrorWhenReplicaUnavailable(err);
+    expect(next).not.toBeNull();
+    expect(next?.message).toContain('encrypted offline copy');
   });
 });

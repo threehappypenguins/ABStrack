@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import type { AbstrackSupabaseClient } from '@abstrack/supabase';
 import type { AbstractPowerSyncDatabase } from '@powersync/react-native';
 import { CrudBatch, CrudEntry, UpdateType } from '@powersync/react-native';
@@ -5,8 +8,12 @@ import { CrudBatch, CrudEntry, UpdateType } from '@powersync/react-native';
 import {
   applyPowerSyncCrudEntryToSupabase,
   normalizePowerSyncRowForSupabase,
+  POWERSYNC_UPLOAD_RUNTIME_PIN_COMMON,
+  POWERSYNC_UPLOAD_RUNTIME_PIN_REACT_NATIVE,
   uploadPowerSyncCrudBatchToSupabase,
 } from './powersync-supabase-upload';
+
+const mobilePackageJsonPath = join(__dirname, '../../../package.json');
 
 type TableOp =
   | {
@@ -76,6 +83,20 @@ function createSupabaseUploadMock(): {
   } as unknown as AbstrackSupabaseClient;
   return { client, ops };
 }
+
+describe('PowerSync upload runtime contract', () => {
+  it('keeps upload pins aligned with apps/mobile/package.json @powersync/* versions', () => {
+    const pkg = JSON.parse(readFileSync(mobilePackageJsonPath, 'utf8')) as {
+      dependencies: Record<string, string>;
+    };
+    expect(pkg.dependencies['@powersync/react-native']).toBe(
+      POWERSYNC_UPLOAD_RUNTIME_PIN_REACT_NATIVE,
+    );
+    expect(pkg.dependencies['@powersync/common']).toBe(
+      POWERSYNC_UPLOAD_RUNTIME_PIN_COMMON,
+    );
+  });
+});
 
 describe('normalizePowerSyncRowForSupabase', () => {
   it('converts episode_symptoms.response_boolean 0/1 from SQLite integers to booleans', () => {
@@ -205,6 +226,25 @@ describe('applyPowerSyncCrudEntryToSupabase', () => {
 });
 
 describe('uploadPowerSyncCrudBatchToSupabase', () => {
+  it('throws when handleCrudCheckpoint is missing (SDK private API contract)', async () => {
+    const { client } = createSupabaseUploadMock();
+    const database = {} as unknown as AbstractPowerSyncDatabase;
+    const batch = new CrudBatch(
+      [
+        new CrudEntry(1, UpdateType.PUT, 'episodes', 'a', undefined, {
+          started_at: '1',
+        }),
+      ],
+      false,
+      jest.fn(),
+    );
+    await expect(
+      uploadPowerSyncCrudBatchToSupabase(client, batch, database),
+    ).rejects.toThrow(
+      `Expected pins: @powersync/react-native ${POWERSYNC_UPLOAD_RUNTIME_PIN_REACT_NATIVE}`,
+    );
+  });
+
   it('applies each CRUD entry in order then checkpoints through each client id', async () => {
     const { client, ops } = createSupabaseUploadMock();
     const checkpoint = jest.fn().mockResolvedValue(undefined);

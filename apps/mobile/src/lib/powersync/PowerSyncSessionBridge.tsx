@@ -1001,6 +1001,8 @@ export function PowerSyncSessionBridge({
     database: bridgeValue.database,
     firstSyncCompleted: bridgeValue.firstSyncCompleted,
     localSqliteInitialized: bridgeValue.localSqliteInitialized,
+    syncConnecting: bridgeValue.syncConnecting,
+    syncError: bridgeValue.syncError,
     powerSyncUrlConfigured: bridgeValue.powerSyncUrlConfigured,
     firstSyncLandingHydrated: bridgeValue.firstSyncLandingHydrated,
     firstSyncLandedOnDevice: bridgeValue.firstSyncLandedOnDevice,
