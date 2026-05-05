@@ -63,6 +63,24 @@ describe('useMobileDeviceNetworkConnected', () => {
     expect(getByTestId('net').props.children).toBe('true');
   });
 
+  it('lets fetch reconcile immediate cached-offline listener after reconnect', async () => {
+    jest
+      .mocked(NetInfo.fetch)
+      .mockResolvedValue(
+        wifiOnline() as Awaited<ReturnType<typeof NetInfo.fetch>>,
+      );
+    jest.mocked(NetInfo.addEventListener).mockImplementation((callback) => {
+      callback(noneOffline());
+      return jest.fn();
+    });
+
+    const { getByTestId } = render(<Host />);
+
+    await waitFor(() => {
+      expect(getByTestId('net').props.children).toBe('true');
+    });
+  });
+
   it('applies fetch when no listener snapshot arrived during fetch', async () => {
     jest
       .mocked(NetInfo.fetch)

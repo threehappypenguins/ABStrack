@@ -14,6 +14,7 @@ import {
   validateEpisodeTemplateName,
   validateEpisodeTemplatePresetPair,
 } from '@abstrack/types';
+import { useMobileAuthUserId } from '../../lib/auth/use-mobile-auth-user-id';
 import {
   getCurrentUserId,
   saveNewEpisodeTemplate,
@@ -47,6 +48,7 @@ type PresetOption = { id: string; name: string };
 export function EpisodeTemplateCreateScreen() {
   const navigation = useNavigation<CreateNav>();
   const { colors } = useAppTheme();
+  const viewerUserId = useMobileAuthUserId();
   const psBridge = usePowerSyncBridgeState();
   const replicaMirrorReads = powerSyncOfflineReplicaReadsEnabled(psBridge);
 
@@ -84,6 +86,9 @@ export function EpisodeTemplateCreateScreen() {
     symptomId: null,
     markerId: null,
   });
+
+  /** `undefined` until the first committed hook user id (detect real account switches vs hydration). */
+  const prevViewerUserIdRef = useRef<string | null | undefined>(undefined);
 
   const loadPresetLists = useCallback(async (signal?: AbortSignal) => {
     setListsLoading(true);
@@ -125,14 +130,45 @@ export function EpisodeTemplateCreateScreen() {
   const loadPresetListsRef = useRef(loadPresetLists);
   loadPresetListsRef.current = loadPresetLists;
 
+  /**
+   * Loads preset picklists when the signed-in user id changes — not only on mount — so an account
+   * switch cannot leave the previous user's symptom/marker names visible. Still intentionally
+   * independent of `replicaMirrorReads` (see retry effect below).
+   */
   useEffect(() => {
+    const next = viewerUserId;
+    const prev = prevViewerUserIdRef.current;
+
+    if (prev !== undefined && prev === next) {
+      return;
+    }
+
+    const switchedAccount = prev !== undefined && prev !== next;
+    prevViewerUserIdRef.current = next;
+
+    if (switchedAccount) {
+      setName('');
+      setSymptomId(null);
+      setMarkerId(null);
+      setSymptoms([]);
+      setMarkers([]);
+      setFormBaseline({
+        name: '',
+        symptomId: null,
+        markerId: null,
+      });
+    }
+
     presetListsAutoRetryConsumedRef.current = false;
+    setListsLoading(true);
+    setListsError(null);
+
     const ac = new AbortController();
     void loadPresetListsRef.current(ac.signal);
     return () => {
       ac.abort();
     };
-  }, []);
+  }, [viewerUserId]);
 
   useEffect(() => {
     if (!listsError) {

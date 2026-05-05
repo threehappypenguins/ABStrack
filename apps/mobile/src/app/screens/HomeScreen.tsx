@@ -110,10 +110,9 @@ export function HomeScreen({
   }, [psBridge.database]);
 
   useEffect(() => {
-    if (!userId) {
-      setNetworkResumeEpisode(null);
-      setNetworkResumeLoading(false);
-    }
+    setNetworkResumeEpisode(null);
+    setNetworkResumeLoading(false);
+    setNetworkResumeSkippedOffline(false);
   }, [userId]);
 
   useEffect(() => {

@@ -110,6 +110,8 @@ export function EpisodesManagementPanel({
   const { colors } = useAppTheme();
   const loadGenRef = useRef(0);
   const viewerUserId = useMobileAuthUserId();
+  /** `undefined`: effect has not committed a baseline yet (skip reset so `useFocusEffect` owns first load). */
+  const prevViewerUserIdRef = useRef<string | null | undefined>(undefined);
   const psBridge = usePowerSyncBridgeState();
   const powerSyncDbForWrites = useMemo(
     () => (powerSyncReplicaSqliteReady(psBridge) ? psBridge.database : null),
@@ -349,6 +351,53 @@ export function EpisodesManagementPanel({
     },
     [endedAtOrAfter, endedAtOrBefore],
   );
+
+  /**
+   * PowerSync subscriptions already receive the signed-in user id, but Supabase-filled snapshots
+   * (`active`, `recent`, `psMirror`) would otherwise stay on the prior account until the next focus
+   * refresh if this panel stays mounted across an account switch.
+   */
+  useEffect(() => {
+    const next = viewerUserId;
+    const prev = prevViewerUserIdRef.current;
+
+    if (prev !== undefined && prev === next) {
+      return;
+    }
+
+    prevViewerUserIdRef.current = next;
+
+    if (prev === undefined) {
+      return;
+    }
+
+    loadGenRef.current += 1;
+    setPsMirror({
+      activeEpisode: null,
+      activeLoading: false,
+      activeQueryError: undefined,
+      completedEpisodes: [],
+      completedLoading: false,
+      completedQueryError: undefined,
+    });
+    setActive(null);
+    setRecent([]);
+    setHasMoreRecent(false);
+    setActiveError(null);
+    setRecentError(null);
+    setPsCompletedFetchLimit(RECENT_PAGE_SIZE);
+    setMediaByEpisodeId({});
+    episodeMediaLoadInFlightRef.current = {};
+    setLoadingMoreRecent(false);
+    setCancelingActiveEpisode(false);
+    setDeletingEpisodeId(null);
+
+    const cancel = { cancelled: false };
+    void loadInitial(cancel);
+    return () => {
+      cancel.cancelled = true;
+    };
+  }, [viewerUserId, loadInitial]);
 
   const loadInitialRef = useRef(loadInitial);
   loadInitialRef.current = loadInitial;

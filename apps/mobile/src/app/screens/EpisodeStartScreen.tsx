@@ -14,6 +14,7 @@ import type {
 } from '@abstrack/types';
 import { getActiveEpisodeForUser, PresetDataError } from '@abstrack/supabase';
 import { announce } from '@abstrack/ui/native';
+import { useMobileAuthUserId } from '../../lib/auth/use-mobile-auth-user-id';
 import {
   fetchEpisodeTemplates,
   getCurrentUserId,
@@ -58,6 +59,7 @@ type EpisodeStartNav = NativeStackNavigationProp<
  */
 export function EpisodeStartScreen() {
   const navigation = useNavigation<EpisodeStartNav>();
+  const viewerUserId = useMobileAuthUserId();
   /** Invalidates in-flight {@link load} when the screen blurs, retry runs, or a load watchdog fires. */
   const loadGenerationRef = useRef(0);
   /** Cleared on blur / completion so {@link EPISODE_START_LOAD_TIMEOUT_MS} cannot fire late. */
@@ -82,6 +84,9 @@ export function EpisodeStartScreen() {
   const [blockingActiveEpisode, setBlockingActiveEpisode] =
     useState<EpisodeRow | null>(null);
   const [resolvingActiveGate, setResolvingActiveGate] = useState(false);
+
+  /** `undefined`: baseline not committed yet (skip reload so `useFocusEffect` owns the first session). */
+  const prevViewerUserIdRef = useRef<string | null | undefined>(undefined);
 
   const psBridge = usePowerSyncBridgeState();
   const powerSyncDbForWrites = useMemo(
@@ -324,51 +329,103 @@ export function EpisodeStartScreen() {
   const loadRef = useRef(load);
   loadRef.current = load;
 
-  useFocusEffect(
-    useCallback(() => {
-      loadGenerationRef.current += 1;
-      const generation = loadGenerationRef.current;
-      const focusCancel: FocusLoadCancel = { cancelled: false };
-      focusCancelRef.current = focusCancel;
+  /**
+   * Begins a focus-style load session (generation bump, cancel token, watchdog race). Returns the
+   * teardown used when the screen blurs or when restarting after an auth account switch.
+   */
+  const scheduleEpisodeStartLoadSession = useCallback((): (() => void) => {
+    loadGenerationRef.current += 1;
+    const generation = loadGenerationRef.current;
+    const focusCancel: FocusLoadCancel = { cancelled: false };
+    focusCancelRef.current = focusCancel;
 
-      void (async () => {
-        const loadTimeoutFallback =
-          'Starting this screen is taking too long. Check your connection, then tap Try again.';
-        try {
-          await Promise.race([
-            loadRef.current(focusCancel, generation),
-            new Promise<never>((_, reject) => {
-              episodeStartLoadTimeoutRef.current = setTimeout(
-                () => reject(new Error(loadTimeoutFallback)),
-                EPISODE_START_LOAD_TIMEOUT_MS,
-              );
-            }),
-          ]);
-        } catch (caught) {
-          focusCancel.cancelled = true;
-          loadGenerationRef.current += 1;
-          setErrorMessage(
-            humanizeUnexpectedScreenError(caught, loadTimeoutFallback),
-          );
-          setStatus('error');
-        } finally {
-          if (episodeStartLoadTimeoutRef.current != null) {
-            clearTimeout(episodeStartLoadTimeoutRef.current);
-            episodeStartLoadTimeoutRef.current = null;
-          }
-        }
-      })();
-
-      return () => {
+    void (async () => {
+      const loadTimeoutFallback =
+        'Starting this screen is taking too long. Check your connection, then tap Try again.';
+      try {
+        await Promise.race([
+          loadRef.current(focusCancel, generation),
+          new Promise<never>((_, reject) => {
+            episodeStartLoadTimeoutRef.current = setTimeout(
+              () => reject(new Error(loadTimeoutFallback)),
+              EPISODE_START_LOAD_TIMEOUT_MS,
+            );
+          }),
+        ]);
+      } catch (caught) {
+        focusCancel.cancelled = true;
+        loadGenerationRef.current += 1;
+        setErrorMessage(
+          humanizeUnexpectedScreenError(caught, loadTimeoutFallback),
+        );
+        setStatus('error');
+      } finally {
         if (episodeStartLoadTimeoutRef.current != null) {
           clearTimeout(episodeStartLoadTimeoutRef.current);
           episodeStartLoadTimeoutRef.current = null;
         }
-        focusCancel.cancelled = true;
-        loadGenerationRef.current += 1;
-      };
-    }, []),
+      }
+    })();
+
+    return () => {
+      if (episodeStartLoadTimeoutRef.current != null) {
+        clearTimeout(episodeStartLoadTimeoutRef.current);
+        episodeStartLoadTimeoutRef.current = null;
+      }
+      const cancelToken = focusCancelRef.current;
+      if (cancelToken != null) {
+        cancelToken.cancelled = true;
+      }
+      loadGenerationRef.current += 1;
+    };
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      const cleanup = scheduleEpisodeStartLoadSession();
+      return cleanup;
+    }, [scheduleEpisodeStartLoadSession]),
   );
+
+  /**
+   * {@link useFocusEffect} does not re-run when only the Supabase session user changes while this
+   * route stays focused — reload templates / active-episode gate for the new account.
+   */
+  useEffect(() => {
+    const next = viewerUserId;
+    const prev = prevViewerUserIdRef.current;
+
+    if (prev !== undefined && prev === next) {
+      return;
+    }
+
+    prevViewerUserIdRef.current = next;
+
+    if (prev === undefined) {
+      return;
+    }
+
+    if (episodeStartLoadTimeoutRef.current != null) {
+      clearTimeout(episodeStartLoadTimeoutRef.current);
+      episodeStartLoadTimeoutRef.current = null;
+    }
+    const cancelToken = focusCancelRef.current;
+    if (cancelToken != null) {
+      cancelToken.cancelled = true;
+    }
+
+    setStatus('loading');
+    setErrorMessage(null);
+    setEpisodeStartError(null);
+    setBlockingActiveEpisode(null);
+    setRows([]);
+    setSelectedId(null);
+    setSubmitting(false);
+    setResolvingActiveGate(false);
+
+    const cleanup = scheduleEpisodeStartLoadSession();
+    return cleanup;
+  }, [viewerUserId, scheduleEpisodeStartLoadSession]);
 
   const onSelectTemplate = (id: string) => {
     setSelectedId(id);

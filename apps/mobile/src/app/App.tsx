@@ -485,6 +485,21 @@ function AppBootstrap() {
 
   const showAuthStack = !session || recoveryFlowActive;
 
+  /**
+   * `NavigationContainer` is keyed so switching accounts **without** visiting the auth stack does not
+   * reuse mounted screens whose local state may only refresh on focus. Changes to `session.user.id`
+   * force a fresh navigator instance on the signed-in tree. Auth routes stay keyed separately from
+   * recovery vs gate flows.
+   */
+  let navigationContainerKey: string;
+  if (showAuthStack) {
+    navigationContainerKey = recoveryFlowActive
+      ? 'navigation-auth-recovery'
+      : 'navigation-auth';
+  } else {
+    navigationContainerKey = `navigation-signed-in-${session.user.id}`;
+  }
+
   if (initializing) {
     return (
       <PowerSyncSessionBridge session={session}>
@@ -505,7 +520,10 @@ function AppBootstrap() {
       <View className={`flex-1 ${nw.screenBg}`}>
         <StatusBar style={statusBarStyle} />
         <View className="min-h-0 flex-1">
-          <NavigationContainer theme={navigationTheme}>
+          <NavigationContainer
+            theme={navigationTheme}
+            key={navigationContainerKey}
+          >
             {showAuthStack ? (
               <>
                 <SignOutReplicaCleanupBanner session={session} />

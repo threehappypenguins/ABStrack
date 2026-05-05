@@ -15,6 +15,10 @@
  *
  * Before `process.exit`, the script waits for forwarded readline streams to close and drains
  * `stdout`/`stderr` so buffered Expo lines are not truncated (Node does not flush stdio on exit).
+ *
+ * When this wrapper runs inside an interactive terminal (all of stdin/stdout/stderr are TTYs),
+ * the child inherits **stdio** end-to-end so Expo / Gradle device prompts behave like a direct
+ * `expo run:android`. Otherwise stdout/stderr are piped through line filtering (CI, redirection).
  */
 
 import { spawn } from 'node:child_process';
@@ -73,10 +77,16 @@ async function flushAndExit(code) {
 
 const expoArgs = ['expo', 'run:android', ...process.argv.slice(2)];
 
+/** Pipe/filter loses child stdout/stderr TTY semantics — breaks interactive Expo device prompts. */
+const interactiveTerminalStdio =
+  process.stdin.isTTY === true &&
+  process.stdout.isTTY === true &&
+  process.stderr.isTTY === true;
+
 const child = spawn('pnpm', expoArgs, {
   cwd: mobileRoot,
   env: process.env,
-  stdio: ['inherit', 'pipe', 'pipe'],
+  stdio: interactiveTerminalStdio ? 'inherit' : ['inherit', 'pipe', 'pipe'],
   shell: isWindows,
 });
 
@@ -102,8 +112,12 @@ function pipeFilteredLines(stream, out) {
   return once(rl, 'close').then(() => undefined);
 }
 
-const stdoutClosed = pipeFilteredLines(child.stdout, process.stdout);
-const stderrClosed = pipeFilteredLines(child.stderr, process.stderr);
+const stdoutClosed = interactiveTerminalStdio
+  ? Promise.resolve()
+  : pipeFilteredLines(child.stdout, process.stdout);
+const stderrClosed = interactiveTerminalStdio
+  ? Promise.resolve()
+  : pipeFilteredLines(child.stderr, process.stderr);
 
 const forwardSignal = (/** @type {NodeJS.Signals} */ sig) => {
   try {

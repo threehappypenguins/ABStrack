@@ -78,6 +78,15 @@ export function mapSqliteRowToEpisodeRow(
 export const EPISODE_COLUMNS =
   'id, user_id, symptom_preset_id, health_marker_preset_id, episode_type, episode_label, note, additional_notes, started_at, ended_at, post_marker_step_completed_at, created_at, updated_at';
 
+/**
+ * Constant zero-row statement with **no** `FROM` clause — used by episode read hooks when there is
+ * no signed-in patient user so `useQuery` does not watch {@link POWERSYNC_SQL_ACTIVE_EPISODE} /
+ * {@link POWERSYNC_SQL_COMPLETED_EPISODES} with a bogus `user_id` bind.
+ *
+ * @internal Exported only for sharing between episode PowerSync read helpers.
+ */
+export const POWERSYNC_SQL_EPISODE_WATCH_IDLE = 'SELECT NULL WHERE 0';
+
 /** Active episode: newest `started_at` among rows with `ended_at IS NULL`. */
 export const POWERSYNC_SQL_ACTIVE_EPISODE = `
 SELECT ${EPISODE_COLUMNS}

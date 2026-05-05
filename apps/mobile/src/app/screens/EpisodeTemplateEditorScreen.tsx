@@ -24,6 +24,7 @@ import {
   validateEpisodeTemplateName,
   validateEpisodeTemplatePresetPair,
 } from '@abstrack/types';
+import { useMobileAuthUserId } from '../../lib/auth/use-mobile-auth-user-id';
 import {
   fetchEpisodeTemplateById,
   removeEpisodeTemplate,
@@ -66,6 +67,7 @@ export function EpisodeTemplateEditorScreen() {
   const { templateId } = route.params;
   const navigation = useNavigation<EditorNav>();
   const { colors } = useAppTheme();
+  const viewerUserId = useMobileAuthUserId();
   const psBridge = usePowerSyncBridgeState();
   const replicaMirrorReads = powerSyncOfflineReplicaReadsEnabled(psBridge);
 
@@ -91,54 +93,100 @@ export function EpisodeTemplateEditorScreen() {
   const [markers, setMarkers] = useState<PresetOption[]>([]);
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(async () => {
-    setStatus('loading');
-    setErrorMessage(null);
-    const offlineRead = offlineReadRef.current;
-    const [tRes, sRes, mRes] = await Promise.all([
-      fetchEpisodeTemplateById(templateId, {
-        powerSyncOfflineRead: offlineRead,
-      }),
-      fetchSymptomPresets({ powerSyncOfflineRead: offlineRead }),
-      fetchHealthMarkerPresets({ powerSyncOfflineRead: offlineRead }),
-    ]);
-    if (!sRes.ok) {
-      setErrorMessage(sRes.error.message);
-      setStatus('error');
-      return;
-    }
-    if (!mRes.ok) {
-      setErrorMessage(mRes.error.message);
-      setStatus('error');
-      return;
-    }
-    setSymptoms(sRes.data.map((r) => ({ id: r.id, name: r.name })));
-    setMarkers(mRes.data.map((r) => ({ id: r.id, name: r.name })));
+  /** Baselines for skipping redundant reloads; `undefined` until first effect commit. */
+  const prevViewerUserIdRef = useRef<string | null | undefined>(undefined);
+  const prevTemplateIdForLoadEffectRef = useRef<string | undefined>(undefined);
 
-    if (!tRes.ok) {
-      setErrorMessage(tRes.error.message);
-      setStatus('error');
-      return;
-    }
-    if (!tRes.data) {
-      setErrorMessage('We could not find that episode template.');
-      setStatus('error');
-      return;
-    }
-    const t = tRes.data;
-    setRow(t);
-    setName(normalizeEpisodeTemplateName(t.name));
-    setSymptomId(t.symptom_preset_id);
-    setMarkerId(t.health_marker_preset_id);
-    setStatus('ready');
-  }, [templateId]);
+  const load = useCallback(
+    async (signal?: AbortSignal) => {
+      setStatus('loading');
+      setErrorMessage(null);
+      const offlineRead = offlineReadRef.current;
+      const [tRes, sRes, mRes] = await Promise.all([
+        fetchEpisodeTemplateById(templateId, {
+          powerSyncOfflineRead: offlineRead,
+        }),
+        fetchSymptomPresets({ powerSyncOfflineRead: offlineRead }),
+        fetchHealthMarkerPresets({ powerSyncOfflineRead: offlineRead }),
+      ]);
+      if (signal?.aborted) {
+        return;
+      }
+      if (!sRes.ok) {
+        setErrorMessage(sRes.error.message);
+        setStatus('error');
+        return;
+      }
+      if (!mRes.ok) {
+        setErrorMessage(mRes.error.message);
+        setStatus('error');
+        return;
+      }
+      setSymptoms(sRes.data.map((r) => ({ id: r.id, name: r.name })));
+      setMarkers(mRes.data.map((r) => ({ id: r.id, name: r.name })));
+
+      if (!tRes.ok) {
+        setErrorMessage(tRes.error.message);
+        setStatus('error');
+        return;
+      }
+      if (!tRes.data) {
+        setErrorMessage('We could not find that episode template.');
+        setStatus('error');
+        return;
+      }
+      const t = tRes.data;
+      setRow(t);
+      setName(normalizeEpisodeTemplateName(t.name));
+      setSymptomId(t.symptom_preset_id);
+      setMarkerId(t.health_marker_preset_id);
+      setStatus('ready');
+    },
+    [templateId],
+  );
 
   const loadRef = useRef(load);
   loadRef.current = load;
 
+  /**
+   * Reload when `templateId` **or** the signed-in user changes — an account switch must not keep
+   * another user's template row / preset picklists visible while this route stays mounted.
+   * Still intentionally independent of bridge readiness (see retry effect below).
+   */
   useEffect(() => {
-    void loadRef.current();
-  }, [templateId]);
+    const nextViewer = viewerUserId;
+    const prevViewer = prevViewerUserIdRef.current;
+    const prevTpl = prevTemplateIdForLoadEffectRef.current;
+
+    if (
+      prevViewer !== undefined &&
+      prevViewer === nextViewer &&
+      prevTpl === templateId
+    ) {
+      return;
+    }
+
+    const switchedAccount =
+      prevViewer !== undefined && prevViewer !== nextViewer;
+
+    prevViewerUserIdRef.current = nextViewer;
+    prevTemplateIdForLoadEffectRef.current = templateId;
+
+    if (switchedAccount) {
+      setRow(null);
+      setName('');
+      setSymptomId(null);
+      setMarkerId(null);
+      setSymptoms([]);
+      setMarkers([]);
+    }
+
+    const ac = new AbortController();
+    void loadRef.current(ac.signal);
+    return () => {
+      ac.abort();
+    };
+  }, [templateId, viewerUserId]);
 
   /**
    * Cold start / offline: the initial load can fail before
@@ -287,7 +335,7 @@ export function EpisodeTemplateEditorScreen() {
       status={status}
       errorMessage={errorMessage ?? undefined}
       onRetry={() => {
-        void load();
+        void loadRef.current();
       }}
     >
       {row ? (
