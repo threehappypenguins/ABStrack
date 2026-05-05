@@ -338,5 +338,55 @@ describe('createSupabaseJwtPowerSyncConnector', () => {
         warnSpy.mockRestore();
       }
     });
+
+    it('restores default batch size after a successful single-op fallback upload', async () => {
+      const warnSpy = jest
+        .spyOn(console, 'warn')
+        .mockImplementation(() => undefined);
+      try {
+        jest.mocked(uploadPowerSyncCrudBatchToSupabase).mockRejectedValueOnce({
+          code: '23503',
+          message: 'violates foreign key constraint',
+        });
+        const connector = createSupabaseJwtPowerSyncConnector({
+          powerSyncUrl,
+          getSession: jest.fn(),
+          getSupabaseClient: () => mockSupabaseClient,
+        });
+        const getCrudBatch = jest
+          .fn()
+          .mockResolvedValueOnce({
+            crud: [{ id: '1' }, { id: '2' }],
+            haveMore: true,
+            complete: jest.fn().mockResolvedValue(undefined),
+          })
+          .mockResolvedValueOnce({
+            crud: [{ id: '1' }],
+            haveMore: true,
+            complete: jest.fn().mockResolvedValue(undefined),
+          })
+          .mockResolvedValueOnce({
+            crud: [{ id: '3' }],
+            haveMore: false,
+            complete: jest.fn().mockResolvedValue(undefined),
+          });
+        const db = { getCrudBatch } as unknown as AbstractPowerSyncDatabase;
+
+        await expect(connector.uploadData?.(db)).resolves.toBeUndefined();
+        await expect(connector.uploadData?.(db)).resolves.toBeUndefined();
+
+        expect(getCrudBatch).toHaveBeenNthCalledWith(
+          1,
+          SUPABASE_JWT_POWERSYNC_UPLOAD_CRUD_BATCH_LIMIT,
+        );
+        expect(getCrudBatch).toHaveBeenNthCalledWith(2, 1);
+        expect(getCrudBatch).toHaveBeenNthCalledWith(
+          3,
+          SUPABASE_JWT_POWERSYNC_UPLOAD_CRUD_BATCH_LIMIT,
+        );
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
   });
 });

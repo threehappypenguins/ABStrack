@@ -112,8 +112,7 @@ export function EpisodesManagementPanel({
   const viewerUserId = useMobileAuthUserId();
   const psBridge = usePowerSyncBridgeState();
   const powerSyncDbForWrites = useMemo(
-    () =>
-      powerSyncOfflineReplicaReadsEnabled(psBridge) ? psBridge.database : null,
+    () => (powerSyncReplicaSqliteReady(psBridge) ? psBridge.database : null),
     [psBridge],
   );
   const [psMirror, setPsMirror] = useState<PowerSyncEpisodeReadSnapshots>({

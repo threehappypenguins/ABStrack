@@ -34,8 +34,9 @@ export interface SupabaseSessionLike {
  * **Uploads:** Queued local writes on replicated tables are applied with the same Supabase client
  * (RLS) via {@link uploadPowerSyncCrudBatchToSupabase}. Starts with
  * {@link SUPABASE_JWT_POWERSYNC_UPLOAD_CRUD_BATCH_LIMIT} to drain reconnect bursts quickly, then
- * falls back to single-op batches after a permanent rejection so dequeue uses
- * {@link CrudBatch#complete} on one head op at a time. **Transient** failures (network, 5xx,
+ * temporarily falls back to single-op batches after a permanent rejection so dequeue uses
+ * {@link CrudBatch#complete} on one head op at a time. After one successful single-op upload it
+ * restores the default batch size for throughput. **Transient** failures (network, 5xx,
  * HTTP **401** / **429**, JWT/session) keep the batch pending for retry. **Permanent** rejections
  * (RLS, FK, constraints, other 4xx / PostgREST client errors) either trigger that single-op
  * fallback or dequeue directly when already single-op (local row may diverge until the next
@@ -78,6 +79,12 @@ export function createSupabaseJwtPowerSyncConnector(options: {
         }
         try {
           await uploadPowerSyncCrudBatchToSupabase(client, batch);
+          if (
+            uploadBatchLimit ===
+            SUPABASE_JWT_POWERSYNC_UPLOAD_SINGLE_OP_BATCH_LIMIT
+          ) {
+            uploadBatchLimit = SUPABASE_JWT_POWERSYNC_UPLOAD_CRUD_BATCH_LIMIT;
+          }
         } catch (e) {
           if (isPowerSyncUploadPermanentServerFailure(e)) {
             console.warn(

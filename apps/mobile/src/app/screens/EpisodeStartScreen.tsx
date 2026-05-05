@@ -26,6 +26,7 @@ import { humanizeUnexpectedScreenError } from '../../lib/network/humanize-unexpe
 import { getActiveEpisodeRowFromPowerSyncDb } from '../../lib/powersync/episode-powersync-local-read';
 import {
   powerSyncOfflineReplicaReadsEnabled,
+  powerSyncReplicaSqliteReady,
   usePowerSyncBridgeState,
 } from '../../lib/powersync/PowerSyncSessionBridge';
 import { AsyncScreenContainer } from '../components/AsyncScreenContainer';
@@ -79,8 +80,7 @@ export function EpisodeStartScreen() {
 
   const psBridge = usePowerSyncBridgeState();
   const powerSyncDbForWrites = useMemo(
-    () =>
-      powerSyncOfflineReplicaReadsEnabled(psBridge) ? psBridge.database : null,
+    () => (powerSyncReplicaSqliteReady(psBridge) ? psBridge.database : null),
     [psBridge],
   );
 
@@ -209,7 +209,7 @@ export function EpisodeStartScreen() {
               userId,
               symptomPresetId: template.symptom_preset_id,
               healthMarkerPresetId: template.health_marker_preset_id,
-              powerSyncDatabase: powerSyncOfflineReplicaReadsEnabled(
+              powerSyncDatabase: powerSyncReplicaSqliteReady(
                 psBridgeRef.current,
               )
                 ? psBridgeRef.current.database
@@ -353,9 +353,7 @@ export function EpisodeStartScreen() {
         userId: authResult.data,
         symptomPresetId: template.symptom_preset_id,
         healthMarkerPresetId: template.health_marker_preset_id,
-        powerSyncDatabase: powerSyncOfflineReplicaReadsEnabled(
-          psBridgeRef.current,
-        )
+        powerSyncDatabase: powerSyncReplicaSqliteReady(psBridgeRef.current)
           ? psBridgeRef.current.database
           : null,
       });

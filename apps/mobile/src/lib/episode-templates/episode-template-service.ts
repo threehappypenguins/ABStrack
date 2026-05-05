@@ -135,10 +135,10 @@ export async function fetchEpisodeTemplates(options?: {
   }
 
   // Supabase sometimes yields `{ data: [], error: null }` without a transport error when offline.
-  // When a local replica is available, prefer it unless NetInfo has definitively confirmed we are online.
+  // When a local replica is available, prefer it only when NetInfo has definitively confirmed we are offline.
   if (remote.ok && remote.data.length === 0) {
     const connected = await fetchMobileDeviceIsConnected();
-    if (db && connected !== true) {
+    if (db && connected === false) {
       try {
         const localRows = await listEpisodeTemplatesWithPresetsFromPowerSyncDb(
           db,

@@ -61,6 +61,7 @@ import {
 } from '../../lib/powersync/powersync-offline-read-bridge-snapshot';
 import {
   powerSyncOfflineReplicaReadsEnabled,
+  powerSyncReplicaSqliteReady,
   usePowerSyncBridgeState,
 } from '../../lib/powersync/PowerSyncSessionBridge';
 import {
@@ -266,8 +267,7 @@ export function HealthMarkerPromptScreen() {
   const supabase = useMemo(() => getMobileSupabaseClient(), []);
   const psBridge = usePowerSyncBridgeState();
   const powerSyncDbForWrites = useMemo(
-    () =>
-      powerSyncOfflineReplicaReadsEnabled(psBridge) ? psBridge.database : null,
+    () => (powerSyncReplicaSqliteReady(psBridge) ? psBridge.database : null),
     [psBridge],
   );
   /**
