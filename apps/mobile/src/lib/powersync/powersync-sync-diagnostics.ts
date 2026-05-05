@@ -5,6 +5,30 @@ import type {
 } from '@powersync/react-native';
 import { Base64 } from 'js-base64';
 
+/**
+ * FNV-1a 32-bit — deterministic and dependency-free; **not** a cryptographic hash. Used only so
+ * debug logs can tell “same subject vs changed” without writing JWT `sub` (user id) in cleartext.
+ */
+function fnv1a32(input: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
+}
+
+/**
+ * 16 hex chars derived from `sub` for diagnostics correlation; never log the raw claim.
+ *
+ * @param jwtSub - JWT `sub` claim (authenticated user identifier).
+ */
+export function fingerprintJwtSubForDiagnostics(jwtSub: string): string {
+  const a = fnv1a32(jwtSub);
+  const b = fnv1a32(`${jwtSub}:abstrack-powersync-diag`);
+  return `${a.toString(16).padStart(8, '0')}${b.toString(16).padStart(8, '0')}`;
+}
+
 function stripErrorStack(
   err:
     | {
@@ -74,7 +98,8 @@ export function jwtAudFromPayload(
 }
 
 /**
- * Safe summary of {@link PowerSyncCredentials} for logs (endpoint host, token shape, JWT `aud` / `exp` / `sub`; never the raw token).
+ * Safe summary of {@link PowerSyncCredentials} for logs (endpoint host, token shape, JWT `aud` /
+ * `exp`, fingerprint of `sub`; never the raw token or cleartext `sub`).
  *
  * @param creds - Resolved credentials or `null` when signed out / unavailable.
  */
@@ -104,7 +129,10 @@ export function summarizePowerSyncFetchCredentialsForLog(
     jwtAud: jwtAudFromPayload(payload),
     jwtExp: exp,
     jwtExpIso: exp != null ? new Date(exp * 1000).toISOString() : undefined,
-    jwtSub: typeof payload?.sub === 'string' ? payload.sub : undefined,
+    jwtSubFingerprint:
+      typeof payload?.sub === 'string' && payload.sub.trim() !== ''
+        ? fingerprintJwtSubForDiagnostics(payload.sub)
+        : undefined,
   };
 }
 

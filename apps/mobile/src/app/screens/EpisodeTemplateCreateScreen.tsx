@@ -134,6 +134,10 @@ export function EpisodeTemplateCreateScreen() {
    * Loads preset picklists when the signed-in user id changes — not only on mount — so an account
    * switch cannot leave the previous user's symptom/marker names visible. Still intentionally
    * independent of `replicaMirrorReads` (see retry effect below).
+   *
+   * `useMobileAuthUserId` starts as `null` and resolves asynchronously; `null → userId` is
+   * hydration, not a switch — do not clear the form or refetch when preset lists already loaded
+   * successfully (a second fetch would reset `loadPresetLists` baseline and wipe typed input).
    */
   useEffect(() => {
     const next = viewerUserId;
@@ -143,7 +147,17 @@ export function EpisodeTemplateCreateScreen() {
       return;
     }
 
-    const switchedAccount = prev !== undefined && prev !== next;
+    const isAuthHydration =
+      prev === null && typeof next === 'string' && next.trim() !== '';
+
+    if (isAuthHydration && !listsLoading && listsError == null) {
+      prevViewerUserIdRef.current = next;
+      return;
+    }
+
+    const switchedAccount =
+      prev !== undefined && prev !== next && !isAuthHydration;
+
     prevViewerUserIdRef.current = next;
 
     if (switchedAccount) {
@@ -168,7 +182,7 @@ export function EpisodeTemplateCreateScreen() {
     return () => {
       ac.abort();
     };
-  }, [viewerUserId]);
+  }, [viewerUserId, listsLoading, listsError]);
 
   useEffect(() => {
     if (!listsError) {

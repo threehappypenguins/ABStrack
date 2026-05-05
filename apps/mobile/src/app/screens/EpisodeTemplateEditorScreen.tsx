@@ -152,6 +152,9 @@ export function EpisodeTemplateEditorScreen() {
    * Reload when `templateId` **or** the signed-in user changes — an account switch must not keep
    * another user's template row / preset picklists visible while this route stays mounted.
    * Still intentionally independent of bridge readiness (see retry effect below).
+   *
+   * `useMobileAuthUserId` hydrates `null → userId` after mount; that is not an account switch. When
+   * the editor is already `ready`, skip a redundant `load()` so baseline/name edits are not reset.
    */
   useEffect(() => {
     const nextViewer = viewerUserId;
@@ -166,8 +169,24 @@ export function EpisodeTemplateEditorScreen() {
       return;
     }
 
+    const isAuthHydration =
+      prevViewer === null &&
+      typeof nextViewer === 'string' &&
+      nextViewer.trim() !== '';
+
+    if (
+      isAuthHydration &&
+      status === 'ready' &&
+      errorMessage == null &&
+      prevTpl === templateId
+    ) {
+      prevViewerUserIdRef.current = nextViewer;
+      prevTemplateIdForLoadEffectRef.current = templateId;
+      return;
+    }
+
     const switchedAccount =
-      prevViewer !== undefined && prevViewer !== nextViewer;
+      prevViewer !== undefined && prevViewer !== nextViewer && !isAuthHydration;
 
     prevViewerUserIdRef.current = nextViewer;
     prevTemplateIdForLoadEffectRef.current = templateId;
@@ -186,7 +205,7 @@ export function EpisodeTemplateEditorScreen() {
     return () => {
       ac.abort();
     };
-  }, [templateId, viewerUserId]);
+  }, [templateId, viewerUserId, status, errorMessage]);
 
   /**
    * Cold start / offline: the initial load can fail before

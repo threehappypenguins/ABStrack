@@ -2,6 +2,7 @@ import { SyncStatus } from '@powersync/common';
 
 import {
   decodeJwtPayloadUnsafeForDiagnostics,
+  fingerprintJwtSubForDiagnostics,
   jwtAudFromPayload,
   summarizePowerSyncFetchCredentialsForLog,
   summarizePowerSyncSyncStatusForLog,
@@ -37,6 +38,20 @@ describe('decodeJwtPayloadUnsafeForDiagnostics', () => {
   });
 });
 
+describe('fingerprintJwtSubForDiagnostics', () => {
+  it('is stable for the same sub', () => {
+    expect(fingerprintJwtSubForDiagnostics('user-a')).toBe(
+      fingerprintJwtSubForDiagnostics('user-a'),
+    );
+  });
+
+  it('differs for different subs', () => {
+    expect(fingerprintJwtSubForDiagnostics('a')).not.toBe(
+      fingerprintJwtSubForDiagnostics('b'),
+    );
+  });
+});
+
 describe('summarizePowerSyncFetchCredentialsForLog', () => {
   it('returns present:false for null', () => {
     expect(summarizePowerSyncFetchCredentialsForLog(null)).toEqual({
@@ -58,10 +73,12 @@ describe('summarizePowerSyncFetchCredentialsForLog', () => {
       endpointHost: 'ps.example.com',
       tokenPartCount: 3,
       jwtAud: 'authenticated',
-      jwtSub: 'u1',
+      jwtSubFingerprint: '0442a7f3eeb6d201',
       jwtExp: 1700000000,
     });
-    expect(JSON.stringify(summary)).not.toContain('eyJ');
+    const json = JSON.stringify(summary);
+    expect(json).not.toContain('eyJ');
+    expect(json).not.toContain('u1');
   });
 });
 

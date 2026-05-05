@@ -49,7 +49,8 @@ const PAGE_SIZE = 30;
 
 /**
  * Result of standalone Manage-tab initial loads (health markers / food diary). Pull-to-refresh uses
- * this to restore prior rows after a fetch failure without masking a successful empty response.
+ * this to restore prior rows after a fetch failure while keeping the load error visible so the UI
+ * does not look freshly synced.
  */
 type ManageStandaloneListLoadOutcome = 'ok' | 'error' | 'no-user' | 'stale';
 
@@ -343,13 +344,16 @@ function StandaloneHealthMarkersManageList({
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const loadInitial = useCallback(
-    async (cancel?: {
-      cancelled: boolean;
-    }): Promise<ManageStandaloneListLoadOutcome> => {
+    async (
+      cancel?: { cancelled: boolean },
+      options?: { suppressFullScreenLoading?: boolean },
+    ): Promise<ManageStandaloneListLoadOutcome> => {
       const generation = ++loadGenRef.current;
       const stale = () =>
         cancel?.cancelled === true || generation !== loadGenRef.current;
-      setLoading(true);
+      if (!options?.suppressFullScreenLoading) {
+        setLoading(true);
+      }
       setError(null);
       try {
         const client = getMobileSupabaseClient();
@@ -410,17 +414,18 @@ function StandaloneHealthMarkersManageList({
   }, [hasMore, rows]);
 
   /**
-   * Pull-to-refresh runs `loadInitial`; offline/network failures clear rows — restore the last
-   * successful snapshot when the reload outcome is `error`.
+   * Pull-to-refresh runs `loadInitial` without full-screen loading; on failure, restores rows but
+   * keeps the failed fetch error so results are not mistaken for a successful refresh.
    */
   const refreshManageScreen = useCallback(async () => {
     const previousRows = rowsRef.current;
     const previousHasMore = hasMoreRef.current;
-    const outcome = await loadInitialRef.current();
+    const outcome = await loadInitialRef.current(undefined, {
+      suppressFullScreenLoading: true,
+    });
     if (outcome === 'error' && previousRows.length > 0) {
       setRows(previousRows);
       setHasMore(previousHasMore);
-      setError(null);
     }
   }, []);
 
@@ -550,10 +555,24 @@ function StandaloneHealthMarkersManageList({
     );
   }, []);
 
+  const refreshFailureBanner =
+    error != null && rows.length > 0 ? (
+      <View
+        accessibilityRole="alert"
+        accessibilityLiveRegion="polite"
+        className={`mb-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2.5 dark:border-red-800/80 dark:bg-red-950/35`}
+      >
+        <Text className={`text-sm leading-snug ${nw.textError}`}>{error}</Text>
+        <Text className={`mt-1 text-xs leading-snug ${nw.textMuted}`}>
+          Showing data from the last successful load. Pull down to try again.
+        </Text>
+      </View>
+    ) : null;
+
   if (loading) {
     return <Text className={`py-4 text-sm ${nw.textMuted}`}>Loading…</Text>;
   }
-  if (error) {
+  if (error != null && rows.length === 0) {
     return (
       <Text
         className={`py-2 text-sm ${nw.textError}`}
@@ -571,6 +590,7 @@ function StandaloneHealthMarkersManageList({
       keyExtractor={(item) => item.id}
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={{ paddingBottom: 24, gap: 12 }}
+      ListHeaderComponent={refreshFailureBanner}
       refreshControl={
         <RefreshControl
           refreshing={syncPullRefreshing}
@@ -661,13 +681,16 @@ function StandaloneFoodDiaryManageList({
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const loadInitial = useCallback(
-    async (cancel?: {
-      cancelled: boolean;
-    }): Promise<ManageStandaloneListLoadOutcome> => {
+    async (
+      cancel?: { cancelled: boolean },
+      options?: { suppressFullScreenLoading?: boolean },
+    ): Promise<ManageStandaloneListLoadOutcome> => {
       const generation = ++loadGenRef.current;
       const stale = () =>
         cancel?.cancelled === true || generation !== loadGenRef.current;
-      setLoading(true);
+      if (!options?.suppressFullScreenLoading) {
+        setLoading(true);
+      }
       setError(null);
       try {
         const client = getMobileSupabaseClient();
@@ -731,11 +754,12 @@ function StandaloneFoodDiaryManageList({
   const refreshFoodManageScreen = useCallback(async () => {
     const previousRows = rowsRef.current;
     const previousHasMore = hasMoreRef.current;
-    const outcome = await loadInitialRef.current();
+    const outcome = await loadInitialRef.current(undefined, {
+      suppressFullScreenLoading: true,
+    });
     if (outcome === 'error' && previousRows.length > 0) {
       setRows(previousRows);
       setHasMore(previousHasMore);
-      setError(null);
     }
   }, []);
 
@@ -858,10 +882,24 @@ function StandaloneFoodDiaryManageList({
     );
   }, []);
 
+  const refreshFailureBanner =
+    error != null && rows.length > 0 ? (
+      <View
+        accessibilityRole="alert"
+        accessibilityLiveRegion="polite"
+        className={`mb-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2.5 dark:border-red-800/80 dark:bg-red-950/35`}
+      >
+        <Text className={`text-sm leading-snug ${nw.textError}`}>{error}</Text>
+        <Text className={`mt-1 text-xs leading-snug ${nw.textMuted}`}>
+          Showing data from the last successful load. Pull down to try again.
+        </Text>
+      </View>
+    ) : null;
+
   if (loading) {
     return <Text className={`py-4 text-sm ${nw.textMuted}`}>Loading…</Text>;
   }
-  if (error) {
+  if (error != null && rows.length === 0) {
     return (
       <Text
         className={`py-2 text-sm ${nw.textError}`}
@@ -879,6 +917,7 @@ function StandaloneFoodDiaryManageList({
       keyExtractor={(item) => item.id}
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={{ paddingBottom: 24, gap: 12 }}
+      ListHeaderComponent={refreshFailureBanner}
       refreshControl={
         <RefreshControl
           refreshing={foodSyncPullRefreshing}
