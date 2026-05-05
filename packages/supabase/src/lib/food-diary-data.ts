@@ -317,13 +317,6 @@ export async function createFoodDiaryEntry(
 }
 
 /**
- * Updates one food diary entry.
- *
- * @param client - Supabase client (RLS applies).
- * @param entryId - `food_diary_entries.id`.
- * @param patch - Fields to change.
- */
-/**
  * Validates and normalizes a food diary update patch (same rules as {@link updateFoodDiaryEntry}).
  *
  * @param patch - Partial fields to persist.
@@ -373,6 +366,13 @@ export function normalizeFoodDiaryEntryUpdate(
   return { ok: true, data: normalizedPatch };
 }
 
+/**
+ * Updates one food diary entry.
+ *
+ * @param client - Supabase client (RLS applies).
+ * @param entryId - `food_diary_entries.id`.
+ * @param patch - Fields to change.
+ */
 export async function updateFoodDiaryEntry(
   client: AbstrackSupabaseClient,
   entryId: Uuid,

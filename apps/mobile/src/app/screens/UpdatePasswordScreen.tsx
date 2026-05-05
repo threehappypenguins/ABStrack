@@ -68,7 +68,9 @@ export function UpdatePasswordScreen({
         data: { session },
       } = await getMobileAuthSessionSafe();
 
-      if (!session) {
+      // `getMobileAuthSessionSafe` can return identity with `access_token: ''` after offline refresh
+      // failure — not a usable recovery JWT for `updatePassword`.
+      if (!session || !session.access_token?.trim()) {
         setErrorMessage(
           'This reset link is invalid or expired. Request a new one.',
         );

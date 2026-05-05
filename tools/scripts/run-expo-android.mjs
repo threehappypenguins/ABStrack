@@ -32,6 +32,9 @@ const isWindows = process.platform === 'win32';
 
 /**
  * Best-effort drain of a writable so buffered chunks reach the terminal before `process.exit`.
+ * Only awaits `'drain'` while {@link NodeJS.WriteStream.writableNeedDrain} is true — Node emits
+ * `drain` after a `write()` returned `false`; waiting on `drain` when `writableLength > 0` but
+ * `writableNeedDrain` is false can hang forever.
  *
  * @param {NodeJS.WriteStream} stream
  * @returns {Promise<void>}
@@ -40,13 +43,7 @@ async function flushWritable(stream) {
   if (!stream || stream.destroyed) {
     return;
   }
-  for (;;) {
-    const len =
-      typeof stream.writableLength === 'number' ? stream.writableLength : 0;
-    const needDrain = stream.writableNeedDrain === true || len > 0;
-    if (!needDrain) {
-      return;
-    }
+  while (stream.writableNeedDrain === true) {
     try {
       await once(stream, 'drain');
     } catch {

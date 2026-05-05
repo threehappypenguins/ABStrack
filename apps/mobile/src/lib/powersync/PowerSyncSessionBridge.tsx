@@ -289,14 +289,33 @@ export function PowerSyncSessionBridge({
   const urlConfiguredRef = useRef(urlConfigured);
   urlConfiguredRef.current = urlConfigured;
 
-  const recordFirstSyncLanded = useCallback(() => {
-    const userId = sessionRef.current?.user?.id;
-    if (!userId) {
-      return;
-    }
-    setFirstSyncLandedOnDevice(true);
-    void markPowerSyncFirstSyncLandedForUser(userId);
-  }, []);
+  /**
+   * Persists “first sync landed” for the given user. When `userIdAtObservation` is set, only marks
+   * if `sessionRef` still refers to that user (avoids wrong-account storage when the auth
+   * user changes between the sync milestone and a deferred microtask).
+   *
+   * @param userIdAtObservation - User id captured when first sync became trusted; omit to use the
+   *   current session only (no mismatch guard).
+   */
+  const recordFirstSyncLanded = useCallback(
+    (userIdAtObservation?: string | null) => {
+      const currentUserId = sessionRef.current?.user?.id ?? null;
+      const userId = userIdAtObservation ?? currentUserId;
+      if (!userId) {
+        return;
+      }
+      if (
+        userIdAtObservation != null &&
+        userIdAtObservation !== '' &&
+        currentUserId !== userIdAtObservation
+      ) {
+        return;
+      }
+      setFirstSyncLandedOnDevice(true);
+      void markPowerSyncFirstSyncLandedForUser(userId);
+    },
+    [],
+  );
 
   /**
    * Before paint (and before other `useEffect` hooks), quarantine offline-read trust when the
@@ -370,8 +389,11 @@ export function PowerSyncSessionBridge({
         try {
           await db.waitForFirstSync(ac.signal);
           outcome = true;
+          const userIdAfterWait = sessionRef.current?.user?.id ?? null;
           setFirstSyncCompleted(true);
-          recordFirstSyncLanded();
+          if (userIdAfterWait) {
+            recordFirstSyncLanded(userIdAfterWait);
+          }
         } finally {
           clearTimeout(timeoutId);
         }
@@ -427,13 +449,17 @@ export function PowerSyncSessionBridge({
           !df?.downloadError;
         const firstSyncTrusted = transportOk && status.hasSynced === true;
         if (firstSyncTrusted) {
+          const userIdAtTrusted = sessionRef.current?.user?.id ?? null;
           setSyncError((prev) => (prev ? null : prev));
           setFirstSyncCompleted((done) => {
             if (done) {
               return done;
             }
+            if (!userIdAtTrusted) {
+              return true;
+            }
             queueMicrotask(() => {
-              recordFirstSyncLanded();
+              recordFirstSyncLanded(userIdAtTrusted);
             });
             return true;
           });
@@ -570,8 +596,11 @@ export function PowerSyncSessionBridge({
         reachedAfterWaitForFirstSync = true;
         clearFirstSyncWatchdog();
         if (!cancelled) {
+          const userIdAfterWait = sessionRef.current?.user?.id ?? null;
           setFirstSyncCompleted(true);
-          recordFirstSyncLanded();
+          if (userIdAfterWait) {
+            recordFirstSyncLanded(userIdAfterWait);
+          }
         }
         if (!cancelled && isPowerSyncReplicaDiagnosticsEnabled()) {
           void runPowerSyncReplicaDiagnostics(db).then((diag) => {

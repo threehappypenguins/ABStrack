@@ -34,7 +34,8 @@ export type EpisodeStartHomeCtaProps = {
   activeEpisodeLoading: boolean;
   /**
    * Shown when the local replica query failed (e.g. broken SQLite) so the UI is not identical to
-   * “no active episode” while offline fallback or retry is in play.
+   * “no active episode” while offline fallback or retry is in play. May be set while
+   * {@link activeEpisodeLoading} is still true (e.g. network fallback skipped).
    */
   activeEpisodeQueryError?: string | null;
 };
@@ -75,7 +76,8 @@ export function episodeRowToActiveHomeSummary(
  * duplicated. Shows **Continue this episode** when {@link ActiveEpisodeHomeSummary} is provided.
  *
  * @param props - Props.
- * @param props.activeEpisodeQueryError - Optional local-replica query failure message.
+ * @param props.activeEpisodeQueryError - Optional local-replica query failure message (shown even
+ *   while loading when the parent keeps the spinner for that state).
  * @returns Episode CTA section for the home screen.
  */
 export function EpisodeStartHomeCta({
@@ -116,8 +118,8 @@ export function EpisodeStartHomeCta({
   }, [activeEpisode, activeEpisodeLoading]);
 
   const showResume = !activeEpisodeLoading && activeEpisode !== null;
-  const showQueryError =
-    Boolean(activeEpisodeQueryError) && !activeEpisodeLoading;
+  /** Not gated on `activeEpisodeLoading`: Home can keep loading true when the replica query fails and the network fallback is skipped. */
+  const showQueryError = Boolean(activeEpisodeQueryError);
 
   return (
     <View

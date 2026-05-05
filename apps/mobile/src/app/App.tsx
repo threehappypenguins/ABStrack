@@ -137,7 +137,11 @@ function AppBootstrap() {
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const recoveryFlowActiveRef = useRef(false);
   const authRouteRef = useRef<AuthRoute>('Login');
-  /** Coalesces foreground `refreshSession` bursts (auto-refresh + resume) to reduce LogBox noise. */
+  /**
+   * Coalesces foreground `refreshSession` bursts (auto-refresh + resume) to reduce LogBox noise.
+   * Cleared when {@link AppState} leaves `active` so a short foreground does not still refresh after
+   * background/inactive (or sign-out before the debounce fires).
+   */
   const resumeRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -333,6 +337,10 @@ function AppBootstrap() {
       'change',
       (nextState) => {
         if (nextState !== 'active') {
+          if (resumeRefreshTimerRef.current !== null) {
+            clearTimeout(resumeRefreshTimerRef.current);
+            resumeRefreshTimerRef.current = null;
+          }
           return;
         }
         void (async () => {

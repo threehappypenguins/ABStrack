@@ -4,13 +4,14 @@
  * `CrudBatch.complete()` and dequeue, avoiding an infinite retry loop that blocks later writes.
  *
  * **Conservative:** unknown or transport-shaped errors return `false` so the connector keeps the
- * transient “retry when online” behavior. HTTP **401** and **429** are never permanent here (even
- * without a PostgREST `code`): JWT refresh and gateway / Supabase rate limits should retry with
- * backoff instead of `batch.complete()` dropping the queue.
+ * transient “retry when online” behavior. HTTP **401**, **408**, and **429** are never permanent
+ * here (even without a PostgREST `code`): JWT refresh, request timeouts from gateways/upstream, and
+ * rate limits should retry with backoff instead of `batch.complete()` dropping the queue.
  *
  * Postgres SQLSTATE **40001** / **40P01** / **57014** and connection-class **08\*** codes are
  * evaluated **before** the generic HTTP **4xx** bucket so Supabase errors that carry both `status`
- * (often **409**) and a retryable `code` are not dequeued as permanent.
+ * (often **409**) and a retryable `code` are not dequeued as permanent. HTTP **408** is excluded
+ * from that bucket so gateway timeouts are not dequeued as validation-style failures.
  *
  * @param error - Value thrown from Supabase `.from().upsert/update/delete` or similar.
  * @returns `true` when the batch should be completed to unblock the queue despite upload failure.
@@ -38,6 +39,10 @@ export function isPowerSyncUploadPermanentServerFailure(
   }
   // Throttling / rate limits from Supabase or an upstream gateway — retry later, do not dequeue.
   if (status === 429) {
+    return false;
+  }
+  // Request timeout (client or gateway) — usually transient; do not dequeue as permanent 4xx.
+  if (status === 408) {
     return false;
   }
 

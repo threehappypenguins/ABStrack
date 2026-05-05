@@ -1,5 +1,5 @@
 import type { EpisodeRow } from '@abstrack/types';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 import { usePowerSyncActiveEpisodeQuery } from './use-episode-powersync-reads';
 
@@ -10,6 +10,9 @@ import { usePowerSyncActiveEpisodeQuery } from './use-episode-powersync-reads';
  * `powerSyncReplicaSqliteReady` from `PowerSyncSessionBridge` (`database` is assigned before
  * `init()` finishes on cold start). Upstream `useQuery` must not run against an uninitialized
  * handle; gating avoids that and keeps hooks order stable.
+ *
+ * On **unmount** (e.g. parent gates the replica off while `database` stays the same), clears the
+ * parent snapshot so UI does not keep the last row/error until a new subscription runs.
  *
  * @param props.userId - Auth user id for SQL.
  * @param props.onChange - Latest row, loading flag, and watched-query error (if any).
@@ -27,6 +30,9 @@ export function PowerSyncActiveEpisodeSubscription({
   }) => void;
 }) {
   const ps = usePowerSyncActiveEpisodeQuery(userId);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
   useEffect(() => {
     onChange({
       episode: ps.episode,
@@ -34,5 +40,16 @@ export function PowerSyncActiveEpisodeSubscription({
       error: ps.error,
     });
   }, [onChange, ps.episode, ps.error, ps.isLoading]);
+
+  useEffect(() => {
+    return () => {
+      onChangeRef.current({
+        episode: null,
+        isLoading: false,
+        error: undefined,
+      });
+    };
+  }, []);
+
   return null;
 }
