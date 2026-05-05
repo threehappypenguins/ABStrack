@@ -32,10 +32,13 @@ export interface SupabaseSessionLike {
  * Configure the PowerSync Service to validate Supabase-issued tokens for your project.
  *
  * **Uploads:** Queued local writes on replicated tables are applied with the same Supabase client
- * (RLS) via {@link uploadPowerSyncCrudBatchToSupabase}. Starts with
+ * (RLS) via {@link uploadPowerSyncCrudBatchToSupabase} (each successful REST write checkpoints the
+ * CRUD queue before the next entry). Starts with
  * {@link SUPABASE_JWT_POWERSYNC_UPLOAD_CRUD_BATCH_LIMIT} to drain reconnect bursts quickly, then
  * temporarily falls back to single-op batches after a permanent rejection so dequeue uses
- * {@link CrudBatch#complete} on one head op at a time. After one successful single-op upload it
+ * {@link CrudBatch#complete} on one head op at a time (same {@link PowerSyncBackendConnector#uploadData}
+ * pass immediately refetches at limit 1; it does not complete the oversized batch first). After one
+ * successful single-op upload it
  * restores the default batch size for throughput. **Transient** failures (network, 5xx,
  * HTTP **401** / **429**, JWT/session) keep the batch pending for retry. **Permanent** rejections
  * (RLS, FK, constraints, other 4xx / PostgREST client errors) either trigger that single-op
@@ -78,7 +81,7 @@ export function createSupabaseJwtPowerSyncConnector(options: {
           continue;
         }
         try {
-          await uploadPowerSyncCrudBatchToSupabase(client, batch);
+          await uploadPowerSyncCrudBatchToSupabase(client, batch, database);
           if (
             uploadBatchLimit ===
             SUPABASE_JWT_POWERSYNC_UPLOAD_SINGLE_OP_BATCH_LIMIT
@@ -101,7 +104,10 @@ export function createSupabaseJwtPowerSyncConnector(options: {
               console.warn(
                 '[PowerSync] Falling back to single-op upload batches after permanent rejection.',
               );
-              return;
+              // Do not complete this multi-entry batch: `complete` would dequeue every op in the
+              // batch (see PowerSync `getCrudBatch`). Fetch again at limit 1 so only the head op is
+              // acknowledged on the next permanent/success path, and keep draining in this pass.
+              continue;
             }
             let completeSucceeded = false;
             try {

@@ -1,6 +1,7 @@
 /**
  * Offline-first writes against the encrypted PowerSync SQLite replica. Mutations queue for upload;
- * {@link uploadPowerSyncCrudBatchToSupabase} applies them to Supabase when online.
+ * {@link uploadPowerSyncCrudBatchToSupabase} applies them to Supabase when online (checkpointing
+ * each op after success).
  */
 import type {
   EpisodeRow,

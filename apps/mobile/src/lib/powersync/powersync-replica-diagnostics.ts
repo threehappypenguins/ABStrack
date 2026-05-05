@@ -11,14 +11,26 @@ export type PowerSyncReplicaDiagnosticsBridgeSlice = {
   syncError: Error | null;
 };
 
-/** Tables that should exist once {@link PowerSyncDatabase.init} has run with `abstrackPowerSyncSchema`. */
+/**
+ * Tables counted for replica health. Matches `abstrackPowerSyncSchema` in
+ * `apps/mobile/src/lib/powersync/abstrack-app-schema.ts` so counts cover preset/detail rows and
+ * episode-scoped data (symptoms, markers, food diary, media), not only top-level preset tables.
+ */
 const REPLICA_DIAGNOSTICS_TABLES = [
   'profiles',
   'symptom_presets',
+  'preset_symptoms',
   'health_marker_presets',
+  'preset_health_markers',
   'episode_templates',
   'episodes',
+  'episode_symptoms',
+  'health_markers',
+  'food_diary_entries',
+  'episode_media',
+  'practitioner_access',
   'caretaker_access',
+  'access_log',
 ] as const;
 
 /**
@@ -58,8 +70,9 @@ export function isPowerSyncReplicaDiagnosticsEnabled(): boolean {
 }
 
 /**
- * Runs cheap `COUNT(*)` queries on replicated tables. Uses the same encrypted handle as the app;
- * if decryption fails, expect `ok: false` and an {@link PowerSyncReplicaDiagnosticsResult.errorMessage}.
+ * Runs cheap `COUNT(*)` queries on the replica diagnostics table set (same names as
+ * `abstrackPowerSyncSchema`). Uses the same encrypted handle as the app; if decryption fails,
+ * expect `ok: false` and an {@link PowerSyncReplicaDiagnosticsResult.errorMessage}.
  *
  * @param db - Open PowerSync database (after `init`).
  */

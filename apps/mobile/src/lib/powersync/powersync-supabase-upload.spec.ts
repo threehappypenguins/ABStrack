@@ -1,4 +1,5 @@
 import type { AbstrackSupabaseClient } from '@abstrack/supabase';
+import type { AbstractPowerSyncDatabase } from '@powersync/react-native';
 import { CrudBatch, CrudEntry, UpdateType } from '@powersync/react-native';
 
 import {
@@ -204,8 +205,12 @@ describe('applyPowerSyncCrudEntryToSupabase', () => {
 });
 
 describe('uploadPowerSyncCrudBatchToSupabase', () => {
-  it('applies each CRUD entry in order then completes the batch', async () => {
+  it('applies each CRUD entry in order then checkpoints through each client id', async () => {
     const { client, ops } = createSupabaseUploadMock();
+    const checkpoint = jest.fn().mockResolvedValue(undefined);
+    const database = {
+      handleCrudCheckpoint: checkpoint,
+    } as unknown as AbstractPowerSyncDatabase;
     const complete = jest.fn().mockResolvedValue(undefined);
     const batch = new CrudBatch(
       [
@@ -219,8 +224,62 @@ describe('uploadPowerSyncCrudBatchToSupabase', () => {
       false,
       complete,
     );
-    await uploadPowerSyncCrudBatchToSupabase(client, batch);
+    await uploadPowerSyncCrudBatchToSupabase(client, batch, database);
     expect(ops.map((o) => o.kind)).toEqual(['upsert', 'patch']);
-    expect(complete).toHaveBeenCalledTimes(1);
+    expect(checkpoint).toHaveBeenCalledTimes(2);
+    expect(checkpoint).toHaveBeenNthCalledWith(1, 1);
+    expect(checkpoint).toHaveBeenNthCalledWith(2, 2);
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it('checkpoints only successful prefixes when a later entry fails', async () => {
+    let upsertCalls = 0;
+    const ops: TableOp[] = [];
+    const client = {
+      from(table: string) {
+        return {
+          upsert(payload: unknown, options: unknown) {
+            upsertCalls += 1;
+            if (upsertCalls >= 2) {
+              return Promise.resolve({
+                error: {
+                  message: 'duplicate key value violates unique constraint',
+                },
+              });
+            }
+            ops.push({ kind: 'upsert', table, payload, options });
+            return Promise.resolve({ error: null });
+          },
+        };
+      },
+    } as unknown as AbstrackSupabaseClient;
+
+    const checkpoint = jest.fn().mockResolvedValue(undefined);
+    const database = {
+      handleCrudCheckpoint: checkpoint,
+    } as unknown as AbstractPowerSyncDatabase;
+
+    const batch = new CrudBatch(
+      [
+        new CrudEntry(1, UpdateType.PUT, 'episodes', 'a', undefined, {
+          started_at: '1',
+        }),
+        new CrudEntry(2, UpdateType.PUT, 'episodes', 'b', undefined, {
+          started_at: '2',
+        }),
+      ],
+      false,
+      jest.fn().mockResolvedValue(undefined),
+    );
+
+    await expect(
+      uploadPowerSyncCrudBatchToSupabase(client, batch, database),
+    ).rejects.toMatchObject({
+      message: 'duplicate key value violates unique constraint',
+    });
+
+    expect(ops).toHaveLength(1);
+    expect(checkpoint).toHaveBeenCalledTimes(1);
+    expect(checkpoint).toHaveBeenCalledWith(1);
   });
 });

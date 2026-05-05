@@ -304,7 +304,6 @@ export function HealthMarkerPromptScreen() {
 
   const foodDiary = useHealthMarkerFoodDiary({
     episodeId,
-    userId,
     supabase,
     powerSyncDatabase: powerSyncDbForWrites,
     enabled: phase === 'foodDiary',

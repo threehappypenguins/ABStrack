@@ -1,6 +1,40 @@
 import type { AbstrackSupabaseClient } from '@abstrack/supabase';
-import type { CrudBatch, CrudEntry } from '@powersync/react-native';
+import type {
+  AbstractPowerSyncDatabase,
+  CrudBatch,
+  CrudEntry,
+} from '@powersync/react-native';
 import { UpdateType } from '@powersync/react-native';
+
+type PowerSyncHandleCrudCheckpoint = (
+  lastClientId: number,
+  writeCheckpoint?: string,
+) => Promise<void>;
+
+/**
+ * Resolves PowerSync's internal CRUD dequeue helper used by {@link CrudBatch#complete}.
+ *
+ * The method is present at runtime on {@link AbstractPowerSyncDatabase} but not part of the public
+ * `.d.ts` surface (private / omitted), so it is accessed via a narrow cast.
+ *
+ * @param database - PowerSync DB passed into {@link PowerSyncBackendConnector#uploadData}.
+ * @returns Function that deletes local CRUD queue rows through `lastClientId` (same as batch complete).
+ */
+function resolvePowerSyncHandleCrudCheckpoint(
+  database: AbstractPowerSyncDatabase,
+): (lastClientId: number) => Promise<void> {
+  const checkpoint = (
+    database as unknown as {
+      handleCrudCheckpoint?: PowerSyncHandleCrudCheckpoint;
+    }
+  ).handleCrudCheckpoint;
+  if (typeof checkpoint !== 'function') {
+    throw new Error(
+      'PowerSync database is missing handleCrudCheckpoint; cannot dequeue uploads after partial batch progress.',
+    );
+  }
+  return (lastClientId) => checkpoint.call(database, lastClientId);
+}
 
 /**
  * Converts SQLite-stored values into shapes PostgREST accepts on upsert/update.
@@ -82,17 +116,26 @@ export async function applyPowerSyncCrudEntryToSupabase(
 }
 
 /**
- * Uploads an entire {@link CrudBatch} to Supabase and completes it.
+ * Uploads every {@link CrudEntry} in a {@link CrudBatch} to Supabase and dequeues each op from the
+ * local upload queue **immediately after** its REST call succeeds.
+ *
+ * Applying every entry first and only then calling {@link CrudBatch#complete} would leave earlier,
+ * already-applied ops on the queue when a later entry fails; the next upload attempt would replay
+ * them (DELETE/PATCH “already gone” false failures). Incremental checkpointing matches PowerSync's
+ * `DELETE FROM ps_crud WHERE id <= ?` semantics per applied prefix.
  *
  * @param client - Authenticated Supabase client.
  * @param batch - Non-empty batch from {@link AbstractPowerSyncDatabase#getCrudBatch}.
+ * @param database - Same PowerSync database instance passed to {@link PowerSyncBackendConnector#uploadData}.
  */
 export async function uploadPowerSyncCrudBatchToSupabase(
   client: AbstrackSupabaseClient,
   batch: CrudBatch,
+  database: AbstractPowerSyncDatabase,
 ): Promise<void> {
+  const dequeueThrough = resolvePowerSyncHandleCrudCheckpoint(database);
   for (const entry of batch.crud) {
     await applyPowerSyncCrudEntryToSupabase(client, entry);
+    await dequeueThrough(entry.clientId);
   }
-  await batch.complete();
 }

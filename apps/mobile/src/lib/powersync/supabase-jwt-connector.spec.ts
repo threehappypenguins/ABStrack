@@ -151,6 +151,7 @@ describe('createSupabaseJwtPowerSyncConnector', () => {
       expect(uploadPowerSyncCrudBatchToSupabase).toHaveBeenCalledWith(
         mockSupabaseClient,
         batch,
+        db,
       );
       expect(complete).toHaveBeenCalledTimes(1);
     });
@@ -327,13 +328,14 @@ describe('createSupabaseJwtPowerSyncConnector', () => {
         const db = { getCrudBatch } as unknown as AbstractPowerSyncDatabase;
 
         await expect(connector.uploadData?.(db)).resolves.toBeUndefined();
-        await expect(connector.uploadData?.(db)).resolves.toBeUndefined();
 
         expect(getCrudBatch).toHaveBeenNthCalledWith(
           1,
           SUPABASE_JWT_POWERSYNC_UPLOAD_CRUD_BATCH_LIMIT,
         );
         expect(getCrudBatch).toHaveBeenNthCalledWith(2, 1);
+        expect(completeA).not.toHaveBeenCalled();
+        expect(completeB).toHaveBeenCalledTimes(1);
       } finally {
         warnSpy.mockRestore();
       }
@@ -372,7 +374,6 @@ describe('createSupabaseJwtPowerSyncConnector', () => {
           });
         const db = { getCrudBatch } as unknown as AbstractPowerSyncDatabase;
 
-        await expect(connector.uploadData?.(db)).resolves.toBeUndefined();
         await expect(connector.uploadData?.(db)).resolves.toBeUndefined();
 
         expect(getCrudBatch).toHaveBeenNthCalledWith(

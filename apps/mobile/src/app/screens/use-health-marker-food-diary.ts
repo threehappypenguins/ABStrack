@@ -12,6 +12,7 @@ import {
   listFoodDiaryEntriesForEpisodeOfflineFirst,
   updateFoodDiaryEntryOfflineFirst,
 } from '../../lib/episodes/mobile-offline-first-gateway';
+import { getMobileAuthSessionSafe } from '../../lib/get-mobile-auth-session-safe';
 import {
   currentLocalDate,
   currentLocalTime,
@@ -50,7 +51,6 @@ function upsertFoodEntrySorted(
 
 export type UseHealthMarkerFoodDiaryArgs = {
   episodeId: string;
-  userId: string | null;
   supabase: AbstrackSupabaseClient;
   /** When set (PowerSync replica ready), food diary CRUD uses local SQLite + upload queue. */
   powerSyncDatabase?: PowerSyncDatabase | null;
@@ -115,10 +115,14 @@ export type HealthMarkerFoodDiaryHookResult = {
 
 /**
  * Food diary list / add / edit / delete for the in-episode health marker flow (mobile).
+ *
+ * **Creates:** {@link onSaveFoodDiary} resolves {@link getMobileAuthSessionSafe} when Save runs and
+ * passes that `user_id` into offline-first creates — queued SQLite writes have no RLS, so a
+ * caller-supplied id from mount would be unsafe across sign-out / account switches (same pattern as
+ * symptom persists on {@link SymptomPromptScreen}).
  */
 export function useHealthMarkerFoodDiary({
   episodeId,
-  userId,
   supabase,
   powerSyncDatabase = null,
   enabled,
@@ -287,7 +291,7 @@ export function useHealthMarkerFoodDiary({
   }, []);
 
   const onSaveFoodDiary = useCallback(async () => {
-    if (savingFoodDiary || !userId) {
+    if (savingFoodDiary) {
       return;
     }
     setSavingFoodDiary(true);
@@ -307,6 +311,22 @@ export function useHealthMarkerFoodDiary({
       setSavingFoodDiary(false);
       return;
     }
+
+    const {
+      data: { session },
+      error: sessionError,
+    } = await getMobileAuthSessionSafe();
+    if (sessionError || session?.user?.id == null || session.user.id === '') {
+      const message =
+        sessionError?.message ??
+        'Your session could not be verified. Try signing in again.';
+      setSavingFoodDiary(false);
+      setFoodDiaryFeedback(message);
+      await announce(message, { politeness: 'assertive' });
+      return;
+    }
+    const sessionUserId = session.user.id;
+
     const editingId = editingFoodEntryId;
     const useCurrentTimestampForDefaultAdd =
       editingId == null &&
@@ -318,7 +338,7 @@ export function useHealthMarkerFoodDiary({
     const result =
       editingId == null
         ? await createFoodDiaryEntryOfflineFirst(supabase, powerSyncDatabase, {
-            user_id: userId,
+            user_id: sessionUserId,
             episode_id: episodeId,
             meal_tag: mealTag,
             food_note: foodNote,
@@ -373,7 +393,6 @@ export function useHealthMarkerFoodDiary({
     powerSyncDatabase,
     savingFoodDiary,
     supabase,
-    userId,
     addFoodInitialDate,
     addFoodInitialTime,
   ]);
