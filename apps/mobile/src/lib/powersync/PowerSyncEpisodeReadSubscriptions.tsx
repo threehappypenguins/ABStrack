@@ -1,5 +1,5 @@
 import type { EpisodeRow } from '@abstrack/types';
-import { useLayoutEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 
 import { POWERSYNC_OFFLINE_EPISODE_PAGE_SIZE } from './episode-powersync-read';
 import {
@@ -36,6 +36,8 @@ export type PowerSyncEpisodeReadSnapshots = {
  * @param props.onSnapshots - Called when query outputs change.
  * Uses `useLayoutEffect` so initial loading flags are delivered before first paint (parents should
  * not briefly treat mirror reads as settled while watched SQL is still resolving).
+ * On unmount, clears the parent snapshot so Manage/Home do not keep stale replica rows/errors
+ * after `powerSyncReplicaSqliteReady(...)` flips false and subscriptions are removed.
  * @returns Renders nothing (subscription-only).
  */
 export function PowerSyncEpisodeReadSubscriptions({
@@ -80,6 +82,19 @@ export function PowerSyncEpisodeReadSubscriptions({
     psCompleted.isLoading,
     completedEpisodesFetchLimit,
   ]);
+
+  useEffect(() => {
+    return () => {
+      onSnapshotsRef.current({
+        activeEpisode: null,
+        activeLoading: false,
+        activeQueryError: undefined,
+        completedEpisodes: [],
+        completedLoading: false,
+        completedQueryError: undefined,
+      });
+    };
+  }, []);
 
   return null;
 }

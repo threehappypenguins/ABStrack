@@ -567,6 +567,22 @@ export function PowerSyncSessionBridge({
             '[PowerSync] SQLite init failed with encrypted-file/key mismatch; attempting one-time local replica reset',
             initError instanceof Error ? initError.message : initError,
           );
+          // SQLCipher/key mismatch implies the local replica contents are being wiped.
+          // Drop first-sync landed trust for the current user so offline reads do not
+          // treat the freshly emptied DB as authoritative before the next real sync.
+          const userIdAtReplicaReset = sessionRef.current?.user?.id ?? null;
+          if (userIdAtReplicaReset) {
+            setFirstSyncCompleted(false);
+            setFirstSyncLandedOnDevice(false);
+            try {
+              await clearPowerSyncFirstSyncLandedForUser(userIdAtReplicaReset);
+            } catch (clearLandingError) {
+              console.warn(
+                '[PowerSync] first-sync landing clear failed during encrypted-file/key mismatch reset',
+                clearLandingError,
+              );
+            }
+          }
           try {
             await db.disconnectAndClear();
           } catch (clearError) {

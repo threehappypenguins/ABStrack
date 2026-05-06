@@ -79,14 +79,16 @@ export function StandaloneHealthMarkersScreen() {
   const [linesSavedCount, setLinesSavedCount] = useState(0);
   const [presetRefetchTick, setPresetRefetchTick] = useState(0);
   const lastPresetUserIdRef = useRef<string | null>(null);
+  const authSnapshotGenerationRef = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
+    const runGeneration = ++authSnapshotGenerationRef.current;
     void (async () => {
       setAuthLoading(true);
       try {
         const { data, error } = await getMobileAuthSessionSafe();
-        if (cancelled) {
+        if (cancelled || authSnapshotGenerationRef.current !== runGeneration) {
           return;
         }
         if (error) {
@@ -105,6 +107,13 @@ export function StandaloneHealthMarkersScreen() {
       }
     })();
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      const callbackGeneration = ++authSnapshotGenerationRef.current;
+      if (
+        cancelled ||
+        authSnapshotGenerationRef.current !== callbackGeneration
+      ) {
+        return;
+      }
       const uid = session?.user?.id ?? null;
       setAuthUserId(uid);
       if (uid) {

@@ -294,9 +294,10 @@ export function HomeScreen({
    * connecting without completion. If NetInfo is explicitly offline before that fetch, stay in
    * loading so an empty local DB is not mistaken for “no active episode.”
    *
-   * When mirror reads are enabled but the active-episode watched query errors, keep loading only
-   * while the online resume attempt is actively running. If it skips for explicit offline
-   * (`networkResumeSkippedOffline`), stop loading so the local-query error can surface.
+   * When mirror reads are enabled but the active-episode watched query errors, keep loading while
+   * the online resume attempt is running **or** explicitly skipped for offline
+   * (`networkResumeSkippedOffline`). In that skipped-offline state we still have no authoritative
+   * answer for whether an active episode exists, so Home must not drop into the start-episode CTA.
    *
    * When mirror reads are **not** trusted yet (no first sync) but {@link powerSyncReplicaSqliteReady}
    * is already true, do **not** keep spinning on skipped-offline alone — offline writes (episode
@@ -317,7 +318,7 @@ export function HomeScreen({
       }
       if (replicaMirrorHomeReads) {
         if (psEpisodeSnap.error) {
-          return networkResumeLoading;
+          return networkResumeLoading || networkResumeSkippedOffline;
         }
         return !psBridge.firstSyncCompleted && psBridge.syncConnecting;
       }
