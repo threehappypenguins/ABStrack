@@ -115,7 +115,8 @@ export function normalizePowerSyncRowForSupabase(
 }
 
 /**
- * Applies one PowerSync CRUD entry to Supabase REST (RLS). Caller completes the batch after success.
+ * Applies one PowerSync CRUD entry to Supabase REST (RLS). {@link uploadPowerSyncCrudBatchToSupabase}
+ * checkpoints after each entry; {@link CrudBatch#complete} runs on the success path in the backend connector.
  *
  * PATCH and DELETE use PostgREST `select('id').single()` after `update` / `delete` so zero-row
  * effects (deleted row, RLS hiding the row, predicate mismatch) return an error instead of succeeding

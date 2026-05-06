@@ -9,11 +9,7 @@ import {
 
 // Connector tests mock the uploader; see powersync-supabase-upload.spec.ts for REST shapes.
 jest.mock('./powersync-supabase-upload', () => ({
-  uploadPowerSyncCrudBatchToSupabase: jest.fn(
-    async (_client: unknown, batch: { complete: () => Promise<void> }) => {
-      await batch.complete();
-    },
-  ),
+  uploadPowerSyncCrudBatchToSupabase: jest.fn(async () => undefined),
 }));
 
 const powerSyncUrl = 'https://powersync.example.test';

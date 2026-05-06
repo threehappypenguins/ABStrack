@@ -43,9 +43,14 @@ export interface SupabaseSessionLike {
  * HTTP **401** / **429**, JWT/session) keep the batch pending for retry. **Permanent** rejections
  * (RLS, FK, constraints, other 4xx / PostgREST client errors) either trigger that single-op
  * fallback or dequeue directly when already single-op (local row may diverge until the next
- * successful sync; see product docs). If {@link CrudBatch#complete} throws after dequeuing the
- * head op, that error is rethrown so `uploadData` rejects and PowerSync can surface `uploadError`
- * instead of treating the upload pass as successful while the queue is stuck.
+ * successful sync; see product docs).
+ *
+ * After {@link uploadPowerSyncCrudBatchToSupabase} succeeds, this connector calls
+ * {@link CrudBatch#complete}: incremental {@link AbstractPowerSyncDatabase#handleCrudCheckpoint}
+ * clears CRUD rows as REST succeeds, but {@link AbstractPowerSyncDatabase#getCrudBatch} docs require
+ * {@link CrudBatch#complete} before fetching another batch (final checkpoint / `target_op`
+ * bookkeeping). If {@link CrudBatch#complete} throws after dequeuing the head op on a permanent
+ * path, that error is rethrown so `uploadData` rejects and PowerSync surfaces `uploadError`.
  *
  * @param options.powerSyncUrl PowerSync Service WebSocket HTTP endpoint (e.g. from dashboard).
  * @param options.getSession Resolves the active Supabase session or null when signed out.
@@ -84,6 +89,7 @@ export function createSupabaseJwtPowerSyncConnector(options: {
         }
         try {
           await uploadPowerSyncCrudBatchToSupabase(client, batch, database);
+          await batch.complete();
           if (
             uploadBatchLimit ===
             SUPABASE_JWT_POWERSYNC_UPLOAD_SINGLE_OP_BATCH_LIMIT
