@@ -101,7 +101,7 @@ export function StandaloneHealthMarkersScreen() {
         setAuthSessionError(null);
         setAuthUserId(data.session?.user?.id ?? null);
       } finally {
-        if (!cancelled) {
+        if (!cancelled && authSnapshotGenerationRef.current === runGeneration) {
           setAuthLoading(false);
         }
       }
@@ -116,9 +116,8 @@ export function StandaloneHealthMarkersScreen() {
       }
       const uid = session?.user?.id ?? null;
       setAuthUserId(uid);
-      if (uid) {
-        setAuthSessionError(null);
-      }
+      setAuthSessionError(null);
+      setAuthLoading(false);
     });
     return () => {
       cancelled = true;

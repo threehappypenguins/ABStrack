@@ -204,9 +204,8 @@ describe('EpisodesScreen', () => {
 
     renderEpisodesScreen();
 
-    expect(await screen.findByLabelText('Resume this episode')).toBeTruthy();
-
-    fireEvent.press(screen.getByLabelText('Resume this episode'));
+    const resumeBtn = await screen.findByLabelText('Resume this episode');
+    fireEvent.press(resumeBtn);
 
     expect(mockNavigate).toHaveBeenCalledWith('SymptomPrompt', {
       episodeId: 'ep-resume',
@@ -229,8 +228,8 @@ describe('EpisodesScreen', () => {
 
     renderEpisodesScreen();
 
-    expect(await screen.findByLabelText('Resume this episode')).toBeTruthy();
-    fireEvent.press(screen.getByLabelText('Resume this episode'));
+    const resumeBtn = await screen.findByLabelText('Resume this episode');
+    fireEvent.press(resumeBtn);
 
     expect(mockNavigate).toHaveBeenCalledWith('HealthMarkerPrompt', {
       episodeId: 'ep-end-step',

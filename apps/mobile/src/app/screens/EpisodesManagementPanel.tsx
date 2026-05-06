@@ -110,6 +110,8 @@ export function EpisodesManagementPanel({
 }: EpisodesManagementPanelProps) {
   const { colors } = useAppTheme();
   const loadGenRef = useRef(0);
+  /** Session user id from the last completed {@link loadInitial} (used to skip redundant reloads). */
+  const lastLoadedAuthUserIdRef = useRef<string | null>(null);
   const viewerUserId = useMobileAuthUserId();
   /** `undefined`: effect has not committed a baseline yet (skip reset so `useFocusEffect` owns first load). */
   const prevViewerUserIdRef = useRef<string | null | undefined>(undefined);
@@ -310,6 +312,7 @@ export function EpisodesManagementPanel({
         }
         const userId = session?.user?.id ?? null;
         if (!userId) {
+          lastLoadedAuthUserIdRef.current = null;
           setActive(null);
           setRecent([]);
           setHasMoreRecent(false);
@@ -345,8 +348,13 @@ export function EpisodesManagementPanel({
           setRecent(recentRes.data);
           setHasMoreRecent(recentRes.data.length === RECENT_PAGE_SIZE);
         }
+
+        if (!stale()) {
+          lastLoadedAuthUserIdRef.current = userId;
+        }
       } catch {
         if (!stale()) {
+          lastLoadedAuthUserIdRef.current = null;
           const message = 'Unable to load episodes.';
           setActiveError(message);
           setRecentError(message);
@@ -384,7 +392,16 @@ export function EpisodesManagementPanel({
       return;
     }
 
+    if (
+      prev === null &&
+      next !== null &&
+      lastLoadedAuthUserIdRef.current === next
+    ) {
+      return;
+    }
+
     loadGenRef.current += 1;
+    lastLoadedAuthUserIdRef.current = null;
     setPsMirror({
       activeEpisode: null,
       activeLoading: false,
