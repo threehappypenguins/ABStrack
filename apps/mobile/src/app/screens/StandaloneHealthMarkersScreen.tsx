@@ -107,11 +107,9 @@ export function StandaloneHealthMarkersScreen() {
       }
     })();
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      const callbackGeneration = ++authSnapshotGenerationRef.current;
-      if (
-        cancelled ||
-        authSnapshotGenerationRef.current !== callbackGeneration
-      ) {
+      authSnapshotGenerationRef.current += 1;
+      // Invalidate in-flight getMobileAuthSessionSafe completions (see runGeneration above).
+      if (cancelled) {
         return;
       }
       const uid = session?.user?.id ?? null;

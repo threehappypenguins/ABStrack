@@ -103,6 +103,10 @@ const child = spawn('pnpm', expoArgs, {
  * Forwards lines to `out`, filtering noise. Resolves when the readline interface closes (child
  * stream ended and trailing line processed).
  *
+ * When {@link NodeJS.WriteStream.write} returns `false`, pauses the readline input until `out`
+ * emits `drain`, so piped / CI stdout does not grow an unbounded internal buffer under heavy
+ * Expo/Gradle output.
+ *
  * @param {import('node:stream').Readable | null} stream
  * @param {NodeJS.WriteStream} out
  * @returns {Promise<void>}
@@ -116,7 +120,18 @@ function pipeFilteredLines(stream, out) {
     if (line.includes(NOISE_SUBSTRING)) {
       return;
     }
-    out.write(`${line}\n`);
+    try {
+      const chunk = `${line}\n`;
+      const ok = out.write(chunk);
+      if (!ok && !out.destroyed && !out.writableEnded) {
+        rl.pause();
+        out.once('drain', () => {
+          rl.resume();
+        });
+      }
+    } catch {
+      // Broken pipe / destroyed sink — ignore; child exit path still runs.
+    }
   });
   return once(rl, 'close').then(() => undefined);
 }
