@@ -179,7 +179,10 @@ export async function fetchEpisodeTemplates(options?: {
  * for list-shaped responses. For **`ok` + `null`** (server not found), the replica is used only when
  * NetInfo reports **`isConnected === false`** so a successful remote “gone” is not overridden from
  * SQLite while online or when connectivity is unknown (`null`); that avoids reopening a stale row
- * for edit after server delete or RLS loss.
+ * for edit after server delete or RLS loss. When there is **no** offline-read DB handle yet (cold
+ * start offline before first sync) but NetInfo is explicitly offline, the same
+ * {@link clarifyNetworkErrorWhenReplicaUnavailable} path as the list applies so the editor does not
+ * show a bare “template not found” for transport-shaped empties.
  *
  * When {@link resolvePowerSyncDatabaseForOfflineRead} returns a handle and NetInfo reports **explicitly
  * offline**, reads SQLite **before** `getEpisodeTemplateById` when a matching local row exists so
@@ -272,6 +275,18 @@ export async function fetchEpisodeTemplateById(
         }
       } catch (caught) {
         return { ok: false, error: toPresetDataError(caught) };
+      }
+    }
+  }
+
+  if (remote.ok && remote.data == null && !db) {
+    const connected = await fetchMobileDeviceIsConnected();
+    if (connected === false) {
+      const alt = clarifyNetworkErrorWhenReplicaUnavailable(
+        new PresetDataError('network_error', 'Network request failed'),
+      );
+      if (alt) {
+        return { ok: false, error: alt };
       }
     }
   }

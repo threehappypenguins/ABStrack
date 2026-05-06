@@ -254,7 +254,7 @@ describe('createSupabaseJwtPowerSyncConnector', () => {
       }
     });
 
-    it('stops upload pass when batch.complete fails after permanent rejection', async () => {
+    it('rejects upload pass when batch.complete fails after permanent rejection', async () => {
       const warnSpy = jest
         .spyOn(console, 'warn')
         .mockImplementation(() => undefined);
@@ -272,9 +272,8 @@ describe('createSupabaseJwtPowerSyncConnector', () => {
           { crud: [{ id: '1' }], haveMore: true },
           { crud: [{ id: '2' }], haveMore: false },
         ]);
-        completeMocks[0] = jest
-          .fn()
-          .mockRejectedValue(new Error('sqlite busy while dequeueing'));
+        const dequeueErr = new Error('sqlite busy while dequeueing');
+        completeMocks[0] = jest.fn().mockRejectedValue(dequeueErr);
         jest
           .mocked(getCrudBatch)
           .mockResolvedValueOnce({
@@ -288,7 +287,9 @@ describe('createSupabaseJwtPowerSyncConnector', () => {
             complete: jest.fn().mockResolvedValue(undefined),
           });
 
-        await expect(connector.uploadData?.(db)).resolves.toBeUndefined();
+        await expect(connector.uploadData?.(db)).rejects.toThrow(
+          'sqlite busy while dequeueing',
+        );
         expect(getCrudBatch).toHaveBeenCalledTimes(1);
         expect(uploadPowerSyncCrudBatchToSupabase).toHaveBeenCalledTimes(1);
         expect(completeMocks[0]).toHaveBeenCalledTimes(1);

@@ -69,7 +69,9 @@ const snapshot: Snapshot = {
 
 /**
  * Updates the latest PowerSync bridge fields used to gate SQLite-backed reads when Supabase fails
- * offline. Called from {@link PowerSyncSessionBridge} whenever bridge state changes.
+ * offline. Called from {@link PowerSyncSessionBridge} in a `useLayoutEffect` after each committed
+ * bridge state change (not during render), so module reads stay aligned without Strict Mode /
+ * concurrent render replay side effects.
  *
  * @param next - Current replication flags and DB handle.
  */

@@ -991,22 +991,27 @@ export function PowerSyncSessionBridge({
   );
 
   /**
-   * Keep the module-level offline read gate aligned with {@link bridgeValue} during render (not in
-   * a `useEffect`). Tab screens often load on `useFocusEffect`, which can run in the same commit
-   * before parent effects flush; a deferred snapshot made `getPowerSyncDatabaseForOfflineReads()`
-   * falsely `null` so preset/template lists skipped the SQLite fallback while the UI bridge was
-   * already ready.
+   * Publish {@link bridgeValue} to the module snapshot **after commit** (not during render).
+   * Updating module globals in render can leak wrong DB / first-sync gates under Strict Mode or
+   * concurrent React when a render is replayed or discarded before commit (e.g. account switch).
+   *
+   * Uses `useLayoutEffect` (not `useEffect`) so tab `useFocusEffect` callbacks that run in the
+   * same tick after layout still see `getPowerSyncDatabaseForOfflineReads()` aligned with the
+   * committed bridge; a plain deferred `useEffect` can run after those focus handlers and briefly
+   * left the snapshot `null` while the UI bridge was already ready.
    */
-  setPowerSyncOfflineReadBridgeSnapshot({
-    database: bridgeValue.database,
-    firstSyncCompleted: bridgeValue.firstSyncCompleted,
-    localSqliteInitialized: bridgeValue.localSqliteInitialized,
-    syncConnecting: bridgeValue.syncConnecting,
-    syncError: bridgeValue.syncError,
-    powerSyncUrlConfigured: bridgeValue.powerSyncUrlConfigured,
-    firstSyncLandingHydrated: bridgeValue.firstSyncLandingHydrated,
-    firstSyncLandedOnDevice: bridgeValue.firstSyncLandedOnDevice,
-  });
+  useLayoutEffect(() => {
+    setPowerSyncOfflineReadBridgeSnapshot({
+      database: bridgeValue.database,
+      firstSyncCompleted: bridgeValue.firstSyncCompleted,
+      localSqliteInitialized: bridgeValue.localSqliteInitialized,
+      syncConnecting: bridgeValue.syncConnecting,
+      syncError: bridgeValue.syncError,
+      powerSyncUrlConfigured: bridgeValue.powerSyncUrlConfigured,
+      firstSyncLandingHydrated: bridgeValue.firstSyncLandingHydrated,
+      firstSyncLandedOnDevice: bridgeValue.firstSyncLandedOnDevice,
+    });
+  }, [bridgeValue]);
 
   // PowerSync typings omit `null`, but hooks treat a missing DB like "not configured" at runtime.
   return (

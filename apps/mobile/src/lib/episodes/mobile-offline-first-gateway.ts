@@ -19,10 +19,10 @@ import type {
   CancelActiveEpisodeByIdResult,
   DeleteEpisodeByIdResult,
   EpisodePostMarkerStepWrite,
-  PresetDataError,
 } from '@abstrack/supabase';
 import type { PresetDataResult } from '@abstrack/supabase';
 import {
+  PresetDataError,
   cancelActiveEpisodeById,
   completeEpisodePostMarkerStep,
   createFoodDiaryEntry,
@@ -41,6 +41,7 @@ import {
 } from '@abstrack/supabase';
 import type { PowerSyncDatabase } from '@powersync/react-native';
 
+import { fetchMobileDeviceIsConnected } from '../network/mobile-device-netinfo';
 import {
   cancelActiveEpisodeByIdPowerSyncDb,
   completeEpisodePostMarkerStepPowerSyncDb,
@@ -255,6 +256,34 @@ export async function endEpisodeIfStillActiveOfflineFirst(
 }
 
 /**
+ * When the mirror is not trusted for empty lists, an `ok` + empty Supabase result while NetInfo is
+ * explicitly offline is not treated as authoritative (cold offline / pre-first-sync).
+ *
+ * @param trustEmptyLocalReplica - When true, empty remote rows are always accepted.
+ * @param remote - Result from {@link listFoodDiaryEntriesForEpisode}.
+ * @returns A network error result to surface, or `null` to keep `remote`.
+ */
+async function foodDiaryEmptyRemoteRejectedWhenOfflineAndMirrorUntrusted(
+  trustEmptyLocalReplica: boolean,
+  remote: PresetDataResult<FoodDiaryEntryRow[]>,
+): Promise<PresetDataResult<FoodDiaryEntryRow[]> | null> {
+  if (trustEmptyLocalReplica || !remote.ok || remote.data.length > 0) {
+    return null;
+  }
+  if ((await fetchMobileDeviceIsConnected()) === false) {
+    return {
+      ok: false,
+      error: new PresetDataError(
+        'network_error',
+        'Could not verify food diary on the server while offline. Connect once while online so this device can sync, then try again.',
+        new TypeError('Network request failed'),
+      ),
+    };
+  }
+  return null;
+}
+
+/**
  * Lists food diary entries for an episode offline-first.
  *
  * When PowerSync is used, a failed local list (`ok: false` from SQLite, or an unexpected throw)
@@ -263,12 +292,13 @@ export async function endEpisodeIfStillActiveOfflineFirst(
  * this verifies with Supabase and prefers remote rows when available (avoids treating a
  * pre-first-sync replica as authoritative). When `trustEmptyLocalReplica` is true (caller should
  * align this with `powerSyncOfflineReplicaReadsEnabled` on the session bridge), skip that verification so a
- * legitimately empty episode does not fail offline. When `trustEmptyLocalReplica` is false and
- * verification fails with {@link PresetDataError} code `network_error`, this still returns the empty
- * local list so a just-created offline episode (empty diary, no server mirror yet) is usable; other
- * verification failures return `{ ok: false, error }`. Thrown errors use the same `network_error`
- * vs non-network split (they must not hit the outer SQLite fallback, which could return misleading
- * empty success for a broken local query path).
+ * legitimately empty episode does not fail offline. When `trustEmptyLocalReplica` is false, a failed
+ * verification (including transport `network_error`) returns `{ ok: false, error }` — it must not
+ * fall back to an empty local success, or a cold offline open with an initialized-but-not-yet-synced
+ * replica would hide server rows. The same applies when Supabase returns **`ok` + `[]`** while NetInfo
+ * is explicitly offline (untrusted mirror). Thrown verification errors return `{ ok: false, error }` and must
+ * not hit the outer SQLite fallback, which could return misleading empty success for a broken local
+ * query path.
  */
 export async function listFoodDiaryEntriesForEpisodeOfflineFirst(
   client: AbstrackSupabaseClient,
@@ -288,11 +318,17 @@ export async function listFoodDiaryEntriesForEpisodeOfflineFirst(
         options.limit ?? 50,
       );
       if (!local.ok) {
-        return await listFoodDiaryEntriesForEpisode(
+        const remoteFallback = await listFoodDiaryEntriesForEpisode(
           client,
           episodeId,
           listOptions ?? {},
         );
+        const gated =
+          await foodDiaryEmptyRemoteRejectedWhenOfflineAndMirrorUntrusted(
+            trustEmptyLocalReplica,
+            remoteFallback,
+          );
+        return gated ?? remoteFallback;
       }
       if (local.data.length > 0) {
         return local;
@@ -308,22 +344,20 @@ export async function listFoodDiaryEntriesForEpisodeOfflineFirst(
           listOptions ?? {},
         );
       } catch (caught) {
-        const err = toPresetDataError(caught);
-        if (err.code === 'network_error') {
-          return local;
-        }
-        return { ok: false, error: err };
+        return { ok: false, error: toPresetDataError(caught) };
       }
       if (remote.ok && remote.data.length > 0) {
         return remote;
       }
       if (!remote.ok) {
-        if (remote.error.code === 'network_error') {
-          return local;
-        }
         return remote;
       }
-      return remote;
+      const emptyOfflineUntrusted =
+        await foodDiaryEmptyRemoteRejectedWhenOfflineAndMirrorUntrusted(
+          trustEmptyLocalReplica,
+          remote,
+        );
+      return emptyOfflineUntrusted ?? remote;
     } catch {
       return await listFoodDiaryEntriesForEpisode(
         client,

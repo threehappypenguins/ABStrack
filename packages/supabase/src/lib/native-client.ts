@@ -26,8 +26,11 @@ export type NativeClientOptions = {
  * Offline refresh attempts may still fail at the network layer; the mobile app uses
  * `getMobileAuthSessionSafe` so reads can fall back to persisted storage when GoTrue throws (e.g.
  * `TypeError: Network request failed`). When the stored access JWT is already past `exp`, that
- * helper still returns `session.user` with a redacted `access_token` so identity stays available
- * offline without exposing a live bearer until refresh succeeds.
+ * helper may return `session.user` with an **empty `access_token`** (redacted) while still including
+ * other persisted session fields—**including `refresh_token` when present in storage**—so identity
+ * stays available offline and refresh can resume when the network returns. An empty `access_token`
+ * must not be used as a live REST/PowerSync bearer until refresh repopulates it; callers should not
+ * treat the whole returned session as identity-only.
  */
 export function createSupabaseNativeClient(
   storage: NativeAuthStorage,

@@ -96,6 +96,12 @@ export function EpisodeTemplateEditorScreen() {
   /** Baselines for skipping redundant reloads; `undefined` until first effect commit. */
   const prevViewerUserIdRef = useRef<string | null | undefined>(undefined);
   const prevTemplateIdForLoadEffectRef = useRef<string | undefined>(undefined);
+  /**
+   * One-shot guard for the replica-ready auto-retry (same idea as `presetListsAutoRetryConsumedRef`
+   * on `EpisodeTemplateCreateScreen`): without it, `status === 'error'` plus `replicaMirrorReads`
+   * would re-invoke `load` forever when the fetch keeps failing.
+   */
+  const templateLoadAutoRetryConsumedRef = useRef(false);
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -200,6 +206,7 @@ export function EpisodeTemplateEditorScreen() {
       setMarkers([]);
     }
 
+    templateLoadAutoRetryConsumedRef.current = false;
     const ac = new AbortController();
     void loadRef.current(ac.signal);
     return () => {
@@ -207,11 +214,24 @@ export function EpisodeTemplateEditorScreen() {
     };
   }, [templateId, viewerUserId, status, errorMessage]);
 
+  useEffect(() => {
+    if (status === 'ready') {
+      templateLoadAutoRetryConsumedRef.current = false;
+    }
+  }, [status]);
+
+  useEffect(() => {
+    if (!replicaMirrorReads) {
+      templateLoadAutoRetryConsumedRef.current = false;
+    }
+  }, [replicaMirrorReads]);
+
   /**
    * Cold start / offline: the initial load can fail before
    * {@link powerSyncOfflineReplicaReadsEnabled} is true. Do not tie the primary load effect to
    * bridge state (that would reset the form whenever PowerSync flips while the screen is already
-   * `ready`). Only auto-retry from **error** once the replica is readable.
+   * `ready`). Only auto-retry from **error** once per error/replica cycle (`templateLoadAutoRetryConsumedRef`),
+   * matching `EpisodeTemplateCreateScreen` preset-list retry semantics.
    */
   useEffect(() => {
     if (status !== 'error') {
@@ -220,6 +240,10 @@ export function EpisodeTemplateEditorScreen() {
     if (!replicaMirrorReads) {
       return;
     }
+    if (templateLoadAutoRetryConsumedRef.current) {
+      return;
+    }
+    templateLoadAutoRetryConsumedRef.current = true;
     void loadRef.current();
   }, [replicaMirrorReads, status]);
 

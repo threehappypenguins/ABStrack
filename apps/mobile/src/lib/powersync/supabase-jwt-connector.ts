@@ -43,7 +43,9 @@ export interface SupabaseSessionLike {
  * HTTP **401** / **429**, JWT/session) keep the batch pending for retry. **Permanent** rejections
  * (RLS, FK, constraints, other 4xx / PostgREST client errors) either trigger that single-op
  * fallback or dequeue directly when already single-op (local row may diverge until the next
- * successful sync; see product docs).
+ * successful sync; see product docs). If {@link CrudBatch#complete} throws after dequeuing the
+ * head op, that error is rethrown so `uploadData` rejects and PowerSync can surface `uploadError`
+ * instead of treating the upload pass as successful while the queue is stuck.
  *
  * @param options.powerSyncUrl PowerSync Service WebSocket HTTP endpoint (e.g. from dashboard).
  * @param options.getSession Resolves the active Supabase session or null when signed out.
@@ -109,10 +111,8 @@ export function createSupabaseJwtPowerSyncConnector(options: {
               // acknowledged on the next permanent/success path, and keep draining in this pass.
               continue;
             }
-            let completeSucceeded = false;
             try {
               await batch.complete();
-              completeSucceeded = true;
             } catch (completeErr) {
               console.warn(
                 '[PowerSync] batch.complete after permanent upload failure:',
@@ -120,9 +120,9 @@ export function createSupabaseJwtPowerSyncConnector(options: {
                   ? completeErr.message
                   : completeErr,
               );
-            }
-            if (!completeSucceeded) {
-              return;
+              throw completeErr instanceof Error
+                ? completeErr
+                : new Error(String(completeErr), { cause: completeErr });
             }
             if (!batch.haveMore) {
               return;
