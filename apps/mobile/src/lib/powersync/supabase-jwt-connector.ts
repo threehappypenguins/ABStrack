@@ -52,6 +52,19 @@ export interface SupabaseSessionLike {
  * bookkeeping). If {@link CrudBatch#complete} throws after dequeuing the head op on a permanent
  * path, that error is rethrown so `uploadData` rejects and PowerSync surfaces `uploadError`.
  *
+ * **Why the multi-entry batch is abandoned (not completed) on a permanent rejection:**
+ * `AbstractPowerSyncDatabase#getCrudBatch` is a stateless `SELECT … FROM ps_crud ORDER BY id ASC
+ * LIMIT ?`; it does **not** reserve or lock the returned rows. {@link CrudBatch#complete} is
+ * `() => handleCrudCheckpoint(last.clientId, …)`, i.e. `DELETE FROM ps_crud WHERE id <= last.clientId`.
+ * If we called `complete()` on the multi-entry batch after a permanent failure on entry _k_, it
+ * would dequeue **every** entry in the batch — including the failing entry _and_ tail entries
+ * _k+1…N_ that we never attempted (data loss). Re-fetching at limit 1 instead is safe because the
+ * SELECT just returns the same head row, lets us retry it once at limit 1, and then either
+ * succeeds (and `complete()` runs) or trips the single-op {@link CrudBatch#complete} branch that
+ * dequeues only that one entry. The “always single-op” alternative would honor the documented
+ * contract on every iteration but trades batched reconnect drain for one HTTP round-trip per
+ * local mutation, which is what the larger default exists to avoid.
+ *
  * @param options.powerSyncUrl PowerSync Service WebSocket HTTP endpoint (e.g. from dashboard).
  * @param options.getSession Resolves the active Supabase session or null when signed out.
  * @param options.getSupabaseClient Supabase JS client used to POST CRUD batches (user JWT).
@@ -112,9 +125,13 @@ export function createSupabaseJwtPowerSyncConnector(options: {
               console.warn(
                 '[PowerSync] Falling back to single-op upload batches after permanent rejection.',
               );
-              // Do not complete this multi-entry batch: `complete` would dequeue every op in the
-              // batch (see PowerSync `getCrudBatch`). Fetch again at limit 1 so only the head op is
-              // acknowledged on the next permanent/success path, and keep draining in this pass.
+              // Do not complete this multi-entry batch. `getCrudBatch` is stateless (a fresh
+              // `SELECT … LIMIT ?` over `ps_crud`), and `batch.complete()` resolves to
+              // `handleCrudCheckpoint(last.clientId)` -> `DELETE FROM ps_crud WHERE id <= last.clientId`
+              // for the entire 25-entry window — that would dequeue the failing entry **and** the
+              // unattempted tail (data loss). Re-fetching at limit 1 returns the same head row;
+              // it retries there and either succeeds or trips the single-op `complete()` branch
+              // below that dequeues only that one entry.
               continue;
             }
             try {
