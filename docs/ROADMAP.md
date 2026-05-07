@@ -141,23 +141,23 @@
 
 ---
 
-## Week 7: April 27 - May 3 -- Media Capture and Offline Sync
+## Week 7: April 27 - May 3 -- Media Capture and Offline Sync (**complete**)
 
 **Goal:** Add video/photo capture to episode logging and enable offline-first mobile experience per the server-side safeguard + SQLCipher model.
 
 **Tasks:**
 
-- [ ] Video capture (max 15 seconds, stop early option) within episode prompt flow
-- [ ] Photo capture within episode prompt flow
-- [ ] Immediate playback preview + re-record option
-- [ ] **Server-side confidentiality for media (not client DEK):** upload to private `episode-media` bucket; access via RLS on `storage.objects` and **time-limited signed URLs**; confidentiality from private bucket + RLS + TLS + platform at-rest encryption ([PRD](PRD.md) Section 10)
-- [ ] Thumbnail object in same bucket as primary media (same access controls as primary file)
-- [ ] Playback: obtain signed URL → download over TLS → display in `<video>` / `<img>` or RN equivalents (**no** application-layer decrypt step for stored objects)
-- [ ] Implement `@abstrack/powersync`:
+- [x] Video capture (max 15 seconds, stop early option) within episode prompt flow
+- [x] Photo capture within episode prompt flow
+- [x] Immediate playback preview + re-record option
+- [x] **Server-side confidentiality for media (not client DEK):** upload to private `episode-media` bucket; access via RLS on `storage.objects` and **time-limited signed URLs**; confidentiality from private bucket + RLS + TLS + platform at-rest encryption ([PRD](PRD.md) Section 10)
+- [x] Thumbnail object in same bucket as primary media (same access controls as primary file)
+- [x] Playback: obtain signed URL → download over TLS → display in `<video>` / `<img>` or RN equivalents (**no** application-layer decrypt step for stored objects)
+- [x] Implement `@abstrack/powersync`:
   - PowerSync schema matching Supabase tables
   - **Sync Rules** (or Sync Streams) mirroring RLS grant logic (patient / caretaker / practitioner)—replication role uses BYPASSRLS; device download scope is defined by rules, not Postgres RLS on the sync connection ([PRD](PRD.md) Architecture)
   - SQLCipher integration via `@powersync/op-sqlite` for encrypted local SQLite
-- [ ] Offline media upload queue:
+- [x] Offline media upload queue:
   - While offline: write blob to local storage; **encrypt queued blobs with a device-bound key** (or store in SQLCipher) so raw video is not left unencrypted on disk if the device is compromised
   - Metadata row in local SQLite (`uploaded: false`); sync metadata to Postgres when online; background worker uploads to Storage then updates row
 

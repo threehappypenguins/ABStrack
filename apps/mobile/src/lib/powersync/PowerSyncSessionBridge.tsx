@@ -9,13 +9,20 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { AppState } from 'react-native';
 import type { AbstractPowerSyncDatabase } from '@powersync/common';
 import { PowerSyncContext } from '@powersync/react';
 import type {
   PowerSyncBackendConnector,
   PowerSyncDatabase,
 } from '@powersync/react-native';
+import NetInfo from '@react-native-community/netinfo';
 
+import {
+  createDebouncedPendingEpisodeMediaFlush,
+  runPendingEpisodeMediaUploadWorker,
+} from '../media/pending-episode-media-upload';
+import { mapNetInfoStateToAppOnline } from '../network/mobile-device-netinfo';
 import {
   getMobileAuthSessionSafe,
   getMobileSupabaseClient,
@@ -307,6 +314,28 @@ export function PowerSyncSessionBridge({
         )
       : baseConnector;
   }, [powerSyncUrl]);
+
+  useEffect(() => {
+    if (!db) {
+      return;
+    }
+    void runPendingEpisodeMediaUploadWorker(db);
+    const flush = createDebouncedPendingEpisodeMediaFlush(() => db, 1200);
+    const subApp = AppState.addEventListener('change', (next) => {
+      if (next === 'active') {
+        flush();
+      }
+    });
+    const subNet = NetInfo.addEventListener((state) => {
+      if (mapNetInfoStateToAppOnline(state) === true) {
+        flush();
+      }
+    });
+    return () => {
+      subApp.remove();
+      subNet();
+    };
+  }, [db]);
 
   /** Latest session for connect-effect cleanup (skip redundant disconnect on sign-out). */
   const sessionRef = useRef(session);

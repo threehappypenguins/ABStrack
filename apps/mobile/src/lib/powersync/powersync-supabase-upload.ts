@@ -1,4 +1,9 @@
 import type { AbstrackSupabaseClient } from '@abstrack/supabase';
+import {
+  listEpisodeMediaBucketPathsForEpisodeMediaId,
+  listEpisodeMediaBucketPathsForEpisodeSymptomId,
+  removeEpisodeMediaStorageObjectPathsBestEffort,
+} from '@abstrack/supabase';
 import type {
   AbstractPowerSyncDatabase,
   CrudBatch,
@@ -118,9 +123,10 @@ export function normalizePowerSyncRowForSupabase(
  * Applies one PowerSync CRUD entry to Supabase REST (RLS). {@link uploadPowerSyncCrudBatchToSupabase}
  * checkpoints after each entry; {@link CrudBatch#complete} runs on the success path in the backend connector.
  *
- * PATCH and DELETE use PostgREST `select('id').single()` after `update` / `delete` so zero-row
- * effects (deleted row, RLS hiding the row, predicate mismatch) return an error instead of succeeding
- * silently before {@link CrudBatch#complete}.
+ * PATCH uses PostgREST `select('id').single()` after `update` so zero-row effects return an error.
+ * DELETE uses `select('id').maybeSingle()` for `episode_symptoms` / `episode_media` (idempotent replay)
+ * and `.single()` for other tables. `episode_symptoms` / `episode_media` deletes remove matching
+ * Storage objects in private `episode-media` first so PowerSync-queued deletes match REST delete cleanup.
  *
  * @param client - Authenticated Supabase client (user JWT).
  * @param entry - Local change from {@link CrudBatch}.
@@ -161,6 +167,47 @@ export async function applyPowerSyncCrudEntryToSupabase(
   }
 
   if (entry.op === UpdateType.DELETE) {
+    if (table === 'episode_symptoms') {
+      const listed = await listEpisodeMediaBucketPathsForEpisodeSymptomId(
+        client,
+        id,
+      );
+      if (!listed.ok) {
+        throw listed.error;
+      }
+      await removeEpisodeMediaStorageObjectPathsBestEffort(client, listed.data);
+      const { error } = await client
+        .from('episode_symptoms')
+        .delete()
+        .eq('id', id)
+        .select('id')
+        .maybeSingle();
+      if (error) {
+        throw error;
+      }
+      return;
+    }
+    if (table === 'episode_media') {
+      const listed = await listEpisodeMediaBucketPathsForEpisodeMediaId(
+        client,
+        id,
+      );
+      if (!listed.ok) {
+        throw listed.error;
+      }
+      await removeEpisodeMediaStorageObjectPathsBestEffort(client, listed.data);
+      const { error } = await client
+        .from('episode_media')
+        .delete()
+        .eq('id', id)
+        .select('id')
+        .maybeSingle();
+      if (error) {
+        throw error;
+      }
+      return;
+    }
+
     const { error } = await client
       .from(table as never)
       .delete()

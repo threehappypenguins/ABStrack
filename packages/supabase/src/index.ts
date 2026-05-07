@@ -108,6 +108,8 @@ export {
   createEpisodeMediaSignedDisplayUrl,
   createEpisodeMediaObjectKey,
   createEpisodeMediaThumbnailObjectKey,
+  listEpisodeMediaBucketPathsForEpisodeMediaId,
+  listEpisodeMediaBucketPathsForEpisodeSymptomId,
   listEpisodeMediaForEpisode,
   listEpisodeMediaStorageObjectPathsForEpisode,
   removeEpisodeMediaObjectsFromStorage,

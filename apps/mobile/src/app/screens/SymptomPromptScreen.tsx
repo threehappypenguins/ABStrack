@@ -25,6 +25,7 @@ import type {
   SymptomPromptPhotoCaptureRef,
   SymptomPromptAnswers,
   SymptomPromptVideoCaptureRef,
+  Uuid,
 } from '@abstrack/types';
 import {
   canonicalOpenPassEpisodeSymptomRowsByPresetLine,
@@ -54,11 +55,16 @@ import {
   listPresetSymptomsForPresetFromPowerSyncDb,
 } from '../../lib/powersync/powersync-episode-flow-reads';
 import {
+  enqueuePendingEpisodeMediaUploadFromCapture,
+  shouldQueueEpisodeMediaUploadError,
+} from '../../lib/media/pending-episode-media-upload';
+import {
   cancelActiveEpisodeByIdOfflineFirst,
   deleteCurrentPassEpisodeSymptomAnswerOfflineFirst,
   endEpisodeIfStillActiveOfflineFirst,
   insertEpisodeSymptomAnswerOfflineFirst,
 } from '../../lib/episodes/mobile-offline-first-gateway';
+import { fetchMobileDeviceIsConnected } from '../../lib/network/mobile-device-netinfo';
 import {
   getPowerSyncDatabaseForOfflineReads,
   isPresetDataNetworkError,
@@ -499,7 +505,56 @@ export function SymptomPromptScreen() {
           );
           if (r.ok && (answer.type === 'photo' || answer.type === 'video')) {
             try {
+              const online = await fetchMobileDeviceIsConnected();
               const upload = await getMobileMediaUploadData(answer);
+
+              if (online === false) {
+                if (!powerSyncDbForWrites) {
+                  if (
+                    isMountedRef.current &&
+                    episodeIdRef.current === enqueueEpisodeId &&
+                    enqueueEpoch === serverPersistEpochRef.current &&
+                    attemptId === persistUiAttemptRef.current
+                  ) {
+                    setPersistError(
+                      'You appear to be offline. Reconnect once so this device can save episode steps, then try again. If you were offline before signing in, open the app online first.',
+                    );
+                  }
+                  return;
+                }
+                await enqueuePendingEpisodeMediaUploadFromCapture(
+                  powerSyncDbForWrites,
+                  {
+                    userId: uid as Uuid,
+                    episodeId: targetEpisodeId as Uuid,
+                    episodeSymptomId: r.data.id as Uuid,
+                    presetSymptomId: line.id as Uuid,
+                    lastPostMarkerStepCompletedAt:
+                      lastPostMarkerStepCompletedAtRef.current,
+                    mediaType: answer.type,
+                    upload: {
+                      body: upload.body,
+                      contentType: upload.contentType,
+                      extension: upload.extension,
+                      durationSeconds: upload.durationSeconds,
+                      thumbnail: upload.thumbnail,
+                    },
+                  },
+                );
+                if (
+                  isMountedRef.current &&
+                  episodeIdRef.current === enqueueEpisodeId &&
+                  enqueueEpoch === serverPersistEpochRef.current &&
+                  attemptId === persistUiAttemptRef.current
+                ) {
+                  announce(
+                    'Saved offline. Media will upload when you are online.',
+                  );
+                  setPersistError(null);
+                }
+                return;
+              }
+
               const mediaPersist = await uploadConfirmedEpisodeMedia(supabase, {
                 userId: uid,
                 episodeId: targetEpisodeId,
@@ -516,7 +571,44 @@ export function SymptomPromptScreen() {
                     lastPostMarkerStepCompletedAtRef.current,
                 },
               });
+
               if (!mediaPersist.ok) {
+                if (
+                  powerSyncDbForWrites &&
+                  shouldQueueEpisodeMediaUploadError(mediaPersist.error)
+                ) {
+                  await enqueuePendingEpisodeMediaUploadFromCapture(
+                    powerSyncDbForWrites,
+                    {
+                      userId: uid as Uuid,
+                      episodeId: targetEpisodeId as Uuid,
+                      episodeSymptomId: r.data.id as Uuid,
+                      presetSymptomId: line.id as Uuid,
+                      lastPostMarkerStepCompletedAt:
+                        lastPostMarkerStepCompletedAtRef.current,
+                      mediaType: answer.type,
+                      upload: {
+                        body: upload.body,
+                        contentType: upload.contentType,
+                        extension: upload.extension,
+                        durationSeconds: upload.durationSeconds,
+                        thumbnail: upload.thumbnail,
+                      },
+                    },
+                  );
+                  if (
+                    isMountedRef.current &&
+                    episodeIdRef.current === enqueueEpisodeId &&
+                    enqueueEpoch === serverPersistEpochRef.current &&
+                    attemptId === persistUiAttemptRef.current
+                  ) {
+                    announce(
+                      'Could not reach the server. Media is saved on this device and will upload automatically.',
+                    );
+                    setPersistError(null);
+                  }
+                  return;
+                }
                 if (
                   isMountedRef.current &&
                   episodeIdRef.current === enqueueEpisodeId &&
@@ -577,6 +669,44 @@ export function SymptomPromptScreen() {
                 });
               }
             } catch (caught) {
+              if (powerSyncDbForWrites) {
+                try {
+                  const uploadCatch = await getMobileMediaUploadData(answer);
+                  await enqueuePendingEpisodeMediaUploadFromCapture(
+                    powerSyncDbForWrites,
+                    {
+                      userId: uid as Uuid,
+                      episodeId: targetEpisodeId as Uuid,
+                      episodeSymptomId: r.data.id as Uuid,
+                      presetSymptomId: line.id as Uuid,
+                      lastPostMarkerStepCompletedAt:
+                        lastPostMarkerStepCompletedAtRef.current,
+                      mediaType: answer.type,
+                      upload: {
+                        body: uploadCatch.body,
+                        contentType: uploadCatch.contentType,
+                        extension: uploadCatch.extension,
+                        durationSeconds: uploadCatch.durationSeconds,
+                        thumbnail: uploadCatch.thumbnail,
+                      },
+                    },
+                  );
+                  if (
+                    isMountedRef.current &&
+                    episodeIdRef.current === enqueueEpisodeId &&
+                    enqueueEpoch === serverPersistEpochRef.current &&
+                    attemptId === persistUiAttemptRef.current
+                  ) {
+                    announce(
+                      'Could not reach the server. Media is saved on this device and will upload automatically.',
+                    );
+                    setPersistError(null);
+                  }
+                  return;
+                } catch {
+                  /* fall through to generic error */
+                }
+              }
               if (
                 isMountedRef.current &&
                 episodeIdRef.current === enqueueEpisodeId &&

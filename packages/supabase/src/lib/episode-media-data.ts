@@ -942,6 +942,85 @@ export async function listEpisodeMediaBucketPathsForEpisodeSymptomIds(
 }
 
 /**
+ * Lists normalized bucket-relative paths for a single `episode_media` row before a remote delete
+ * (used when PowerSync uploads a local `episode_media` DELETE so Storage matches Postgres).
+ *
+ * @param client - Supabase client (RLS applies).
+ * @param episodeMediaId - `episode_media.id`.
+ */
+export async function listEpisodeMediaBucketPathsForEpisodeMediaId(
+  client: AbstrackSupabaseClient,
+  episodeMediaId: Uuid,
+): Promise<PresetDataResult<string[]>> {
+  try {
+    const { data: row, error } = await client
+      .from('episode_media')
+      .select('storage_object_key, thumbnail_storage_key')
+      .eq('id', episodeMediaId)
+      .maybeSingle();
+    if (error) {
+      return { ok: false, error: toPresetDataError(error) };
+    }
+    if (!row) {
+      return { ok: true, data: [] };
+    }
+    const typed = row as {
+      storage_object_key: string;
+      thumbnail_storage_key: string | null;
+    };
+    const keys = new Set<string>();
+    for (const normalized of normalizeStoragePath(
+      typed.storage_object_key ?? '',
+    )) {
+      keys.add(normalized);
+    }
+    for (const normalized of normalizeStoragePath(
+      typed.thumbnail_storage_key ?? '',
+    )) {
+      keys.add(normalized);
+    }
+    return { ok: true, data: [...keys] };
+  } catch (caught) {
+    return { ok: false, error: toPresetDataError(caught) };
+  }
+}
+
+/**
+ * Lists normalized bucket-relative paths for `episode_media` rows tied to one
+ * `episode_symptoms` row (resolves `episode_id` first). Used when PowerSync uploads a local
+ * `episode_symptoms` DELETE so Storage objects are removed like the REST delete helper.
+ *
+ * @param client - Supabase client (RLS applies).
+ * @param episodeSymptomId - `episode_symptoms.id`.
+ */
+export async function listEpisodeMediaBucketPathsForEpisodeSymptomId(
+  client: AbstrackSupabaseClient,
+  episodeSymptomId: Uuid,
+): Promise<PresetDataResult<string[]>> {
+  try {
+    const { data: sym, error: symErr } = await client
+      .from('episode_symptoms')
+      .select('episode_id')
+      .eq('id', episodeSymptomId)
+      .maybeSingle();
+    if (symErr) {
+      return { ok: false, error: toPresetDataError(symErr) };
+    }
+    const eid = sym?.episode_id;
+    if (typeof eid !== 'string' || eid.trim() === '') {
+      return { ok: true, data: [] };
+    }
+    return listEpisodeMediaBucketPathsForEpisodeSymptomIds(
+      client,
+      eid as Uuid,
+      [episodeSymptomId],
+    );
+  } catch (caught) {
+    return { ok: false, error: toPresetDataError(caught) };
+  }
+}
+
+/**
  * Reads `episode_media` keys for an episode and returns deduped, bucket-relative Storage paths
  * (same normalization as `removeEpisodeMediaObjectsFromStorage`). Call while the episode row still
  * exists so metadata is available for listing.
