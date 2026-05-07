@@ -52,16 +52,45 @@ jest.mock('@abstrack/supabase', () => {
   };
 });
 
-jest.mock('../../lib/supabase-wiring', () => ({
-  getMobileSupabaseClient: jest.fn(() => ({
-    mockClient: true,
-    auth: {
-      getUser: jest.fn(async () => ({
-        data: { user: { id: 'test-user-1' } },
-      })),
-    },
+jest.mock('../../lib/powersync/PowerSyncSessionBridge', () => ({
+  usePowerSyncBridgeState: jest.fn(() => ({
+    syncChromeEnabled: false,
+    powerSyncUrlConfigured: false,
+    database: null,
+    firstSyncCompleted: false,
+    localSqliteInitialized: false,
+    syncConnecting: false,
+    syncError: null,
+    firstSyncLandedOnDevice: false,
+    firstSyncLandingHydrated: true,
   })),
+  usePowerSyncManualResync: jest.fn(() => ({
+    requestManualResync: jest.fn().mockResolvedValue(true),
+    manualResyncBusy: false,
+  })),
+  powerSyncOfflineReplicaReadsEnabled: jest.fn(() => false),
+  powerSyncReplicaSqliteReady: jest.fn(() => false),
 }));
+
+jest.mock('../../lib/supabase-wiring-core', () => {
+  const actual = jest.requireActual(
+    '../../lib/supabase-wiring-core',
+  ) as typeof import('../../lib/supabase-wiring-core');
+  return {
+    ...actual,
+    getMobileSupabaseClient: jest.fn(() => ({
+      mockClient: true,
+      auth: {
+        getUser: jest.fn(async () => ({
+          data: { user: { id: 'test-user-1' } },
+        })),
+        getSession: jest.fn(async () => ({
+          data: { session: { user: { id: 'test-user-1' } } },
+        })),
+      },
+    })),
+  };
+});
 
 jest.mock('../theme/AppThemeContext', () => ({
   useAppTheme: jest.fn(),

@@ -54,16 +54,25 @@ jest.mock('@abstrack/supabase', () => ({
   uploadConfirmedEpisodeMedia: jest.fn(),
 }));
 
-jest.mock('../../lib/supabase-wiring', () => ({
-  getMobileSupabaseClient: jest.fn(() => ({
-    mockClient: true,
-    auth: {
-      getUser: jest.fn(async () => ({
-        data: { user: { id: 'test-user-1' } },
-      })),
-    },
-  })),
-}));
+jest.mock('../../lib/supabase-wiring-core', () => {
+  const actual = jest.requireActual(
+    '../../lib/supabase-wiring-core',
+  ) as typeof import('../../lib/supabase-wiring-core');
+  return {
+    ...actual,
+    getMobileSupabaseClient: jest.fn(() => ({
+      mockClient: true,
+      auth: {
+        getUser: jest.fn(async () => ({
+          data: { user: { id: 'test-user-1' } },
+        })),
+        getSession: jest.fn(async () => ({
+          data: { session: { user: { id: 'test-user-1' } } },
+        })),
+      },
+    })),
+  };
+});
 
 jest.mock('../../lib/episodes/symptom-prompt-session-store', () => ({
   getSymptomPromptSession: jest.fn(),

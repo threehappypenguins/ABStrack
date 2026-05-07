@@ -18,6 +18,7 @@ import { announce } from '@abstrack/ui/native';
 
 import { clearSymptomPromptSession } from '../../lib/episodes/symptom-prompt-session-store';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
+import { AppThemeProvider } from '../theme/AppThemeContext';
 import { EpisodesScreen } from './EpisodesScreen';
 
 jest.mock('@react-navigation/native', () => {
@@ -50,9 +51,15 @@ jest.mock('../../lib/episodes/symptom-prompt-session-store', () => ({
   clearSymptomPromptSession: jest.fn(),
 }));
 
-jest.mock('../../lib/supabase-wiring', () => ({
-  getMobileSupabaseClient: jest.fn(),
-}));
+jest.mock('../../lib/supabase-wiring-core', () => {
+  const actual = jest.requireActual(
+    '../../lib/supabase-wiring-core',
+  ) as typeof import('../../lib/supabase-wiring-core');
+  return {
+    ...actual,
+    getMobileSupabaseClient: jest.fn(),
+  };
+});
 
 function makeEpisodeRow(overrides: Partial<EpisodeRow> = {}): EpisodeRow {
   return {
@@ -73,9 +80,17 @@ function makeEpisodeRow(overrides: Partial<EpisodeRow> = {}): EpisodeRow {
   };
 }
 
+function renderEpisodesScreen() {
+  return render(
+    <AppThemeProvider>
+      <EpisodesScreen />
+    </AppThemeProvider>,
+  );
+}
+
 describe('EpisodesScreen', () => {
   const mockNavigate = jest.fn();
-  const mockGetUser = jest.fn();
+  const mockGetSession = jest.fn();
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -84,10 +99,14 @@ describe('EpisodesScreen', () => {
       navigate: mockNavigate,
     } as never);
 
-    mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
+    // `mockReturnValue` in individual tests must not outrank the default signed-in session.
+    mockGetSession.mockReset();
+    mockGetSession.mockResolvedValue({
+      data: { session: { user: { id: 'user-1' } } },
+    });
     jest.mocked(getMobileSupabaseClient).mockReturnValue({
       auth: {
-        getUser: mockGetUser,
+        getSession: mockGetSession,
       },
     } as never);
 
@@ -110,20 +129,22 @@ describe('EpisodesScreen', () => {
   });
 
   it('shows loading text until load finishes', async () => {
-    let resolveGetUser!: (v: { data: { user: { id: string } | null } }) => void;
-    const getUserPromise = new Promise<{
-      data: { user: { id: string } | null };
+    let resolveGetSession!: (v: {
+      data: { session: { user: { id: string } } | null };
+    }) => void;
+    const getSessionPromise = new Promise<{
+      data: { session: { user: { id: string } } | null };
     }>((resolve) => {
-      resolveGetUser = resolve;
+      resolveGetSession = resolve;
     });
-    mockGetUser.mockReturnValue(getUserPromise);
+    mockGetSession.mockReturnValue(getSessionPromise);
 
-    render(<EpisodesScreen />);
+    renderEpisodesScreen();
 
     expect(screen.getByText('Loading…')).toBeTruthy();
 
     await act(async () => {
-      resolveGetUser({ data: { user: null } });
+      resolveGetSession({ data: { session: null } });
     });
 
     await waitFor(() => {
@@ -134,9 +155,9 @@ describe('EpisodesScreen', () => {
   });
 
   it('shows empty signed-out-style copy when user is null', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: null } });
+    mockGetSession.mockResolvedValue({ data: { session: null } });
 
-    render(<EpisodesScreen />);
+    renderEpisodesScreen();
 
     expect(await screen.findByText('No episode in progress.')).toBeTruthy();
     expect(
@@ -154,19 +175,21 @@ describe('EpisodesScreen', () => {
       error: { message: 'Recent query failed' } as never,
     });
 
-    render(<EpisodesScreen />);
+    renderEpisodesScreen();
 
     expect(await screen.findByText('Active query failed')).toBeTruthy();
     expect(await screen.findByText('Recent query failed')).toBeTruthy();
   });
 
-  it('surfaces unified error when load throws', async () => {
-    mockGetUser.mockRejectedValue(new Error('network'));
+  it('treats rejected getSession like no session when storage fallback is empty', async () => {
+    mockGetSession.mockRejectedValue(new Error('network'));
 
-    render(<EpisodesScreen />);
+    renderEpisodesScreen();
 
-    const alerts = await screen.findAllByText('Unable to load episodes.');
-    expect(alerts).toHaveLength(2);
+    expect(await screen.findByText('No episode in progress.')).toBeTruthy();
+    expect(
+      await screen.findByText('No ended episodes in your history yet.'),
+    ).toBeTruthy();
   });
 
   it('navigates to SymptomPrompt with resume when Resume is pressed', async () => {
@@ -179,11 +202,10 @@ describe('EpisodesScreen', () => {
       data: active,
     });
 
-    render(<EpisodesScreen />);
+    renderEpisodesScreen();
 
-    expect(await screen.findByLabelText('Resume this episode')).toBeTruthy();
-
-    fireEvent.press(screen.getByLabelText('Resume this episode'));
+    const resumeBtn = await screen.findByLabelText('Resume this episode');
+    fireEvent.press(resumeBtn);
 
     expect(mockNavigate).toHaveBeenCalledWith('SymptomPrompt', {
       episodeId: 'ep-resume',
@@ -196,6 +218,7 @@ describe('EpisodesScreen', () => {
     const active = makeEpisodeRow({
       id: 'ep-end-step',
       symptom_preset_id: null,
+      health_marker_preset_id: 'hm-end-step',
       post_marker_step_completed_at: '2026-04-20T12:00:00.000Z',
     });
     jest.mocked(getActiveEpisodeForUser).mockResolvedValue({
@@ -203,10 +226,10 @@ describe('EpisodesScreen', () => {
       data: active,
     });
 
-    render(<EpisodesScreen />);
+    renderEpisodesScreen();
 
-    expect(await screen.findByLabelText('Resume this episode')).toBeTruthy();
-    fireEvent.press(screen.getByLabelText('Resume this episode'));
+    const resumeBtn = await screen.findByLabelText('Resume this episode');
+    fireEvent.press(resumeBtn);
 
     expect(mockNavigate).toHaveBeenCalledWith('HealthMarkerPrompt', {
       episodeId: 'ep-end-step',
@@ -226,7 +249,7 @@ describe('EpisodesScreen', () => {
       data: [ended],
     });
 
-    render(<EpisodesScreen />);
+    renderEpisodesScreen();
 
     expect(await screen.findByText('ABS — Test label')).toBeTruthy();
     expect(screen.getByText('Ended')).toBeTruthy();
@@ -247,7 +270,7 @@ describe('EpisodesScreen', () => {
         data: [ended],
       });
 
-      render(<EpisodesScreen />);
+      renderEpisodesScreen();
 
       expect(await screen.findByText('ABS — History row')).toBeTruthy();
       fireEvent.press(screen.getByText('Delete episode'));
@@ -295,7 +318,7 @@ describe('EpisodesScreen', () => {
         data: active,
       });
 
-      render(<EpisodesScreen />);
+      renderEpisodesScreen();
 
       expect(await screen.findByLabelText('Cancel episode')).toBeTruthy();
       fireEvent.press(screen.getByLabelText('Cancel episode'));

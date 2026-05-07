@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Pressable, Switch, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, Pressable, Switch, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
@@ -7,6 +7,12 @@ import {
   setRequireReauthOnOpenPreference,
 } from '../reauth-preference';
 import { ScreenShell } from '../components/ScreenShell';
+import {
+  formatPowerSyncReplicaDiagnosticsMessage,
+  isPowerSyncReplicaDiagnosticsEnabled,
+  runPowerSyncReplicaDiagnostics,
+} from '../../lib/powersync/powersync-replica-diagnostics';
+import { usePowerSyncBridgeState } from '../../lib/powersync/PowerSyncSessionBridge';
 import type { MainStackParamList } from '../navigation/types';
 import { useAppTheme } from '../theme/AppThemeContext';
 import { nw } from '../theme/app-nativewind-classes';
@@ -45,6 +51,33 @@ export function SettingsScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [themeError, setThemeError] = useState<string | null>(null);
   const [themeSaving, setThemeSaving] = useState(false);
+  const powerSyncBridge = usePowerSyncBridgeState();
+  const [powerSyncDiagBusy, setPowerSyncDiagBusy] = useState(false);
+
+  const onRunPowerSyncReplicaDiagnostics = useCallback(async () => {
+    const db = powerSyncBridge.database;
+    if (!db) {
+      Alert.alert(
+        'PowerSync replica',
+        'No local database is open. Check that EXPO_PUBLIC_POWERSYNC_URL is set and you are signed in.',
+      );
+      return;
+    }
+    setPowerSyncDiagBusy(true);
+    try {
+      const result = await runPowerSyncReplicaDiagnostics(db);
+      const body = formatPowerSyncReplicaDiagnosticsMessage(
+        result,
+        powerSyncBridge,
+      );
+      Alert.alert(
+        result.ok ? 'PowerSync replica' : 'PowerSync replica (query failed)',
+        body.length > 3500 ? `${body.slice(0, 3500)}\n…` : body,
+      );
+    } finally {
+      setPowerSyncDiagBusy(false);
+    }
+  }, [powerSyncBridge]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -180,6 +213,34 @@ export function SettingsScreen() {
           in-progress episode.
         </Text>
       </Pressable>
+
+      {isPowerSyncReplicaDiagnosticsEnabled() ? (
+        <>
+          <View className="my-2 h-px bg-app-border dark:bg-app-border-dark" />
+          <View className="gap-2">
+            <Text className={`text-base font-semibold ${nw.textInk}`}>
+              PowerSync replica (debug)
+            </Text>
+            <Text className={`text-base ${nw.textMuted}`}>
+              Counts rows in the encrypted local replica. If decryption fails,
+              you will see a query error instead of numbers. Does not log the
+              encryption key. Filter logcat with PowerSyncReplicaDiag.
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Run PowerSync replica diagnostics"
+              accessibilityState={{ disabled: powerSyncDiagBusy }}
+              disabled={powerSyncDiagBusy}
+              onPress={() => void onRunPowerSyncReplicaDiagnostics()}
+              className={`min-h-[52px] justify-center rounded-xl border border-app-border bg-app-surface px-4 py-3 dark:border-app-border-dark dark:bg-app-surface-dark ${powerSyncDiagBusy ? 'opacity-60' : ''}`}
+            >
+              <Text className={`text-base font-semibold ${nw.textInk}`}>
+                {powerSyncDiagBusy ? 'Running…' : 'Run replica diagnostics'}
+              </Text>
+            </Pressable>
+          </View>
+        </>
+      ) : null}
 
       <View className="my-2 h-px bg-app-border dark:bg-app-border-dark" />
 

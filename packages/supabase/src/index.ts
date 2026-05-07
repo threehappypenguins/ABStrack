@@ -115,11 +115,13 @@ export {
   uploadConfirmedEpisodeMedia,
 } from './lib/episode-media-data.js';
 export {
+  buildHealthMarkerInsertRowForPresetLine,
   createStandaloneHealthMarkerForLine,
   deleteHealthMarkerById,
   insertEpisodeHealthMarkerForLine,
   listEpisodeHealthMarkersForEpisode,
   listStandaloneHealthMarkersForUser,
+  validateHealthMarkerNumericPayload,
 } from './lib/episode-health-marker-data.js';
 export {
   compareEpisodeTimelineItems,
@@ -132,5 +134,11 @@ export {
   deleteFoodDiaryEntry,
   listFoodDiaryEntriesForEpisode,
   listFoodDiaryEntriesForUser,
+  normalizeFoodDiaryEntryUpdate,
   updateFoodDiaryEntry,
+  validateAndNormalizeFoodDiaryCreateCore,
+} from './lib/food-diary-data.js';
+export type {
+  FoodDiaryCreateCorePayload,
+  ValidateFoodDiaryCreateCoreResult,
 } from './lib/food-diary-data.js';

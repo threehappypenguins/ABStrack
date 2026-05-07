@@ -60,6 +60,19 @@ jest.mock('expo-file-system', () => ({
   },
 }));
 
+/** `getMobileAuthSessionSafe` falls back to SecureStore when GoTrue rejects; real native calls can hang Jest. */
+jest.mock('expo-secure-store', () => {
+  /** Stable numeric stand-in for `expo-secure-store` `WHEN_UNLOCKED_THIS_DEVICE_ONLY` in Jest. */
+  const WHEN_UNLOCKED_THIS_DEVICE_ONLY = 6;
+  return {
+    __esModule: true,
+    WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+    getItemAsync: jest.fn(async () => null),
+    setItemAsync: jest.fn(async () => undefined),
+    deleteItemAsync: jest.fn(async () => undefined),
+  };
+});
+
 jest.mock('expo-video', () => {
   return {
     VideoView: (props: { accessibilityLabel?: string }) =>
@@ -71,6 +84,80 @@ jest.mock('expo-video', () => {
 });
 
 configure({ asyncUtilTimeout: 5000 });
+
+jest.mock('@react-native-community/netinfo', () => ({
+  __esModule: true,
+  default: {
+    fetch: jest.fn(() =>
+      Promise.resolve({
+        isConnected: true,
+        isInternetReachable: true,
+      }),
+    ),
+    addEventListener: jest.fn(() => jest.fn()),
+  },
+}));
+
+jest.mock('@powersync/react', () => {
+  const React = require('react');
+  return {
+    PowerSyncContext: React.createContext(null),
+    usePowerSync: () => null,
+    useQuery: () => ({
+      isLoading: false,
+      isFetching: false,
+      data: [],
+      error: undefined,
+    }),
+  };
+});
+
+jest.mock('./lib/powersync/PowerSyncSessionBridge', () => {
+  /** Stable reference so screen hooks that depend on `[psBridge]` do not thrash `useFocusEffect`. */
+  const mockBridgeState = {
+    syncChromeEnabled: false,
+    powerSyncUrlConfigured: false,
+    database: null,
+    firstSyncCompleted: false,
+    localSqliteInitialized: false,
+    syncConnecting: false,
+    syncError: null,
+    firstSyncLandedOnDevice: false,
+    firstSyncLandingHydrated: true,
+  };
+  return {
+    PowerSyncSessionBridge: ({ children }: { children: unknown }) => children,
+    /** Mirrors production logic; avoid `requireActual` here (pulls native PowerSync into Jest). */
+    powerSyncOfflineReplicaReadsEnabled: (bridge: {
+      powerSyncUrlConfigured: boolean;
+      database: unknown;
+      firstSyncCompleted: boolean;
+      localSqliteInitialized: boolean;
+      firstSyncLandedOnDevice?: boolean;
+      firstSyncLandingHydrated?: boolean;
+    }) => {
+      const mirrorTrusted =
+        bridge.firstSyncCompleted ||
+        ((bridge.firstSyncLandingHydrated ?? true) &&
+          Boolean(bridge.firstSyncLandedOnDevice));
+      return Boolean(
+        bridge.powerSyncUrlConfigured &&
+          bridge.database &&
+          bridge.localSqliteInitialized &&
+          mirrorTrusted,
+      );
+    },
+    powerSyncReplicaSqliteReady: (bridge: {
+      database: unknown;
+      localSqliteInitialized: boolean;
+    }) => Boolean(bridge.database && bridge.localSqliteInitialized),
+    usePowerSyncBridgeState: () => mockBridgeState,
+    usePowerSyncManualResync: () => ({
+      requestManualResync: jest.fn().mockResolvedValue(true),
+      manualResyncBusy: false,
+    }),
+  };
+});
 
 if (typeof global.structuredClone === 'undefined') {
   global.structuredClone = (object) => JSON.parse(JSON.stringify(object));

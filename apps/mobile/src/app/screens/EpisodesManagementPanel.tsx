@@ -1,9 +1,16 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   Alert,
   Image,
   Pressable,
+  RefreshControl,
   ScrollView,
   Text,
   View,
@@ -17,21 +24,41 @@ import {
 } from '@abstrack/types';
 import { announce } from '@abstrack/ui/native';
 import {
-  cancelActiveEpisodeById,
   createEpisodeMediaSignedDisplayUrl,
-  deleteEpisodeById,
   getActiveEpisodeForUser,
   listEpisodeMediaForEpisode,
   listCompletedEpisodesForUser,
 } from '@abstrack/supabase';
 import { useVideoPlayer, VideoView } from 'expo-video';
+import { useMobileAuthUserId } from '../../lib/auth/use-mobile-auth-user-id';
+import {
+  cancelActiveEpisodeByIdOfflineFirst,
+  deleteEpisodeByIdOfflineFirst,
+} from '../../lib/episodes/mobile-offline-first-gateway';
 import { clearSymptomPromptSession } from '../../lib/episodes/symptom-prompt-session-store';
-import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
+import { POWERSYNC_OFFLINE_EPISODE_PAGE_SIZE } from '../../lib/powersync/episode-powersync-read';
+import {
+  PowerSyncEpisodeReadSubscriptions,
+  type PowerSyncEpisodeReadSnapshots,
+} from '../../lib/powersync/PowerSyncEpisodeReadSubscriptions';
+import {
+  powerSyncOfflineReplicaReadsEnabled,
+  powerSyncReplicaSqliteReady,
+  usePowerSyncBridgeState,
+} from '../../lib/powersync/PowerSyncSessionBridge';
+import { usePullToResyncPowerSync } from '../../lib/powersync/use-pull-to-resync-powersync';
+import {
+  getMobileAuthSessionSafe,
+  getMobileSupabaseClient,
+} from '../../lib/supabase-wiring';
+import { episodeRowEligibleForHealthMarkerResume } from '../components/episode-flow/EpisodeStartHomeCta';
 import { ScreenShell } from '../components/ScreenShell';
 import type { MainStackParamList } from '../navigation/types';
+import { useAppTheme } from '../theme/AppThemeContext';
 import { nw } from '../theme/app-nativewind-classes';
 
-const RECENT_PAGE_SIZE = 25;
+/** Matches Supabase `listCompletedEpisodesForUser` first page and default SQLite `LIMIT`. */
+const RECENT_PAGE_SIZE = POWERSYNC_OFFLINE_EPISODE_PAGE_SIZE;
 
 export type EpisodesManagementNav =
   NativeStackNavigationProp<MainStackParamList>;
@@ -81,7 +108,41 @@ export function EpisodesManagementPanel({
   endedAtOrAfter = null,
   endedAtOrBefore = null,
 }: EpisodesManagementPanelProps) {
+  const { colors } = useAppTheme();
   const loadGenRef = useRef(0);
+  /** Session user id from the last completed {@link loadInitial} (used to skip redundant reloads). */
+  const lastLoadedAuthUserIdRef = useRef<string | null>(null);
+  const viewerUserId = useMobileAuthUserId();
+  /** `undefined`: effect has not committed a baseline yet (skip reset so `useFocusEffect` owns first load). */
+  const prevViewerUserIdRef = useRef<string | null | undefined>(undefined);
+  const psBridge = usePowerSyncBridgeState();
+  const powerSyncDbForWrites = useMemo(
+    () => (powerSyncReplicaSqliteReady(psBridge) ? psBridge.database : null),
+    [psBridge],
+  );
+  const [psMirror, setPsMirror] = useState<PowerSyncEpisodeReadSnapshots>({
+    activeEpisode: null,
+    activeLoading: false,
+    activeQueryError: undefined,
+    completedEpisodes: [],
+    completedLoading: false,
+    completedQueryError: undefined,
+  });
+
+  useEffect(() => {
+    // Same gate as `powerSyncReplicaSqliteReady` — depend on fields only (exhaustive-deps).
+    if (!psBridge.database || !psBridge.localSqliteInitialized) {
+      setPsMirror({
+        activeEpisode: null,
+        activeLoading: false,
+        activeQueryError: undefined,
+        completedEpisodes: [],
+        completedLoading: false,
+        completedQueryError: undefined,
+      });
+    }
+  }, [psBridge.database, psBridge.localSqliteInitialized]);
+
   const [loading, setLoading] = useState(true);
   const [loadingMoreRecent, setLoadingMoreRecent] = useState(false);
   const [activeError, setActiveError] = useState<string | null>(null);
@@ -89,6 +150,9 @@ export function EpisodesManagementPanel({
   const [active, setActive] = useState<EpisodeRow | null>(null);
   const [recent, setRecent] = useState<EpisodeRow[]>([]);
   const [hasMoreRecent, setHasMoreRecent] = useState(false);
+  /** Grows the completed-episode SQLite `LIMIT` when Manage pages history without Supabase. */
+  const [psCompletedFetchLimit, setPsCompletedFetchLimit] =
+    useState(RECENT_PAGE_SIZE);
   const [cancelingActiveEpisode, setCancelingActiveEpisode] = useState(false);
   const [deletingEpisodeId, setDeletingEpisodeId] = useState<string | null>(
     null,
@@ -111,6 +175,122 @@ export function EpisodesManagementPanel({
   >({});
   /** Prevents overlapping loads per episode (e.g. double tap before `loading` is committed). */
   const episodeMediaLoadInFlightRef = useRef<Record<string, boolean>>({});
+
+  const psReplicaReadsEnabled = powerSyncOfflineReplicaReadsEnabled(psBridge);
+
+  const activeDisplay = useMemo((): EpisodeRow | null => {
+    if (psReplicaReadsEnabled && !psMirror.activeQueryError) {
+      if (psMirror.activeLoading) {
+        // First mirror snapshot: keep Supabase header until the watched query settles.
+        if (!activeError) {
+          return active;
+        }
+        return psMirror.activeEpisode;
+      }
+      // Local replica is authoritative for active row (e.g. cancel deletes SQLite before upload
+      // removes the row server-side; Supabase `getActiveEpisodeForUser` can still return it once).
+      return psMirror.activeEpisode;
+    }
+    if (
+      !psReplicaReadsEnabled &&
+      powerSyncReplicaSqliteReady(psBridge) &&
+      !psMirror.activeQueryError &&
+      active == null &&
+      psMirror.activeEpisode != null
+    ) {
+      return psMirror.activeEpisode;
+    }
+    if (!activeError) {
+      return active;
+    }
+    if (psReplicaReadsEnabled && psMirror.activeEpisode) {
+      return psMirror.activeEpisode;
+    }
+    return null;
+  }, [
+    active,
+    activeError,
+    psBridge,
+    psMirror.activeEpisode,
+    psMirror.activeLoading,
+    psMirror.activeQueryError,
+    psReplicaReadsEnabled,
+  ]);
+
+  const recentDisplay = useMemo((): EpisodeRow[] => {
+    if (!recentError) {
+      return recent;
+    }
+    if (psReplicaReadsEnabled && !psMirror.completedQueryError) {
+      return psMirror.completedEpisodes;
+    }
+    return [];
+  }, [
+    psMirror.completedEpisodes,
+    psMirror.completedQueryError,
+    psReplicaReadsEnabled,
+    recent,
+    recentError,
+  ]);
+
+  const recentMirrorPaging =
+    Boolean(recentError) &&
+    psReplicaReadsEnabled &&
+    psMirror.completedQueryError == null;
+
+  const hasMoreRecentEffective = useMemo(() => {
+    if (recentMirrorPaging) {
+      if (psMirror.completedLoading) {
+        return false;
+      }
+      return psMirror.completedEpisodes.length === psCompletedFetchLimit;
+    }
+    return hasMoreRecent;
+  }, [
+    hasMoreRecent,
+    psCompletedFetchLimit,
+    psMirror.completedEpisodes.length,
+    psMirror.completedLoading,
+    recentMirrorPaging,
+  ]);
+
+  const showLoadMoreRecent =
+    hasMoreRecentEffective && (!recentError || recentMirrorPaging);
+
+  /**
+   * When Supabase list calls fail but this install has a local replica, explain that Manage uses
+   * synced SQLite (same rows upload when online again via PowerSync). Omit when the matching
+   * watched query also failed so we do not imply the device copy is authoritative.
+   */
+  const showOfflineReplicaCallout =
+    psReplicaReadsEnabled &&
+    (activeError != null || recentError != null) &&
+    !(activeError != null && psMirror.activeQueryError) &&
+    !(recentError != null && psMirror.completedQueryError);
+
+  /** When SQLite reads succeed, soften the Supabase header error in favor of local rows. */
+  const suppressActiveServerError =
+    Boolean(activeError) &&
+    psReplicaReadsEnabled &&
+    psMirror.activeQueryError == null;
+
+  const suppressRecentServerError =
+    Boolean(recentError) &&
+    psReplicaReadsEnabled &&
+    psMirror.completedQueryError == null;
+
+  const showActiveReplicaLoadingHint =
+    Boolean(activeError) &&
+    psReplicaReadsEnabled &&
+    psMirror.activeLoading &&
+    psMirror.activeEpisode == null;
+
+  const showRecentReplicaLoadingHint =
+    Boolean(recentError) &&
+    psReplicaReadsEnabled &&
+    psMirror.completedLoading &&
+    psMirror.completedEpisodes.length === 0;
+
   const loadInitial = useCallback(
     async (cancel?: { cancelled: boolean }) => {
       const generation = ++loadGenRef.current;
@@ -120,16 +300,19 @@ export function EpisodesManagementPanel({
       setLoading(true);
       setActiveError(null);
       setRecentError(null);
+      setPsCompletedFetchLimit(RECENT_PAGE_SIZE);
 
       try {
         const client = getMobileSupabaseClient();
         const {
-          data: { user },
-        } = await client.auth.getUser();
+          data: { session },
+        } = await getMobileAuthSessionSafe();
         if (stale()) {
           return;
         }
-        if (!user) {
+        const userId = session?.user?.id ?? null;
+        if (!userId) {
+          lastLoadedAuthUserIdRef.current = null;
           setActive(null);
           setRecent([]);
           setHasMoreRecent(false);
@@ -137,8 +320,8 @@ export function EpisodesManagementPanel({
         }
 
         const [activeRes, recentRes] = await Promise.all([
-          getActiveEpisodeForUser(client, user.id),
-          listCompletedEpisodesForUser(client, user.id, {
+          getActiveEpisodeForUser(client, userId),
+          listCompletedEpisodesForUser(client, userId, {
             limit: RECENT_PAGE_SIZE,
             offset: 0,
             endedAtOrAfter: endedAtOrAfter ?? undefined,
@@ -165,8 +348,13 @@ export function EpisodesManagementPanel({
           setRecent(recentRes.data);
           setHasMoreRecent(recentRes.data.length === RECENT_PAGE_SIZE);
         }
+
+        if (!stale()) {
+          lastLoadedAuthUserIdRef.current = userId;
+        }
       } catch {
         if (!stale()) {
+          lastLoadedAuthUserIdRef.current = null;
           const message = 'Unable to load episodes.';
           setActiveError(message);
           setRecentError(message);
@@ -175,7 +363,9 @@ export function EpisodesManagementPanel({
           setHasMoreRecent(false);
         }
       } finally {
-        if (!stale()) {
+        // Drop spinner when this invocation is still the latest (`useFocusEffect` cleanup bumps
+        // `loadGenRef` without awaiting the next load — `stale()` would stay true for cancelled runs).
+        if (generation === loadGenRef.current) {
           setLoading(false);
         }
       }
@@ -183,8 +373,80 @@ export function EpisodesManagementPanel({
     [endedAtOrAfter, endedAtOrBefore],
   );
 
+  /**
+   * PowerSync subscriptions already receive the signed-in user id, but Supabase-filled snapshots
+   * (`active`, `recent`, `psMirror`) would otherwise stay on the prior account until the next focus
+   * refresh if this panel stays mounted across an account switch.
+   */
+  useEffect(() => {
+    const next = viewerUserId;
+    const prev = prevViewerUserIdRef.current;
+
+    if (prev !== undefined && prev === next) {
+      return;
+    }
+
+    prevViewerUserIdRef.current = next;
+
+    if (prev === undefined) {
+      return;
+    }
+
+    if (
+      prev === null &&
+      next !== null &&
+      lastLoadedAuthUserIdRef.current === next
+    ) {
+      return;
+    }
+
+    loadGenRef.current += 1;
+    lastLoadedAuthUserIdRef.current = null;
+    setPsMirror({
+      activeEpisode: null,
+      activeLoading: false,
+      activeQueryError: undefined,
+      completedEpisodes: [],
+      completedLoading: false,
+      completedQueryError: undefined,
+    });
+    setActive(null);
+    setRecent([]);
+    setHasMoreRecent(false);
+    setActiveError(null);
+    setRecentError(null);
+    setPsCompletedFetchLimit(RECENT_PAGE_SIZE);
+    setMediaByEpisodeId({});
+    episodeMediaLoadInFlightRef.current = {};
+    setLoadingMoreRecent(false);
+    setCancelingActiveEpisode(false);
+    setDeletingEpisodeId(null);
+
+    const cancel = { cancelled: false };
+    void loadInitial(cancel);
+    return () => {
+      cancel.cancelled = true;
+    };
+  }, [viewerUserId, loadInitial]);
+
+  const loadInitialRef = useRef(loadInitial);
+  loadInitialRef.current = loadInitial;
+  const { refreshing: syncPullRefreshing, onRefresh: onSyncPullRefresh } =
+    usePullToResyncPowerSync(() => loadInitialRef.current());
+
   const loadMoreRecent = useCallback(async () => {
-    if (loadingMoreRecent || !hasMoreRecent) {
+    if (loadingMoreRecent || !hasMoreRecentEffective) {
+      return;
+    }
+    if (
+      recentError &&
+      psReplicaReadsEnabled &&
+      psMirror.completedQueryError == null
+    ) {
+      if (psMirror.completedLoading) {
+        return;
+      }
+      setPsCompletedFetchLimit((n) => n + RECENT_PAGE_SIZE);
       return;
     }
     const generation = loadGenRef.current;
@@ -193,16 +455,17 @@ export function EpisodesManagementPanel({
     try {
       const client = getMobileSupabaseClient();
       const {
-        data: { user },
-      } = await client.auth.getUser();
+        data: { session },
+      } = await getMobileAuthSessionSafe();
       if (stale()) {
         return;
       }
-      if (!user) {
+      const userId = session?.user?.id ?? null;
+      if (!userId) {
         setHasMoreRecent(false);
         return;
       }
-      const recentRes = await listCompletedEpisodesForUser(client, user.id, {
+      const recentRes = await listCompletedEpisodesForUser(client, userId, {
         limit: RECENT_PAGE_SIZE,
         offset: recent.length,
         endedAtOrAfter: endedAtOrAfter ?? undefined,
@@ -229,9 +492,13 @@ export function EpisodesManagementPanel({
   }, [
     endedAtOrAfter,
     endedAtOrBefore,
-    hasMoreRecent,
+    hasMoreRecentEffective,
     loadingMoreRecent,
+    psMirror.completedLoading,
+    psMirror.completedQueryError,
+    psReplicaReadsEnabled,
     recent.length,
+    recentError,
   ]);
 
   useFocusEffect(
@@ -246,7 +513,7 @@ export function EpisodesManagementPanel({
   );
 
   const onResume = (episode: EpisodeRow) => {
-    if (episode.post_marker_step_completed_at) {
+    if (episodeRowEligibleForHealthMarkerResume(episode)) {
       navigation.navigate('HealthMarkerPrompt', {
         episodeId: episode.id,
         resume: true,
@@ -360,7 +627,7 @@ export function EpisodesManagementPanel({
   );
 
   const onCancelEpisode = useCallback(() => {
-    if (!active || cancelingActiveEpisode) {
+    if (!activeDisplay || cancelingActiveEpisode) {
       return;
     }
     Alert.alert(
@@ -376,14 +643,18 @@ export function EpisodesManagementPanel({
               setCancelingActiveEpisode(true);
               try {
                 const client = getMobileSupabaseClient();
-                const result = await cancelActiveEpisodeById(client, active.id);
+                const result = await cancelActiveEpisodeByIdOfflineFirst(
+                  client,
+                  powerSyncDbForWrites,
+                  activeDisplay.id,
+                );
                 if (!result.ok) {
                   await announce(result.error.message, {
                     politeness: 'assertive',
                   });
                   return;
                 }
-                clearSymptomPromptSession(active.id);
+                clearSymptomPromptSession(activeDisplay.id);
                 if (result.data.didCancel) {
                   await announce(
                     'Episode canceled. Resume is no longer available.',
@@ -405,7 +676,12 @@ export function EpisodesManagementPanel({
         },
       ],
     );
-  }, [active, cancelingActiveEpisode, loadInitial]);
+  }, [
+    activeDisplay,
+    cancelingActiveEpisode,
+    loadInitial,
+    powerSyncDbForWrites,
+  ]);
 
   const onDeleteEpisode = useCallback(
     (episode: EpisodeRow) => {
@@ -425,7 +701,11 @@ export function EpisodesManagementPanel({
                 setDeletingEpisodeId(episode.id);
                 try {
                   const client = getMobileSupabaseClient();
-                  const result = await deleteEpisodeById(client, episode.id);
+                  const result = await deleteEpisodeByIdOfflineFirst(
+                    client,
+                    powerSyncDbForWrites,
+                    episode.id,
+                  );
                   if (!result.ok) {
                     await announce(result.error.message, {
                       politeness: 'assertive',
@@ -451,360 +731,445 @@ export function EpisodesManagementPanel({
         ],
       );
     },
-    [deletingEpisodeId, loadInitial],
+    [deletingEpisodeId, loadInitial, powerSyncDbForWrites],
   );
 
   const body = (
-    <ScrollView
-      className="min-h-0 flex-1"
-      keyboardShouldPersistTaps="handled"
-      contentContainerStyle={{ paddingBottom: 24, gap: 16 }}
-    >
-      {variant === 'standalone' ? (
-        <>
+    <>
+      {powerSyncReplicaSqliteReady(psBridge) ? (
+        <PowerSyncEpisodeReadSubscriptions
+          userId={viewerUserId}
+          endedAtOrAfter={endedAtOrAfter}
+          endedAtOrBefore={endedAtOrBefore}
+          completedEpisodesFetchLimit={psCompletedFetchLimit}
+          onSnapshots={setPsMirror}
+        />
+      ) : null}
+      <ScrollView
+        className="min-h-0 flex-1"
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ paddingBottom: 24, gap: 16 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={syncPullRefreshing}
+            onRefresh={onSyncPullRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
+      >
+        {variant === 'standalone' ? (
+          <>
+            <Text
+              className={`text-[22px] font-semibold ${nw.textInk}`}
+              accessibilityRole="header"
+              maxFontSizeMultiplier={2}
+            >
+              Episodes
+            </Text>
+            <Text
+              className={`text-base ${nw.textMuted}`}
+              maxFontSizeMultiplier={2}
+            >
+              Active and recent episodes. Resume continues the guided symptom
+              flow.
+            </Text>
+          </>
+        ) : (
+          <Text className={`text-sm ${nw.textMuted}`} maxFontSizeMultiplier={2}>
+            Episode records (symptom flow and markers). Standalone health and
+            food entries live under the other Manage tabs.
+          </Text>
+        )}
+
+        {showOfflineReplicaCallout ? (
+          <View
+            className={`rounded-lg px-3 py-2.5 ${nw.card}`}
+            accessibilityRole="text"
+            accessibilityLiveRegion="polite"
+          >
+            <Text
+              className={`text-sm leading-snug ${nw.textInk}`}
+              maxFontSizeMultiplier={2}
+            >
+              Showing episodes from data synced on this device. Media previews
+              still need a network connection. Episode list, cancel, and delete
+              use your local copy and sync to the server when you are back
+              online.
+            </Text>
+          </View>
+        ) : null}
+
+        <View>
           <Text
-            className={`text-[22px] font-semibold ${nw.textInk}`}
+            className={`text-lg font-semibold ${nw.textInk}`}
             accessibilityRole="header"
             maxFontSizeMultiplier={2}
           >
-            Episodes
+            Active episode
           </Text>
-          <Text
-            className={`text-base ${nw.textMuted}`}
-            maxFontSizeMultiplier={2}
-          >
-            Active and recent episodes. Resume continues the guided symptom
-            flow.
-          </Text>
-        </>
-      ) : (
-        <Text className={`text-sm ${nw.textMuted}`} maxFontSizeMultiplier={2}>
-          Episode records (symptom flow and markers). Standalone health and food
-          entries live under the other Manage tabs.
-        </Text>
-      )}
-
-      <View>
-        <Text
-          className={`text-lg font-semibold ${nw.textInk}`}
-          accessibilityRole="header"
-          maxFontSizeMultiplier={2}
-        >
-          Active episode
-        </Text>
-        {loading ? (
-          <Text className={`mt-2 text-sm ${nw.textMuted}`}>Loading…</Text>
-        ) : null}
-        {activeError ? (
-          <Text
-            className={`mt-2 text-sm ${nw.textError}`}
-            accessibilityRole="alert"
-            maxFontSizeMultiplier={2}
-          >
-            {activeError}
-          </Text>
-        ) : null}
-        {!loading && !activeError && active === null ? (
-          <Text className={`mt-2 text-sm ${nw.textMuted}`}>
-            No episode in progress.
-          </Text>
-        ) : null}
-        {!loading && !activeError && active !== null ? (
-          <View
-            className={`mt-3 gap-2 rounded-2xl border-2 border-emerald-600/45 bg-emerald-50 p-4 dark:border-emerald-500/45 dark:bg-emerald-950/50`}
-            accessibilityLabel="Active episode"
-          >
+          {loading ? (
+            <Text className={`mt-2 text-sm ${nw.textMuted}`}>Loading…</Text>
+          ) : null}
+          {activeError && !suppressActiveServerError ? (
             <Text
-              className="text-xs font-semibold uppercase text-emerald-800 dark:text-emerald-200"
+              className={`mt-2 text-sm ${nw.textError}`}
+              accessibilityRole="alert"
               maxFontSizeMultiplier={2}
             >
-              In progress
+              {activeError}
             </Text>
+          ) : null}
+          {showActiveReplicaLoadingHint ? (
             <Text
-              className={`text-base font-semibold ${nw.textInk}`}
+              className={`mt-2 text-sm ${nw.textMuted}`}
+              accessibilityLiveRegion="polite"
               maxFontSizeMultiplier={2}
             >
-              {episodeSummaryLine(active)}
+              Loading active episode from this device…
             </Text>
+          ) : null}
+          {!loading && psMirror.activeQueryError && !psMirror.activeLoading ? (
             <Text
-              className={`text-sm ${nw.textMuted}`}
+              className={`mt-2 text-sm ${nw.textError}`}
+              accessibilityRole="alert"
               maxFontSizeMultiplier={2}
             >
-              Started {formatInstant(active.started_at)}
+              Could not read the active episode from the copy on this device.{' '}
+              {psMirror.activeQueryError.message}
             </Text>
-            <Text
-              className={`text-sm ${nw.textMuted}`}
-              maxFontSizeMultiplier={2}
-            >
-              Ended —
+          ) : null}
+          {!loading && activeDisplay === null ? (
+            <Text className={`mt-2 text-sm ${nw.textMuted}`}>
+              No episode in progress.
             </Text>
-            {active.post_marker_step_completed_at ||
-            active.symptom_preset_id ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Resume this episode"
-                onPress={() => onResume(active)}
-                className={`mt-2 min-h-[52px] items-center justify-center rounded-xl bg-emerald-700 px-4 py-3 dark:bg-emerald-600`}
-              >
-                <Text className="text-center text-[17px] font-semibold text-white">
-                  Resume this episode
-                </Text>
-              </Pressable>
-            ) : (
-              <Text className={`mt-1 text-sm ${nw.textMuted}`}>
-                No symptom preset linked yet. Start or configure an episode from
-                the episode start screen.
-              </Text>
-            )}
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Cancel episode"
-              accessibilityHint="Permanently removes this in-progress episode"
-              accessibilityState={{ disabled: cancelingActiveEpisode }}
-              onPress={onCancelEpisode}
-              disabled={cancelingActiveEpisode}
-              className={`mt-2 min-h-[52px] items-center justify-center rounded-xl border border-red-300 bg-red-50 px-4 py-3 dark:border-red-800/80 dark:bg-red-950/30`}
+          ) : null}
+          {!loading && activeDisplay !== null ? (
+            <View
+              className={`mt-3 gap-2 rounded-2xl border-2 border-emerald-600/45 bg-emerald-50 p-4 dark:border-emerald-500/45 dark:bg-emerald-950/50`}
+              accessibilityLabel="Active episode"
             >
               <Text
-                className="text-center text-[17px] font-semibold text-red-800 dark:text-red-200"
+                className="text-xs font-semibold uppercase text-emerald-800 dark:text-emerald-200"
                 maxFontSizeMultiplier={2}
               >
-                {cancelingActiveEpisode
-                  ? 'Canceling episode…'
-                  : 'Cancel episode'}
+                In progress
               </Text>
-            </Pressable>
-          </View>
-        ) : null}
-      </View>
-
-      <View>
-        <Text
-          className={`text-lg font-semibold ${nw.textInk}`}
-          accessibilityRole="header"
-          maxFontSizeMultiplier={2}
-        >
-          Recent episodes
-        </Text>
-        {recentError ? (
-          <Text
-            className={`mt-2 text-sm ${nw.textError}`}
-            accessibilityRole="alert"
-            maxFontSizeMultiplier={2}
-          >
-            {recentError}
-          </Text>
-        ) : null}
-        {!loading && !recentError && recent.length === 0 ? (
-          <Text className={`mt-2 text-sm ${nw.textMuted}`}>
-            No ended episodes in your history yet.
-          </Text>
-        ) : null}
-        {!loading && recent.length > 0 ? (
-          <View className="mt-3 gap-3" accessibilityRole="list">
-            {recent.map((ep) => (
-              <View
-                key={ep.id}
-                className={`rounded-xl border border-app-border bg-app-surface p-4 dark:border-app-border-dark dark:bg-app-surface-dark`}
-                accessibilityRole="none"
+              <Text
+                className={`text-base font-semibold ${nw.textInk}`}
+                maxFontSizeMultiplier={2}
               >
-                <Text
-                  className="text-xs font-semibold uppercase text-app-muted"
-                  maxFontSizeMultiplier={2}
-                >
-                  Ended
-                </Text>
-                <Text
-                  className="text-xs text-app-muted"
-                  maxFontSizeMultiplier={2}
-                  accessibilityLabel="Episode record (not a standalone entry)"
-                >
-                  Episode record
-                </Text>
-                <Text
-                  className={`mt-1 text-base font-semibold ${nw.textInk}`}
-                  maxFontSizeMultiplier={2}
-                >
-                  {episodeSummaryLine(ep)}
-                </Text>
-                <Text className={`mt-2 text-sm ${nw.textMuted}`}>
-                  Started {formatInstant(ep.started_at)}
-                </Text>
-                <Text className={`text-sm ${nw.textMuted}`}>
-                  Ended {ep.ended_at ? formatInstant(ep.ended_at) : '—'}
-                </Text>
-                <Text className={`text-sm ${nw.textMuted}`}>
-                  Duration{' '}
-                  {formatEpisodeDurationSimple(ep.started_at, ep.ended_at) ??
-                    '—'}
-                </Text>
-                <View className="mt-2 rounded-lg border border-app-border px-3 py-3 dark:border-app-border-dark">
-                  {(() => {
-                    const mediaState = mediaByEpisodeId[ep.id];
-                    return (
-                      <>
-                        <Text className={`text-sm font-semibold ${nw.textInk}`}>
-                          Details
-                        </Text>
-                        <Text className={`mt-1 text-xs ${nw.textMuted}`}>
-                          Type: {ep.episode_type}
-                        </Text>
-                        {ep.episode_label?.trim() ? (
-                          <Text className={`mt-0.5 text-xs ${nw.textMuted}`}>
-                            Label: {ep.episode_label.trim()}
-                          </Text>
-                        ) : null}
-                        <Text
-                          className={`mt-2 text-xs font-semibold ${nw.textInk}`}
-                        >
-                          Media
-                        </Text>
-                        {!mediaState ? (
-                          <Pressable
-                            accessibilityRole="button"
-                            accessibilityLabel="Load episode media"
-                            onPress={() => void loadEpisodeMedia(ep.id)}
-                            className="mt-2 min-h-[40px] self-start rounded-lg border border-app-border px-3 py-2 dark:border-app-border-dark"
-                          >
-                            <Text
-                              className={`text-xs font-semibold ${nw.textPrimary}`}
-                            >
-                              Load media
-                            </Text>
-                          </Pressable>
-                        ) : null}
-                        {mediaState?.loading ? (
-                          <View className="mt-2 flex-row items-center gap-2">
-                            <ActivityIndicator />
-                            <Text className={`text-xs ${nw.textMuted}`}>
-                              Loading media…
-                            </Text>
-                          </View>
-                        ) : null}
-                        {mediaState?.error ? (
-                          <View className="mt-2">
-                            <Text className={`text-xs ${nw.textError}`}>
-                              {mediaState.error}
-                            </Text>
-                            <Pressable
-                              accessibilityRole="button"
-                              accessibilityLabel="Retry loading media"
-                              accessibilityState={{
-                                disabled: Boolean(mediaState?.loading),
-                              }}
-                              disabled={Boolean(mediaState?.loading)}
-                              onPress={() => void loadEpisodeMedia(ep.id)}
-                              className={`mt-2 min-h-[40px] self-start rounded-lg border border-app-border px-3 py-2 dark:border-app-border-dark ${mediaState?.loading ? 'opacity-50' : ''}`}
-                            >
-                              <Text
-                                className={`text-xs font-semibold ${nw.textPrimary}`}
-                              >
-                                Retry
-                              </Text>
-                            </Pressable>
-                          </View>
-                        ) : null}
-                        {!mediaState?.loading &&
-                        !mediaState?.error &&
-                        mediaState &&
-                        mediaState.items.length === 0 ? (
-                          <Text className={`mt-2 text-xs ${nw.textMuted}`}>
-                            No photo or video for this episode.
-                          </Text>
-                        ) : null}
-                        {mediaState?.items.length ? (
-                          <View className="mt-2 gap-2">
-                            {mediaState.items.map((item) => (
-                              <View
-                                key={item.key}
-                                className="overflow-hidden rounded-lg border border-app-border/80 bg-black/5 dark:border-app-border-dark/80 dark:bg-black/25"
-                                style={{ minHeight: 180 }}
-                              >
-                                {item.signedUrl ? (
-                                  item.mediaType === 'video' ? (
-                                    <EpisodeMediaVideo uri={item.signedUrl} />
-                                  ) : (
-                                    <Image
-                                      source={{ uri: item.signedUrl }}
-                                      accessibilityLabel="Episode media"
-                                      accessibilityIgnoresInvertColors
-                                      style={{ width: '100%', height: 220 }}
-                                      resizeMode="contain"
-                                      onError={() =>
-                                        onEpisodeMediaDisplayError(
-                                          ep.id,
-                                          item.key,
-                                        )
-                                      }
-                                    />
-                                  )
-                                ) : (
-                                  <Text className="p-3 text-xs text-red-700 dark:text-red-300">
-                                    {item.loadError ??
-                                      'Link expired or unavailable.'}
-                                  </Text>
-                                )}
-                              </View>
-                            ))}
-                            <Pressable
-                              accessibilityRole="button"
-                              accessibilityLabel="Refresh media links"
-                              accessibilityState={{
-                                disabled: Boolean(mediaState?.loading),
-                              }}
-                              disabled={Boolean(mediaState?.loading)}
-                              onPress={() => void loadEpisodeMedia(ep.id)}
-                              className={`min-h-[40px] self-start rounded-lg border border-app-border px-3 py-2 dark:border-app-border-dark ${mediaState?.loading ? 'opacity-50' : ''}`}
-                            >
-                              <Text
-                                className={`text-xs font-semibold ${nw.textPrimary}`}
-                              >
-                                Refresh media links
-                              </Text>
-                            </Pressable>
-                          </View>
-                        ) : null}
-                      </>
-                    );
-                  })()}
-                </View>
+                {episodeSummaryLine(activeDisplay)}
+              </Text>
+              <Text
+                className={`text-sm ${nw.textMuted}`}
+                maxFontSizeMultiplier={2}
+              >
+                Started {formatInstant(activeDisplay.started_at)}
+              </Text>
+              <Text
+                className={`text-sm ${nw.textMuted}`}
+                maxFontSizeMultiplier={2}
+              >
+                Ended —
+              </Text>
+              {episodeRowEligibleForHealthMarkerResume(activeDisplay) ||
+              activeDisplay.symptom_preset_id ? (
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel={`Delete ${episodeSummaryLine(ep)} episode`}
-                  accessibilityHint="Permanently removes this episode from history"
-                  accessibilityState={{
-                    disabled: deletingEpisodeId === ep.id,
-                  }}
-                  onPress={() => onDeleteEpisode(ep)}
-                  disabled={deletingEpisodeId === ep.id}
-                  className="mt-2 items-start justify-center rounded-lg px-1 py-2"
+                  accessibilityLabel="Resume this episode"
+                  onPress={() => onResume(activeDisplay)}
+                  className={`mt-2 min-h-[52px] items-center justify-center rounded-xl bg-emerald-700 px-4 py-3 dark:bg-emerald-600`}
                 >
-                  <Text className="text-sm font-medium text-red-700 dark:text-red-300">
-                    {deletingEpisodeId === ep.id
-                      ? 'Deleting episode…'
-                      : 'Delete episode'}
+                  <Text className="text-center text-[17px] font-semibold text-white">
+                    Resume this episode
                   </Text>
                 </Pressable>
-              </View>
-            ))}
-          </View>
-        ) : null}
-        {hasMoreRecent && !recentError ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Load more episodes"
-            accessibilityState={{ disabled: loadingMoreRecent }}
-            onPress={() => void loadMoreRecent()}
-            disabled={loadingMoreRecent}
-            className={`mt-4 min-h-[48px] items-center justify-center rounded-xl border border-app-border bg-app-surface px-4 py-3 dark:border-app-border-dark dark:bg-app-surface-dark ${loadingMoreRecent ? 'opacity-60' : ''}`}
+              ) : (
+                <Text className={`mt-1 text-sm ${nw.textMuted}`}>
+                  {activeDisplay.post_marker_step_completed_at != null &&
+                  !episodeRowEligibleForHealthMarkerResume(activeDisplay)
+                    ? 'This episode finished the marker step but has no health marker preset linked, so it cannot be resumed. Cancel this episode or start over from the episode start screen.'
+                    : 'No symptom preset linked yet. Start or configure an episode from the episode start screen.'}
+                </Text>
+              )}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Cancel episode"
+                accessibilityHint="Permanently removes this in-progress episode"
+                accessibilityState={{ disabled: cancelingActiveEpisode }}
+                onPress={onCancelEpisode}
+                disabled={cancelingActiveEpisode}
+                className={`mt-2 min-h-[52px] items-center justify-center rounded-xl border border-red-300 bg-red-50 px-4 py-3 dark:border-red-800/80 dark:bg-red-950/30`}
+              >
+                <Text
+                  className="text-center text-[17px] font-semibold text-red-800 dark:text-red-200"
+                  maxFontSizeMultiplier={2}
+                >
+                  {cancelingActiveEpisode
+                    ? 'Canceling episode…'
+                    : 'Cancel episode'}
+                </Text>
+              </Pressable>
+            </View>
+          ) : null}
+        </View>
+
+        <View>
+          <Text
+            className={`text-lg font-semibold ${nw.textInk}`}
+            accessibilityRole="header"
+            maxFontSizeMultiplier={2}
           >
-            <Text className={`text-base font-semibold ${nw.textInk}`}>
-              {loadingMoreRecent ? 'Loading…' : 'Load more episodes'}
+            Recent episodes
+          </Text>
+          {recentError && !suppressRecentServerError ? (
+            <Text
+              className={`mt-2 text-sm ${nw.textError}`}
+              accessibilityRole="alert"
+              maxFontSizeMultiplier={2}
+            >
+              {recentError}
             </Text>
-          </Pressable>
-        ) : null}
-      </View>
-    </ScrollView>
+          ) : null}
+          {showRecentReplicaLoadingHint ? (
+            <Text
+              className={`mt-2 text-sm ${nw.textMuted}`}
+              accessibilityLiveRegion="polite"
+              maxFontSizeMultiplier={2}
+            >
+              Loading recent episodes from this device…
+            </Text>
+          ) : null}
+          {!loading &&
+          psMirror.completedQueryError &&
+          !psMirror.completedLoading ? (
+            <Text
+              className={`mt-2 text-sm ${nw.textError}`}
+              accessibilityRole="alert"
+              maxFontSizeMultiplier={2}
+            >
+              Could not read recent episodes from the copy on this device.{' '}
+              {psMirror.completedQueryError.message}
+            </Text>
+          ) : null}
+          {!loading &&
+          recentDisplay.length === 0 &&
+          (!recentError || suppressRecentServerError) &&
+          !showRecentReplicaLoadingHint &&
+          !psMirror.completedQueryError ? (
+            <Text className={`mt-2 text-sm ${nw.textMuted}`}>
+              No ended episodes in your history yet.
+            </Text>
+          ) : null}
+          {!loading && recentDisplay.length > 0 ? (
+            <View className="mt-3 gap-3" accessibilityRole="list">
+              {recentDisplay.map((ep) => (
+                <View
+                  key={ep.id}
+                  className={`rounded-xl border border-app-border bg-app-surface p-4 dark:border-app-border-dark dark:bg-app-surface-dark`}
+                  accessibilityRole="none"
+                >
+                  <Text
+                    className="text-xs font-semibold uppercase text-app-muted"
+                    maxFontSizeMultiplier={2}
+                  >
+                    Ended
+                  </Text>
+                  <Text
+                    className="text-xs text-app-muted"
+                    maxFontSizeMultiplier={2}
+                    accessibilityLabel="Episode record (not a standalone entry)"
+                  >
+                    Episode record
+                  </Text>
+                  <Text
+                    className={`mt-1 text-base font-semibold ${nw.textInk}`}
+                    maxFontSizeMultiplier={2}
+                  >
+                    {episodeSummaryLine(ep)}
+                  </Text>
+                  <Text className={`mt-2 text-sm ${nw.textMuted}`}>
+                    Started {formatInstant(ep.started_at)}
+                  </Text>
+                  <Text className={`text-sm ${nw.textMuted}`}>
+                    Ended {ep.ended_at ? formatInstant(ep.ended_at) : '—'}
+                  </Text>
+                  <Text className={`text-sm ${nw.textMuted}`}>
+                    Duration{' '}
+                    {formatEpisodeDurationSimple(ep.started_at, ep.ended_at) ??
+                      '—'}
+                  </Text>
+                  <View className="mt-2 rounded-lg border border-app-border px-3 py-3 dark:border-app-border-dark">
+                    {(() => {
+                      const mediaState = mediaByEpisodeId[ep.id];
+                      return (
+                        <>
+                          <Text
+                            className={`text-sm font-semibold ${nw.textInk}`}
+                          >
+                            Details
+                          </Text>
+                          <Text className={`mt-1 text-xs ${nw.textMuted}`}>
+                            Type: {ep.episode_type}
+                          </Text>
+                          {ep.episode_label?.trim() ? (
+                            <Text className={`mt-0.5 text-xs ${nw.textMuted}`}>
+                              Label: {ep.episode_label.trim()}
+                            </Text>
+                          ) : null}
+                          <Text
+                            className={`mt-2 text-xs font-semibold ${nw.textInk}`}
+                          >
+                            Media
+                          </Text>
+                          {!mediaState ? (
+                            <Pressable
+                              accessibilityRole="button"
+                              accessibilityLabel="Load episode media"
+                              onPress={() => void loadEpisodeMedia(ep.id)}
+                              className="mt-2 min-h-[40px] self-start rounded-lg border border-app-border px-3 py-2 dark:border-app-border-dark"
+                            >
+                              <Text
+                                className={`text-xs font-semibold ${nw.textPrimary}`}
+                              >
+                                Load media
+                              </Text>
+                            </Pressable>
+                          ) : null}
+                          {mediaState?.loading ? (
+                            <View className="mt-2 flex-row items-center gap-2">
+                              <ActivityIndicator />
+                              <Text className={`text-xs ${nw.textMuted}`}>
+                                Loading media…
+                              </Text>
+                            </View>
+                          ) : null}
+                          {mediaState?.error ? (
+                            <View className="mt-2">
+                              <Text className={`text-xs ${nw.textError}`}>
+                                {mediaState.error}
+                              </Text>
+                              <Pressable
+                                accessibilityRole="button"
+                                accessibilityLabel="Retry loading media"
+                                accessibilityState={{
+                                  disabled: Boolean(mediaState?.loading),
+                                }}
+                                disabled={Boolean(mediaState?.loading)}
+                                onPress={() => void loadEpisodeMedia(ep.id)}
+                                className={`mt-2 min-h-[40px] self-start rounded-lg border border-app-border px-3 py-2 dark:border-app-border-dark ${mediaState?.loading ? 'opacity-50' : ''}`}
+                              >
+                                <Text
+                                  className={`text-xs font-semibold ${nw.textPrimary}`}
+                                >
+                                  Retry
+                                </Text>
+                              </Pressable>
+                            </View>
+                          ) : null}
+                          {!mediaState?.loading &&
+                          !mediaState?.error &&
+                          mediaState &&
+                          mediaState.items.length === 0 ? (
+                            <Text className={`mt-2 text-xs ${nw.textMuted}`}>
+                              No photo or video for this episode.
+                            </Text>
+                          ) : null}
+                          {mediaState?.items.length ? (
+                            <View className="mt-2 gap-2">
+                              {mediaState.items.map((item) => (
+                                <View
+                                  key={item.key}
+                                  className="overflow-hidden rounded-lg border border-app-border/80 bg-black/5 dark:border-app-border-dark/80 dark:bg-black/25"
+                                  style={{ minHeight: 180 }}
+                                >
+                                  {item.signedUrl ? (
+                                    item.mediaType === 'video' ? (
+                                      <EpisodeMediaVideo uri={item.signedUrl} />
+                                    ) : (
+                                      <Image
+                                        source={{ uri: item.signedUrl }}
+                                        accessibilityLabel="Episode media"
+                                        accessibilityIgnoresInvertColors
+                                        style={{ width: '100%', height: 220 }}
+                                        resizeMode="contain"
+                                        onError={() =>
+                                          onEpisodeMediaDisplayError(
+                                            ep.id,
+                                            item.key,
+                                          )
+                                        }
+                                      />
+                                    )
+                                  ) : (
+                                    <Text className="p-3 text-xs text-red-700 dark:text-red-300">
+                                      {item.loadError ??
+                                        'Link expired or unavailable.'}
+                                    </Text>
+                                  )}
+                                </View>
+                              ))}
+                              <Pressable
+                                accessibilityRole="button"
+                                accessibilityLabel="Refresh media links"
+                                accessibilityState={{
+                                  disabled: Boolean(mediaState?.loading),
+                                }}
+                                disabled={Boolean(mediaState?.loading)}
+                                onPress={() => void loadEpisodeMedia(ep.id)}
+                                className={`min-h-[40px] self-start rounded-lg border border-app-border px-3 py-2 dark:border-app-border-dark ${mediaState?.loading ? 'opacity-50' : ''}`}
+                              >
+                                <Text
+                                  className={`text-xs font-semibold ${nw.textPrimary}`}
+                                >
+                                  Refresh media links
+                                </Text>
+                              </Pressable>
+                            </View>
+                          ) : null}
+                        </>
+                      );
+                    })()}
+                  </View>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Delete ${episodeSummaryLine(ep)} episode`}
+                    accessibilityHint="Permanently removes this episode from history"
+                    accessibilityState={{
+                      disabled: deletingEpisodeId === ep.id,
+                    }}
+                    onPress={() => onDeleteEpisode(ep)}
+                    disabled={deletingEpisodeId === ep.id}
+                    className="mt-2 items-start justify-center rounded-lg px-1 py-2"
+                  >
+                    <Text className="text-sm font-medium text-red-700 dark:text-red-300">
+                      {deletingEpisodeId === ep.id
+                        ? 'Deleting episode…'
+                        : 'Delete episode'}
+                    </Text>
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+          ) : null}
+          {showLoadMoreRecent ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Load more episodes"
+              accessibilityState={{ disabled: loadingMoreRecent }}
+              onPress={() => void loadMoreRecent()}
+              disabled={loadingMoreRecent}
+              className={`mt-4 min-h-[48px] items-center justify-center rounded-xl border border-app-border bg-app-surface px-4 py-3 dark:border-app-border-dark dark:bg-app-surface-dark ${loadingMoreRecent ? 'opacity-60' : ''}`}
+            >
+              <Text className={`text-base font-semibold ${nw.textInk}`}>
+                {loadingMoreRecent ? 'Loading…' : 'Load more episodes'}
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
+      </ScrollView>
+    </>
   );
 
   if (variant === 'embedded') {

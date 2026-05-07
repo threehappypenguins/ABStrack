@@ -2,6 +2,7 @@ import React, {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -38,11 +39,7 @@ import {
   symptomPromptAnswerHasValue,
 } from '@abstrack/types';
 import {
-  cancelActiveEpisodeById,
-  deleteCurrentPassEpisodeSymptomAnswer,
-  endEpisodeIfStillActive,
   getEpisodeById,
-  insertEpisodeSymptomAnswer,
   listEpisodeMediaForEpisode,
   listEpisodeSymptomsForEpisode,
   listPresetSymptomsForPreset,
@@ -50,7 +47,30 @@ import {
 } from '@abstrack/supabase';
 import { announce } from '@abstrack/ui/native';
 import { COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
-import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
+import {
+  getEpisodeByIdFromPowerSyncDb,
+  listEpisodeMediaForEpisodeFromPowerSyncDb,
+  listEpisodeSymptomsForEpisodeFromPowerSyncDb,
+  listPresetSymptomsForPresetFromPowerSyncDb,
+} from '../../lib/powersync/powersync-episode-flow-reads';
+import {
+  cancelActiveEpisodeByIdOfflineFirst,
+  deleteCurrentPassEpisodeSymptomAnswerOfflineFirst,
+  endEpisodeIfStillActiveOfflineFirst,
+  insertEpisodeSymptomAnswerOfflineFirst,
+} from '../../lib/episodes/mobile-offline-first-gateway';
+import {
+  getPowerSyncDatabaseForOfflineReads,
+  isPresetDataNetworkError,
+} from '../../lib/powersync/powersync-offline-read-bridge-snapshot';
+import {
+  powerSyncReplicaSqliteReady,
+  usePowerSyncBridgeState,
+} from '../../lib/powersync/PowerSyncSessionBridge';
+import {
+  getMobileAuthSessionSafe,
+  getMobileSupabaseClient,
+} from '../../lib/supabase-wiring';
 import {
   clearSymptomPromptSession,
   getSymptomPromptSession,
@@ -378,7 +398,6 @@ export function SymptomPromptScreen() {
    * across `episodeId` changes while this screen stays mounted.
    */
   const lineWriteQueueRef = useRef<Map<string, Promise<void>>>(new Map());
-  const userIdRef = useRef<string | null>(null);
   /** Bumps on each `load()` start and on effect cleanup so in-flight loads ignore stale results after unmount, retry, or param change. */
   const loadGenRef = useRef(0);
   /**
@@ -400,26 +419,27 @@ export function SymptomPromptScreen() {
   );
   const [endingEpisode, setEndingEpisode] = useState(false);
 
-  /**
-   * Caches the auth user id on {@link userIdRef}. Called from {@link load} before `ready`, and
-   * from {@link executeServerPersist} so writes never depend on a separate mount-only `getUser()`.
-   */
-  const resolveSessionUserId = useCallback(
-    async (
-      supabase: ReturnType<typeof getMobileSupabaseClient>,
-    ): Promise<string | null> => {
-      if (userIdRef.current) {
-        return userIdRef.current;
-      }
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      const id = user?.id ?? null;
-      userIdRef.current = id;
-      return id;
-    },
-    [],
+  const psBridge = usePowerSyncBridgeState();
+  const powerSyncDbForWrites = useMemo(
+    () => (powerSyncReplicaSqliteReady(psBridge) ? psBridge.database : null),
+    [psBridge],
   );
+
+  /**
+   * Reads the signed-in user id from {@link getMobileAuthSessionSafe} on every call (no ref cache).
+   * Queued symptom writes can flush after sign-out / during replica teardown; a stale cached id
+   * could otherwise insert PHI into a DB being cleared.
+   */
+  const resolveSessionUserId = useCallback(async (): Promise<string | null> => {
+    try {
+      const {
+        data: { session },
+      } = await getMobileAuthSessionSafe();
+      return session?.user?.id ?? null;
+    } catch {
+      return null;
+    }
+  }, []);
 
   useLayoutEffect(() => {
     answersRef.current = answers;
@@ -453,7 +473,7 @@ export function SymptomPromptScreen() {
         .then(async () => {
           const targetEpisodeId = enqueueEpisodeId;
           const supabase = getMobileSupabaseClient();
-          const uid = await resolveSessionUserId(supabase);
+          const uid = await resolveSessionUserId();
           if (!uid) {
             if (
               isMountedRef.current &&
@@ -467,12 +487,16 @@ export function SymptomPromptScreen() {
             }
             return;
           }
-          const r = await insertEpisodeSymptomAnswer(supabase, {
-            userId: uid,
-            episodeId: targetEpisodeId,
-            line,
-            answer,
-          });
+          const r = await insertEpisodeSymptomAnswerOfflineFirst(
+            supabase,
+            powerSyncDbForWrites,
+            {
+              userId: uid,
+              episodeId: targetEpisodeId,
+              line,
+              answer,
+            },
+          );
           if (r.ok && (answer.type === 'photo' || answer.type === 'video')) {
             try {
               const upload = await getMobileMediaUploadData(answer);
@@ -587,13 +611,17 @@ export function SymptomPromptScreen() {
           }
         });
       queues.set(queueKey, next);
-      void next.finally(() => {
-        if (queues.get(queueKey) === next) {
-          queues.delete(queueKey);
-        }
-      });
+      void next
+        .catch(() => {
+          /* Rejections (e.g. getSession network failure) must not become unhandled */
+        })
+        .finally(() => {
+          if (queues.get(queueKey) === next) {
+            queues.delete(queueKey);
+          }
+        });
     },
-    [resolveSessionUserId],
+    [powerSyncDbForWrites, resolveSessionUserId],
   );
 
   const executeServerDelete = useCallback(
@@ -616,7 +644,7 @@ export function SymptomPromptScreen() {
         .then(async () => {
           const targetEpisodeId = enqueueEpisodeId;
           const supabase = getMobileSupabaseClient();
-          const uid = await resolveSessionUserId(supabase);
+          const uid = await resolveSessionUserId();
           if (!uid) {
             if (
               isMountedRef.current &&
@@ -630,13 +658,17 @@ export function SymptomPromptScreen() {
             }
             return;
           }
-          const r = await deleteCurrentPassEpisodeSymptomAnswer(supabase, {
-            episodeId: targetEpisodeId,
-            presetSymptomId: line.id,
-            lastPostMarkerStepCompletedAt:
-              lastPostMarkerStepCompletedAtRef.current,
-            episodeMediaPathHints: options?.episodeMediaPathHints,
-          });
+          const r = await deleteCurrentPassEpisodeSymptomAnswerOfflineFirst(
+            supabase,
+            powerSyncDbForWrites,
+            {
+              episodeId: targetEpisodeId,
+              presetSymptomId: line.id,
+              lastPostMarkerStepCompletedAt:
+                lastPostMarkerStepCompletedAtRef.current,
+              episodeMediaPathHints: options?.episodeMediaPathHints,
+            },
+          );
           if (enqueueEpoch !== serverPersistEpochRef.current) {
             return;
           }
@@ -656,13 +688,17 @@ export function SymptomPromptScreen() {
           }
         });
       queues.set(queueKey, next);
-      void next.finally(() => {
-        if (queues.get(queueKey) === next) {
-          queues.delete(queueKey);
-        }
-      });
+      void next
+        .catch(() => {
+          /* Rejections (e.g. getSession network failure) must not become unhandled */
+        })
+        .finally(() => {
+          if (queues.get(queueKey) === next) {
+            queues.delete(queueKey);
+          }
+        });
     },
-    [resolveSessionUserId],
+    [powerSyncDbForWrites, resolveSessionUserId],
   );
 
   /**
@@ -738,7 +774,7 @@ export function SymptomPromptScreen() {
     setPersistError(null);
     try {
       const supabase = getMobileSupabaseClient();
-      const uid = await resolveSessionUserId(supabase);
+      const uid = await resolveSessionUserId();
       if (stale()) {
         return;
       }
@@ -749,30 +785,50 @@ export function SymptomPromptScreen() {
         setStatus('error');
         return;
       }
-      const ep = await getEpisodeById(supabase, episodeId);
+      const psDb = getPowerSyncDatabaseForOfflineReads();
+
+      const epRemote = await getEpisodeById(supabase, episodeId);
       if (stale()) {
         return;
       }
-      if (!ep.ok) {
-        setErrorMessage(ep.error.message);
+      let episodeRow = epRemote.ok && epRemote.data ? epRemote.data : null;
+      // Do not read SQLite on `ok` + null: that is authoritative (deleted / RLS); replica could be stale online.
+      const shouldTryEpisodeReplica =
+        Boolean(psDb) &&
+        !epRemote.ok &&
+        isPresetDataNetworkError(epRemote.error);
+      if (!episodeRow && shouldTryEpisodeReplica && psDb) {
+        episodeRow = await getEpisodeByIdFromPowerSyncDb(psDb, episodeId);
+      }
+      if (!episodeRow) {
+        if (!epRemote.ok) {
+          setErrorMessage(epRemote.error.message);
+        } else {
+          setErrorMessage('Could not load this episode.');
+        }
         setStatus('error');
         return;
       }
-      if (!ep.data) {
-        setErrorMessage('Could not load this episode.');
-        setStatus('error');
-        return;
-      }
-      setEpisodeForEndCta(ep.data);
-      const passBoundary = ep.data.post_marker_step_completed_at ?? null;
+      setEpisodeForEndCta(episodeRow);
+      const passBoundary = episodeRow.post_marker_step_completed_at ?? null;
       lastPostMarkerStepCompletedAtRef.current = passBoundary;
 
-      const result = await listPresetSymptomsForPreset(
-        supabase,
-        symptomPresetId,
-      );
+      let result = await listPresetSymptomsForPreset(supabase, symptomPresetId);
       if (stale()) {
         return;
+      }
+      if (
+        !result.ok &&
+        isPresetDataNetworkError(result.error) &&
+        psDb != null
+      ) {
+        result = {
+          ok: true,
+          data: await listPresetSymptomsForPresetFromPowerSyncDb(
+            psDb,
+            symptomPresetId,
+          ),
+        };
       }
       if (!result.ok) {
         setErrorMessage(result.error.message);
@@ -780,13 +836,30 @@ export function SymptomPromptScreen() {
         return;
       }
       setLines(result.data);
-      const fromServer = await listEpisodeSymptomsForEpisode(
+      let fromServer = await listEpisodeSymptomsForEpisode(
         supabase,
         episodeId,
         {
           orderBy: 'recent',
         },
       );
+      if (stale()) {
+        return;
+      }
+      if (
+        !fromServer.ok &&
+        isPresetDataNetworkError(fromServer.error) &&
+        psDb != null
+      ) {
+        fromServer = {
+          ok: true,
+          data: await listEpisodeSymptomsForEpisodeFromPowerSyncDb(
+            psDb,
+            episodeId,
+            'recent',
+          ),
+        };
+      }
       if (stale()) {
         return;
       }
@@ -802,13 +875,31 @@ export function SymptomPromptScreen() {
             passBoundary,
           )
         : {};
-      const mediaRows = fromServer.ok
+      let mediaRows = fromServer.ok
         ? await listEpisodeMediaForEpisode(supabase, episodeId, {
             episodeSymptomIds: Object.values(
               canonicalSymptomRowsForHydrate,
             ).map((r) => r.id),
           })
         : { ok: true as const, data: [] };
+      if (stale()) {
+        return;
+      }
+      if (
+        fromServer.ok &&
+        !mediaRows.ok &&
+        isPresetDataNetworkError(mediaRows.error) &&
+        psDb != null
+      ) {
+        mediaRows = {
+          ok: true,
+          data: await listEpisodeMediaForEpisodeFromPowerSyncDb(
+            psDb,
+            episodeId,
+            Object.values(canonicalSymptomRowsForHydrate).map((r) => r.id),
+          ),
+        };
+      }
       if (stale()) {
         return;
       }
@@ -1097,8 +1188,9 @@ export function SymptomPromptScreen() {
           onPress: () => {
             void (async () => {
               cancelPendingServerPersist();
-              const result = await cancelActiveEpisodeById(
+              const result = await cancelActiveEpisodeByIdOfflineFirst(
                 getMobileSupabaseClient(),
+                powerSyncDbForWrites,
                 episodeIdRef.current,
               );
               if (!result.ok) {
@@ -1132,7 +1224,7 @@ export function SymptomPromptScreen() {
         },
       ],
     );
-  }, [cancelPendingServerPersist, navigation]);
+  }, [cancelPendingServerPersist, navigation, powerSyncDbForWrites]);
 
   const onEndEpisodePress = useCallback(() => {
     if (endingEpisode || !episodeForEndCta) {
@@ -1159,8 +1251,9 @@ export function SymptomPromptScreen() {
                 ? episodeForEndCta.started_at
                 : nowIso;
             const supabase = getMobileSupabaseClient();
-            const result = await endEpisodeIfStillActive(
+            const result = await endEpisodeIfStillActiveOfflineFirst(
               supabase,
+              powerSyncDbForWrites,
               episodeId,
               endedAt,
               episodeForEndCta.started_at,
@@ -1194,7 +1287,13 @@ export function SymptomPromptScreen() {
         },
       },
     ]);
-  }, [endingEpisode, episodeForEndCta, episodeId, navigation]);
+  }, [
+    endingEpisode,
+    episodeForEndCta,
+    episodeId,
+    navigation,
+    powerSyncDbForWrites,
+  ]);
 
   const advanceToNextStep = () => {
     if (lines.length === 0) {

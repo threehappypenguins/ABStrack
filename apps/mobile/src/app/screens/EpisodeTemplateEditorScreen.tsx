@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   Alert,
   Pressable,
@@ -18,12 +24,17 @@ import {
   validateEpisodeTemplateName,
   validateEpisodeTemplatePresetPair,
 } from '@abstrack/types';
+import { useMobileAuthUserId } from '../../lib/auth/use-mobile-auth-user-id';
 import {
   fetchEpisodeTemplateById,
   removeEpisodeTemplate,
   saveEpisodeTemplate,
 } from '../../lib/episode-templates/episode-template-service';
 import { fetchHealthMarkerPresets } from '../../lib/health-marker-presets/health-marker-preset-service';
+import {
+  powerSyncOfflineReplicaReadsEnabled,
+  usePowerSyncBridgeState,
+} from '../../lib/powersync/PowerSyncSessionBridge';
 import { fetchSymptomPresets } from '../../lib/symptom-presets/symptom-preset-service';
 import { PresetOptionSheetField } from '../components/episode-templates/PresetOptionSheetField';
 import { AsyncScreenContainer } from '../components/AsyncScreenContainer';
@@ -56,6 +67,19 @@ export function EpisodeTemplateEditorScreen() {
   const { templateId } = route.params;
   const navigation = useNavigation<EditorNav>();
   const { colors } = useAppTheme();
+  const viewerUserId = useMobileAuthUserId();
+  const psBridge = usePowerSyncBridgeState();
+  const replicaMirrorReads = powerSyncOfflineReplicaReadsEnabled(psBridge);
+
+  /** Latest offline-read knobs for fetches without redefining `load` when PowerSync opens (would rerun the effect and wipe in-progress edits). */
+  const offlineReadRef = useRef({
+    database: psBridge.database,
+    replicationReady: replicaMirrorReads,
+  });
+  offlineReadRef.current = {
+    database: psBridge.database,
+    replicationReady: replicaMirrorReads,
+  };
 
   const [status, setStatus] = useState<'loading' | 'error' | 'ready'>(
     'loading',
@@ -69,48 +93,184 @@ export function EpisodeTemplateEditorScreen() {
   const [markers, setMarkers] = useState<PresetOption[]>([]);
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(async () => {
-    setStatus('loading');
-    setErrorMessage(null);
-    const [tRes, sRes, mRes] = await Promise.all([
-      fetchEpisodeTemplateById(templateId),
-      fetchSymptomPresets(),
-      fetchHealthMarkerPresets(),
-    ]);
-    if (!sRes.ok) {
-      setErrorMessage(sRes.error.message);
-      setStatus('error');
-      return;
-    }
-    if (!mRes.ok) {
-      setErrorMessage(mRes.error.message);
-      setStatus('error');
-      return;
-    }
-    setSymptoms(sRes.data.map((r) => ({ id: r.id, name: r.name })));
-    setMarkers(mRes.data.map((r) => ({ id: r.id, name: r.name })));
+  /** Baselines for skipping redundant reloads; `undefined` until first effect commit. */
+  const prevViewerUserIdRef = useRef<string | null | undefined>(undefined);
+  const prevTemplateIdForLoadEffectRef = useRef<string | undefined>(undefined);
+  /**
+   * One-shot guard for the replica-ready auto-retry (same idea as `presetListsAutoRetryConsumedRef`
+   * on `EpisodeTemplateCreateScreen`): without it, `status === 'error'` plus `replicaMirrorReads`
+   * would re-invoke `load` forever when the fetch keeps failing.
+   */
+  const templateLoadAutoRetryConsumedRef = useRef(false);
 
-    if (!tRes.ok) {
-      setErrorMessage(tRes.error.message);
-      setStatus('error');
-      return;
-    }
-    if (!tRes.data) {
-      setErrorMessage('We could not find that episode template.');
-      setStatus('error');
-      return;
-    }
-    const t = tRes.data;
-    setRow(t);
-    setName(normalizeEpisodeTemplateName(t.name));
-    setSymptomId(t.symptom_preset_id);
-    setMarkerId(t.health_marker_preset_id);
-    setStatus('ready');
-  }, [templateId]);
+  const load = useCallback(
+    async (signal?: AbortSignal) => {
+      setStatus('loading');
+      setErrorMessage(null);
+      const offlineRead = offlineReadRef.current;
+      const [tRes, sRes, mRes] = await Promise.all([
+        fetchEpisodeTemplateById(templateId, {
+          powerSyncOfflineRead: offlineRead,
+        }),
+        fetchSymptomPresets({ powerSyncOfflineRead: offlineRead }),
+        fetchHealthMarkerPresets({ powerSyncOfflineRead: offlineRead }),
+      ]);
+      if (signal?.aborted) {
+        return;
+      }
+      if (!sRes.ok) {
+        setErrorMessage(sRes.error.message);
+        setStatus('error');
+        return;
+      }
+      if (!mRes.ok) {
+        setErrorMessage(mRes.error.message);
+        setStatus('error');
+        return;
+      }
+      setSymptoms(sRes.data.map((r) => ({ id: r.id, name: r.name })));
+      setMarkers(mRes.data.map((r) => ({ id: r.id, name: r.name })));
+
+      if (!tRes.ok) {
+        setErrorMessage(tRes.error.message);
+        setStatus('error');
+        return;
+      }
+      if (!tRes.data) {
+        setErrorMessage('We could not find that episode template.');
+        setStatus('error');
+        return;
+      }
+      const t = tRes.data;
+      setRow(t);
+      setName(normalizeEpisodeTemplateName(t.name));
+      setSymptomId(t.symptom_preset_id);
+      setMarkerId(t.health_marker_preset_id);
+      setStatus('ready');
+    },
+    [templateId],
+  );
+
+  const loadRef = useRef(load);
+  loadRef.current = load;
+
+  /**
+   * Latest in-flight `AbortController` for manual retry from {@link AsyncScreenContainer.onRetry}.
+   * A subsequent manual retry aborts the prior attempt; unmount aborts the last one so a late
+   * `setStatus` / `setRow` cannot land after navigation.
+   */
+  const manualRetryAbortRef = useRef<AbortController | null>(null);
+
+  const triggerManualRetry = useCallback(() => {
+    manualRetryAbortRef.current?.abort();
+    const ac = new AbortController();
+    manualRetryAbortRef.current = ac;
+    void loadRef.current(ac.signal);
+  }, []);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    return () => {
+      manualRetryAbortRef.current?.abort();
+      manualRetryAbortRef.current = null;
+    };
+  }, []);
+
+  /**
+   * Reload when `templateId` **or** the signed-in user changes — an account switch must not keep
+   * another user's template row / preset picklists visible while this route stays mounted.
+   * Still intentionally independent of bridge readiness (see retry effect below).
+   *
+   * `useMobileAuthUserId` hydrates `null → userId` after mount; that is not an account switch. When
+   * the editor is already `ready`, skip a redundant `load()` so baseline/name edits are not reset.
+   */
+  useEffect(() => {
+    const nextViewer = viewerUserId;
+    const prevViewer = prevViewerUserIdRef.current;
+    const prevTpl = prevTemplateIdForLoadEffectRef.current;
+
+    if (
+      prevViewer !== undefined &&
+      prevViewer === nextViewer &&
+      prevTpl === templateId
+    ) {
+      return;
+    }
+
+    const isAuthHydration =
+      prevViewer === null &&
+      typeof nextViewer === 'string' &&
+      nextViewer.trim() !== '';
+
+    if (
+      isAuthHydration &&
+      status === 'ready' &&
+      errorMessage == null &&
+      prevTpl === templateId
+    ) {
+      prevViewerUserIdRef.current = nextViewer;
+      prevTemplateIdForLoadEffectRef.current = templateId;
+      return;
+    }
+
+    const switchedAccount =
+      prevViewer !== undefined && prevViewer !== nextViewer && !isAuthHydration;
+
+    prevViewerUserIdRef.current = nextViewer;
+    prevTemplateIdForLoadEffectRef.current = templateId;
+
+    if (switchedAccount) {
+      setRow(null);
+      setName('');
+      setSymptomId(null);
+      setMarkerId(null);
+      setSymptoms([]);
+      setMarkers([]);
+    }
+
+    templateLoadAutoRetryConsumedRef.current = false;
+    const ac = new AbortController();
+    void loadRef.current(ac.signal);
+    return () => {
+      ac.abort();
+    };
+  }, [templateId, viewerUserId, status, errorMessage]);
+
+  useEffect(() => {
+    if (status === 'ready') {
+      templateLoadAutoRetryConsumedRef.current = false;
+    }
+  }, [status]);
+
+  useEffect(() => {
+    if (!replicaMirrorReads) {
+      templateLoadAutoRetryConsumedRef.current = false;
+    }
+  }, [replicaMirrorReads]);
+
+  /**
+   * Cold start / offline: the initial load can fail before
+   * {@link powerSyncOfflineReplicaReadsEnabled} is true. Do not tie the primary load effect to
+   * bridge state (that would reset the form whenever PowerSync flips while the screen is already
+   * `ready`). Only auto-retry from **error** once per error/replica cycle (`templateLoadAutoRetryConsumedRef`),
+   * matching `EpisodeTemplateCreateScreen` preset-list retry semantics.
+   */
+  useEffect(() => {
+    if (status !== 'error') {
+      return;
+    }
+    if (!replicaMirrorReads) {
+      return;
+    }
+    if (templateLoadAutoRetryConsumedRef.current) {
+      return;
+    }
+    templateLoadAutoRetryConsumedRef.current = true;
+    const ac = new AbortController();
+    void loadRef.current(ac.signal);
+    return () => {
+      ac.abort();
+    };
+  }, [replicaMirrorReads, status]);
 
   const isDirty = useMemo(() => {
     if (!row) {
@@ -242,9 +402,7 @@ export function EpisodeTemplateEditorScreen() {
     <AsyncScreenContainer
       status={status}
       errorMessage={errorMessage ?? undefined}
-      onRetry={() => {
-        void load();
-      }}
+      onRetry={triggerManualRetry}
     >
       {row ? (
         <ScrollView

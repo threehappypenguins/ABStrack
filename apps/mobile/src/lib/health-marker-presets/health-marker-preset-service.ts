@@ -4,6 +4,7 @@
  */
 import type {
   HealthMarkerPresetInsert,
+  HealthMarkerPresetRow,
   HealthMarkerPresetUpdate,
   PresetHealthMarkerInsert,
   PresetHealthMarkerUpdate,
@@ -14,7 +15,6 @@ import {
   createPresetHealthMarker,
   deleteHealthMarkerPreset,
   deletePresetHealthMarker,
-  getAuthUser,
   getHealthMarkerPresetById,
   listHealthMarkerPresets,
   listPresetHealthMarkersForPreset,
@@ -23,36 +23,126 @@ import {
   updateHealthMarkerPreset,
   updatePresetHealthMarker,
 } from '@abstrack/supabase';
-import { getMobileSupabaseClient } from '../supabase-wiring';
+import { fetchMobileDeviceIsConnected } from '../network/mobile-device-netinfo';
+import { listHealthMarkerPresetsForUserFromPowerSyncDb } from '../powersync/powersync-episode-flow-reads';
+import {
+  clarifyNetworkErrorWhenReplicaUnavailable,
+  isPresetDataNetworkError,
+  resolvePowerSyncDatabaseForOfflineRead,
+  type PowerSyncOfflineReadContext,
+} from '../powersync/powersync-offline-read-bridge-snapshot';
+import {
+  getMobileAuthSessionSafe,
+  getMobileSupabaseClient,
+  isAuthSessionRecoveryFailure,
+  readPersistedMobileAuthUserId,
+} from '../supabase-wiring';
 
 /**
- * Resolves the signed-in user id, or distinguishes “no session” from {@link getAuthUser} failures.
+ * Resolves the signed-in user id from the persisted session (offline-safe).
+ * When {@link getMobileAuthSessionSafe} returns `auth_session_recovery_failed`, falls back to
+ * {@link readPersistedMobileAuthUserId} (same as symptom presets) so offline replica reads survive
+ * transient secure-store / recovery failures.
  *
  * @returns `{ ok: true, data: id }` when signed in; `{ ok: true, data: null }` when signed out with
- * no auth error; `{ ok: false, error }` when the auth lookup failed.
+ * no auth error; `{ ok: false, error }` when the session read failed.
  */
 export async function getCurrentUserId(): Promise<
   PresetDataResult<string | null>
 > {
   try {
     const {
-      data: { user },
+      data: { session },
       error,
-    } = await getAuthUser(getMobileSupabaseClient());
-    if (error) {
+    } = await getMobileAuthSessionSafe();
+    if (!error) {
+      return { ok: true, data: session?.user?.id ?? null };
+    }
+    if (!isAuthSessionRecoveryFailure(error)) {
       return { ok: false, error: toPresetDataError(error) };
     }
-    return { ok: true, data: user?.id ?? null };
+    const persistedId = await readPersistedMobileAuthUserId();
+    if (persistedId != null) {
+      return { ok: true, data: persistedId };
+    }
+    return { ok: false, error: toPresetDataError(error) };
   } catch (caught) {
     return { ok: false, error: toPresetDataError(caught) };
   }
 }
 
 /**
- * Lists the signed-in user’s health marker presets.
+ * Lists the signed-in user’s health marker presets, falling back to the PowerSync replica when
+ * Supabase is unreachable and {@link resolvePowerSyncDatabaseForOfflineRead} returns a database
+ * handle. That resolver enforces {@link canUsePowerSyncReplicaForOfflineReads}; list screens should
+ * pass `replicationReady` from `powerSyncOfflineReplicaReadsEnabled(usePowerSyncBridgeState())` so an
+ * **init-only** replica without a completed first sync (or persisted landing for this user) does
+ * **not** yield SQLite here — avoiding an empty list that would mask the “sync once while online”
+ * path handled by {@link clarifyNetworkErrorWhenReplicaUnavailable}.
+ *
+ * When the replica is already trusted for offline reads and NetInfo reports **explicitly offline**
+ * (`fetchMobileDeviceIsConnected() === false`), reads SQLite immediately instead of waiting for a
+ * Supabase list timeout (same pattern as `fetchSymptomPresets` in `symptom-preset-service.ts`).
+ * If that SQLite read throws, the returned error is the mapped local failure (not a masked Supabase
+ * network result).
+ *
+ * @param options.powerSyncOfflineRead - From `usePowerSyncBridgeState()` when calling from UI.
  */
-export function fetchHealthMarkerPresets() {
-  return listHealthMarkerPresets(getMobileSupabaseClient());
+export async function fetchHealthMarkerPresets(options?: {
+  powerSyncOfflineRead?: PowerSyncOfflineReadContext | null;
+}): Promise<PresetDataResult<HealthMarkerPresetRow[]>> {
+  const client = getMobileSupabaseClient();
+  const db = resolvePowerSyncDatabaseForOfflineRead(
+    options?.powerSyncOfflineRead ?? null,
+  );
+
+  if (db) {
+    const connected = await fetchMobileDeviceIsConnected();
+    if (connected === false) {
+      const auth = await getCurrentUserId();
+      if (!auth.ok) {
+        return auth;
+      }
+      if (auth.data == null) {
+        return listHealthMarkerPresets(client);
+      }
+      try {
+        const data = await listHealthMarkerPresetsForUserFromPowerSyncDb(
+          db,
+          auth.data,
+        );
+        return { ok: true, data };
+      } catch (caught) {
+        return { ok: false, error: toPresetDataError(caught) };
+      }
+    }
+  }
+
+  const remote = await listHealthMarkerPresets(client);
+  if (remote.ok) {
+    return remote;
+  }
+  if (!isPresetDataNetworkError(remote.error)) {
+    return remote;
+  }
+  // Same server-mirror gate as symptom presets: not init() alone (see bridge snapshot + landing storage).
+  if (!db) {
+    const alt = clarifyNetworkErrorWhenReplicaUnavailable(remote.error);
+    return alt ? { ok: false, error: alt } : remote;
+  }
+  const auth = await getCurrentUserId();
+  if (!auth.ok || auth.data == null) {
+    return remote;
+  }
+  try {
+    const data = await listHealthMarkerPresetsForUserFromPowerSyncDb(
+      db,
+      auth.data,
+    );
+    return { ok: true, data };
+  } catch (caught) {
+    return { ok: false, error: toPresetDataError(caught) };
+  }
 }
 
 /**

@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { PresetHealthMarkerRow } from '@abstrack/types';
 import {
+  buildHealthMarkerInsertRowForPresetLine,
   createStandaloneHealthMarkerForLine,
   deleteHealthMarkerById,
   listEpisodeHealthMarkersForEpisode,
   listStandaloneHealthMarkersForUser,
   insertEpisodeHealthMarkerForLine,
+  validateHealthMarkerNumericPayload,
 } from './episode-health-marker-data.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
 
@@ -19,6 +21,193 @@ const line: PresetHealthMarkerRow = {
   created_at: '2026-04-18T12:00:00.000Z',
   updated_at: '2026-04-18T12:00:00.000Z',
 };
+
+describe('validateHealthMarkerNumericPayload', () => {
+  describe('blood_pressure', () => {
+    it('rejects value_numeric (must use systolic/diastolic)', () => {
+      expect(
+        validateHealthMarkerNumericPayload('blood_pressure', 120, 118, 76),
+      ).toContain('single number');
+    });
+
+    it('rejects missing systolic or diastolic', () => {
+      expect(
+        validateHealthMarkerNumericPayload(
+          'blood_pressure',
+          null,
+          120,
+          undefined,
+        ),
+      ).toContain('systolic and diastolic');
+      expect(
+        validateHealthMarkerNumericPayload(
+          'blood_pressure',
+          null,
+          undefined,
+          80,
+        ),
+      ).toContain('systolic and diastolic');
+    });
+
+    it('rejects non-finite systolic or diastolic', () => {
+      expect(
+        validateHealthMarkerNumericPayload(
+          'blood_pressure',
+          null,
+          Number.NaN,
+          80,
+        ),
+      ).toContain('valid numbers');
+      expect(
+        validateHealthMarkerNumericPayload(
+          'blood_pressure',
+          null,
+          120,
+          Number.POSITIVE_INFINITY,
+        ),
+      ).toContain('valid numbers');
+    });
+
+    it('returns null when systolic and diastolic are finite', () => {
+      expect(
+        validateHealthMarkerNumericPayload('blood_pressure', null, 118, 76),
+      ).toBeNull();
+    });
+  });
+
+  describe('non-blood_pressure kinds', () => {
+    it('rejects missing value_numeric', () => {
+      expect(
+        validateHealthMarkerNumericPayload('blood_glucose', null, null, null),
+      ).toContain('measurement value');
+    });
+
+    it('rejects non-finite value_numeric', () => {
+      expect(
+        validateHealthMarkerNumericPayload(
+          'blood_glucose',
+          Number.NaN,
+          null,
+          null,
+        ),
+      ).toContain('valid number');
+      expect(
+        validateHealthMarkerNumericPayload(
+          'heart_rate',
+          Number.NEGATIVE_INFINITY,
+          null,
+          null,
+        ),
+      ).toContain('valid number');
+    });
+
+    it('rejects systolic/diastolic fields for single-value kinds', () => {
+      expect(
+        validateHealthMarkerNumericPayload('blood_glucose', 120, 120, null),
+      ).toContain('single numeric value');
+      expect(
+        validateHealthMarkerNumericPayload('blood_glucose', 120, null, 80),
+      ).toContain('single numeric value');
+    });
+
+    it('accepts zero as a finite measurement', () => {
+      expect(
+        validateHealthMarkerNumericPayload('blood_glucose', 0, null, null),
+      ).toBeNull();
+    });
+  });
+});
+
+describe('buildHealthMarkerInsertRowForPresetLine', () => {
+  const recordedAt = '2026-04-18T12:00:00.000Z';
+
+  it('maps episode-bound glucose: value_numeric only, BP columns null', () => {
+    const row = buildHealthMarkerInsertRowForPresetLine({
+      userId: 'user-1',
+      episodeId: 'ep-42',
+      line,
+      customName: null,
+      customUnit: null,
+      valueNumeric: 6.2,
+      systolicNumeric: null,
+      diastolicNumeric: null,
+      notes: 'post-meal',
+      recordedAt,
+    });
+    expect(row).toEqual({
+      user_id: 'user-1',
+      episode_id: 'ep-42',
+      preset_health_marker_id: 'phm-1',
+      marker_kind: 'blood_glucose',
+      custom_name: null,
+      custom_unit: null,
+      value_numeric: 6.2,
+      systolic_numeric: null,
+      diastolic_numeric: null,
+      notes: 'post-meal',
+      recorded_at: recordedAt,
+    });
+  });
+
+  it('clears systolic/diastolic for non-blood_pressure kinds even when callers pass them', () => {
+    const row = buildHealthMarkerInsertRowForPresetLine({
+      userId: 'user-1',
+      episodeId: 'ep-42',
+      line,
+      customName: 'Glucose',
+      customUnit: 'mmol/L',
+      valueNumeric: 5,
+      systolicNumeric: 120,
+      diastolicNumeric: 80,
+      notes: null,
+      recordedAt,
+    });
+    expect(row.systolic_numeric).toBeNull();
+    expect(row.diastolic_numeric).toBeNull();
+    expect(row.value_numeric).toBe(5);
+  });
+
+  it('maps blood_pressure: null value_numeric, preserves systolic/diastolic', () => {
+    const bpLine: PresetHealthMarkerRow = {
+      ...line,
+      marker_kind: 'blood_pressure',
+    };
+    const row = buildHealthMarkerInsertRowForPresetLine({
+      userId: 'user-1',
+      episodeId: 'ep-42',
+      line: bpLine,
+      customName: null,
+      customUnit: null,
+      valueNumeric: 999,
+      systolicNumeric: 122,
+      diastolicNumeric: 78,
+      notes: null,
+      recordedAt,
+    });
+    expect(row.marker_kind).toBe('blood_pressure');
+    expect(row.value_numeric).toBeNull();
+    expect(row.systolic_numeric).toBe(122);
+    expect(row.diastolic_numeric).toBe(78);
+  });
+
+  it('sets episode_id null for standalone inserts', () => {
+    const row = buildHealthMarkerInsertRowForPresetLine({
+      userId: 'user-1',
+      episodeId: null,
+      line,
+      customName: null,
+      customUnit: null,
+      valueNumeric: 100,
+      systolicNumeric: null,
+      diastolicNumeric: null,
+      notes: 'home',
+      recordedAt,
+    });
+    expect(row.episode_id).toBeNull();
+    expect(row.user_id).toBe('user-1');
+    expect(row.value_numeric).toBe(100);
+  });
+});
 
 describe('listEpisodeHealthMarkersForEpisode', () => {
   it('orders by recorded_at desc, then created_at desc, then id desc', async () => {

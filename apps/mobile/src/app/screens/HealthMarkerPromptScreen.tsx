@@ -35,12 +35,7 @@ import {
   validatePresetHealthMarkerCustomFields,
 } from '@abstrack/types';
 import {
-  cancelActiveEpisodeById,
-  completeEpisodePostMarkerStep,
-  endEpisodeIfStillActive,
   getEpisodeById,
-  insertEpisodeHealthMarkerForLine,
-  listEpisodeHealthMarkersForEpisode,
   listEpisodeObservationTimeline,
   listPresetHealthMarkersForPreset,
   type EpisodeTimelineItem,
@@ -48,7 +43,31 @@ import {
 } from '@abstrack/supabase';
 import { announce, COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
 import { clearSymptomPromptSession } from '../../lib/episodes/symptom-prompt-session-store';
-import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
+import {
+  cancelActiveEpisodeByIdOfflineFirst,
+  completeEpisodePostMarkerStepOfflineFirst,
+  endEpisodeIfStillActiveOfflineFirst,
+  insertEpisodeHealthMarkerLineOfflineFirst,
+  listEpisodeHealthMarkersForEpisodeOfflineFirst,
+} from '../../lib/episodes/mobile-offline-first-gateway';
+import {
+  getEpisodeByIdFromPowerSyncDb,
+  listEpisodeHealthMarkersForEpisodeFromPowerSyncDb,
+  listPresetHealthMarkersForPresetFromPowerSyncDb,
+} from '../../lib/powersync/powersync-episode-flow-reads';
+import {
+  getPowerSyncDatabaseForOfflineReads,
+  isPresetDataNetworkError,
+} from '../../lib/powersync/powersync-offline-read-bridge-snapshot';
+import {
+  powerSyncOfflineReplicaReadsEnabled,
+  powerSyncReplicaSqliteReady,
+  usePowerSyncBridgeState,
+} from '../../lib/powersync/PowerSyncSessionBridge';
+import {
+  getMobileAuthSessionSafe,
+  getMobileSupabaseClient,
+} from '../../lib/supabase-wiring';
 import { AsyncScreenContainer } from '../components/AsyncScreenContainer';
 import { ScreenShell } from '../components/ScreenShell';
 import { EpisodeFlowSecondaryActionsSection } from '../components/episode-flow/EpisodeFlowSecondaryActionsSection';
@@ -246,6 +265,23 @@ export function HealthMarkerPromptScreen() {
   >([]);
 
   const supabase = useMemo(() => getMobileSupabaseClient(), []);
+  const psBridge = usePowerSyncBridgeState();
+  const powerSyncDbForWrites = useMemo(
+    () => (powerSyncReplicaSqliteReady(psBridge) ? psBridge.database : null),
+    [psBridge],
+  );
+  const trustEmptyLocalFoodDiaryList = useMemo(
+    () => powerSyncOfflineReplicaReadsEnabled(psBridge),
+    [psBridge],
+  );
+  /**
+   * Latest write DB for offline-first calls inside `load` without listing `powerSyncDbForWrites` in
+   * `load` deps — when first sync lands, the DB handle appears and would otherwise rerun the mount
+   * effect and wipe phase/drafts/food-diary state mid-edit.
+   */
+  const powerSyncDbForWritesRef = useRef(powerSyncDbForWrites);
+  powerSyncDbForWritesRef.current = powerSyncDbForWrites;
+
   /** Bumps when the screen unmounts or `load` deps change so stale async work does not setState. */
   const loadGenerationRef = useRef(0);
 
@@ -273,13 +309,17 @@ export function HealthMarkerPromptScreen() {
 
   const foodDiary = useHealthMarkerFoodDiary({
     episodeId,
-    userId,
     supabase,
+    powerSyncDatabase: powerSyncDbForWrites,
+    trustEmptyLocalFoodDiaryList,
     enabled: phase === 'foodDiary',
     onLeaveFoodDiary,
     onBack: onBackToHealthMarkersFromFoodDiaryBody,
   });
   const resetFoodDiaryState = foodDiary.reset;
+  /** Lets `load` omit `resetFoodDiaryState` from deps so hook churn cannot rerun mount load. */
+  const resetFoodDiaryStateRef = useRef(resetFoodDiaryState);
+  resetFoodDiaryStateRef.current = resetFoodDiaryState;
 
   useEffect(() => {
     setPersistFeedback(null);
@@ -309,36 +349,68 @@ export function HealthMarkerPromptScreen() {
     setPhase('prompting');
     postFormInitRef.current = false;
     setPostFeedback(null);
-    resetFoodDiaryState();
+    resetFoodDiaryStateRef.current();
     setEndFeedback(null);
     setEndedSummary(null);
     setObservationTimeline([]);
 
+    let sessionUserId: string | null = null;
     const {
-      data: { user },
-    } = await supabase.auth.getUser();
+      data: { session },
+      error: sessionError,
+    } = await getMobileAuthSessionSafe();
+    if (sessionError) {
+      if (stale()) {
+        return;
+      }
+      setErrorMessage(sessionError.message);
+      setStatus('error');
+      return;
+    }
+    sessionUserId = session?.user?.id ?? null;
     if (stale()) {
       return;
     }
-    if (!user) {
+    if (!sessionUserId) {
       setErrorMessage(
         'You must be signed in to save health marker answers. Try signing in again.',
       );
       setStatus('error');
       return;
     }
-    setUserId(user.id);
+    setUserId(sessionUserId);
 
-    const episode = await getEpisodeById(supabase, episodeId);
+    const psDb = getPowerSyncDatabaseForOfflineReads();
+    let usedPowerSyncReplicaReads = false;
+
+    const episodeRemote = await getEpisodeById(supabase, episodeId);
     if (stale()) {
       return;
     }
-    if (!episode.ok) {
-      setErrorMessage(episode.error.message);
+    let episodeRow =
+      episodeRemote.ok && episodeRemote.data ? episodeRemote.data : null;
+    // Do not read SQLite on `ok` + null: authoritative not-found / RLS; replica could be stale online.
+    const shouldTryEpisodeReplica =
+      Boolean(psDb) &&
+      !episodeRemote.ok &&
+      isPresetDataNetworkError(episodeRemote.error);
+    if (!episodeRow && shouldTryEpisodeReplica && psDb) {
+      const localEp = await getEpisodeByIdFromPowerSyncDb(psDb, episodeId);
+      if (localEp) {
+        episodeRow = localEp;
+        usedPowerSyncReplicaReads = true;
+      }
+    }
+    if (!episodeRow) {
+      if (!episodeRemote.ok) {
+        setErrorMessage(episodeRemote.error.message);
+      } else {
+        setErrorMessage('Could not load this episode.');
+      }
       setStatus('error');
       return;
     }
-    const markerPresetId = episode.data?.health_marker_preset_id;
+    const markerPresetId = episodeRow.health_marker_preset_id;
     if (!markerPresetId) {
       setErrorMessage(
         'This episode has no health marker preset linked. Return home and start a new episode template.',
@@ -346,39 +418,80 @@ export function HealthMarkerPromptScreen() {
       setStatus('error');
       return;
     }
-    setEpisodeRow(episode.data);
-    if (episode.data?.ended_at) {
+    setEpisodeRow(episodeRow);
+    if (episodeRow.ended_at) {
       setEndedSummary({
-        endedAt: episode.data.ended_at,
+        endedAt: episodeRow.ended_at,
         durationText: formatEpisodeDurationSimple(
-          episode.data.started_at,
-          episode.data.ended_at,
+          episodeRow.started_at,
+          episodeRow.ended_at,
         ),
       });
     }
 
-    const [presetLines, markerRows] = await Promise.all([
-      listPresetHealthMarkersForPreset(supabase, markerPresetId),
-      listEpisodeHealthMarkersForEpisode(supabase, episodeId),
-    ]);
+    let presetLines = await listPresetHealthMarkersForPreset(
+      supabase,
+      markerPresetId,
+    );
     if (stale()) {
       return;
+    }
+    if (
+      !presetLines.ok &&
+      isPresetDataNetworkError(presetLines.error) &&
+      psDb != null
+    ) {
+      presetLines = {
+        ok: true,
+        data: await listPresetHealthMarkersForPresetFromPowerSyncDb(
+          psDb,
+          markerPresetId,
+        ),
+      };
+      usedPowerSyncReplicaReads = true;
     }
     if (!presetLines.ok) {
       setErrorMessage(presetLines.error.message);
       setStatus('error');
       return;
     }
+
+    let markerRows = await listEpisodeHealthMarkersForEpisodeOfflineFirst(
+      supabase,
+      powerSyncDbForWritesRef.current,
+      episodeId,
+    );
+    if (stale()) {
+      return;
+    }
+    if (
+      !markerRows.ok &&
+      isPresetDataNetworkError(markerRows.error) &&
+      psDb != null
+    ) {
+      markerRows = {
+        ok: true,
+        data: await listEpisodeHealthMarkersForEpisodeFromPowerSyncDb(
+          psDb,
+          episodeId,
+        ),
+        markersReadFromLocalReplica: true,
+      };
+      usedPowerSyncReplicaReads = true;
+    }
     if (!markerRows.ok) {
       setErrorMessage(markerRows.error.message);
       setStatus('error');
       return;
     }
+    if (markerRows.markersReadFromLocalReplica) {
+      usedPowerSyncReplicaReads = true;
+    }
 
     setLines(presetLines.data);
 
     const lastPost: string | null =
-      episode.data?.post_marker_step_completed_at ?? null;
+      episodeRow.post_marker_step_completed_at ?? null;
     const passRows = filterHealthMarkerRowsForOpenPass(
       markerRows.data,
       lastPost,
@@ -409,25 +522,44 @@ export function HealthMarkerPromptScreen() {
     }
     setStatus('ready');
 
-    const tl = await listEpisodeObservationTimeline(supabase, episodeId, {
-      prefetchedHealthMarkers: markerRows.data,
-    });
-    if (stale()) {
-      return;
-    }
-    if (tl.ok) {
-      setObservationTimeline(tl.data);
-    } else {
+    if (usedPowerSyncReplicaReads) {
       setObservationTimeline([]);
+    } else {
+      const tl = await listEpisodeObservationTimeline(supabase, episodeId, {
+        prefetchedHealthMarkers: markerRows.data,
+      });
+      if (stale()) {
+        return;
+      }
+      if (tl.ok) {
+        setObservationTimeline(tl.data);
+      } else {
+        setObservationTimeline([]);
+      }
     }
-  }, [episodeId, hub, resetFoodDiaryState, resume, supabase]);
+  }, [episodeId, hub, resume, supabase]);
+
+  const loadRef = useRef(load);
+  loadRef.current = load;
 
   useEffect(() => {
-    void load();
+    let cancelled = false;
+    void loadRef.current().catch((error: unknown) => {
+      if (cancelled) {
+        return;
+      }
+      console.error(
+        'HealthMarkerPromptScreen load() rejected unexpectedly',
+        error,
+      );
+      setStatus('error');
+      setErrorMessage('Unable to load this screen. Please try again.');
+    });
     return () => {
+      cancelled = true;
       loadGenerationRef.current += 1;
     };
-  }, [load]);
+  }, [episodeId, hub, resume]);
 
   const currentLine = lines[activeIndex] ?? null;
   const currentDraft = currentLine
@@ -490,20 +622,24 @@ export function HealthMarkerPromptScreen() {
 
     setSaving(true);
     setPersistFeedback(null);
-    const result = await insertEpisodeHealthMarkerForLine(supabase, {
-      userId,
-      episodeId,
-      line: currentLine,
-      valueNumeric: parsed.valueNumeric,
-      systolicNumeric: parsed.systolicNumeric,
-      diastolicNumeric: parsed.diastolicNumeric,
-      notes: currentDraft.notes.trim() ? currentDraft.notes.trim() : null,
-    });
+    const result = await insertEpisodeHealthMarkerLineOfflineFirst(
+      supabase,
+      powerSyncDbForWrites,
+      {
+        userId,
+        episodeId,
+        line: currentLine,
+        valueNumeric: parsed.valueNumeric,
+        systolicNumeric: parsed.systolicNumeric,
+        diastolicNumeric: parsed.diastolicNumeric,
+        notes: currentDraft.notes.trim() ? currentDraft.notes.trim() : null,
+      },
+    );
     setSaving(false);
     if (!result.ok) {
       setPersistFeedback({ source: 'sync', message: result.error.message });
       await announce(
-        `Could not sync with the server: ${result.error.message}`,
+        `Could not save this measurement. ${result.error.message}`,
         {
           politeness: 'assertive',
         },
@@ -528,15 +664,16 @@ export function HealthMarkerPromptScreen() {
    * then moves to the food diary step.
    */
   const enterFoodDiaryPhaseAfterMarkers = useCallback(async () => {
-    const markerRows = await listEpisodeHealthMarkersForEpisode(
+    const markerRows = await listEpisodeHealthMarkersForEpisodeOfflineFirst(
       supabase,
+      powerSyncDbForWrites,
       episodeId,
     );
     if (markerRows.ok) {
       setBacSuggestAbs(bacReadingSuggestsAbsEpisode(markerRows.data));
     }
     setPhase('foodDiary');
-  }, [episodeId, supabase]);
+  }, [episodeId, powerSyncDbForWrites, supabase]);
 
   const goNext = async () => {
     if (saving) {
@@ -582,14 +719,19 @@ export function HealthMarkerPromptScreen() {
     }
     setSavingPost(true);
     setPostFeedback(null);
-    const result = await completeEpisodePostMarkerStep(supabase, episodeId, {
-      episode_type: postEpisodeKind,
-      episode_label: trimToNull(postLabel),
-      additional_notes: trimToNull(postAdditional),
-      note: trimToNull(postNote),
-      // Completion signal only: DB overwrites stored boundary with authoritative server time.
-      post_marker_step_completed_at: null,
-    });
+    const result = await completeEpisodePostMarkerStepOfflineFirst(
+      supabase,
+      powerSyncDbForWrites,
+      episodeId,
+      {
+        episode_type: postEpisodeKind,
+        episode_label: trimToNull(postLabel),
+        additional_notes: trimToNull(postAdditional),
+        note: trimToNull(postNote),
+        // Completion signal only: DB overwrites stored boundary with authoritative server time.
+        post_marker_step_completed_at: null,
+      },
+    );
     setSavingPost(false);
     if (!result.ok) {
       setPostFeedback(result.error.message);
@@ -667,8 +809,9 @@ export function HealthMarkerPromptScreen() {
             void (async () => {
               setCancelingEpisode(true);
               try {
-                const result = await cancelActiveEpisodeById(
+                const result = await cancelActiveEpisodeByIdOfflineFirst(
                   supabase,
+                  powerSyncDbForWrites,
                   episodeId,
                 );
                 if (!result.ok) {
@@ -737,8 +880,9 @@ export function HealthMarkerPromptScreen() {
         nowMs < startedAtMs
           ? episodeRow.started_at
           : nowIso;
-      const result = await endEpisodeIfStillActive(
+      const result = await endEpisodeIfStillActiveOfflineFirst(
         supabase,
+        powerSyncDbForWrites,
         episodeId,
         endedAt,
         episodeRow.started_at,
@@ -777,6 +921,24 @@ export function HealthMarkerPromptScreen() {
         });
         return;
       }
+      if (powerSyncDbForWrites) {
+        const local = await getEpisodeByIdFromPowerSyncDb(
+          powerSyncDbForWrites,
+          episodeId,
+        );
+        if (local?.ended_at) {
+          const durationText = formatEpisodeDurationSimple(
+            local.started_at,
+            local.ended_at,
+          );
+          setEpisodeRow(local);
+          setEndedSummary({ endedAt: local.ended_at, durationText });
+          await announce('This episode was already ended.', {
+            politeness: 'polite',
+          });
+          return;
+        }
+      }
       const message =
         'This episode is no longer active. Return home and refresh episodes.';
       setEndFeedback(message);
@@ -784,7 +946,7 @@ export function HealthMarkerPromptScreen() {
     } finally {
       setEndingEpisode(false);
     }
-  }, [endingEpisode, episodeId, episodeRow, supabase]);
+  }, [endingEpisode, episodeId, episodeRow, powerSyncDbForWrites, supabase]);
 
   const onRequestEndEpisode = useCallback(() => {
     if (endingEpisode || endedSummary) {

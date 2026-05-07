@@ -1,12 +1,17 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, Linking, View } from 'react-native';
+import { ActivityIndicator, AppState, Linking, Text, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import type { Session } from '@abstrack/supabase';
-import { getMobileSupabaseClient } from '../lib/supabase-wiring';
+import { fetchMobileDeviceIsConnected } from '../lib/network/mobile-device-netinfo';
+import {
+  getMobileAuthSessionSafe,
+  getMobileSupabaseClient,
+} from '../lib/supabase-wiring';
 import { AppProviders } from './components/AppProviders';
+import { SyncHealthFooter } from './components/SyncHealthFooter';
 import { ForgotPasswordScreen } from './screens/ForgotPasswordScreen';
 import { MainTabNavigator } from './navigation/MainTabNavigator';
 import type { MainStackParamList } from './navigation/types';
@@ -19,6 +24,10 @@ import { SymptomPromptScreen } from './screens/SymptomPromptScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { SignupScreen } from './screens/SignupScreen';
 import { UpdatePasswordScreen } from './screens/UpdatePasswordScreen';
+import {
+  PowerSyncSessionBridge,
+  usePowerSyncBridgeState,
+} from '../lib/powersync/PowerSyncSessionBridge';
 import { getRequireReauthOnOpenPreference } from './reauth-preference';
 import { useAppTheme } from './theme/AppThemeContext';
 import { nw } from './theme/app-nativewind-classes';
@@ -34,6 +43,37 @@ const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const MainStack = createNativeStackNavigator<MainStackParamList>();
 
 type AuthRoute = keyof AuthStackParamList;
+
+/**
+ * When sign-out replica wipe fails, the PowerSync bridge sets `syncError` but
+ * `SyncHealthFooter` is not mounted on the auth stack — surface the message here.
+ *
+ * Uses the same top/side safe-area pattern as `ScreenShell` (`app/components/ScreenShell.tsx`);
+ * `edges` omit `bottom` so auth screens still own bottom inset via their own `ScreenShell`.
+ *
+ * @param props.session - Current session; banner hidden while any session exists.
+ */
+function SignOutReplicaCleanupBanner({ session }: { session: Session | null }) {
+  const { syncError } = usePowerSyncBridgeState();
+  if (session || !syncError) {
+    return null;
+  }
+  return (
+    <SafeAreaView edges={['top', 'left', 'right']}>
+      <View
+        accessibilityRole="alert"
+        className={`border-b border-app-health-failure-border bg-app-health-failure-bg px-4 py-3 dark:border-app-health-failure-border-dark dark:bg-app-health-failure-bg-dark`}
+      >
+        <Text
+          className={`${nw.healthFailureBody} text-sm`}
+          accessibilityLabel={syncError.message}
+        >
+          {syncError.message}
+        </Text>
+      </View>
+    </SafeAreaView>
+  );
+}
 
 function parseDeepLink(url: string): {
   params: URLSearchParams;
@@ -102,6 +142,17 @@ function AppBootstrap() {
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const recoveryFlowActiveRef = useRef(false);
   const authRouteRef = useRef<AuthRoute>('Login');
+  /**
+   * Coalesces foreground `refreshSession` bursts (auto-refresh + resume) to reduce LogBox noise.
+   * Cleared when {@link AppState} leaves `active` so a short foreground does not still refresh after
+   * background/inactive (or sign-out before the debounce fires).
+   */
+  const resumeRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const resumeRefreshInFlightRef = useRef(false);
+  /** Prevents resume handler `setInitializing(false)` from racing cold start `bootstrap` `finally`. */
+  const bootstrapCompleteRef = useRef(false);
 
   const stackScreenOptions = useMemo(
     () => ({
@@ -120,7 +171,15 @@ function AppBootstrap() {
       recoveryFlowActiveRef.current ||
       authRouteRef.current === 'UpdatePassword';
 
-    const enforceReauthIfNeeded = async () => {
+    const enforceReauthIfNeeded = async (options?: {
+      /**
+       * When false (offline / unknown reachability), still enforce re-auth privacy with
+       * `signOut({ scope: 'local' })` so the session is cleared on-device without a network round
+       * trip. When true, uses the default sign-out (server + local) after a confident online read.
+       */
+      allowServerSignOut?: boolean;
+    }) => {
+      const allowServerSignOut = options?.allowServerSignOut ?? true;
       try {
         if (isRecoveryFlowInProgress()) {
           return;
@@ -139,7 +198,7 @@ function AppBootstrap() {
         const {
           data: { session: currentSession },
           error: getSessionError,
-        } = await mobileSupabase.auth.getSession();
+        } = await getMobileAuthSessionSafe();
 
         if (getSessionError) {
           console.warn(
@@ -153,11 +212,15 @@ function AppBootstrap() {
           return;
         }
 
-        const { error: signOutError } = await mobileSupabase.auth.signOut();
+        const { error: signOutError } = allowServerSignOut
+          ? await mobileSupabase.auth.signOut()
+          : await mobileSupabase.auth.signOut({ scope: 'local' });
 
         if (signOutError) {
           console.warn(
-            'Unable to sign out while enforcing re-auth preference.',
+            allowServerSignOut
+              ? 'Unable to sign out while enforcing re-auth preference.'
+              : 'Unable to sign out locally while enforcing re-auth preference.',
             signOutError,
           );
         }
@@ -233,38 +296,96 @@ function AppBootstrap() {
     };
 
     const bootstrap = async () => {
-      const [{ data }, initialUrl] = await Promise.all([
-        mobileSupabase.auth.getSession(),
-        Linking.getInitialURL(),
-      ]);
+      try {
+        // Prime session read in parallel with deep link; do not `setSession` until after
+        // `enforceReauthIfNeeded` so PowerSync never opens the replica for a session we will clear.
+        const [, initialUrl] = await Promise.all([
+          getMobileAuthSessionSafe(),
+          Linking.getInitialURL(),
+        ]);
 
-      if (mounted) {
-        setSession(data.session ?? null);
-      }
+        if (initialUrl) {
+          await handleRecoveryLink(initialUrl);
+        }
 
-      if (initialUrl) {
-        await handleRecoveryLink(initialUrl);
-      }
+        const connectedAtBoot = await fetchMobileDeviceIsConnected();
+        await enforceReauthIfNeeded({
+          allowServerSignOut: connectedAtBoot === true,
+        });
 
-      await enforceReauthIfNeeded();
-
-      if (mounted) {
-        setInitializing(false);
+        const { data: afterReauth } = await getMobileAuthSessionSafe();
+        if (mounted) {
+          setSession(afterReauth.session ?? null);
+        }
+      } catch (error) {
+        /* Hermes LogBox: do not rethrow; still leave bootstrap so the UI is not stuck loading. */
+        if (__DEV__) {
+          console.warn('[AppBootstrap] Startup failed', error);
+        }
+      } finally {
+        bootstrapCompleteRef.current = true;
+        if (mounted) {
+          setInitializing(false);
+        }
       }
     };
 
     void bootstrap();
 
     const urlSubscription = Linking.addEventListener('url', ({ url }) => {
-      void handleRecoveryLink(url);
+      void handleRecoveryLink(url).catch(() => {
+        /* Deep link handling must not reject unhandled */
+      });
     });
 
     const appStateSubscription = AppState.addEventListener(
       'change',
       (nextState) => {
-        if (nextState === 'active') {
-          void enforceReauthIfNeeded();
+        if (nextState !== 'active') {
+          if (resumeRefreshTimerRef.current !== null) {
+            clearTimeout(resumeRefreshTimerRef.current);
+            resumeRefreshTimerRef.current = null;
+          }
+          return;
         }
+        void (async () => {
+          try {
+            const connected = await fetchMobileDeviceIsConnected();
+            await enforceReauthIfNeeded({
+              allowServerSignOut: connected === true,
+            });
+            const { data: postReauthSession } =
+              await getMobileAuthSessionSafe();
+            // Re-auth may have signed the user out; do not debounce `refreshSession` with no session.
+            if (connected !== true || postReauthSession.session == null) {
+              return;
+            }
+            if (resumeRefreshTimerRef.current !== null) {
+              clearTimeout(resumeRefreshTimerRef.current);
+            }
+            resumeRefreshTimerRef.current = setTimeout(() => {
+              resumeRefreshTimerRef.current = null;
+              if (resumeRefreshInFlightRef.current) {
+                return;
+              }
+              const refresh = mobileSupabase.auth.refreshSession;
+              if (typeof refresh !== 'function') {
+                return;
+              }
+              resumeRefreshInFlightRef.current = true;
+              void refresh
+                .call(mobileSupabase.auth)
+                .catch(() => undefined)
+                .finally(() => {
+                  resumeRefreshInFlightRef.current = false;
+                });
+            }, 400);
+          } finally {
+            if (mounted && bootstrapCompleteRef.current) {
+              setInitializing(false);
+            }
+          }
+        })();
       },
     );
 
@@ -293,6 +414,10 @@ function AppBootstrap() {
       subscription.unsubscribe();
       urlSubscription?.remove?.();
       appStateSubscription?.remove?.();
+      if (resumeRefreshTimerRef.current !== null) {
+        clearTimeout(resumeRefreshTimerRef.current);
+        resumeRefreshTimerRef.current = null;
+      }
     };
   }, [mobileSupabase]);
 
@@ -360,81 +485,109 @@ function AppBootstrap() {
 
   const showAuthStack = !session || recoveryFlowActive;
 
+  /**
+   * `NavigationContainer` is keyed so switching accounts **without** visiting the auth stack does not
+   * reuse mounted screens whose local state may only refresh on focus. Changes to `session.user.id`
+   * force a fresh navigator instance on the signed-in tree. Auth routes stay keyed separately from
+   * recovery vs gate flows.
+   */
+  let navigationContainerKey: string;
+  if (showAuthStack) {
+    navigationContainerKey = recoveryFlowActive
+      ? 'navigation-auth-recovery'
+      : 'navigation-auth';
+  } else {
+    navigationContainerKey = `navigation-signed-in-${session.user.id}`;
+  }
+
   if (initializing) {
     return (
-      <View className={`flex-1 ${nw.screenBg}`}>
-        <StatusBar style={statusBarStyle} />
-        <SafeAreaView
-          className={`flex-1 items-center justify-center ${nw.screenBg}`}
-        >
-          <ActivityIndicator size="large" color={colors.primary} />
-        </SafeAreaView>
-      </View>
+      <PowerSyncSessionBridge session={session}>
+        <View className={`flex-1 ${nw.screenBg}`}>
+          <StatusBar style={statusBarStyle} />
+          <SafeAreaView
+            className={`flex-1 items-center justify-center ${nw.screenBg}`}
+          >
+            <ActivityIndicator size="large" color={colors.primary} />
+          </SafeAreaView>
+        </View>
+      </PowerSyncSessionBridge>
     );
   }
 
   return (
-    <View className={`flex-1 ${nw.screenBg}`}>
-      <StatusBar style={statusBarStyle} />
-      <NavigationContainer theme={navigationTheme}>
-        {showAuthStack ? (
-          authStack
-        ) : (
-          <MainStack.Navigator screenOptions={stackScreenOptions}>
-            <MainStack.Screen
-              name="MainTabs"
-              component={MainTabNavigator}
-              options={{ headerShown: false }}
-            />
-            <MainStack.Screen
-              name="EpisodeStart"
-              component={EpisodeStartScreen}
-              options={{
-                title: '',
-                headerBackTitle: 'Home',
-              }}
-            />
-            <MainStack.Screen
-              name="SymptomPrompt"
-              component={SymptomPromptScreen}
-              options={{
-                title: 'Symptoms',
-                headerBackTitle: 'Home',
-              }}
-            />
-            <MainStack.Screen
-              name="HealthMarkerPrompt"
-              component={HealthMarkerPromptScreen}
-              options={{
-                title: 'Health markers',
-                headerBackTitle: 'Home',
-              }}
-            />
-            <MainStack.Screen
-              name="FoodDiaryEntry"
-              component={FoodDiaryEntryScreen}
-              options={{
-                title: 'Food diary',
-                headerBackTitle: 'Home',
-              }}
-            />
-            <MainStack.Screen
-              name="StandaloneHealthMarkers"
-              component={StandaloneHealthMarkersScreen}
-              options={{
-                title: 'Health markers',
-                headerBackTitle: 'Home',
-              }}
-            />
-            <MainStack.Screen
-              name="Settings"
-              component={SettingsScreen}
-              options={{ title: 'Settings' }}
-            />
-          </MainStack.Navigator>
-        )}
-      </NavigationContainer>
-    </View>
+    <PowerSyncSessionBridge session={session}>
+      <View className={`flex-1 ${nw.screenBg}`}>
+        <StatusBar style={statusBarStyle} />
+        <View className="min-h-0 flex-1">
+          <NavigationContainer
+            theme={navigationTheme}
+            key={navigationContainerKey}
+          >
+            {showAuthStack ? (
+              <>
+                <SignOutReplicaCleanupBanner session={session} />
+                {authStack}
+              </>
+            ) : (
+              <MainStack.Navigator screenOptions={stackScreenOptions}>
+                <MainStack.Screen
+                  name="MainTabs"
+                  component={MainTabNavigator}
+                  options={{ headerShown: false }}
+                />
+                <MainStack.Screen
+                  name="EpisodeStart"
+                  component={EpisodeStartScreen}
+                  options={{
+                    title: '',
+                    headerBackTitle: 'Home',
+                  }}
+                />
+                <MainStack.Screen
+                  name="SymptomPrompt"
+                  component={SymptomPromptScreen}
+                  options={{
+                    title: 'Symptoms',
+                    headerBackTitle: 'Home',
+                  }}
+                />
+                <MainStack.Screen
+                  name="HealthMarkerPrompt"
+                  component={HealthMarkerPromptScreen}
+                  options={{
+                    title: 'Health markers',
+                    headerBackTitle: 'Home',
+                  }}
+                />
+                <MainStack.Screen
+                  name="FoodDiaryEntry"
+                  component={FoodDiaryEntryScreen}
+                  options={{
+                    title: 'Food diary',
+                    headerBackTitle: 'Home',
+                  }}
+                />
+                <MainStack.Screen
+                  name="StandaloneHealthMarkers"
+                  component={StandaloneHealthMarkersScreen}
+                  options={{
+                    title: 'Health markers',
+                    headerBackTitle: 'Home',
+                  }}
+                />
+                <MainStack.Screen
+                  name="Settings"
+                  component={SettingsScreen}
+                  options={{ title: 'Settings' }}
+                />
+              </MainStack.Navigator>
+            )}
+          </NavigationContainer>
+        </View>
+        {!showAuthStack ? <SyncHealthFooter /> : null}
+      </View>
+    </PowerSyncSessionBridge>
   );
 }
 

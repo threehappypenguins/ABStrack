@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { Pressable, Text, TextInput } from 'react-native';
 import { signOut, updatePassword } from '@abstrack/supabase';
-import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
+import {
+  getMobileAuthSessionSafe,
+  getMobileSupabaseClient,
+} from '../../lib/supabase-wiring';
 import { mapAuthError, validateSignupPassword } from '../auth-helpers';
 import { ScreenShell } from '../components/ScreenShell';
 import { nw } from '../theme/app-nativewind-classes';
@@ -63,9 +66,18 @@ export function UpdatePasswordScreen({
     try {
       const {
         data: { session },
-      } = await mobileSupabase.auth.getSession();
+        error: sessionError,
+      } = await getMobileAuthSessionSafe();
 
-      if (!session) {
+      if (sessionError) {
+        setErrorMessage(mapAuthError(sessionError.message));
+        setStatusMessage(null);
+        return;
+      }
+
+      // `getMobileAuthSessionSafe` can return identity with `access_token: ''` after offline refresh
+      // failure — not a usable recovery JWT for `updatePassword`.
+      if (!session || !session.access_token?.trim()) {
         setErrorMessage(
           'This reset link is invalid or expired. Request a new one.',
         );

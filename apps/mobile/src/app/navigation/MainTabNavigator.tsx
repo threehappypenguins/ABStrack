@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
@@ -120,6 +121,36 @@ function tabBarIonIcon(name: IonName) {
 }
 
 /**
+ * Home tab screen: stable `component` entry so hooks inside `HomeScreen` are not tied to a
+ * render-prop `Tab.Screen` child function (avoids remount / hook-order surprises with navigation).
+ *
+ * @returns Home tab UI.
+ */
+function HomeTab() {
+  const navigation =
+    useNavigation<BottomTabNavigationProp<MainTabParamList, 'Home'>>();
+  return (
+    <HomeScreen
+      onGoToSettings={() => {
+        navigateFromHomeTabToSettings(navigation);
+      }}
+      onGoToFoodDiary={() => {
+        navigateFromHomeTabToFoodDiary(navigation);
+      }}
+      onGoToStandaloneHealthMarkers={() => {
+        navigateFromHomeTabToStandaloneHealthMarkers(navigation);
+      }}
+      onStartEpisode={() => {
+        navigateFromHomeTabToEpisodeStart(navigation);
+      }}
+      onResumeEpisode={(episode) => {
+        navigateFromHomeTabToEpisodeResume(navigation, episode);
+      }}
+    />
+  );
+}
+
+/**
  * Primary signed-in navigation: home plus preset entry points with a bottom tab bar sized for
  * comfortable touch targets.
  *
@@ -158,32 +189,13 @@ export function MainTabNavigator() {
       >
         <Tab.Screen
           name="Home"
+          component={HomeTab}
           options={{
             tabBarLabel: 'Home',
             tabBarAccessibilityLabel: 'Home',
             tabBarIcon: tabBarIonIcon('home-outline'),
           }}
-        >
-          {({ navigation }) => (
-            <HomeScreen
-              onGoToSettings={() => {
-                navigateFromHomeTabToSettings(navigation);
-              }}
-              onGoToFoodDiary={() => {
-                navigateFromHomeTabToFoodDiary(navigation);
-              }}
-              onGoToStandaloneHealthMarkers={() => {
-                navigateFromHomeTabToStandaloneHealthMarkers(navigation);
-              }}
-              onStartEpisode={() => {
-                navigateFromHomeTabToEpisodeStart(navigation);
-              }}
-              onResumeEpisode={(episode) => {
-                navigateFromHomeTabToEpisodeResume(navigation, episode);
-              }}
-            />
-          )}
-        </Tab.Screen>
+        />
         <Tab.Screen
           name="SymptomPresets"
           component={SymptomPresetsNavigator}

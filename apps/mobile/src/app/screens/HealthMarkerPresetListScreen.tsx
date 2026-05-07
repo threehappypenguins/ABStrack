@@ -11,6 +11,10 @@ import {
   getCurrentUserId,
   removeHealthMarkerPreset,
 } from '../../lib/health-marker-presets/health-marker-preset-service';
+import {
+  powerSyncOfflineReplicaReadsEnabled,
+  usePowerSyncBridgeState,
+} from '../../lib/powersync/PowerSyncSessionBridge';
 import { AsyncScreenContainer } from '../components/AsyncScreenContainer';
 import type { HealthMarkerPresetsStackParamList } from '../navigation/types';
 import { useAppTheme } from '../theme/AppThemeContext';
@@ -32,45 +36,57 @@ type ListNav = NativeStackNavigationProp<
 export function HealthMarkerPresetListScreen() {
   const navigation = useNavigation<ListNav>();
   const { colors } = useAppTheme();
+  const psBridge = usePowerSyncBridgeState();
+  const replicaMirrorReads = powerSyncOfflineReplicaReadsEnabled(psBridge);
   const [status, setStatus] = useState<'loading' | 'error' | 'ready'>(
     'loading',
   );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [rows, setRows] = useState<HealthMarkerPresetRow[]>([]);
 
-  const load = useCallback(async (focusCancel?: FocusLoadCancel) => {
-    const stale = () => focusCancel?.cancelled === true;
+  const load = useCallback(
+    async (focusCancel?: FocusLoadCancel) => {
+      const stale = () => focusCancel?.cancelled === true;
 
-    setStatus('loading');
-    setErrorMessage(null);
-    const authResult = await getCurrentUserId();
-    if (stale()) {
-      return;
-    }
-    if (!authResult.ok) {
-      setErrorMessage(authResult.error.message);
-      setStatus('error');
-      return;
-    }
-    if (authResult.data === null) {
-      setErrorMessage(
-        'You need to be signed in to manage health marker presets.',
-      );
-      setStatus('error');
-      return;
-    }
-    const result = await fetchHealthMarkerPresets();
-    if (stale()) {
-      return;
-    }
-    if (!result.ok) {
-      setErrorMessage(result.error.message);
-      setStatus('error');
-      return;
-    }
-    setRows(result.data);
-    setStatus('ready');
-  }, []);
+      setStatus('loading');
+      setErrorMessage(null);
+      const authResult = await getCurrentUserId();
+      if (stale()) {
+        return;
+      }
+      if (!authResult.ok) {
+        setErrorMessage(authResult.error.message);
+        setStatus('error');
+        return;
+      }
+      if (authResult.data === null) {
+        setErrorMessage(
+          'You need to be signed in to manage health marker presets.',
+        );
+        setStatus('error');
+        return;
+      }
+      const result = await fetchHealthMarkerPresets({
+        powerSyncOfflineRead: {
+          database: psBridge.database,
+          replicationReady: replicaMirrorReads,
+        },
+      });
+      if (stale()) {
+        return;
+      }
+      if (!result.ok) {
+        setErrorMessage(result.error.message);
+        setStatus('error');
+        return;
+      }
+      setRows(result.data);
+      setStatus('ready');
+    },
+    // Only re-run when offline preset reads could change shape — not the whole bridge
+    // (`syncConnecting` / `syncError` / first-sync flags would reset list state on every transition).
+    [psBridge.database, replicaMirrorReads],
+  );
 
   useFocusEffect(
     useCallback(() => {

@@ -5,7 +5,14 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Alert, FlatList, Pressable, Text, View } from 'react-native';
+import {
+  Alert,
+  FlatList,
+  Pressable,
+  RefreshControl,
+  Text,
+  View,
+} from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import type { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import {
@@ -25,16 +32,35 @@ import {
   listFoodDiaryEntriesForUser,
   listStandaloneHealthMarkersForUser,
 } from '@abstrack/supabase';
+import {
+  usePullToResyncPowerSync,
+  type UsePullToResyncPowerSyncOptions,
+} from '../../lib/powersync/use-pull-to-resync-powersync';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { ScreenShell } from '../components/ScreenShell';
 import type { MainStackParamList, MainTabParamList } from '../navigation/types';
+import { useAppTheme } from '../theme/AppThemeContext';
 import { nw } from '../theme/app-nativewind-classes';
 import {
   EpisodesManagementPanel,
   type EpisodesManagementNav,
 } from './EpisodesManagementPanel';
-
 const PAGE_SIZE = 30;
+
+/**
+ * Result of standalone Manage-tab initial loads (health markers / food diary). Pull-to-refresh uses
+ * this to restore prior rows after a fetch failure while keeping the load error visible so the UI
+ * does not look freshly synced.
+ */
+type ManageStandaloneListLoadOutcome = 'ok' | 'error' | 'no-user' | 'stale';
+
+/**
+ * Health and Food Manage lists load only via Supabase — do not await PowerSync manual resync on
+ * pull-to-refresh (offline `waitForFirstSync` can block ~60s before the list reload runs).
+ */
+const MANAGE_SUPABASE_ONLY_PULL_OPTIONS: UsePullToResyncPowerSyncOptions = {
+  skipPowerSyncManualResync: true,
+};
 
 type ManageTabSegment = 'episodes' | 'health' | 'food';
 
@@ -308,6 +334,7 @@ function StandaloneHealthMarkersManageList({
   recordedAtOrAfter,
   recordedAtOrBefore,
 }: StandaloneHealthMarkersManageListProps) {
+  const { colors } = useAppTheme();
   const loadGenRef = useRef(0);
   const [rows, setRows] = useState<HealthMarkerRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -317,11 +344,16 @@ function StandaloneHealthMarkersManageList({
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const loadInitial = useCallback(
-    async (cancel?: { cancelled: boolean }) => {
+    async (
+      cancel?: { cancelled: boolean },
+      options?: { suppressFullScreenLoading?: boolean },
+    ): Promise<ManageStandaloneListLoadOutcome> => {
       const generation = ++loadGenRef.current;
       const stale = () =>
         cancel?.cancelled === true || generation !== loadGenRef.current;
-      setLoading(true);
+      if (!options?.suppressFullScreenLoading) {
+        setLoading(true);
+      }
       setError(null);
       try {
         const client = getMobileSupabaseClient();
@@ -329,12 +361,12 @@ function StandaloneHealthMarkersManageList({
           data: { user },
         } = await client.auth.getUser();
         if (stale()) {
-          return;
+          return 'stale';
         }
         if (!user) {
           setRows([]);
           setHasMore(false);
-          return;
+          return 'no-user';
         }
         const res = await listStandaloneHealthMarkersForUser(client, user.id, {
           limit: PAGE_SIZE,
@@ -343,22 +375,25 @@ function StandaloneHealthMarkersManageList({
           recordedAtOrBefore: recordedAtOrBefore ?? undefined,
         });
         if (stale()) {
-          return;
+          return 'stale';
         }
         if (!res.ok) {
           setError(res.error.message);
           setRows([]);
           setHasMore(false);
-          return;
+          return 'error';
         }
         setRows(res.data);
         setHasMore(res.data.length === PAGE_SIZE);
+        return 'ok';
       } catch {
         if (!stale()) {
           setError('Unable to load health markers.');
           setRows([]);
           setHasMore(false);
+          return 'error';
         }
+        return 'stale';
       } finally {
         if (!stale()) {
           setLoading(false);
@@ -367,6 +402,38 @@ function StandaloneHealthMarkersManageList({
     },
     [recordedAtOrAfter, recordedAtOrBefore],
   );
+
+  const loadInitialRef = useRef(loadInitial);
+  loadInitialRef.current = loadInitial;
+
+  const rowsRef = useRef(rows);
+  const hasMoreRef = useRef(hasMore);
+  useEffect(() => {
+    rowsRef.current = rows;
+    hasMoreRef.current = hasMore;
+  }, [hasMore, rows]);
+
+  /**
+   * Pull-to-refresh runs `loadInitial` without full-screen loading; on failure, restores rows but
+   * keeps the failed fetch error so results are not mistaken for a successful refresh.
+   */
+  const refreshManageScreen = useCallback(async () => {
+    const previousRows = rowsRef.current;
+    const previousHasMore = hasMoreRef.current;
+    const outcome = await loadInitialRef.current(undefined, {
+      suppressFullScreenLoading: true,
+    });
+    if (outcome === 'error' && previousRows.length > 0) {
+      setRows(previousRows);
+      setHasMore(previousHasMore);
+    }
+  }, []);
+
+  const { refreshing: syncPullRefreshing, onRefresh: onSyncPullRefresh } =
+    usePullToResyncPowerSync(
+      refreshManageScreen,
+      MANAGE_SUPABASE_ONLY_PULL_OPTIONS,
+    );
 
   useFocusEffect(
     useCallback(() => {
@@ -488,10 +555,24 @@ function StandaloneHealthMarkersManageList({
     );
   }, []);
 
+  const refreshFailureBanner =
+    error != null && rows.length > 0 ? (
+      <View
+        accessibilityRole="alert"
+        accessibilityLiveRegion="polite"
+        className={`mb-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2.5 dark:border-red-800/80 dark:bg-red-950/35`}
+      >
+        <Text className={`text-sm leading-snug ${nw.textError}`}>{error}</Text>
+        <Text className={`mt-1 text-xs leading-snug ${nw.textMuted}`}>
+          Showing data from the last successful load. Pull down to try again.
+        </Text>
+      </View>
+    ) : null;
+
   if (loading) {
     return <Text className={`py-4 text-sm ${nw.textMuted}`}>Loading…</Text>;
   }
-  if (error) {
+  if (error != null && rows.length === 0) {
     return (
       <Text
         className={`py-2 text-sm ${nw.textError}`}
@@ -509,6 +590,15 @@ function StandaloneHealthMarkersManageList({
       keyExtractor={(item) => item.id}
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={{ paddingBottom: 24, gap: 12 }}
+      ListHeaderComponent={refreshFailureBanner}
+      refreshControl={
+        <RefreshControl
+          refreshing={syncPullRefreshing}
+          onRefresh={onSyncPullRefresh}
+          tintColor={colors.primary}
+          colors={[colors.primary]}
+        />
+      }
       onEndReachedThreshold={0.4}
       onEndReached={() => {
         if (hasMore && !loadingMore && rows.length > 0) {
@@ -581,6 +671,7 @@ function StandaloneFoodDiaryManageList({
   loggedAtOrAfter,
   loggedAtOrBefore,
 }: StandaloneFoodDiaryManageListProps) {
+  const { colors } = useAppTheme();
   const loadGenRef = useRef(0);
   const [rows, setRows] = useState<FoodDiaryEntryRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -590,11 +681,16 @@ function StandaloneFoodDiaryManageList({
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const loadInitial = useCallback(
-    async (cancel?: { cancelled: boolean }) => {
+    async (
+      cancel?: { cancelled: boolean },
+      options?: { suppressFullScreenLoading?: boolean },
+    ): Promise<ManageStandaloneListLoadOutcome> => {
       const generation = ++loadGenRef.current;
       const stale = () =>
         cancel?.cancelled === true || generation !== loadGenRef.current;
-      setLoading(true);
+      if (!options?.suppressFullScreenLoading) {
+        setLoading(true);
+      }
       setError(null);
       try {
         const client = getMobileSupabaseClient();
@@ -602,12 +698,12 @@ function StandaloneFoodDiaryManageList({
           data: { user },
         } = await client.auth.getUser();
         if (stale()) {
-          return;
+          return 'stale';
         }
         if (!user) {
           setRows([]);
           setHasMore(false);
-          return;
+          return 'no-user';
         }
         const res = await listFoodDiaryEntriesForUser(client, user.id, {
           limit: PAGE_SIZE,
@@ -617,22 +713,25 @@ function StandaloneFoodDiaryManageList({
           loggedAtOrBefore: loggedAtOrBefore ?? undefined,
         });
         if (stale()) {
-          return;
+          return 'stale';
         }
         if (!res.ok) {
           setError(res.error.message);
           setRows([]);
           setHasMore(false);
-          return;
+          return 'error';
         }
         setRows(res.data);
         setHasMore(res.data.length === PAGE_SIZE);
+        return 'ok';
       } catch {
         if (!stale()) {
           setError('Unable to load food diary entries.');
           setRows([]);
           setHasMore(false);
+          return 'error';
         }
+        return 'stale';
       } finally {
         if (!stale()) {
           setLoading(false);
@@ -640,6 +739,36 @@ function StandaloneFoodDiaryManageList({
       }
     },
     [loggedAtOrAfter, loggedAtOrBefore],
+  );
+
+  const loadInitialRef = useRef(loadInitial);
+  loadInitialRef.current = loadInitial;
+
+  const rowsRef = useRef(rows);
+  const hasMoreRef = useRef(hasMore);
+  useEffect(() => {
+    rowsRef.current = rows;
+    hasMoreRef.current = hasMore;
+  }, [hasMore, rows]);
+
+  const refreshFoodManageScreen = useCallback(async () => {
+    const previousRows = rowsRef.current;
+    const previousHasMore = hasMoreRef.current;
+    const outcome = await loadInitialRef.current(undefined, {
+      suppressFullScreenLoading: true,
+    });
+    if (outcome === 'error' && previousRows.length > 0) {
+      setRows(previousRows);
+      setHasMore(previousHasMore);
+    }
+  }, []);
+
+  const {
+    refreshing: foodSyncPullRefreshing,
+    onRefresh: onFoodSyncPullRefresh,
+  } = usePullToResyncPowerSync(
+    refreshFoodManageScreen,
+    MANAGE_SUPABASE_ONLY_PULL_OPTIONS,
   );
 
   useFocusEffect(
@@ -753,10 +882,24 @@ function StandaloneFoodDiaryManageList({
     );
   }, []);
 
+  const refreshFailureBanner =
+    error != null && rows.length > 0 ? (
+      <View
+        accessibilityRole="alert"
+        accessibilityLiveRegion="polite"
+        className={`mb-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2.5 dark:border-red-800/80 dark:bg-red-950/35`}
+      >
+        <Text className={`text-sm leading-snug ${nw.textError}`}>{error}</Text>
+        <Text className={`mt-1 text-xs leading-snug ${nw.textMuted}`}>
+          Showing data from the last successful load. Pull down to try again.
+        </Text>
+      </View>
+    ) : null;
+
   if (loading) {
     return <Text className={`py-4 text-sm ${nw.textMuted}`}>Loading…</Text>;
   }
-  if (error) {
+  if (error != null && rows.length === 0) {
     return (
       <Text
         className={`py-2 text-sm ${nw.textError}`}
@@ -774,6 +917,15 @@ function StandaloneFoodDiaryManageList({
       keyExtractor={(item) => item.id}
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={{ paddingBottom: 24, gap: 12 }}
+      ListHeaderComponent={refreshFailureBanner}
+      refreshControl={
+        <RefreshControl
+          refreshing={foodSyncPullRefreshing}
+          onRefresh={onFoodSyncPullRefresh}
+          tintColor={colors.primary}
+          colors={[colors.primary]}
+        />
+      }
       onEndReachedThreshold={0.4}
       onEndReached={() => {
         if (hasMore && !loadingMore && rows.length > 0) {

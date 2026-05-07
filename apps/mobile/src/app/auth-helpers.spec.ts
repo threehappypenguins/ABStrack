@@ -1,3 +1,4 @@
+import { MOBILE_AUTH_SESSION_RECOVERY_USER_MESSAGE } from '../lib/get-mobile-auth-session-safe';
 import {
   mapAuthError,
   validateEmailPassword,
@@ -62,6 +63,12 @@ describe('mapAuthError', () => {
   test('maps already registered message', () => {
     expect(mapAuthError('User already registered')).toBe(
       'An account with this email already exists.',
+    );
+  });
+
+  test('passes through mobile auth session recovery user message unchanged', () => {
+    expect(mapAuthError(MOBILE_AUTH_SESSION_RECOVERY_USER_MESSAGE)).toBe(
+      MOBILE_AUTH_SESSION_RECOVERY_USER_MESSAGE,
     );
   });
 

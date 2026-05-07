@@ -1,19 +1,47 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import {
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  Text,
+  View,
+} from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import type { EpisodeRow } from '@abstrack/types';
 import {
   getActiveEpisodeForUser,
-  getAuthUser,
   healthCheckProfilesLimit1,
   signOut,
 } from '@abstrack/supabase';
-import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
+import { useMobileAuthUserId } from '../../lib/auth/use-mobile-auth-user-id';
+import { PowerSyncActiveEpisodeSubscription } from '../../lib/powersync/PowerSyncActiveEpisodeSubscription';
+import {
+  powerSyncOfflineReplicaReadsEnabled,
+  powerSyncReplicaSqliteReady,
+  usePowerSyncBridgeState,
+} from '../../lib/powersync/PowerSyncSessionBridge';
+import { usePullToResyncPowerSync } from '../../lib/powersync/use-pull-to-resync-powersync';
+import { fetchMobileDeviceIsConnected } from '../../lib/network/mobile-device-netinfo';
+import { useMobileDeviceNetworkConnected } from '../../lib/network/use-mobile-device-network-connected';
+import {
+  getMobileAuthSessionSafe,
+  getMobileSupabaseClient,
+} from '../../lib/supabase-wiring';
 import { mapAuthError } from '../auth-helpers';
 import {
   EpisodeStartHomeCta,
+  episodeRowToActiveHomeSummary,
   type ActiveEpisodeHomeSummary,
 } from '../components/episode-flow/EpisodeStartHomeCta';
 import { AppNavigationShell } from '../components/AppNavigationShell';
+import { userFacingSyncHealthBridgeOrClientError } from '../components/sync-health-footer-user-messages';
+import { useAppTheme } from '../theme/AppThemeContext';
 import { nw } from '../theme/app-nativewind-classes';
 
 interface HealthCheckResult {
@@ -37,6 +65,7 @@ export function HomeScreen({
   onStartEpisode,
   onResumeEpisode,
 }: HomeScreenProps) {
+  const { colors } = useAppTheme();
   const isTestEnv =
     typeof process !== 'undefined' && process.env.NODE_ENV === 'test';
   const showHealthCheck = __DEV__ && !isTestEnv;
@@ -46,98 +75,382 @@ export function HomeScreen({
   const [healthCheck, setHealthCheck] = useState<HealthCheckResult | null>(
     null,
   );
-  const [activeEpisode, setActiveEpisode] =
+  /** When `EXPO_PUBLIC_POWERSYNC_URL` is unset only: online Supabase resume row (see README). */
+  const [networkResumeEpisode, setNetworkResumeEpisode] =
     useState<ActiveEpisodeHomeSummary | null>(null);
-  const [activeEpisodeLoading, setActiveEpisodeLoading] = useState(true);
+  const [networkResumeLoading, setNetworkResumeLoading] = useState(false);
+  /**
+   * True when the last network-resume attempt bailed before calling Supabase because NetInfo
+   * reported explicit offline. While PowerSync is configured but the replica is not mirror-ready,
+   * we must not treat a null resume row as authoritative (empty replica + no fetch).
+   */
+  const [networkResumeSkippedOffline, setNetworkResumeSkippedOffline] =
+    useState(false);
 
-  /** Bumped on each load start and on blur/unmount so in-flight loads never win over newer work. */
-  const loadGenerationRef = useRef(0);
+  const userId = useMobileAuthUserId();
+  const { isConnected: deviceNetConnected } = useMobileDeviceNetworkConnected();
+  const psBridge = usePowerSyncBridgeState();
+  const replicaMirrorHomeReads = useMemo(
+    () => powerSyncOfflineReplicaReadsEnabled(psBridge),
+    [psBridge],
+  );
+  const [psEpisodeSnap, setPsEpisodeSnap] = useState<{
+    episode: EpisodeRow | null;
+    isLoading: boolean;
+    error: Error | undefined;
+  }>({ episode: null, isLoading: false, error: undefined });
 
-  const loadActiveEpisode = useCallback(
-    async (cancel?: { cancelled: boolean }) => {
-      const generation = ++loadGenerationRef.current;
-      const stale = () =>
-        cancel?.cancelled === true || generation !== loadGenerationRef.current;
+  useEffect(() => {
+    if (!psBridge.database) {
+      setPsEpisodeSnap({
+        episode: null,
+        isLoading: false,
+        error: undefined,
+      });
+    }
+  }, [psBridge.database]);
 
-      setActiveEpisodeLoading(true);
+  useEffect(() => {
+    setNetworkResumeEpisode(null);
+    setNetworkResumeLoading(false);
+    setNetworkResumeSkippedOffline(false);
+  }, [userId]);
+
+  useEffect(() => {
+    if (replicaMirrorHomeReads) {
+      setNetworkResumeEpisode(null);
+      setNetworkResumeLoading(false);
+      setNetworkResumeSkippedOffline(false);
+    }
+  }, [replicaMirrorHomeReads]);
+
+  const loadNetworkResumeEpisode = useCallback(
+    async (
+      cancel?: { cancelled: boolean },
+      options?: { bypassReplicaMirrorGate?: boolean },
+    ) => {
+      const stale = () => cancel?.cancelled === true;
+      if (!userId) {
+        if (!stale()) {
+          setNetworkResumeLoading(false);
+          setNetworkResumeSkippedOffline(false);
+        }
+        return;
+      }
+      if (replicaMirrorHomeReads && !options?.bypassReplicaMirrorGate) {
+        if (!stale()) {
+          setNetworkResumeLoading(false);
+          setNetworkResumeSkippedOffline(false);
+        }
+        return;
+      }
+      const connected = await fetchMobileDeviceIsConnected();
+      if (connected === false) {
+        if (!stale()) {
+          setNetworkResumeSkippedOffline(true);
+          setNetworkResumeLoading(false);
+        }
+        return;
+      }
+      if (!stale()) {
+        setNetworkResumeSkippedOffline(false);
+      }
+      setNetworkResumeLoading(true);
       try {
         const mobileSupabase = getMobileSupabaseClient();
         const {
-          data: { user },
-        } = await mobileSupabase.auth.getUser();
+          data: { session },
+          error: sessionError,
+        } = await getMobileAuthSessionSafe();
         if (stale()) {
           return;
         }
-        if (!user) {
-          setActiveEpisode(null);
+        if (sessionError || !session?.user?.id) {
+          setNetworkResumeEpisode(null);
           return;
         }
-        const result = await getActiveEpisodeForUser(mobileSupabase, user.id);
+        const result = await getActiveEpisodeForUser(
+          mobileSupabase,
+          session.user.id,
+        );
         if (stale()) {
           return;
         }
         if (!result.ok || !result.data) {
-          setActiveEpisode(null);
+          setNetworkResumeEpisode(null);
           return;
         }
-        const hasSymptomResumePath = !!result.data.symptom_preset_id;
-        const hasEndStepResumePath =
-          result.data.post_marker_step_completed_at != null;
-        if (!hasSymptomResumePath && !hasEndStepResumePath) {
-          setActiveEpisode(null);
-          return;
-        }
-        if (hasEndStepResumePath) {
-          setActiveEpisode({
-            episodeId: result.data.id,
-            resumeAtHealthMarkers: true,
-            symptomPresetId: result.data.symptom_preset_id,
-          });
-          return;
-        }
-        setActiveEpisode({
-          episodeId: result.data.id,
-          symptomPresetId: result.data.symptom_preset_id as string,
-          resumeAtHealthMarkers: false,
-        });
+        setNetworkResumeEpisode(
+          episodeRowToActiveHomeSummary(result.data) ?? null,
+        );
       } catch {
         if (!stale()) {
-          setActiveEpisode(null);
+          setNetworkResumeEpisode(null);
         }
       } finally {
         if (!stale()) {
-          setActiveEpisodeLoading(false);
+          setNetworkResumeLoading(false);
         }
       }
     },
-    [],
+    [userId, replicaMirrorHomeReads],
   );
+
+  /** When the watched SQLite query fails, fetch Supabase resume as a fallback (same user, online). */
+  useEffect(() => {
+    if (!userId || !replicaMirrorHomeReads || !psEpisodeSnap.error) {
+      return;
+    }
+    const cancel = { cancelled: false };
+    void loadNetworkResumeEpisode(cancel, { bypassReplicaMirrorGate: true });
+    return () => {
+      cancel.cancelled = true;
+    };
+  }, [
+    userId,
+    replicaMirrorHomeReads,
+    psEpisodeSnap.error,
+    loadNetworkResumeEpisode,
+  ]);
+
+  /** Drop stale online fallback once local reads work again. */
+  useEffect(() => {
+    if (!replicaMirrorHomeReads || psEpisodeSnap.error) {
+      return;
+    }
+    setNetworkResumeEpisode(null);
+    setNetworkResumeLoading(false);
+    setNetworkResumeSkippedOffline(false);
+  }, [replicaMirrorHomeReads, psEpisodeSnap.error]);
+
+  const loadNetworkResumeEpisodeRef = useRef(loadNetworkResumeEpisode);
+  loadNetworkResumeEpisodeRef.current = loadNetworkResumeEpisode;
+  const psEpisodeQueryErrorRef = useRef<Error | undefined>(undefined);
+  psEpisodeQueryErrorRef.current = psEpisodeSnap.error;
+  const runDevHealthCheckRef = useRef<() => Promise<void>>(() =>
+    Promise.resolve(),
+  );
+
+  const { refreshing: syncPullRefreshing, onRefresh: onSyncPullRefresh } =
+    usePullToResyncPowerSync(() => {
+      void loadNetworkResumeEpisodeRef.current(undefined, {
+        bypassReplicaMirrorGate: Boolean(psEpisodeQueryErrorRef.current),
+      });
+      void runDevHealthCheckRef.current();
+    });
 
   useFocusEffect(
     useCallback(() => {
+      if (showHealthCheck) {
+        void runDevHealthCheckRef.current();
+      }
+      if (!userId) {
+        return;
+      }
+      const bypass = replicaMirrorHomeReads && Boolean(psEpisodeSnap.error);
+      if (replicaMirrorHomeReads && !bypass) {
+        return;
+      }
       const cancel = { cancelled: false };
-      void loadActiveEpisode(cancel);
+      void loadNetworkResumeEpisode(
+        cancel,
+        bypass ? { bypassReplicaMirrorGate: true } : undefined,
+      );
       return () => {
         cancel.cancelled = true;
-        loadGenerationRef.current += 1;
       };
-    }, [loadActiveEpisode]),
+    }, [
+      showHealthCheck,
+      loadNetworkResumeEpisode,
+      replicaMirrorHomeReads,
+      userId,
+      psEpisodeSnap.error,
+    ]),
   );
 
   useEffect(() => {
+    if (replicaMirrorHomeReads) {
+      return;
+    }
     const supabase = getMobileSupabaseClient();
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
-        void loadActiveEpisode();
+        void loadNetworkResumeEpisode();
       }
     });
     return () => {
       subscription.unsubscribe();
-      loadGenerationRef.current += 1;
     };
-  }, [loadActiveEpisode]);
+  }, [loadNetworkResumeEpisode, replicaMirrorHomeReads]);
+
+  /**
+   * Episode CTA loading: with PowerSync configured, wait on SQLite **only** while init/connect may
+   * still succeed (`syncConnecting`, or an open DB handle with no terminal {@link PowerSyncBridgeState.syncError}).
+   * If `init`/`connect` fails (SQLCipher, schema, etc.), do **not** spin forever — the same online
+   * resume path as when the replica is not mirror-ready drives loading so {@link loadNetworkResumeEpisode}
+   * can surface Supabase. When the replica is mirror-ready, keep loading while first sync is still
+   * connecting without completion. If NetInfo is explicitly offline before that fetch, stay in
+   * loading so an empty local DB is not mistaken for “no active episode.”
+   *
+   * When mirror reads are enabled but the active-episode watched query errors, keep loading while
+   * the online resume attempt is running **or** explicitly skipped for offline
+   * (`networkResumeSkippedOffline`). In that skipped-offline state we still have no authoritative
+   * answer for whether an active episode exists, so Home must not drop into the start-episode CTA.
+   *
+   * When mirror reads are **not** trusted yet (no first sync) but {@link powerSyncReplicaSqliteReady}
+   * is already true, do **not** keep spinning on skipped-offline alone — offline writes (episode
+   * start) are allowed on initialized SQLite; blocking the CTA would trap airplane-mode users after
+   * init without helping resume accuracy.
+   */
+  const activeEpisodeLoading = useMemo(() => {
+    if (!userId) {
+      return false;
+    }
+    if (psBridge.powerSyncUrlConfigured) {
+      const maybeStillOpeningSqlite =
+        !psBridge.localSqliteInitialized &&
+        (psBridge.syncConnecting ||
+          (psBridge.database != null && psBridge.syncError == null));
+      if (maybeStillOpeningSqlite) {
+        return true;
+      }
+      if (replicaMirrorHomeReads) {
+        if (psEpisodeSnap.error) {
+          return networkResumeLoading || networkResumeSkippedOffline;
+        }
+        return !psBridge.firstSyncCompleted && psBridge.syncConnecting;
+      }
+      // Same as {@link powerSyncReplicaSqliteReady}; inline so deps stay primitive bridge fields.
+      const replicaSqliteReady = Boolean(
+        psBridge.database && psBridge.localSqliteInitialized,
+      );
+      return (
+        networkResumeLoading ||
+        (!replicaSqliteReady && networkResumeSkippedOffline)
+      );
+    }
+    return networkResumeLoading;
+  }, [
+    userId,
+    psBridge.database,
+    psBridge.powerSyncUrlConfigured,
+    psBridge.firstSyncCompleted,
+    psBridge.localSqliteInitialized,
+    psBridge.syncConnecting,
+    psBridge.syncError,
+    replicaMirrorHomeReads,
+    psEpisodeSnap.error,
+    networkResumeLoading,
+    networkResumeSkippedOffline,
+  ]);
+
+  const homeActiveEpisode = useMemo((): ActiveEpisodeHomeSummary | null => {
+    if (!userId) {
+      return null;
+    }
+    if (replicaMirrorHomeReads) {
+      if (psEpisodeSnap.error) {
+        return networkResumeEpisode;
+      }
+      const row = psEpisodeSnap.episode;
+      if (!row) {
+        return null;
+      }
+      return episodeRowToActiveHomeSummary(row);
+    }
+    if (
+      powerSyncReplicaSqliteReady(psBridge) &&
+      !psEpisodeSnap.error &&
+      networkResumeEpisode == null &&
+      psEpisodeSnap.episode != null
+    ) {
+      return episodeRowToActiveHomeSummary(psEpisodeSnap.episode);
+    }
+    return networkResumeEpisode;
+  }, [
+    userId,
+    replicaMirrorHomeReads,
+    psEpisodeSnap.episode,
+    psEpisodeSnap.error,
+    networkResumeEpisode,
+    psBridge,
+  ]);
+
+  const activeEpisodeQueryError = useMemo(() => {
+    if (!replicaMirrorHomeReads || !psEpisodeSnap.error) {
+      return null;
+    }
+    if (activeEpisodeLoading || homeActiveEpisode) {
+      return null;
+    }
+    return `Could not read episode status from the copy stored on this device. ${userFacingSyncHealthBridgeOrClientError(psEpisodeSnap.error)}`;
+  }, [
+    replicaMirrorHomeReads,
+    psEpisodeSnap.error,
+    activeEpisodeLoading,
+    homeActiveEpisode,
+  ]);
+
+  const runDevHealthCheck = useCallback(async () => {
+    if (!showHealthCheck) {
+      return;
+    }
+    try {
+      const mobileSupabase = getMobileSupabaseClient();
+      const {
+        data: { session },
+        error: sessionError,
+      } = await mobileSupabase.auth.getSession();
+
+      if (sessionError || !session?.user) {
+        if (isMountedRef.current) {
+          setHealthCheck({
+            success: false,
+            message: 'Health check failed',
+            error: sessionError?.message ?? 'No authenticated user found',
+          });
+        }
+        return;
+      }
+
+      const result = await healthCheckProfilesLimit1(mobileSupabase);
+
+      if (result.error) {
+        if (isMountedRef.current) {
+          setHealthCheck({
+            success: false,
+            message: 'Health check failed',
+            error: result.error.message,
+          });
+        }
+      } else {
+        if (isMountedRef.current) {
+          setHealthCheck({
+            success: true,
+            message:
+              'Health check passed: authenticated user found and profiles query executed without API error (empty rows may still indicate no profile or restrictive RLS).',
+          });
+        }
+      }
+    } catch (err) {
+      // getSession may still attempt a token refresh offline; suppress network errors silently.
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      const isNetworkError =
+        message.includes('Network request failed') ||
+        message.includes('Failed to fetch');
+      if (isMountedRef.current && !isNetworkError) {
+        setHealthCheck({
+          success: false,
+          message: 'Health check error',
+          error: message,
+        });
+      }
+    }
+  }, [showHealthCheck]);
+
+  runDevHealthCheckRef.current = runDevHealthCheck;
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -148,61 +461,12 @@ export function HomeScreen({
       };
     }
 
-    const runHealthCheck = async () => {
-      try {
-        const mobileSupabase = getMobileSupabaseClient();
-        const {
-          data: { user },
-          error: userError,
-        } = await getAuthUser(mobileSupabase);
-
-        if (userError || !user) {
-          if (isMountedRef.current) {
-            setHealthCheck({
-              success: false,
-              message: 'Health check failed',
-              error: userError?.message ?? 'No authenticated user found',
-            });
-          }
-          return;
-        }
-
-        const result = await healthCheckProfilesLimit1(mobileSupabase);
-
-        if (result.error) {
-          if (isMountedRef.current) {
-            setHealthCheck({
-              success: false,
-              message: 'Health check failed',
-              error: result.error.message,
-            });
-          }
-        } else {
-          if (isMountedRef.current) {
-            setHealthCheck({
-              success: true,
-              message:
-                'Health check passed: authenticated user found and profiles query executed without API error (empty rows may still indicate no profile or restrictive RLS).',
-            });
-          }
-        }
-      } catch (err) {
-        if (isMountedRef.current) {
-          setHealthCheck({
-            success: false,
-            message: 'Health check error',
-            error: err instanceof Error ? err.message : 'Unknown error',
-          });
-        }
-      }
-    };
-
-    void runHealthCheck();
+    void runDevHealthCheck();
 
     return () => {
       isMountedRef.current = false;
     };
-  }, [showHealthCheck]);
+  }, [showHealthCheck, deviceNetConnected, runDevHealthCheck]);
 
   const handleSignOut = async () => {
     const mobileSupabase = getMobileSupabaseClient();
@@ -228,6 +492,12 @@ export function HomeScreen({
 
   return (
     <AppNavigationShell title="Home">
+      {powerSyncReplicaSqliteReady(psBridge) ? (
+        <PowerSyncActiveEpisodeSubscription
+          userId={userId}
+          onChange={setPsEpisodeSnap}
+        />
+      ) : null}
       <ScrollView
         className="flex-1"
         contentContainerStyle={{
@@ -237,12 +507,21 @@ export function HomeScreen({
           justifyContent: 'flex-start',
         }}
         keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={syncPullRefreshing}
+            onRefresh={onSyncPullRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
       >
         <EpisodeStartHomeCta
           onStartEpisode={onStartEpisode}
           onResumeEpisode={onResumeEpisode}
-          activeEpisode={activeEpisode}
+          activeEpisode={homeActiveEpisode}
           activeEpisodeLoading={activeEpisodeLoading}
+          activeEpisodeQueryError={activeEpisodeQueryError}
         />
 
         <Pressable

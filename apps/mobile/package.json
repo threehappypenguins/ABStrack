@@ -19,6 +19,7 @@
     "@powersync/op-sqlite": "0.9.6",
     "@powersync/react-native": "1.34.0",
     "@react-native-community/datetimepicker": "8.4.4",
+    "@react-native-community/netinfo": "^11.4.1",
     "@react-navigation/bottom-tabs": "*",
     "@react-navigation/native": "*",
     "@react-navigation/native-stack": "*",

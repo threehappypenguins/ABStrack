@@ -6,6 +6,7 @@ import type {
   PresetSymptomInsert,
   PresetSymptomUpdate,
   SymptomPresetInsert,
+  SymptomPresetRow,
   SymptomPresetUpdate,
 } from '@abstrack/types';
 import type { PresetDataResult } from '@abstrack/supabase';
@@ -14,7 +15,6 @@ import {
   createSymptomPreset,
   deletePresetSymptom,
   deleteSymptomPreset,
-  getAuthUser,
   getSymptomPresetById,
   listPresetSymptomsForPreset,
   listSymptomPresets,
@@ -23,39 +23,120 @@ import {
   updatePresetSymptom,
   updateSymptomPreset,
 } from '@abstrack/supabase';
-import { getMobileSupabaseClient } from '../supabase-wiring';
+import { fetchMobileDeviceIsConnected } from '../network/mobile-device-netinfo';
+import { listSymptomPresetsForUserFromPowerSyncDb } from '../powersync/powersync-episode-flow-reads';
+import {
+  clarifyNetworkErrorWhenReplicaUnavailable,
+  isPresetDataNetworkError,
+  resolvePowerSyncDatabaseForOfflineRead,
+  type PowerSyncOfflineReadContext,
+} from '../powersync/powersync-offline-read-bridge-snapshot';
+import {
+  getMobileAuthSessionSafe,
+  getMobileSupabaseClient,
+  isAuthSessionRecoveryFailure,
+  readPersistedMobileAuthUserId,
+} from '../supabase-wiring';
 
 /**
- * Resolves the signed-in user id, or distinguishes “no session” from {@link getAuthUser} failures
- * (network, Supabase outage, etc.) so UIs can show an accurate message and offer retry.
+ * Resolves the signed-in user id from the persisted session (same pattern as episode templates).
+ * Uses {@link getMobileAuthSessionSafe} rather than `getUser()` so airplane mode does not fail the auth lookup.
+ * When that helper returns `auth_session_recovery_failed`, falls back to {@link readPersistedMobileAuthUserId}
+ * so transient secure-store / recovery hiccups do not block offline PowerSync preset lists.
  *
  * @returns `{ ok: true, data: id }` when signed in; `{ ok: true, data: null }` when signed out with
- * no auth error; `{ ok: false, error }` when the auth lookup failed.
+ * no auth error; `{ ok: false, error }` when the session read failed.
  */
 export async function getCurrentUserId(): Promise<
   PresetDataResult<string | null>
 > {
   try {
     const {
-      data: { user },
+      data: { session },
       error,
-    } = await getAuthUser(getMobileSupabaseClient());
-    if (error) {
+    } = await getMobileAuthSessionSafe();
+    if (!error) {
+      return { ok: true, data: session?.user?.id ?? null };
+    }
+    if (!isAuthSessionRecoveryFailure(error)) {
       return { ok: false, error: toPresetDataError(error) };
     }
-    return { ok: true, data: user?.id ?? null };
+    const persistedId = await readPersistedMobileAuthUserId();
+    if (persistedId != null) {
+      return { ok: true, data: persistedId };
+    }
+    return { ok: false, error: toPresetDataError(error) };
   } catch (caught) {
     return { ok: false, error: toPresetDataError(caught) };
   }
 }
 
 /**
- * Lists the signed-in user’s symptom presets.
+ * Lists the signed-in user’s symptom presets, falling back to the PowerSync replica when Supabase
+ * is unreachable and the bridge reports the replica is ready for server-mirror reads (first sync
+ * this session or a persisted first-sync landing for this user on device).
  *
+ * When the replica is already trusted for offline reads and NetInfo reports **explicitly offline**
+ * (`fetchMobileDeviceIsConnected() === false`), reads SQLite immediately instead of waiting for a
+ * Supabase list timeout (same idea as `HomeScreen` skipping the network resume fetch when offline).
+ * If that SQLite read throws, the returned error is the mapped local failure (not a masked Supabase
+ * network result).
+ *
+ * @param options.powerSyncOfflineRead - Prefer passing `usePowerSyncBridgeState()` fields from the
+ *   screen so reads use the same DB instance as `PowerSyncContext` (PowerSync SDK lifecycle).
  * @returns {@link PresetDataResult} of preset rows or an error.
  */
-export function fetchSymptomPresets() {
-  return listSymptomPresets(getMobileSupabaseClient());
+export async function fetchSymptomPresets(options?: {
+  powerSyncOfflineRead?: PowerSyncOfflineReadContext | null;
+}): Promise<PresetDataResult<SymptomPresetRow[]>> {
+  const client = getMobileSupabaseClient();
+  const db = resolvePowerSyncDatabaseForOfflineRead(
+    options?.powerSyncOfflineRead ?? null,
+  );
+
+  if (db) {
+    const connected = await fetchMobileDeviceIsConnected();
+    if (connected === false) {
+      const auth = await getCurrentUserId();
+      if (!auth.ok) {
+        return auth;
+      }
+      if (auth.data == null) {
+        return listSymptomPresets(client);
+      }
+      try {
+        const data = await listSymptomPresetsForUserFromPowerSyncDb(
+          db,
+          auth.data,
+        );
+        return { ok: true, data };
+      } catch (caught) {
+        return { ok: false, error: toPresetDataError(caught) };
+      }
+    }
+  }
+
+  const remote = await listSymptomPresets(client);
+  if (remote.ok) {
+    return remote;
+  }
+  if (!isPresetDataNetworkError(remote.error)) {
+    return remote;
+  }
+  if (!db) {
+    const alt = clarifyNetworkErrorWhenReplicaUnavailable(remote.error);
+    return alt ? { ok: false, error: alt } : remote;
+  }
+  const auth = await getCurrentUserId();
+  if (!auth.ok || auth.data == null) {
+    return remote;
+  }
+  try {
+    const data = await listSymptomPresetsForUserFromPowerSyncDb(db, auth.data);
+    return { ok: true, data };
+  } catch (caught) {
+    return { ok: false, error: toPresetDataError(caught) };
+  }
 }
 
 /**

@@ -1,13 +1,14 @@
 import React, { useEffect, useRef } from 'react';
 import { Platform, Pressable, Text, View } from 'react-native';
+import type { EpisodeRow } from '@abstrack/types';
 import { announce } from '@abstrack/ui/native';
 import { nw } from '../../theme/app-nativewind-classes';
 
 /**
  * Active episode resume summary for the home CTA.
  *
- * - `resumeAtHealthMarkers: true` means the episode is at the explicit end step; symptom preset is
- *   optional/irrelevant for this resume path.
+ * - `resumeAtHealthMarkers: true` means the episode is at the explicit end step **and** the row has
+ *   `health_marker_preset_id` (required by the health-marker resume screen).
  * - Otherwise, resume enters symptom prompts and requires `symptomPresetId`.
  */
 export type ActiveEpisodeHomeSummary =
@@ -31,7 +32,62 @@ export type EpisodeStartHomeCtaProps = {
   activeEpisode: ActiveEpisodeHomeSummary | null;
   /** Whether an active-episode check is still running. */
   activeEpisodeLoading: boolean;
+  /**
+   * Shown when the local replica query failed (e.g. broken SQLite) so the UI is not identical to
+   * “no active episode” while offline fallback or retry is in play. May be set while
+   * {@link activeEpisodeLoading} is still true (e.g. network fallback skipped).
+   */
+  activeEpisodeQueryError?: string | null;
 };
+
+/**
+ * True when the episode row is far enough along to open the health-marker prompt in resume mode:
+ * post–marker step is done **and** a health marker preset is linked (the screen errors if
+ * `health_marker_preset_id` is missing).
+ *
+ * @param row - Subset of {@link EpisodeRow} fields used for routing.
+ */
+export function episodeRowEligibleForHealthMarkerResume(
+  row: Pick<
+    EpisodeRow,
+    'post_marker_step_completed_at' | 'health_marker_preset_id'
+  >,
+): boolean {
+  return (
+    row.post_marker_step_completed_at != null &&
+    row.health_marker_preset_id != null &&
+    row.health_marker_preset_id !== ''
+  );
+}
+
+/**
+ * Builds the home continue-episode summary from a replicated {@link EpisodeRow} (same rules as
+ * {@link HomeScreen} uses when reading the active episode from PowerSync SQLite).
+ *
+ * @param row - Episode row from SQLite / PowerSync.
+ * @returns Resume summary for the CTA, or `null` when there is no resumable path.
+ */
+export function episodeRowToActiveHomeSummary(
+  row: EpisodeRow,
+): ActiveEpisodeHomeSummary | null {
+  const hasSymptomResumePath = !!row.symptom_preset_id;
+  const hasEndStepResumePath = episodeRowEligibleForHealthMarkerResume(row);
+  if (!hasSymptomResumePath && !hasEndStepResumePath) {
+    return null;
+  }
+  if (hasEndStepResumePath) {
+    return {
+      episodeId: row.id,
+      resumeAtHealthMarkers: true,
+      symptomPresetId: row.symptom_preset_id,
+    };
+  }
+  return {
+    episodeId: row.id,
+    symptomPresetId: row.symptom_preset_id as string,
+    resumeAtHealthMarkers: false,
+  };
+}
 
 /**
  * Prominent home entry point for episode logging: large touch target, high-contrast primary
@@ -40,6 +96,8 @@ export type EpisodeStartHomeCtaProps = {
  * duplicated. Shows **Continue this episode** when {@link ActiveEpisodeHomeSummary} is provided.
  *
  * @param props - Props.
+ * @param props.activeEpisodeQueryError - Optional local-replica query failure message (shown even
+ *   while loading when the parent keeps the spinner for that state).
  * @returns Episode CTA section for the home screen.
  */
 export function EpisodeStartHomeCta({
@@ -47,6 +105,7 @@ export function EpisodeStartHomeCta({
   onResumeEpisode,
   activeEpisode,
   activeEpisodeLoading,
+  activeEpisodeQueryError = null,
 }: EpisodeStartHomeCtaProps) {
   const prevResumeRef = useRef<boolean | null>(null);
 
@@ -79,6 +138,8 @@ export function EpisodeStartHomeCta({
   }, [activeEpisode, activeEpisodeLoading]);
 
   const showResume = !activeEpisodeLoading && activeEpisode !== null;
+  /** Not gated on `activeEpisodeLoading`: Home can keep loading true when the replica query fails and the network fallback is skipped. */
+  const showQueryError = Boolean(activeEpisodeQueryError);
 
   return (
     <View
@@ -93,6 +154,15 @@ export function EpisodeStartHomeCta({
       >
         Episode logging
       </Text>
+      {showQueryError ? (
+        <Text
+          accessibilityRole="alert"
+          className={`text-base leading-relaxed ${nw.textError}`}
+          maxFontSizeMultiplier={2}
+        >
+          {activeEpisodeQueryError}
+        </Text>
+      ) : null}
       <Text
         className={`text-base leading-relaxed ${nw.textMuted}`}
         maxFontSizeMultiplier={2}

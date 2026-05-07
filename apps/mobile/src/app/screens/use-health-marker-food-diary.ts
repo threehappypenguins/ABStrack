@@ -4,13 +4,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Platform } from 'react-native';
 import type { FoodDiaryEntryRow, MealTag } from '@abstrack/types';
 import type { AbstrackSupabaseClient } from '@abstrack/supabase';
-import {
-  createFoodDiaryEntry,
-  deleteFoodDiaryEntry,
-  listFoodDiaryEntriesForEpisode,
-  updateFoodDiaryEntry,
-} from '@abstrack/supabase';
+import type { PowerSyncDatabase } from '@powersync/react-native';
 import { announce } from '@abstrack/ui/native';
+import {
+  createFoodDiaryEntryOfflineFirst,
+  deleteFoodDiaryEntryOfflineFirst,
+  listFoodDiaryEntriesForEpisodeOfflineFirst,
+  updateFoodDiaryEntryOfflineFirst,
+} from '../../lib/episodes/mobile-offline-first-gateway';
+import {
+  getMobileAuthSessionSafe,
+  isAuthSessionRecoveryFailure,
+  readPersistedMobileAuthUserId,
+} from '../../lib/get-mobile-auth-session-safe';
 import {
   currentLocalDate,
   currentLocalTime,
@@ -49,8 +55,16 @@ function upsertFoodEntrySorted(
 
 export type UseHealthMarkerFoodDiaryArgs = {
   episodeId: string;
-  userId: string | null;
   supabase: AbstrackSupabaseClient;
+  /** When set (PowerSync replica ready), food diary CRUD uses local SQLite + upload queue. */
+  powerSyncDatabase?: PowerSyncDatabase | null;
+  /**
+   * When true (caller should align with `powerSyncOfflineReplicaReadsEnabled` on the session bridge),
+   * an empty local PowerSync list skips Supabase verification so legitimately empty episodes work offline
+   * without a redundant remote read. When false, empty local still requires a successful verification
+   * read so an initialized-but-not-yet-synced replica cannot mask server rows on a cold offline open.
+   */
+  trustEmptyLocalFoodDiaryList?: boolean;
   enabled: boolean;
   onLeaveFoodDiary: (decision: 'saved' | 'skipped') => void | Promise<void>;
   onBack: () => void | Promise<void>;
@@ -112,11 +126,21 @@ export type HealthMarkerFoodDiaryHookResult = {
 
 /**
  * Food diary list / add / edit / delete for the in-episode health marker flow (mobile).
+ *
+ * **Creates:** {@link onSaveFoodDiary} resolves {@link getMobileAuthSessionSafe} for **new** entries
+ * and passes that `user_id` into offline-first creates — queued SQLite writes have no RLS, so a
+ * caller-supplied id from mount would be unsafe across sign-out / account switches (same pattern as
+ * symptom persists on {@link SymptomPromptScreen}). On `auth_session_recovery_failed`, falls back to
+ * {@link readPersistedMobileAuthUserId} so transient secure-store hiccups do not block offline creates.
+ * **Edits** skip that session check and call
+ * {@link updateFoodDiaryEntryOfflineFirst} by row id only so local updates still apply when persisted-session
+ * recovery fails after sync.
  */
 export function useHealthMarkerFoodDiary({
   episodeId,
-  userId,
   supabase,
+  powerSyncDatabase = null,
+  trustEmptyLocalFoodDiaryList = false,
   enabled,
   onLeaveFoodDiary,
   onBack,
@@ -236,14 +260,19 @@ export function useHealthMarkerFoodDiary({
   const loadFoodEntries = useCallback(async () => {
     setFoodEntriesLoading(true);
     setFoodEntriesError(null);
-    const result = await listFoodDiaryEntriesForEpisode(supabase, episodeId);
+    const result = await listFoodDiaryEntriesForEpisodeOfflineFirst(
+      supabase,
+      powerSyncDatabase,
+      episodeId,
+      { trustEmptyLocalReplica: trustEmptyLocalFoodDiaryList },
+    );
     setFoodEntriesLoading(false);
     if (!result.ok) {
       setFoodEntriesError(result.error.message);
       return;
     }
     setFoodEntries(result.data);
-  }, [episodeId, supabase]);
+  }, [episodeId, powerSyncDatabase, supabase, trustEmptyLocalFoodDiaryList]);
 
   useEffect(() => {
     if (!enabled) {
@@ -279,7 +308,7 @@ export function useHealthMarkerFoodDiary({
   }, []);
 
   const onSaveFoodDiary = useCallback(async () => {
-    if (savingFoodDiary || !userId) {
+    if (savingFoodDiary) {
       return;
     }
     setSavingFoodDiary(true);
@@ -299,6 +328,7 @@ export function useHealthMarkerFoodDiary({
       setSavingFoodDiary(false);
       return;
     }
+
     const editingId = editingFoodEntryId;
     const useCurrentTimestampForDefaultAdd =
       editingId == null &&
@@ -307,20 +337,56 @@ export function useHealthMarkerFoodDiary({
     const createLoggedAtIso = useCurrentTimestampForDefaultAdd
       ? new Date().toISOString()
       : loggedAtIso;
-    const result =
-      editingId == null
-        ? await createFoodDiaryEntry(supabase, {
-            user_id: userId,
-            episode_id: episodeId,
-            meal_tag: mealTag,
-            food_note: foodNote,
-            logged_at: createLoggedAtIso,
-          })
-        : await updateFoodDiaryEntry(supabase, editingId, {
-            meal_tag: mealTag,
-            food_note: foodNote,
-            logged_at: loggedAtIso,
-          });
+
+    let result;
+    if (editingId != null) {
+      result = await updateFoodDiaryEntryOfflineFirst(
+        supabase,
+        powerSyncDatabase,
+        editingId,
+        {
+          meal_tag: mealTag,
+          food_note: foodNote,
+          logged_at: loggedAtIso,
+        },
+      );
+    } else {
+      const {
+        data: { session },
+        error: sessionError,
+      } = await getMobileAuthSessionSafe();
+      let userId: string | null =
+        session?.user?.id != null && session.user.id !== ''
+          ? session.user.id
+          : null;
+      if (
+        userId == null &&
+        sessionError != null &&
+        isAuthSessionRecoveryFailure(sessionError)
+      ) {
+        userId = await readPersistedMobileAuthUserId();
+      }
+      if (userId == null || userId === '') {
+        const message =
+          sessionError?.message ??
+          'Your session could not be verified. Try signing in again.';
+        setSavingFoodDiary(false);
+        setFoodDiaryFeedback(message);
+        await announce(message, { politeness: 'assertive' });
+        return;
+      }
+      result = await createFoodDiaryEntryOfflineFirst(
+        supabase,
+        powerSyncDatabase,
+        {
+          user_id: userId,
+          episode_id: episodeId,
+          meal_tag: mealTag,
+          food_note: foodNote,
+          logged_at: createLoggedAtIso,
+        },
+      );
+    }
     if (!result.ok) {
       setSavingFoodDiary(false);
       setFoodDiaryFeedback(result.error.message);
@@ -357,9 +423,9 @@ export function useHealthMarkerFoodDiary({
     foodLoggedTime,
     foodNote,
     mealTag,
+    powerSyncDatabase,
     savingFoodDiary,
     supabase,
-    userId,
     addFoodInitialDate,
     addFoodInitialTime,
   ]);
@@ -522,7 +588,11 @@ export function useHealthMarkerFoodDiary({
             void (async () => {
               setDeletingFoodEntryId(entryId);
               setFoodDiaryFeedback(null);
-              const result = await deleteFoodDiaryEntry(supabase, entryId);
+              const result = await deleteFoodDiaryEntryOfflineFirst(
+                supabase,
+                powerSyncDatabase,
+                entryId,
+              );
               setDeletingFoodEntryId(null);
               if (!result.ok) {
                 setFoodDiaryFeedback(result.error.message);
@@ -547,6 +617,7 @@ export function useHealthMarkerFoodDiary({
       editingFoodEntryId,
       loadFoodEntries,
       onNewFoodEntry,
+      powerSyncDatabase,
       savingFoodDiary,
       supabase,
     ],

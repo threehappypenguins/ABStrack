@@ -1,3 +1,5 @@
+import { MOBILE_AUTH_SESSION_RECOVERY_USER_MESSAGE } from '../lib/get-mobile-auth-session-safe';
+
 export function validateEmailPassword(
   email: string,
   password: string,
@@ -31,6 +33,10 @@ export function validateSignupPassword(password: string): string | null {
  * the original error is logged for telemetry/debugging.
  */
 export function mapAuthError(message: string): string {
+  if (message === MOBILE_AUTH_SESSION_RECOVERY_USER_MESSAGE) {
+    return message;
+  }
+
   const normalized = message.toLowerCase();
 
   if (normalized.includes('invalid login credentials')) {

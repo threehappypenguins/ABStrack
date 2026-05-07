@@ -1,4 +1,10 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -6,25 +12,39 @@ import type {
   EpisodeRow,
   EpisodeTemplateWithPresetsRow,
 } from '@abstrack/types';
-import {
-  endEpisodeIfStillActive,
-  getActiveEpisodeForUser,
-} from '@abstrack/supabase';
+import { getActiveEpisodeForUser, PresetDataError } from '@abstrack/supabase';
 import { announce } from '@abstrack/ui/native';
+import { useMobileAuthUserId } from '../../lib/auth/use-mobile-auth-user-id';
 import {
   fetchEpisodeTemplates,
   getCurrentUserId,
 } from '../../lib/episode-templates/episode-template-service';
 import { clearSymptomPromptSession } from '../../lib/episodes/symptom-prompt-session-store';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
+import { endEpisodeIfStillActiveOfflineFirst } from '../../lib/episodes/mobile-offline-first-gateway';
 import { saveEpisodeWithTemplatePresets } from '../../lib/episodes/episode-start-service';
+import { humanizeUnexpectedScreenError } from '../../lib/network/humanize-unexpected-screen-error';
+import { fetchMobileDeviceIsConnected } from '../../lib/network/mobile-device-netinfo';
+import { getActiveEpisodeRowFromPowerSyncDb } from '../../lib/powersync/episode-powersync-local-read';
+import {
+  powerSyncOfflineReplicaReadsEnabled,
+  powerSyncReplicaSqliteReady,
+  usePowerSyncBridgeState,
+} from '../../lib/powersync/PowerSyncSessionBridge';
 import { AsyncScreenContainer } from '../components/AsyncScreenContainer';
+import { episodeRowEligibleForHealthMarkerResume } from '../components/episode-flow/EpisodeStartHomeCta';
 import { ScreenShell } from '../components/ScreenShell';
 import type { MainStackParamList } from '../navigation/types';
 import { nw } from '../theme/app-nativewind-classes';
 
 /** Token for focus-scoped loads. */
 type FocusLoadCancel = { cancelled: boolean };
+
+const EPISODE_START_LOAD_TIMEOUT_MS = 45_000;
+
+/** Shown when SQLite active-episode verification throws — must not be treated as “no active episode”. */
+const ACTIVE_EPISODE_LOCAL_VERIFY_FAILED_MESSAGE =
+  'Could not verify whether you already have an episode in progress from this device. Open Home to continue an episode that is already synced, or connect online and try again.';
 
 type EpisodeStartNav = NativeStackNavigationProp<
   MainStackParamList,
@@ -40,13 +60,14 @@ type EpisodeStartNav = NativeStackNavigationProp<
  */
 export function EpisodeStartScreen() {
   const navigation = useNavigation<EpisodeStartNav>();
-  /** Increments on each screen focus; scopes single-template auto-start idempotency to the current focus cycle. */
-  const focusCycleIdRef = useRef(0);
-  /** Prevents concurrent `saveEpisodeWithTemplatePresets` on the single-template path when `load` runs more than once before success. */
-  const singleTemplateAutoInFlightRef = useRef(false);
-  /** `focusCycleId` for which single-template auto-start already succeeded (skips duplicate inserts until a new focus cycle). */
-  const singleTemplateAutoSucceededCycleIdRef = useRef<number | null>(null);
-  /** Current focus session’s cancellation token; set in `useFocusEffect` and passed to every `load()` so blur cancels in-flight work (including Retry). */
+  const viewerUserId = useMobileAuthUserId();
+  /** Invalidates in-flight {@link load} when the screen blurs, retry runs, or a load watchdog fires. */
+  const loadGenerationRef = useRef(0);
+  /** Cleared on blur / completion so {@link EPISODE_START_LOAD_TIMEOUT_MS} cannot fire late. */
+  const episodeStartLoadTimeoutRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+  /** Current focus session’s cancellation token; aligned with {@link loadGenerationRef} invalidation. */
   const focusCancelRef = useRef<FocusLoadCancel | null>(null);
 
   const [status, setStatus] = useState<'loading' | 'error' | 'ready'>(
@@ -65,132 +86,347 @@ export function EpisodeStartScreen() {
     useState<EpisodeRow | null>(null);
   const [resolvingActiveGate, setResolvingActiveGate] = useState(false);
 
+  /** `undefined`: baseline not committed yet (skip reload so `useFocusEffect` owns the first session). */
+  const prevViewerUserIdRef = useRef<string | null | undefined>(undefined);
+
+  const psBridge = usePowerSyncBridgeState();
+  const powerSyncDbForWrites = useMemo(
+    () => (powerSyncReplicaSqliteReady(psBridge) ? psBridge.database : null),
+    [psBridge],
+  );
+
+  /**
+   * PowerSync bridge updates frequently during connect/first-sync (`syncConnecting`, sqlite init,
+   * etc.). Those updates must **not** change {@link load}'s identity. Also, `useFocusEffect` must not
+   * depend on `load`: when `navigation` (or anything else) bumps `load`, the effect would cancel
+   * and restart mid-flight and strand the UI on `loading`.
+   */
+  const psBridgeRef = useRef(psBridge);
+  useEffect(() => {
+    psBridgeRef.current = psBridge;
+  }, [psBridge]);
+
   const load = useCallback(
-    async (focusCancel?: FocusLoadCancel, focusCycle?: number) => {
-      const cycleId = focusCycle ?? focusCycleIdRef.current;
-      const stale = () => focusCancel?.cancelled === true;
+    async (focusCancel?: FocusLoadCancel, expectedGen?: number) => {
+      const stale = () =>
+        focusCancel?.cancelled === true ||
+        (expectedGen !== undefined &&
+          expectedGen !== loadGenerationRef.current);
 
-      setStatus('loading');
-      setErrorMessage(null);
-      setEpisodeStartError(null);
-      setBlockingActiveEpisode(null);
-      const authResult = await getCurrentUserId();
-      if (stale()) {
-        return;
-      }
-      if (!authResult.ok) {
-        setErrorMessage(authResult.error.message);
-        setStatus('error');
-        return;
-      }
-      if (authResult.data === null) {
-        setErrorMessage('You need to be signed in to start an episode.');
-        setStatus('error');
-        return;
-      }
-      const userId = authResult.data;
+      const loadTimeoutFallback =
+        'Starting this screen is taking too long. Check your connection, then tap Try again.';
 
-      const supabase = getMobileSupabaseClient();
-      const activeResult = await getActiveEpisodeForUser(supabase, userId);
-      if (stale()) {
-        return;
-      }
-      if (!activeResult.ok) {
-        setErrorMessage(activeResult.error.message);
-        setStatus('error');
-        return;
-      }
-      if (activeResult.data) {
-        setBlockingActiveEpisode(activeResult.data);
-        setRows([]);
-        setSubmitting(false);
-        setStatus('ready');
-        return;
-      }
-
-      const result = await fetchEpisodeTemplates();
-      if (stale()) {
-        return;
-      }
-      if (!result.ok) {
-        setErrorMessage(result.error.message);
-        setStatus('error');
-        return;
-      }
-
-      setRows(result.data);
-
-      if (result.data.length === 1) {
-        if (singleTemplateAutoSucceededCycleIdRef.current === cycleId) {
-          // Stay on `loading` until `navigation.replace` unmounts — `ready` would flash the chooser if `load` re-runs.
+      try {
+        setStatus('loading');
+        setErrorMessage(null);
+        setEpisodeStartError(null);
+        setBlockingActiveEpisode(null);
+        const authResult = await getCurrentUserId();
+        if (stale()) {
           return;
         }
-        if (singleTemplateAutoInFlightRef.current) {
-          setStatus('loading');
+        if (!authResult.ok) {
+          setErrorMessage(authResult.error.message);
+          setStatus('error');
           return;
         }
+        if (authResult.data === null) {
+          setErrorMessage('You need to be signed in to start an episode.');
+          setStatus('error');
+          return;
+        }
+        const userId = authResult.data;
 
-        const template = result.data[0];
-        singleTemplateAutoInFlightRef.current = true;
-        setSubmitting(true);
-        let didNavigateToSymptomPrompt = false;
-        try {
-          const saveResult = await saveEpisodeWithTemplatePresets({
-            userId,
-            symptomPresetId: template.symptom_preset_id,
-            healthMarkerPresetId: template.health_marker_preset_id,
-          });
+        let activeEpisodeRow: EpisodeRow | null = null;
+        const bridgeForActiveRead = psBridgeRef.current;
+        const trustedReplicaDb = powerSyncOfflineReplicaReadsEnabled(
+          bridgeForActiveRead,
+        )
+          ? bridgeForActiveRead.database
+          : null;
+        const sqliteReadyReplicaDb = powerSyncReplicaSqliteReady(
+          bridgeForActiveRead,
+        )
+          ? bridgeForActiveRead.database
+          : null;
+        /** Prefer trusted mirror for reads; fall back to init-only SQLite after Supabase network errors. */
+        const replicaDbForNetworkFallback =
+          trustedReplicaDb ?? sqliteReadyReplicaDb;
+        let shouldQuerySupabaseForActive = true;
+        if (trustedReplicaDb) {
+          const connected = await fetchMobileDeviceIsConnected();
           if (stale()) {
             return;
           }
-          if (!saveResult.ok) {
-            setSelectedId(template.id);
-            setEpisodeStartError(saveResult.error.message);
-            announce(saveResult.error.message);
-            setStatus('ready');
+          if (connected === false) {
+            shouldQuerySupabaseForActive = false;
+            try {
+              activeEpisodeRow = await getActiveEpisodeRowFromPowerSyncDb(
+                trustedReplicaDb,
+                userId,
+              );
+            } catch (caught) {
+              if (!stale()) {
+                setErrorMessage(
+                  humanizeUnexpectedScreenError(
+                    caught,
+                    ACTIVE_EPISODE_LOCAL_VERIFY_FAILED_MESSAGE,
+                  ),
+                );
+                setStatus('error');
+              }
+              return;
+            }
+          }
+        }
+
+        if (!activeEpisodeRow && shouldQuerySupabaseForActive) {
+          const supabase = getMobileSupabaseClient();
+          const activeResult = await getActiveEpisodeForUser(supabase, userId);
+          if (stale()) {
             return;
           }
-          singleTemplateAutoSucceededCycleIdRef.current = cycleId;
-          announce('Episode started.');
-          // Keep `loading` until navigation unmounts — `ready` would flash the template chooser briefly.
-          navigation.replace('SymptomPrompt', {
-            episodeId: saveResult.data.id,
-            symptomPresetId: template.symptom_preset_id,
-          });
-          didNavigateToSymptomPrompt = true;
-        } finally {
-          singleTemplateAutoInFlightRef.current = false;
-          if (!stale() && !didNavigateToSymptomPrompt) {
-            setSubmitting(false);
+
+          if (activeResult.ok) {
+            activeEpisodeRow = activeResult.data;
+          } else {
+            const isNetwork =
+              activeResult.error instanceof PresetDataError &&
+              activeResult.error.code === 'network_error';
+            if (isNetwork && replicaDbForNetworkFallback) {
+              try {
+                activeEpisodeRow = await getActiveEpisodeRowFromPowerSyncDb(
+                  replicaDbForNetworkFallback,
+                  userId,
+                );
+              } catch (caught) {
+                if (!stale()) {
+                  setErrorMessage(
+                    humanizeUnexpectedScreenError(
+                      caught,
+                      ACTIVE_EPISODE_LOCAL_VERIFY_FAILED_MESSAGE,
+                    ),
+                  );
+                  setStatus('error');
+                }
+                return;
+              }
+            }
+            if (!activeEpisodeRow) {
+              if (!isNetwork) {
+                setErrorMessage(activeResult.error.message);
+                setStatus('error');
+                return;
+              }
+              // Network and no replicated active episode — try templates (may also be offline).
+            }
           }
         }
-        return;
-      }
 
-      setSubmitting(false);
-      setSelectedId((prev) => {
-        if (prev && result.data.some((r) => r.id === prev)) {
-          return prev;
+        if (activeEpisodeRow) {
+          setBlockingActiveEpisode(activeEpisodeRow);
+          setRows([]);
+          setSubmitting(false);
+          setStatus('ready');
+          return;
         }
-        return null;
-      });
-      setStatus('ready');
+
+        const bridgeForTemplates = psBridgeRef.current;
+        const result = await fetchEpisodeTemplates({
+          powerSyncOfflineRead: {
+            database: bridgeForTemplates.database,
+            replicationReady:
+              powerSyncOfflineReplicaReadsEnabled(bridgeForTemplates),
+          },
+        });
+        if (stale()) {
+          return;
+        }
+        if (!result.ok) {
+          const offlineTemplates =
+            result.error instanceof PresetDataError &&
+            result.error.code === 'network_error';
+          setErrorMessage(
+            offlineTemplates
+              ? 'You are offline. Connect to the internet to load episode templates, or go back to Home to continue an episode that was already synced to this device.'
+              : result.error.message,
+          );
+          setStatus('error');
+          return;
+        }
+
+        setRows(result.data);
+
+        if (result.data.length === 1) {
+          const template = result.data[0];
+          setSubmitting(true);
+          let didNavigateToSymptomPrompt = false;
+          try {
+            const saveResult = await saveEpisodeWithTemplatePresets({
+              userId,
+              symptomPresetId: template.symptom_preset_id,
+              healthMarkerPresetId: template.health_marker_preset_id,
+              powerSyncDatabase: powerSyncReplicaSqliteReady(
+                psBridgeRef.current,
+              )
+                ? psBridgeRef.current.database
+                : null,
+            });
+            if (stale()) {
+              return;
+            }
+            if (!saveResult.ok) {
+              setSelectedId(template.id);
+              setEpisodeStartError(saveResult.error.message);
+              announce(saveResult.error.message);
+              setStatus('ready');
+              return;
+            }
+            announce('Episode started.');
+            try {
+              navigation.replace('SymptomPrompt', {
+                episodeId: saveResult.data.id,
+                symptomPresetId: template.symptom_preset_id,
+              });
+              didNavigateToSymptomPrompt = true;
+            } catch (navErr) {
+              const msg =
+                navErr instanceof Error
+                  ? navErr.message
+                  : 'Could not open symptoms for this episode.';
+              setEpisodeStartError(msg);
+              announce(msg, { politeness: 'assertive' });
+              setStatus('ready');
+            }
+          } finally {
+            if (!stale() && !didNavigateToSymptomPrompt) {
+              setSubmitting(false);
+            }
+          }
+          return;
+        }
+
+        setSubmitting(false);
+        setSelectedId((prev) => {
+          if (prev && result.data.some((r) => r.id === prev)) {
+            return prev;
+          }
+          return null;
+        });
+        setStatus('ready');
+      } catch (caught) {
+        if (stale()) {
+          return;
+        }
+        setErrorMessage(
+          humanizeUnexpectedScreenError(caught, loadTimeoutFallback),
+        );
+        setStatus('error');
+      }
     },
     [navigation],
   );
 
+  const loadRef = useRef(load);
+  loadRef.current = load;
+
+  /**
+   * Begins a focus-style load session (generation bump, cancel token, watchdog race). Returns the
+   * teardown used when the screen blurs or when restarting after an auth account switch.
+   */
+  const scheduleEpisodeStartLoadSession = useCallback((): (() => void) => {
+    loadGenerationRef.current += 1;
+    const generation = loadGenerationRef.current;
+    const focusCancel: FocusLoadCancel = { cancelled: false };
+    focusCancelRef.current = focusCancel;
+
+    void (async () => {
+      const loadTimeoutFallback =
+        'Starting this screen is taking too long. Check your connection, then tap Try again.';
+      try {
+        await Promise.race([
+          loadRef.current(focusCancel, generation),
+          new Promise<never>((_, reject) => {
+            episodeStartLoadTimeoutRef.current = setTimeout(
+              () => reject(new Error(loadTimeoutFallback)),
+              EPISODE_START_LOAD_TIMEOUT_MS,
+            );
+          }),
+        ]);
+      } catch (caught) {
+        focusCancel.cancelled = true;
+        loadGenerationRef.current += 1;
+        setErrorMessage(
+          humanizeUnexpectedScreenError(caught, loadTimeoutFallback),
+        );
+        setStatus('error');
+      } finally {
+        if (episodeStartLoadTimeoutRef.current != null) {
+          clearTimeout(episodeStartLoadTimeoutRef.current);
+          episodeStartLoadTimeoutRef.current = null;
+        }
+      }
+    })();
+
+    return () => {
+      if (episodeStartLoadTimeoutRef.current != null) {
+        clearTimeout(episodeStartLoadTimeoutRef.current);
+        episodeStartLoadTimeoutRef.current = null;
+      }
+      const cancelToken = focusCancelRef.current;
+      if (cancelToken != null) {
+        cancelToken.cancelled = true;
+      }
+      loadGenerationRef.current += 1;
+    };
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
-      focusCycleIdRef.current += 1;
-      const cycleId = focusCycleIdRef.current;
-      const focusCancel: FocusLoadCancel = { cancelled: false };
-      focusCancelRef.current = focusCancel;
-      void load(focusCancel, cycleId);
-      return () => {
-        focusCancel.cancelled = true;
-      };
-    }, [load]),
+      const cleanup = scheduleEpisodeStartLoadSession();
+      return cleanup;
+    }, [scheduleEpisodeStartLoadSession]),
   );
+
+  /**
+   * {@link useFocusEffect} does not re-run when only the Supabase session user changes while this
+   * route stays focused — reload templates / active-episode gate for the new account.
+   */
+  useEffect(() => {
+    const next = viewerUserId;
+    const prev = prevViewerUserIdRef.current;
+
+    if (prev !== undefined && prev === next) {
+      return;
+    }
+
+    prevViewerUserIdRef.current = next;
+
+    if (prev === undefined) {
+      return;
+    }
+
+    if (episodeStartLoadTimeoutRef.current != null) {
+      clearTimeout(episodeStartLoadTimeoutRef.current);
+      episodeStartLoadTimeoutRef.current = null;
+    }
+    const cancelToken = focusCancelRef.current;
+    if (cancelToken != null) {
+      cancelToken.cancelled = true;
+    }
+
+    setStatus('loading');
+    setErrorMessage(null);
+    setEpisodeStartError(null);
+    setBlockingActiveEpisode(null);
+    setRows([]);
+    setSelectedId(null);
+    setSubmitting(false);
+    setResolvingActiveGate(false);
+
+    const cleanup = scheduleEpisodeStartLoadSession();
+    return cleanup;
+  }, [viewerUserId, scheduleEpisodeStartLoadSession]);
 
   const onSelectTemplate = (id: string) => {
     setSelectedId(id);
@@ -226,6 +462,9 @@ export function EpisodeStartScreen() {
         userId: authResult.data,
         symptomPresetId: template.symptom_preset_id,
         healthMarkerPresetId: template.health_marker_preset_id,
+        powerSyncDatabase: powerSyncReplicaSqliteReady(psBridgeRef.current)
+          ? psBridgeRef.current.database
+          : null,
       });
       if (!result.ok) {
         setEpisodeStartError(result.error.message);
@@ -251,7 +490,7 @@ export function EpisodeStartScreen() {
     if (!row) {
       return;
     }
-    if (row.post_marker_step_completed_at) {
+    if (episodeRowEligibleForHealthMarkerResume(row)) {
       navigation.replace('HealthMarkerPrompt', {
         episodeId: row.id,
         resume: true,
@@ -279,8 +518,9 @@ export function EpisodeStartScreen() {
     setEpisodeStartError(null);
     try {
       const supabase = getMobileSupabaseClient();
-      const end = await endEpisodeIfStillActive(
+      const end = await endEpisodeIfStillActiveOfflineFirst(
         supabase,
+        powerSyncDbForWrites,
         row.id,
         new Date().toISOString(),
         row.started_at,
@@ -291,11 +531,11 @@ export function EpisodeStartScreen() {
         return;
       }
       clearSymptomPromptSession(row.id);
-      // Reload start flow before any success announcement so UI matches server state; always await
-      // `load` (fallback cancel token if focus ref is unset).
-      await load(
+      loadGenerationRef.current += 1;
+      const gen = loadGenerationRef.current;
+      await loadRef.current(
         focusCancelRef.current ?? { cancelled: false },
-        focusCycleIdRef.current,
+        gen,
       );
       if (!end.data.didEnd) {
         return;
@@ -315,11 +555,12 @@ export function EpisodeStartScreen() {
     } finally {
       setResolvingActiveGate(false);
     }
-  }, [blockingActiveEpisode, load, resolvingActiveGate]);
+  }, [blockingActiveEpisode, powerSyncDbForWrites, resolvingActiveGate]);
 
   const gatePresetId = blockingActiveEpisode?.symptom_preset_id;
   const gateAtEndStep =
-    blockingActiveEpisode?.post_marker_step_completed_at != null;
+    blockingActiveEpisode != null &&
+    episodeRowEligibleForHealthMarkerResume(blockingActiveEpisode);
   const canResumeFromGate =
     gateAtEndStep ||
     (typeof gatePresetId === 'string' && gatePresetId.length > 0);
@@ -422,11 +663,12 @@ export function EpisodeStartScreen() {
             errorTitle="Could not load templates"
             errorMessage={errorMessage ?? undefined}
             onRetry={() => {
-              const token = focusCancelRef.current;
-              if (token == null) {
-                return;
-              }
-              void load(token, focusCycleIdRef.current);
+              loadGenerationRef.current += 1;
+              const gen = loadGenerationRef.current;
+              const token = focusCancelRef.current ?? { cancelled: false };
+              focusCancelRef.current = token;
+              token.cancelled = false;
+              void loadRef.current(token, gen);
             }}
           >
             <ScrollView

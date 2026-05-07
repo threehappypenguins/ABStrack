@@ -1,5 +1,7 @@
 import * as React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import NetInfo from '@react-native-community/netinfo';
+import type { NetInfoState } from '@react-native-community/netinfo';
 import { AppState, Linking } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import type { AbstrackSupabaseClient, Session } from '@abstrack/supabase';
@@ -10,14 +12,22 @@ import {
   getMobileSupabaseClient,
 } from '../lib/supabase-wiring';
 
-jest.mock('expo-secure-store', () => ({
-  getItemAsync: jest.fn(async () => null),
-  setItemAsync: jest.fn(async () => undefined),
-  deleteItemAsync: jest.fn(async () => undefined),
-}));
+jest.mock('@abstrack/supabase', () => {
+  const actual =
+    jest.requireActual<typeof import('@abstrack/supabase')>(
+      '@abstrack/supabase',
+    );
+  return {
+    ...actual,
+    getActiveEpisodeForUser: jest.fn().mockResolvedValue({
+      ok: true,
+      data: null,
+    }),
+  };
+});
 
-jest.mock('../lib/supabase-wiring', () => {
-  const original = jest.requireActual('../lib/supabase-wiring');
+jest.mock('../lib/supabase-wiring-core', () => {
+  const original = jest.requireActual('../lib/supabase-wiring-core');
   return {
     ...original,
     getMobileSupabaseClient: jest.fn(),
@@ -94,7 +104,7 @@ describe('mobile auth state sync', () => {
     'This reset link is invalid or expired. Request a new one.';
 
   /**
-   * Supabase registers multiple `onAuthStateChange` listeners (e.g. App + HomeScreen). Tests must
+   * Supabase registers multiple `onAuthStateChange` listeners (e.g. App). Tests must
    * broadcast to every subscriber; a single stored callback misses App when Home overwrites it.
    */
   function multiSubscriberOnAuthStateChange() {
@@ -443,7 +453,11 @@ describe('mobile auth state sync', () => {
       user: { id: 'user-1' },
     } as unknown as Session;
 
+    /** After `signOut`, bootstrap’s post–re-auth `getSession` must see null (matches real GoTrue). */
+    let persistedSession: Session | null = signedInSession;
+
     const signOut = jest.fn(async () => {
+      persistedSession = null;
       authStateListener?.('SIGNED_OUT', null);
       return { error: null };
     });
@@ -451,7 +465,7 @@ describe('mobile auth state sync', () => {
     const mockClient = {
       auth: {
         getSession: jest.fn(async () => ({
-          data: { session: signedInSession },
+          data: { session: persistedSession },
         })),
         signOut,
         onAuthStateChange: jest.fn((callback) => {
@@ -699,6 +713,114 @@ describe('mobile auth state sync', () => {
 
     expect(await findByText('Need an account? Sign up')).toBeTruthy();
 
+    addEventListenerSpy.mockRestore();
+  });
+
+  test('uses local signOut for re-auth when foregrounding offline and skips refreshSession', async () => {
+    let appStateListener: ((state: string) => void) | null = null;
+    const addEventListenerSpy = jest
+      .spyOn(AppState, 'addEventListener')
+      .mockImplementation((eventType, listener) => {
+        if (eventType === 'change') {
+          appStateListener = listener as (state: string) => void;
+        }
+
+        return {
+          remove: jest.fn(),
+        } as unknown as ReturnType<typeof AppState.addEventListener>;
+      });
+
+    const { onAuthStateChange, emitAuth } = multiSubscriberOnAuthStateChange();
+
+    const signedInSession = {
+      access_token: 'access',
+      refresh_token: 'refresh',
+      token_type: 'bearer',
+      expires_in: 3600,
+      expires_at: 9999999999,
+      user: { id: 'user-1' },
+    } as unknown as Session;
+
+    const signOut = jest.fn(async () => {
+      emitAuth('SIGNED_OUT', null);
+      return { error: null };
+    });
+    const refreshSession = jest.fn(async () => ({ data: {}, error: null }));
+
+    const mockClient = {
+      auth: {
+        getSession: jest.fn(async () => ({
+          data: { session: signedInSession },
+          error: null,
+        })),
+        signOut,
+        refreshSession,
+        onAuthStateChange,
+      },
+    } as unknown as AbstrackSupabaseClient;
+
+    jest.mocked(getMobileSupabaseClient).mockReturnValue(mockClient);
+    let reauthPreferenceReads = 0;
+    jest.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => {
+      if (key === 'abstrack.theme_preference') {
+        return null;
+      }
+      if (key === 'abstrack.require_reauth_on_open') {
+        reauthPreferenceReads += 1;
+        return reauthPreferenceReads >= 2 ? 'true' : 'false';
+      }
+      return null;
+    });
+
+    const onlineNet = {
+      type: 'wifi',
+      isConnected: true,
+      isInternetReachable: true,
+      details: {},
+    } as unknown as NetInfoState;
+    const offlineNet = {
+      type: 'none',
+      isConnected: false,
+      isInternetReachable: false,
+      details: {},
+    } as unknown as NetInfoState;
+
+    let netFetchCount = 0;
+    jest.mocked(NetInfo.fetch).mockImplementation(() => {
+      netFetchCount += 1;
+      if (netFetchCount === 1) {
+        return Promise.resolve(onlineNet);
+      }
+      return Promise.resolve(offlineNet);
+    });
+
+    const { findByText } = render(<App />);
+
+    expect(await findByText('You are signed in.')).toBeTruthy();
+    expect(signOut).not.toHaveBeenCalled();
+
+    await act(async () => {
+      appStateListener?.('active');
+    });
+
+    await waitFor(() => {
+      expect(netFetchCount).toBeGreaterThanOrEqual(2);
+    });
+
+    await waitFor(() => {
+      expect(signOut).toHaveBeenCalledTimes(1);
+    });
+    expect(signOut).toHaveBeenCalledWith({ scope: 'local' });
+
+    await act(async () => {
+      await new Promise<void>((resolve) => setTimeout(resolve, 500));
+    });
+
+    expect(refreshSession).not.toHaveBeenCalled();
+
+    jest
+      .mocked(NetInfo.fetch)
+      .mockImplementation(() => Promise.resolve(onlineNet));
     addEventListenerSpy.mockRestore();
   });
 
