@@ -210,7 +210,11 @@ export function EpisodeTemplateCreateScreen() {
       return;
     }
     presetListsAutoRetryConsumedRef.current = true;
-    void loadPresetListsRef.current();
+    const ac = new AbortController();
+    void loadPresetListsRef.current(ac.signal);
+    return () => {
+      ac.abort();
+    };
   }, [replicaMirrorReads, listsError, listsLoading]);
 
   const nameOk = useMemo(() => validateEpisodeTemplateName(name).ok, [name]);

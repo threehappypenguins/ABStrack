@@ -155,6 +155,27 @@ export function EpisodeTemplateEditorScreen() {
   loadRef.current = load;
 
   /**
+   * Latest in-flight `AbortController` for manual retry from {@link AsyncScreenContainer.onRetry}.
+   * A subsequent manual retry aborts the prior attempt; unmount aborts the last one so a late
+   * `setStatus` / `setRow` cannot land after navigation.
+   */
+  const manualRetryAbortRef = useRef<AbortController | null>(null);
+
+  const triggerManualRetry = useCallback(() => {
+    manualRetryAbortRef.current?.abort();
+    const ac = new AbortController();
+    manualRetryAbortRef.current = ac;
+    void loadRef.current(ac.signal);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      manualRetryAbortRef.current?.abort();
+      manualRetryAbortRef.current = null;
+    };
+  }, []);
+
+  /**
    * Reload when `templateId` **or** the signed-in user changes — an account switch must not keep
    * another user's template row / preset picklists visible while this route stays mounted.
    * Still intentionally independent of bridge readiness (see retry effect below).
@@ -244,7 +265,11 @@ export function EpisodeTemplateEditorScreen() {
       return;
     }
     templateLoadAutoRetryConsumedRef.current = true;
-    void loadRef.current();
+    const ac = new AbortController();
+    void loadRef.current(ac.signal);
+    return () => {
+      ac.abort();
+    };
   }, [replicaMirrorReads, status]);
 
   const isDirty = useMemo(() => {
@@ -377,9 +402,7 @@ export function EpisodeTemplateEditorScreen() {
     <AsyncScreenContainer
       status={status}
       errorMessage={errorMessage ?? undefined}
-      onRetry={() => {
-        void loadRef.current();
-      }}
+      onRetry={triggerManualRetry}
     >
       {row ? (
         <ScrollView
