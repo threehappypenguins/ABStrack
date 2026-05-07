@@ -1,3 +1,5 @@
+import { messageLooksLikeFetchTransportFailure } from '../network/fetch-transport-failure-heuristic';
+
 /**
  * Detects PostgREST / Postgres failures where retrying the same CRUD batch is unlikely to succeed
  * (RLS, FK, check constraints, client errors). The PowerSync upload connector uses this to call
@@ -160,16 +162,6 @@ function extractPostgrestCode(error: unknown): string | null {
     return code;
   }
   return null;
-}
-
-function messageLooksLikeFetchTransportFailure(message: string): boolean {
-  const m = message.toLowerCase();
-  return (
-    m.includes('failed to fetch') ||
-    m.includes('networkerror when attempting') ||
-    m.includes('load failed') ||
-    m.includes('network request failed')
-  );
 }
 
 function isLikelyNetworkTransportFailure(error: unknown): boolean {
