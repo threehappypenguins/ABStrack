@@ -97,9 +97,9 @@ CREATE POLICY practitioner_observation_notes_update ON public.practitioner_obser
 
 -- ---------------------------------------------------------------------------
 -- PowerSync replication (publication + role grant; BYPASSRLS download scope in sync-rules.yaml)
+-- Idempotent: skip when powersync_role is absent (environments without 20260430120000) so GRANT
+-- does not error; ADD TABLE only when publication exists and the table is not already a member.
 -- ---------------------------------------------------------------------------
-GRANT SELECT ON TABLE public.practitioner_observation_notes TO powersync_role;
-
 DO $$
 BEGIN
   IF EXISTS (
@@ -109,6 +109,7 @@ BEGIN
       pg_roles
     WHERE
       rolname = 'powersync_role') THEN
+    GRANT SELECT ON TABLE public.practitioner_observation_notes TO powersync_role;
     IF EXISTS (
       SELECT
         1
