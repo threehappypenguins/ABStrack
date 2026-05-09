@@ -134,9 +134,10 @@ export function persistedSessionIdentityWithRedactedAccessJwt(
  * use {@link hasUsableSupabaseAccessTokenForNetwork} before network use.
  *
  * Resolves the Supabase client via {@link getMobileSupabaseClient} from `./supabase-wiring-core`
- * (not the `supabase-wiring` barrel) so Jest tests can `jest.mock('../../lib/supabase-wiring-core',
- * () => ({ ...requireActual(), getMobileSupabaseClient: jest.fn() }))` and this helper uses the
- * same mocked client as screens that import from the barrel.
+ * (not the `supabase-wiring` barrel). In Jest, mock that module **without** spreading
+ * `jest.requireActual('./supabase-wiring-core')`: the real module wires `mobileAuthStorage` to
+ * chunking secure-store I/O; this helper calls `mobileAuthStorage.getItem` on the recovery path,
+ * which can finish after teardown and break Jest if the real store is still active.
  *
  * @returns Same shape as `SupabaseClient.auth.getSession()`.
  */

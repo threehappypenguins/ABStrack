@@ -987,8 +987,8 @@ export async function listEpisodeMediaBucketPathsForEpisodeMediaId(
 
 /**
  * Lists normalized bucket-relative paths for `episode_media` rows tied to one
- * `episode_symptoms` row (resolves `episode_id` first). Used when PowerSync uploads a local
- * `episode_symptoms` DELETE so Storage objects are removed like the REST delete helper.
+ * `episode_symptoms` row (resolves `episode_id` first). Call before PostgREST DELETE; remove Storage
+ * only after DELETE succeeds (same order as {@link deleteCurrentPassEpisodeSymptomAnswer}).
  *
  * @param client - Supabase client (RLS applies).
  * @param episodeSymptomId - `episode_symptoms.id`.

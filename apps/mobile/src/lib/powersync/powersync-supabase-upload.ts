@@ -123,10 +123,10 @@ export function normalizePowerSyncRowForSupabase(
  * Applies one PowerSync CRUD entry to Supabase REST (RLS). {@link uploadPowerSyncCrudBatchToSupabase}
  * checkpoints after each entry; {@link CrudBatch#complete} runs on the success path in the backend connector.
  *
- * PATCH uses PostgREST `select('id').single()` after `update` so zero-row effects return an error.
- * DELETE uses `select('id').maybeSingle()` for `episode_symptoms` / `episode_media` (idempotent replay)
- * and `.single()` for other tables. `episode_symptoms` / `episode_media` deletes remove matching
- * Storage objects in private `episode-media` first so PowerSync-queued deletes match REST delete cleanup.
+ * PATCH and DELETE use `select('id').maybeSingle()` so 0-row effects (replay, ordering, idempotent
+ * deletes) do not return **PGRST116**, which is classified as a permanent API failure and would dequeue
+ * ops incorrectly. For `episode_symptoms` / `episode_media`, bucket paths are listed first; Storage
+ * objects are removed only after PostgREST DELETE succeeds (same order as {@link deleteCurrentPassEpisodeSymptomAnswer}).
  *
  * @param client - Authenticated Supabase client (user JWT).
  * @param entry - Local change from {@link CrudBatch}.
@@ -159,7 +159,7 @@ export async function applyPowerSyncCrudEntryToSupabase(
       .update(patch as never)
       .eq('id', id)
       .select('id')
-      .single();
+      .maybeSingle();
     if (error) {
       throw error;
     }
@@ -175,7 +175,6 @@ export async function applyPowerSyncCrudEntryToSupabase(
       if (!listed.ok) {
         throw listed.error;
       }
-      await removeEpisodeMediaStorageObjectPathsBestEffort(client, listed.data);
       const { error } = await client
         .from('episode_symptoms')
         .delete()
@@ -184,6 +183,12 @@ export async function applyPowerSyncCrudEntryToSupabase(
         .maybeSingle();
       if (error) {
         throw error;
+      }
+      if (listed.data.length > 0) {
+        await removeEpisodeMediaStorageObjectPathsBestEffort(
+          client,
+          listed.data,
+        );
       }
       return;
     }
@@ -195,7 +200,6 @@ export async function applyPowerSyncCrudEntryToSupabase(
       if (!listed.ok) {
         throw listed.error;
       }
-      await removeEpisodeMediaStorageObjectPathsBestEffort(client, listed.data);
       const { error } = await client
         .from('episode_media')
         .delete()
@@ -205,6 +209,12 @@ export async function applyPowerSyncCrudEntryToSupabase(
       if (error) {
         throw error;
       }
+      if (listed.data.length > 0) {
+        await removeEpisodeMediaStorageObjectPathsBestEffort(
+          client,
+          listed.data,
+        );
+      }
       return;
     }
 
@@ -213,7 +223,7 @@ export async function applyPowerSyncCrudEntryToSupabase(
       .delete()
       .eq('id', id)
       .select('id')
-      .single();
+      .maybeSingle();
     if (error) {
       throw error;
     }

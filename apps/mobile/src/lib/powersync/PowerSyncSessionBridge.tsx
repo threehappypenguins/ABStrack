@@ -21,8 +21,8 @@ import NetInfo from '@react-native-community/netinfo';
 import {
   createDebouncedPendingEpisodeMediaFlush,
   runPendingEpisodeMediaUploadWorker,
+  type PendingEpisodeMediaFlushHandle,
 } from '../media/pending-episode-media-upload';
-import { mapNetInfoStateToAppOnline } from '../network/mobile-device-netinfo';
 import {
   getMobileAuthSessionSafe,
   getMobileSupabaseClient,
@@ -279,6 +279,13 @@ export function PowerSyncSessionBridge({
    */
   const accountSwitchPrevUserIdRef = useRef<string | null>(null);
 
+  /**
+   * Throttled pending episode-media flush ({@link createDebouncedPendingEpisodeMediaFlush}): call
+   * {@link PendingEpisodeMediaFlushHandle.flush} after trusted sync; {@link PendingEpisodeMediaFlushHandle.cancel} on effect teardown.
+   */
+  const pendingEpisodeMediaFlushRef =
+    useRef<PendingEpisodeMediaFlushHandle | null>(null);
+
   const [db, setDb] = useState<PowerSyncDatabase | null>(null);
   const [firstSyncCompleted, setFirstSyncCompleted] = useState(false);
   const [localSqliteInitialized, setLocalSqliteInitialized] = useState(false);
@@ -317,21 +324,54 @@ export function PowerSyncSessionBridge({
 
   useEffect(() => {
     if (!db) {
+      pendingEpisodeMediaFlushRef.current = null;
       return;
     }
-    void runPendingEpisodeMediaUploadWorker(db);
-    const flush = createDebouncedPendingEpisodeMediaFlush(() => db, 1200);
+    const flushHandle = createDebouncedPendingEpisodeMediaFlush(() => db);
+    pendingEpisodeMediaFlushRef.current = flushHandle;
+    void runPendingEpisodeMediaUploadWorker(db, {
+      signal: flushHandle.signal,
+    });
+    const { flush } = flushHandle;
     const subApp = AppState.addEventListener('change', (next) => {
       if (next === 'active') {
         flush();
+        void NetInfo.fetch()
+          .then((state) => {
+            if (!state.isConnected || state.isInternetReachable === false) {
+              return;
+            }
+            flush();
+          })
+          .catch(() => {
+            flush();
+          });
       }
     });
+    /**
+     * Do not require `mapNetInfoStateToAppOnline === true`: while `isInternetReachable` is still
+     * `null`, that helper returns `null` and we would never drain the queue after reconnect. Pending
+     * uploads already retry with backoff on failure; skip only definitive "no route" (`false`).
+     */
     const subNet = NetInfo.addEventListener((state) => {
-      if (mapNetInfoStateToAppOnline(state) === true) {
-        flush();
+      if (!state.isConnected) {
+        return;
       }
+      if (state.isInternetReachable === false) {
+        return;
+      }
+      flush();
     });
+    /** Safety net if NetInfo does not emit after reconnect (some devices). */
+    const interval = setInterval(() => {
+      void runPendingEpisodeMediaUploadWorker(db, {
+        signal: flushHandle.signal,
+      });
+    }, 60_000);
     return () => {
+      flushHandle.cancel();
+      pendingEpisodeMediaFlushRef.current = null;
+      clearInterval(interval);
       subApp.remove();
       subNet();
     };
@@ -518,6 +558,9 @@ export function PowerSyncSessionBridge({
               recordFirstSyncLanded(userIdAtTrusted);
             });
             return true;
+          });
+          queueMicrotask(() => {
+            pendingEpisodeMediaFlushRef.current?.flush();
           });
         }
       },

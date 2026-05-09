@@ -5,9 +5,12 @@
  * - `packages/powersync/sync-rules.yaml` (`FROM` / `JOIN` references)
  * - `supabase/migrations/20260430120000_powersync_replication_role_and_publication.sql`
  *   (`required_tables` + publication / grants)
- * - `apps/mobile/src/lib/powersync/abstrack-app-schema.ts` (`Schema` table keys)
+ * - `apps/mobile/src/lib/powersync/abstrack-app-schema.ts` — replicated tables below **plus**
+ *   {@link MOBILE_LOCAL_ONLY_POWER_SYNC_SCHEMA_TABLE_NAMES} (`localOnly` client tables not in Postgres
+ *   sync streams).
  *
- * Vitest asserts YAML + migration agree with this list (`replicated-artifacts-alignment.spec.ts`).
+ * Vitest asserts YAML + migration agree with {@link REPLICATED_PUBLIC_TABLE_NAMES}
+ * (`replicated-artifacts-alignment.spec.ts`).
  */
 export const REPLICATED_PUBLIC_TABLE_NAMES = [
   'access_log',
@@ -24,6 +27,14 @@ export const REPLICATED_PUBLIC_TABLE_NAMES = [
   'practitioner_access',
   'profiles',
   'symptom_presets',
+] as const;
+
+/**
+ * Mobile PowerSync `Schema` entries that are **local-only** (not replicated from Supabase).
+ * Keep in sync with `localOnly: true` tables in `abstrack-app-schema.ts`.
+ */
+export const MOBILE_LOCAL_ONLY_POWER_SYNC_SCHEMA_TABLE_NAMES = [
+  'pending_episode_media_upload',
 ] as const;
 
 export type ReplicatedPublicTableName =

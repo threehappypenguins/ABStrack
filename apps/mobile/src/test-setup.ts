@@ -15,7 +15,16 @@ const shouldSuppressActWarning = (
 
 let consoleErrorSpy: jest.SpiedFunction<typeof console.error> | undefined;
 
+/**
+ * In-memory blob store for the `expo-file-system` Jest mock (`File.bytes`, `write`, etc.).
+ * Cleared each test so offline-queue / crypto specs do not leak paths across cases.
+ *
+ * Prefixed `mock` so Jest allows the `jest.mock('expo-file-system')` factory to close over it.
+ */
+const mockExpoFileSystemByteStore = new Map<string, Uint8Array>();
+
 beforeEach(() => {
+  mockExpoFileSystemByteStore.clear();
   consoleErrorSpy?.mockRestore();
   const original = console.error.bind(console);
   consoleErrorSpy = jest
@@ -50,15 +59,110 @@ jest.mock('react-native-safe-area-context', () => {
   };
 });
 
-jest.mock('expo-file-system', () => ({
-  __esModule: true,
-  /** Minimal stand-in for Expo SDK 54+ `File` so Jest never touches native file I/O. */
-  File: class MockExpoFile {
-    async arrayBuffer(): Promise<ArrayBuffer> {
-      return new Uint8Array([102, 97, 107, 101]).buffer;
+jest.mock('expo-file-system', () => {
+  const store = mockExpoFileSystemByteStore;
+
+  function resolvePathRoot(first: unknown): string {
+    if (typeof first === 'string') {
+      return first;
     }
-  },
-}));
+    if (
+      first !== null &&
+      typeof first === 'object' &&
+      'uri' in first &&
+      typeof (first as { uri: unknown }).uri === 'string'
+    ) {
+      return (first as { uri: string }).uri;
+    }
+    return String(first);
+  }
+
+  class Directory {
+    readonly uri: string;
+
+    constructor(baseUri: string, ...segments: string[]) {
+      const base = baseUri.replace(/\/+$/, '');
+      this.uri = segments.length > 0 ? `${base}/${segments.join('/')}` : base;
+    }
+
+    create(_options?: { intermediates?: boolean; overwrite?: boolean }): void {
+      /* no-op in Jest — directory hierarchy is not modeled */
+    }
+  }
+
+  class File {
+    private readonly key: string;
+
+    constructor(first: unknown, ...segments: string[]) {
+      if (segments.length === 0) {
+        this.key = resolvePathRoot(first);
+      } else {
+        const root = resolvePathRoot(first).replace(/\/+$/, '');
+        this.key = `${root}/${segments.join('/')}`;
+      }
+    }
+
+    create(options?: { intermediates?: boolean; overwrite?: boolean }): void {
+      if (options?.overwrite && store.has(this.key)) {
+        store.delete(this.key);
+      }
+      if (!store.has(this.key)) {
+        store.set(this.key, new Uint8Array(0));
+      }
+    }
+
+    write(data: Uint8Array): void {
+      store.set(this.key, new Uint8Array(data));
+    }
+
+    get exists(): boolean {
+      return store.has(this.key);
+    }
+
+    get size(): number {
+      return store.get(this.key)?.byteLength ?? 0;
+    }
+
+    async bytes(): Promise<Uint8Array> {
+      const bytes = store.get(this.key);
+      if (!bytes) {
+        throw new Error(
+          `Mock expo-file-system File.bytes: missing "${this.key}"`,
+        );
+      }
+      return new Uint8Array(bytes);
+    }
+
+    delete(): void {
+      store.delete(this.key);
+    }
+
+    /**
+     * Used by capture upload flows (`SymptomPromptScreen`) with `new File(localUri)` — when the URI
+     * was never written in Jest, fall back to stable fake bytes (legacy mock behavior).
+     */
+    async arrayBuffer(): Promise<ArrayBuffer> {
+      const bytes = store.get(this.key);
+      if (!bytes) {
+        return new Uint8Array([102, 97, 107, 101]).buffer;
+      }
+      const copy = new Uint8Array(bytes.byteLength);
+      copy.set(bytes);
+      return copy.buffer;
+    }
+  }
+
+  const Paths = {
+    document: new Directory('file:///jest-mock-expo-fs/Documents'),
+  };
+
+  return {
+    __esModule: true,
+    Directory,
+    File,
+    Paths,
+  };
+});
 
 /** `getMobileAuthSessionSafe` falls back to SecureStore when GoTrue rejects; real native calls can hang Jest. */
 jest.mock('expo-secure-store', () => {

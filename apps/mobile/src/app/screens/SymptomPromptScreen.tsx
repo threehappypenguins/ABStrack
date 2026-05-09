@@ -56,6 +56,7 @@ import {
 } from '../../lib/powersync/powersync-episode-flow-reads';
 import {
   enqueuePendingEpisodeMediaUploadFromCapture,
+  removePendingEpisodeMediaUploadsForEpisodeSymptomRow,
   shouldQueueEpisodeMediaUploadError,
 } from '../../lib/media/pending-episode-media-upload';
 import {
@@ -529,8 +530,6 @@ export function SymptomPromptScreen() {
                     episodeId: targetEpisodeId as Uuid,
                     episodeSymptomId: r.data.id as Uuid,
                     presetSymptomId: line.id as Uuid,
-                    lastPostMarkerStepCompletedAt:
-                      lastPostMarkerStepCompletedAtRef.current,
                     mediaType: answer.type,
                     upload: {
                       body: upload.body,
@@ -584,8 +583,6 @@ export function SymptomPromptScreen() {
                       episodeId: targetEpisodeId as Uuid,
                       episodeSymptomId: r.data.id as Uuid,
                       presetSymptomId: line.id as Uuid,
-                      lastPostMarkerStepCompletedAt:
-                        lastPostMarkerStepCompletedAtRef.current,
                       mediaType: answer.type,
                       upload: {
                         body: upload.body,
@@ -618,6 +615,16 @@ export function SymptomPromptScreen() {
                   setPersistError(mediaPersist.error.message);
                 }
                 return;
+              }
+              if (powerSyncDbForWrites) {
+                try {
+                  await removePendingEpisodeMediaUploadsForEpisodeSymptomRow(
+                    powerSyncDbForWrites,
+                    r.data.id,
+                  );
+                } catch {
+                  /* best-effort — media already landed in Storage */
+                }
               }
               if (
                 isMountedRef.current &&
@@ -679,8 +686,6 @@ export function SymptomPromptScreen() {
                       episodeId: targetEpisodeId as Uuid,
                       episodeSymptomId: r.data.id as Uuid,
                       presetSymptomId: line.id as Uuid,
-                      lastPostMarkerStepCompletedAt:
-                        lastPostMarkerStepCompletedAtRef.current,
                       mediaType: answer.type,
                       upload: {
                         body: uploadCatch.body,
@@ -915,19 +920,39 @@ export function SymptomPromptScreen() {
         setStatus('error');
         return;
       }
-      const psDb = getPowerSyncDatabaseForOfflineReads();
+      /**
+       * Prefer the open bridge handle when SQLite is initialized — same as offline-first writes.
+       * {@link getPowerSyncDatabaseForOfflineReads} stays stricter (first-sync landing) and stays
+       * `null` on cold start until mirror trust flags flip, which blocked loading an episode that
+       * already exists locally.
+       */
+      const psDb =
+        powerSyncReplicaSqliteReady(psBridge) && psBridge.database != null
+          ? psBridge.database
+          : getPowerSyncDatabaseForOfflineReads();
 
       const epRemote = await getEpisodeById(supabase, episodeId);
       if (stale()) {
         return;
       }
       let episodeRow = epRemote.ok && epRemote.data ? epRemote.data : null;
-      // Do not read SQLite on `ok` + null: that is authoritative (deleted / RLS); replica could be stale online.
-      const shouldTryEpisodeReplica =
+      const shouldTryEpisodeReplicaForNetworkFailure =
         Boolean(psDb) &&
         !epRemote.ok &&
         isPresetDataNetworkError(epRemote.error);
-      if (!episodeRow && shouldTryEpisodeReplica && psDb) {
+      /**
+       * Supabase can return no row briefly (replication lag) or before an offline-first insert has
+       * uploaded upstream. If the episode row exists in the local replica, use it so this screen
+       * can load.
+       */
+      const shouldTryEpisodeReplicaForServerMiss =
+        Boolean(psDb) && epRemote.ok && epRemote.data === null;
+      if (
+        !episodeRow &&
+        psDb &&
+        (shouldTryEpisodeReplicaForNetworkFailure ||
+          shouldTryEpisodeReplicaForServerMiss)
+      ) {
         episodeRow = await getEpisodeByIdFromPowerSyncDb(psDb, episodeId);
       }
       if (!episodeRow) {
@@ -1133,7 +1158,7 @@ export function SymptomPromptScreen() {
       setErrorMessage(message);
       setStatus('error');
     }
-  }, [episodeId, symptomPresetId, resolveSessionUserId]);
+  }, [episodeId, symptomPresetId, resolveSessionUserId, psBridge]);
 
   useEffect(() => {
     void load();

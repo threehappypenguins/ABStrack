@@ -2,6 +2,12 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { AbstrackSupabaseClient } from '@abstrack/supabase';
+import {
+  listEpisodeMediaBucketPathsForEpisodeMediaId,
+  listEpisodeMediaBucketPathsForEpisodeSymptomId,
+  PresetDataError,
+  removeEpisodeMediaStorageObjectPathsBestEffort,
+} from '@abstrack/supabase';
 import type { AbstractPowerSyncDatabase } from '@powersync/react-native';
 import { CrudBatch, CrudEntry, UpdateType } from '@powersync/react-native';
 
@@ -12,6 +18,25 @@ import {
   POWERSYNC_UPLOAD_RUNTIME_PIN_REACT_NATIVE,
   uploadPowerSyncCrudBatchToSupabase,
 } from './powersync-supabase-upload';
+
+jest.mock('@abstrack/supabase', () => ({
+  ...jest.requireActual<typeof import('@abstrack/supabase')>(
+    '@abstrack/supabase',
+  ),
+  listEpisodeMediaBucketPathsForEpisodeSymptomId: jest.fn(),
+  listEpisodeMediaBucketPathsForEpisodeMediaId: jest.fn(),
+  removeEpisodeMediaStorageObjectPathsBestEffort: jest.fn(),
+}));
+
+const mockListEpisodeMediaBucketPathsForEpisodeSymptomId = jest.mocked(
+  listEpisodeMediaBucketPathsForEpisodeSymptomId,
+);
+const mockListEpisodeMediaBucketPathsForEpisodeMediaId = jest.mocked(
+  listEpisodeMediaBucketPathsForEpisodeMediaId,
+);
+const mockRemoveEpisodeMediaStorageObjectPathsBestEffort = jest.mocked(
+  removeEpisodeMediaStorageObjectPathsBestEffort,
+);
 
 const mobilePackageJsonPath = join(__dirname, '../../../package.json');
 
@@ -29,11 +54,15 @@ type TableOp =
  * Minimal PostgREST-style chain that records which write shape ran (upsert / update+eq+select /
  * delete+eq+select), matching {@link applyPowerSyncCrudEntryToSupabase}.
  */
-function createSupabaseUploadMock(): {
+function createSupabaseUploadMock(options?: {
+  /** When set, `delete().eq().select().maybeSingle()` resolves with this PostgREST error for that table. */
+  deleteErrorForTable?: Partial<Record<string, unknown>>;
+}): {
   client: AbstrackSupabaseClient;
   ops: TableOp[];
 } {
   const ops: TableOp[] = [];
+  const deleteErrorForTable = options?.deleteErrorForTable ?? {};
   const client = {
     from(table: string) {
       return {
@@ -53,7 +82,7 @@ function createSupabaseUploadMock(): {
               return {
                 select(_columns: string) {
                   return {
-                    single() {
+                    maybeSingle() {
                       return Promise.resolve({ error: null });
                     },
                   };
@@ -66,11 +95,12 @@ function createSupabaseUploadMock(): {
           return {
             eq(column: string, value: unknown) {
               ops.push({ kind: 'delete', table, id: String(value) });
+              const err = deleteErrorForTable[table] ?? null;
               return {
                 select(_columns: string) {
                   return {
-                    single() {
-                      return Promise.resolve({ error: null });
+                    maybeSingle() {
+                      return Promise.resolve({ error: err });
                     },
                   };
                 },
@@ -174,7 +204,7 @@ describe('applyPowerSyncCrudEntryToSupabase', () => {
     });
   });
 
-  it('PATCH sends normalized opData with update eq id and select id single', async () => {
+  it('PATCH sends normalized opData with update eq id and select id maybeSingle', async () => {
     const { client, ops } = createSupabaseUploadMock();
     const entry = new CrudEntry(
       3,
@@ -195,7 +225,7 @@ describe('applyPowerSyncCrudEntryToSupabase', () => {
     ]);
   });
 
-  it('DELETE uses delete eq id and select id single', async () => {
+  it('DELETE uses delete eq id and select id maybeSingle', async () => {
     const { client, ops } = createSupabaseUploadMock();
     const entry = new CrudEntry(4, UpdateType.DELETE, 'episodes', 'e3');
     await applyPowerSyncCrudEntryToSupabase(client, entry);
@@ -222,6 +252,222 @@ describe('applyPowerSyncCrudEntryToSupabase', () => {
     await expect(
       applyPowerSyncCrudEntryToSupabase(client, entry),
     ).rejects.toEqual({ message: 'row-level security' });
+  });
+
+  describe('episode_symptoms DELETE (bucket paths + Storage after successful PostgREST DELETE)', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
+    it('lists paths, executes DELETE, then removes Storage when paths are non-empty', async () => {
+      const paths = ['user/u1/ep/e1/s/a/file.jpg'];
+      mockListEpisodeMediaBucketPathsForEpisodeSymptomId.mockResolvedValue({
+        ok: true,
+        data: paths,
+      });
+      mockRemoveEpisodeMediaStorageObjectPathsBestEffort.mockResolvedValue(
+        undefined,
+      );
+
+      const { client, ops } = createSupabaseUploadMock();
+      await applyPowerSyncCrudEntryToSupabase(
+        client,
+        new CrudEntry(10, UpdateType.DELETE, 'episode_symptoms', 'sym-1'),
+      );
+
+      expect(
+        mockListEpisodeMediaBucketPathsForEpisodeSymptomId,
+      ).toHaveBeenCalledWith(client, 'sym-1');
+      expect(ops).toEqual([
+        { kind: 'delete', table: 'episode_symptoms', id: 'sym-1' },
+      ]);
+      expect(
+        mockRemoveEpisodeMediaStorageObjectPathsBestEffort,
+      ).toHaveBeenCalledWith(client, paths);
+      expect(
+        mockListEpisodeMediaBucketPathsForEpisodeSymptomId.mock
+          .invocationCallOrder[0],
+      ).toBeLessThan(
+        mockRemoveEpisodeMediaStorageObjectPathsBestEffort.mock
+          .invocationCallOrder[0],
+      );
+    });
+
+    it('skips Storage cleanup when listed paths are empty', async () => {
+      mockListEpisodeMediaBucketPathsForEpisodeSymptomId.mockResolvedValue({
+        ok: true,
+        data: [],
+      });
+
+      const { client, ops } = createSupabaseUploadMock();
+      await applyPowerSyncCrudEntryToSupabase(
+        client,
+        new CrudEntry(11, UpdateType.DELETE, 'episode_symptoms', 'sym-2'),
+      );
+
+      expect(ops).toEqual([
+        { kind: 'delete', table: 'episode_symptoms', id: 'sym-2' },
+      ]);
+      expect(
+        mockRemoveEpisodeMediaStorageObjectPathsBestEffort,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('does not remove Storage when PostgREST DELETE returns an error', async () => {
+      mockListEpisodeMediaBucketPathsForEpisodeSymptomId.mockResolvedValue({
+        ok: true,
+        data: ['orphan-risk.mp4'],
+      });
+
+      const { client, ops } = createSupabaseUploadMock({
+        deleteErrorForTable: {
+          episode_symptoms: { message: 'row-level security policy' },
+        },
+      });
+
+      await expect(
+        applyPowerSyncCrudEntryToSupabase(
+          client,
+          new CrudEntry(12, UpdateType.DELETE, 'episode_symptoms', 'sym-3'),
+        ),
+      ).rejects.toEqual({ message: 'row-level security policy' });
+
+      expect(ops).toEqual([
+        { kind: 'delete', table: 'episode_symptoms', id: 'sym-3' },
+      ]);
+      expect(
+        mockRemoveEpisodeMediaStorageObjectPathsBestEffort,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('does not DELETE or touch Storage when listing paths fails', async () => {
+      mockListEpisodeMediaBucketPathsForEpisodeSymptomId.mockResolvedValue({
+        ok: false,
+        error: new PresetDataError('unknown', 'metadata query failed'),
+      });
+
+      const { client, ops } = createSupabaseUploadMock();
+
+      await expect(
+        applyPowerSyncCrudEntryToSupabase(
+          client,
+          new CrudEntry(13, UpdateType.DELETE, 'episode_symptoms', 'sym-4'),
+        ),
+      ).rejects.toThrow('metadata query failed');
+
+      expect(ops).toEqual([]);
+      expect(
+        mockRemoveEpisodeMediaStorageObjectPathsBestEffort,
+      ).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('episode_media DELETE (bucket paths + Storage after successful PostgREST DELETE)', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
+    it('lists paths, executes DELETE, then removes Storage when paths are non-empty', async () => {
+      const paths = ['user/u1/ep/e1/m/media-id/thumb.jpg'];
+      mockListEpisodeMediaBucketPathsForEpisodeMediaId.mockResolvedValue({
+        ok: true,
+        data: paths,
+      });
+      mockRemoveEpisodeMediaStorageObjectPathsBestEffort.mockResolvedValue(
+        undefined,
+      );
+
+      const { client, ops } = createSupabaseUploadMock();
+      await applyPowerSyncCrudEntryToSupabase(
+        client,
+        new CrudEntry(20, UpdateType.DELETE, 'episode_media', 'med-1'),
+      );
+
+      expect(
+        mockListEpisodeMediaBucketPathsForEpisodeMediaId,
+      ).toHaveBeenCalledWith(client, 'med-1');
+      expect(ops).toEqual([
+        { kind: 'delete', table: 'episode_media', id: 'med-1' },
+      ]);
+      expect(
+        mockRemoveEpisodeMediaStorageObjectPathsBestEffort,
+      ).toHaveBeenCalledWith(client, paths);
+      expect(
+        mockListEpisodeMediaBucketPathsForEpisodeMediaId.mock
+          .invocationCallOrder[0],
+      ).toBeLessThan(
+        mockRemoveEpisodeMediaStorageObjectPathsBestEffort.mock
+          .invocationCallOrder[0],
+      );
+    });
+
+    it('skips Storage cleanup when listed paths are empty', async () => {
+      mockListEpisodeMediaBucketPathsForEpisodeMediaId.mockResolvedValue({
+        ok: true,
+        data: [],
+      });
+
+      const { client, ops } = createSupabaseUploadMock();
+      await applyPowerSyncCrudEntryToSupabase(
+        client,
+        new CrudEntry(21, UpdateType.DELETE, 'episode_media', 'med-2'),
+      );
+
+      expect(ops).toEqual([
+        { kind: 'delete', table: 'episode_media', id: 'med-2' },
+      ]);
+      expect(
+        mockRemoveEpisodeMediaStorageObjectPathsBestEffort,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('does not remove Storage when PostgREST DELETE returns an error', async () => {
+      mockListEpisodeMediaBucketPathsForEpisodeMediaId.mockResolvedValue({
+        ok: true,
+        data: ['keep-until-db-row-gone.bin'],
+      });
+
+      const { client, ops } = createSupabaseUploadMock({
+        deleteErrorForTable: {
+          episode_media: { message: 'JWT expired' },
+        },
+      });
+
+      await expect(
+        applyPowerSyncCrudEntryToSupabase(
+          client,
+          new CrudEntry(22, UpdateType.DELETE, 'episode_media', 'med-3'),
+        ),
+      ).rejects.toEqual({ message: 'JWT expired' });
+
+      expect(ops).toEqual([
+        { kind: 'delete', table: 'episode_media', id: 'med-3' },
+      ]);
+      expect(
+        mockRemoveEpisodeMediaStorageObjectPathsBestEffort,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('does not DELETE or touch Storage when listing paths fails', async () => {
+      mockListEpisodeMediaBucketPathsForEpisodeMediaId.mockResolvedValue({
+        ok: false,
+        error: new PresetDataError('unknown', 'episode_media select failed'),
+      });
+
+      const { client, ops } = createSupabaseUploadMock();
+
+      await expect(
+        applyPowerSyncCrudEntryToSupabase(
+          client,
+          new CrudEntry(23, UpdateType.DELETE, 'episode_media', 'med-4'),
+        ),
+      ).rejects.toThrow('episode_media select failed');
+
+      expect(ops).toEqual([]);
+      expect(
+        mockRemoveEpisodeMediaStorageObjectPathsBestEffort,
+      ).not.toHaveBeenCalled();
+    });
   });
 });
 

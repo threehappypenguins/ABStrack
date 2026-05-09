@@ -8,6 +8,7 @@ export {
 
 export {
   type ReplicatedPublicTableName,
+  MOBILE_LOCAL_ONLY_POWER_SYNC_SCHEMA_TABLE_NAMES,
   REPLICATED_PUBLIC_TABLE_NAMES,
 } from './lib/replicated-public-tables.js';
 

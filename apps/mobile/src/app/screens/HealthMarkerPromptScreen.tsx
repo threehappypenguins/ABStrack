@@ -380,7 +380,10 @@ export function HealthMarkerPromptScreen() {
     }
     setUserId(sessionUserId);
 
-    const psDb = getPowerSyncDatabaseForOfflineReads();
+    const psDb =
+      powerSyncReplicaSqliteReady(psBridge) && psBridge.database != null
+        ? psBridge.database
+        : getPowerSyncDatabaseForOfflineReads();
     let usedPowerSyncReplicaReads = false;
 
     const episodeRemote = await getEpisodeById(supabase, episodeId);
@@ -389,12 +392,18 @@ export function HealthMarkerPromptScreen() {
     }
     let episodeRow =
       episodeRemote.ok && episodeRemote.data ? episodeRemote.data : null;
-    // Do not read SQLite on `ok` + null: authoritative not-found / RLS; replica could be stale online.
-    const shouldTryEpisodeReplica =
+    const shouldTryEpisodeReplicaForNetworkFailure =
       Boolean(psDb) &&
       !episodeRemote.ok &&
       isPresetDataNetworkError(episodeRemote.error);
-    if (!episodeRow && shouldTryEpisodeReplica && psDb) {
+    const shouldTryEpisodeReplicaForServerMiss =
+      Boolean(psDb) && episodeRemote.ok && episodeRemote.data === null;
+    if (
+      !episodeRow &&
+      psDb &&
+      (shouldTryEpisodeReplicaForNetworkFailure ||
+        shouldTryEpisodeReplicaForServerMiss)
+    ) {
       const localEp = await getEpisodeByIdFromPowerSyncDb(psDb, episodeId);
       if (localEp) {
         episodeRow = localEp;
@@ -537,7 +546,7 @@ export function HealthMarkerPromptScreen() {
         setObservationTimeline([]);
       }
     }
-  }, [episodeId, hub, resume, supabase]);
+  }, [episodeId, hub, resume, supabase, psBridge]);
 
   const loadRef = useRef(load);
   loadRef.current = load;
@@ -559,7 +568,7 @@ export function HealthMarkerPromptScreen() {
       cancelled = true;
       loadGenerationRef.current += 1;
     };
-  }, [episodeId, hub, resume]);
+  }, [episodeId, hub, resume, psBridge]);
 
   const currentLine = lines[activeIndex] ?? null;
   const currentDraft = currentLine
