@@ -355,6 +355,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
+/**
+ * Row shape from `select('storage_object_key, thumbnail_storage_key')`: both columns are nullable in
+ * Postgres, and the client may surface `undefined` for missing cells — always normalize with `?? ''`
+ * (or trim checks) before {@link normalizeStoragePath}.
+ */
+type EpisodeMediaStorageKeyPick = {
+  storage_object_key: string | null | undefined;
+  thumbnail_storage_key: string | null | undefined;
+};
+
 function httpStatusFromStorageError(error: unknown): number | null {
   if (!isRecord(error)) {
     return null;
@@ -522,10 +532,7 @@ async function deleteSupersededOpenPassEpisodeSymptomsAndTheirEpisodeMedia(
 
   const keysToRemove = new Set<string>();
   for (const raw of mediaRows ?? []) {
-    const row = raw as {
-      storage_object_key: string;
-      thumbnail_storage_key: string | null;
-    };
+    const row = raw as EpisodeMediaStorageKeyPick;
     for (const k of normalizeStoragePath(row.storage_object_key ?? '')) {
       keysToRemove.add(k);
     }
@@ -920,10 +927,7 @@ export async function listEpisodeMediaBucketPathsForEpisodeSymptomIds(
 
     const keys = new Set<string>();
     for (const raw of rows ?? []) {
-      const row = raw as {
-        storage_object_key: string;
-        thumbnail_storage_key: string | null;
-      };
+      const row = raw as EpisodeMediaStorageKeyPick;
       for (const normalized of normalizeStoragePath(
         row.storage_object_key ?? '',
       )) {
@@ -964,10 +968,7 @@ export async function listEpisodeMediaBucketPathsForEpisodeMediaId(
     if (!row) {
       return { ok: true, data: [] };
     }
-    const typed = row as {
-      storage_object_key: string;
-      thumbnail_storage_key: string | null;
-    };
+    const typed = row as EpisodeMediaStorageKeyPick;
     const keys = new Set<string>();
     for (const normalized of normalizeStoragePath(
       typed.storage_object_key ?? '',
@@ -1046,10 +1047,7 @@ export async function listEpisodeMediaStorageObjectPathsForEpisode(
 
     const keys = new Set<string>();
     for (const raw of rows ?? []) {
-      const row = raw as {
-        storage_object_key: string;
-        thumbnail_storage_key: string | null;
-      };
+      const row = raw as EpisodeMediaStorageKeyPick;
       for (const normalized of normalizeStoragePath(
         row.storage_object_key ?? '',
       )) {

@@ -261,8 +261,14 @@ export async function removePendingEpisodeMediaUploadsForEpisodeSymptomRow(
  * The pass boundary is read from `episodes.post_marker_step_completed_at` in SQLite at enqueue time
  * (not from UI refs) so it stays aligned with the replica when marker completion updates the episode.
  *
- * After a successful insert, deletes ciphertext files previously queued for that line so
+ * After a successful DB commit, deletes ciphertext files previously queued for that line so
  * `abstrack/pending-media/` does not accumulate orphans on “record again”.
+ *
+ * **Atomicity:** `DELETE` + `INSERT` run inside one SQLite `BEGIN IMMEDIATE` … `COMMIT` so a failed
+ * insert rolls back the delete (queue rows for the same line are not dropped without a successor).
+ * If any DB step fails after the new ciphertext files were written, this function **best-effort**
+ * deletes `primaryPath` / `thumbPath` so those files are not left without a queue row (filesystem
+ * writes cannot participate in the SQL transaction).
  *
  * @param db - Open PowerSync database.
  * @param args - Linkage + already-normalized upload payload from the capture pipeline.
@@ -314,38 +320,56 @@ export async function enqueuePendingEpisodeMediaUploadFromCapture(
     args.upload.thumbnail.body,
   );
 
-  await db.execute(
-    `DELETE FROM pending_episode_media_upload WHERE episode_id = ? AND preset_symptom_id = ? AND ${pass.sql}`,
-    [args.episodeId, args.presetSymptomId, ...pass.params],
-  );
+  try {
+    await db.execute('BEGIN IMMEDIATE');
+    try {
+      await db.execute(
+        `DELETE FROM pending_episode_media_upload WHERE episode_id = ? AND preset_symptom_id = ? AND ${pass.sql}`,
+        [args.episodeId, args.presetSymptomId, ...pass.params],
+      );
 
-  await db.execute(
-    `INSERT INTO pending_episode_media_upload (
+      await db.execute(
+        `INSERT INTO pending_episode_media_upload (
        id, user_id, episode_id, episode_symptom_id, preset_symptom_id, last_post_marker_step_completed_at,
        media_type, content_type_primary, extension, duration_seconds,
        primary_cipher_relative_path, thumbnail_cipher_relative_path,
        attempt_count, last_attempt_at, last_error, created_at, updated_at
      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      rowId,
-      args.userId,
-      args.episodeId,
-      args.episodeSymptomId,
-      args.presetSymptomId,
-      boundary,
-      args.mediaType,
-      args.upload.contentType,
-      args.upload.extension,
-      args.upload.durationSeconds ?? null,
-      primaryPath,
-      thumbPath,
-      0,
-      null,
-      null,
-      now,
-      now,
-    ],
-  );
+        [
+          rowId,
+          args.userId,
+          args.episodeId,
+          args.episodeSymptomId,
+          args.presetSymptomId,
+          boundary,
+          args.mediaType,
+          args.upload.contentType,
+          args.upload.extension,
+          args.upload.durationSeconds ?? null,
+          primaryPath,
+          thumbPath,
+          0,
+          null,
+          null,
+          now,
+          now,
+        ],
+      );
+
+      await db.execute('COMMIT');
+    } catch (inner) {
+      try {
+        await db.execute('ROLLBACK');
+      } catch {
+        /* ignore: may not be in a transaction (e.g. BEGIN failed first) */
+      }
+      throw inner;
+    }
+  } catch (e) {
+    deleteEncryptedPendingMediaFileBestEffort(primaryPath);
+    deleteEncryptedPendingMediaFileBestEffort(thumbPath);
+    throw e;
+  }
 
   for (const r of replacedRows) {
     deleteEncryptedPendingMediaFileBestEffort(r.primary_cipher_relative_path);
@@ -380,7 +404,12 @@ async function runPendingEpisodeMediaUploadWorkerImpl(
   }
 
   const online = await fetchMobileDeviceIsConnected();
-  if (online !== true) {
+  if (pendingMediaUploadSignalRequestedStop(signal)) {
+    return { processed: 0, failures: 0 };
+  }
+  // Bail only on definitive offline; `null` (unknown reachability / fetch error) still tries — matches
+  // PowerSyncSessionBridge + file header; row failures use backoff.
+  if (online === false) {
     return { processed: 0, failures: 0 };
   }
 
@@ -570,6 +599,10 @@ async function runPendingEpisodeMediaUploadWorkerImpl(
 /**
  * Drains pending episode media (see {@link runPendingEpisodeMediaUploadWorkerImpl}). Overlapping
  * calls are queued so only one drain executes at a time.
+ *
+ * Skips work when {@link fetchMobileDeviceIsConnected} is **`false`** only; **`null`** (reachability
+ * still resolving or fetch failed) still runs the drain so the queue is not starved — same policy as
+ * {@link PowerSyncSessionBridge}.
  *
  * @param db - Open PowerSync DB, or `null` to no-op.
  * @param options - {@link RunPendingEpisodeMediaUploadWorkerOptions}

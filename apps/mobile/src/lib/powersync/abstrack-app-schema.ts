@@ -278,6 +278,30 @@ const pending_episode_media_upload = new Table(
 );
 
 /**
+ * Durable list of `episode-media` object keys to remove after Postgres rows are gone. Survives a
+ * process crash between PostgREST DELETE success and Storage `remove` so retries that can no longer
+ * list paths (CASCADE cleared `episode_media`) still complete cleanup ({@link drainPendingEpisodeMediaStorageCleanupQueue}).
+ */
+const pending_episode_media_storage_cleanup = new Table(
+  {
+    id: column.text,
+    /** JSON array of bucket-relative paths (same strings as {@link listEpisodeMediaBucketPathsForEpisodeSymptomId}). */
+    storage_paths_json: column.text,
+    /** `episode_symptoms` or `episode_media` — matches the PowerSync CRUD table for the delete op. */
+    target_kind: column.text,
+    /** Remote row id that was deleted (PostgREST `id`). */
+    target_id: column.text,
+    created_at: column.text,
+  },
+  {
+    localOnly: true,
+    indexes: {
+      pending_media_storage_cleanup_target_idx: ['target_kind', 'target_id'],
+    },
+  },
+);
+
+/**
  * Client-side PowerSync schema aligned with Supabase `public` PHI tables listed in
  * `packages/powersync/sync-rules.yaml`.
  *
@@ -302,6 +326,7 @@ export const abstrackPowerSyncSchema = new Schema({
   practitioner_access,
   caretaker_access,
   access_log,
+  pending_episode_media_storage_cleanup,
   pending_episode_media_upload,
 });
 

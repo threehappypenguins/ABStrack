@@ -353,7 +353,36 @@ export function PowerSyncSessionBridge({
      * `null`, that helper returns `null` and we would never drain the queue after reconnect. Pending
      * uploads already retry with backoff on failure; skip only definitive "no route" (`false`).
      */
+    /**
+     * Mirrors the same “not definitively offline” gate used before {@link flush} so the periodic
+     * worker does not spin while backgrounded or on airplane mode / no route.
+     */
+    const netAllowsPeriodicDrainRef: { current: boolean | null } = {
+      current: null,
+    };
+    const syncNetAllowsPeriodicDrain = (state: {
+      isConnected: boolean | null;
+      isInternetReachable: boolean | null;
+    }) => {
+      if (state.isConnected !== true) {
+        netAllowsPeriodicDrainRef.current = false;
+        return;
+      }
+      if (state.isInternetReachable === false) {
+        netAllowsPeriodicDrainRef.current = false;
+        return;
+      }
+      netAllowsPeriodicDrainRef.current = true;
+    };
+
+    void NetInfo.fetch()
+      .then(syncNetAllowsPeriodicDrain)
+      .catch(() => {
+        netAllowsPeriodicDrainRef.current = null;
+      });
+
     const subNet = NetInfo.addEventListener((state) => {
+      syncNetAllowsPeriodicDrain(state);
       if (!state.isConnected) {
         return;
       }
@@ -362,8 +391,18 @@ export function PowerSyncSessionBridge({
       }
       flush();
     });
-    /** Safety net if NetInfo does not emit after reconnect (some devices). */
+    /**
+     * Last-resort if NetInfo misses a reconnect on some devices. Skips while **inactive** (saves
+     * wakeups in background) and while NetInfo reports **definitively offline**; unknown / maybe-online
+     * still runs so we do not starve uploads before the first NetInfo snapshot.
+     */
     const interval = setInterval(() => {
+      if (AppState.currentState !== 'active') {
+        return;
+      }
+      if (netAllowsPeriodicDrainRef.current === false) {
+        return;
+      }
       void runPendingEpisodeMediaUploadWorker(db, {
         signal: flushHandle.signal,
       });

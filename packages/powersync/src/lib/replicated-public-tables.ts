@@ -34,6 +34,7 @@ export const REPLICATED_PUBLIC_TABLE_NAMES = [
  * Keep in sync with `localOnly: true` tables in `abstrack-app-schema.ts`.
  */
 export const MOBILE_LOCAL_ONLY_POWER_SYNC_SCHEMA_TABLE_NAMES = [
+  'pending_episode_media_storage_cleanup',
   'pending_episode_media_upload',
 ] as const;
 
