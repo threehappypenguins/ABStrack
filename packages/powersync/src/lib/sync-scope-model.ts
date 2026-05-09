@@ -56,8 +56,9 @@ function activePractitionerPatients(input: SyncScopeModelInput): Set<string> {
 /**
  * Returns distinct patient scope ids for `phi_*` buckets (aligned with YAML parameter queries:
  * `patient_self`, `caretaker_patients`, `practitioner_mfa_patients`). Values match PHI row `user_id`
- * / profile ids and grant-side `patient_user_id`; combines own patient data, caretaker-linked
- * patients, or practitioner-linked patients with MFA (`aal2`).
+ * (and `practitioner_observation_notes.patient_user_id`), profile ids, and grant-side
+ * `patient_user_id`; combines own patient data, caretaker-linked patients, or practitioner-linked
+ * patients with MFA (`aal2`).
  *
  * @param input Modeled auth claims and grant rows (same intent as sync-rule parameter queries).
  * @returns Stable sorted ids for assertions.

@@ -70,6 +70,7 @@ streams:
       - SELECT * FROM health_markers WHERE user_id IN patient_self
       - SELECT * FROM food_diary_entries WHERE user_id IN patient_self
       - SELECT * FROM episode_media WHERE user_id IN patient_self
+      - SELECT * FROM practitioner_observation_notes WHERE patient_user_id IN patient_self
 
   phi_caretaker_linked_patients:
     auto_subscribe: true
@@ -88,6 +89,8 @@ streams:
       - SELECT * FROM health_markers WHERE user_id IN caretaker_patients
       - SELECT * FROM food_diary_entries WHERE user_id IN caretaker_patients
       - SELECT * FROM episode_media WHERE user_id IN caretaker_patients
+      - >-
+        SELECT * FROM practitioner_observation_notes WHERE patient_user_id IN caretaker_patients
 
   phi_practitioner_linked_patients:
     auto_subscribe: true
@@ -106,3 +109,6 @@ streams:
       - SELECT * FROM health_markers WHERE user_id IN practitioner_mfa_patients
       - SELECT * FROM food_diary_entries WHERE user_id IN practitioner_mfa_patients
       - SELECT * FROM episode_media WHERE user_id IN practitioner_mfa_patients
+      - >-
+        SELECT * FROM practitioner_observation_notes WHERE patient_user_id IN
+        practitioner_mfa_patients

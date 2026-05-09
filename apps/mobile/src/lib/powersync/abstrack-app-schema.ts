@@ -205,6 +205,34 @@ const practitioner_access = new Table(
   },
 );
 
+const practitioner_observation_notes = new Table(
+  {
+    id: column.text,
+    patient_user_id: column.text,
+    episode_id: column.text,
+    practitioner_user_id: column.text,
+    body: column.text,
+    created_at: column.text,
+    updated_at: column.text,
+  },
+  {
+    indexes: {
+      practitioner_observation_notes_patient_created_idx: [
+        'patient_user_id',
+        'created_at',
+      ],
+      practitioner_observation_notes_patient_episode_idx: [
+        'patient_user_id',
+        'episode_id',
+      ],
+      practitioner_observation_notes_practitioner_idx: [
+        'practitioner_user_id',
+        'patient_user_id',
+      ],
+    },
+  },
+);
+
 const caretaker_access = new Table(
   {
     patient_user_id: column.text,
@@ -324,6 +352,7 @@ export const abstrackPowerSyncSchema = new Schema({
   food_diary_entries,
   episode_media,
   practitioner_access,
+  practitioner_observation_notes,
   caretaker_access,
   access_log,
   pending_episode_media_storage_cleanup,

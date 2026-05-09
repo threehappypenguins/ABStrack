@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
@@ -64,6 +65,37 @@ function parseMigrationRequiredTables(sql: string): string[] {
   return [...match[1].matchAll(/'([^']+)'/g)].map((groups) => groups[1]);
 }
 
+/** Tables added after the base PowerSync migration via `ALTER PUBLICATION powersync ADD TABLE`. */
+function parseAlterPublicationAddTables(migrationsDir: string): string[] {
+  const names = new Set<string>();
+  for (const file of readdirSync(migrationsDir).filter((f) =>
+    f.endsWith('.sql'),
+  )) {
+    const sql = readFileSync(join(migrationsDir, file), 'utf8');
+    const re =
+      /\bALTER\s+PUBLICATION\s+powersync\s+ADD\s+TABLE\s+public\.([a-z_][a-z0-9_]*)\b/gi;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(sql)) !== null) {
+      names.add(m[1]);
+    }
+  }
+  return [...names];
+}
+
+function publicationAllowlistFromMigrations(repoRoot: string): string[] {
+  const migrationsDir = join(repoRoot, 'supabase/migrations');
+  const baseSql = readFileSync(
+    join(
+      migrationsDir,
+      '20260430120000_powersync_replication_role_and_publication.sql',
+    ),
+    'utf8',
+  );
+  const base = parseMigrationRequiredTables(baseSql);
+  const added = parseAlterPublicationAddTables(migrationsDir);
+  return [...new Set([...base, ...added])].sort();
+}
+
 describe('Replicated table allowlist alignment', () => {
   const allowlistSorted = [...REPLICATED_PUBLIC_TABLE_NAMES].sort();
 
@@ -74,15 +106,10 @@ describe('Replicated table allowlist alignment', () => {
     expect(referenced).toEqual(allowlistSorted);
   });
 
-  it('matches powersync migration required_tables array', () => {
-    const migrationPath = resolveFromSpec(
-      '../../../../supabase/migrations/20260430120000_powersync_replication_role_and_publication.sql',
-    );
-    const sql = readFileSync(migrationPath, 'utf8');
-    const fromMigration = [
-      ...new Set(parseMigrationRequiredTables(sql)),
-    ].sort();
-    expect(fromMigration).toEqual(allowlistSorted);
+  it('matches powersync publication allowlist (base migration + ADD TABLE in later files)', () => {
+    const repoRoot = resolveFromSpec('../../../../');
+    const fromMigrations = publicationAllowlistFromMigrations(repoRoot);
+    expect(fromMigrations).toEqual(allowlistSorted);
   });
 
   it('matches mobile abstrack-app-schema.ts Schema table keys', () => {
