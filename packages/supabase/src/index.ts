@@ -103,6 +103,7 @@ export type {
   EpisodeMediaListRow,
   EpisodeMediaUploadBody,
   RemoveEpisodeMediaObjectsFromStorageResult,
+  RemoveEpisodeMediaStorageObjectPathsResult,
 } from './lib/episode-media-data.js';
 export {
   createEpisodeMediaSignedDisplayUrl,
@@ -114,6 +115,7 @@ export {
   listEpisodeMediaStorageObjectPathsForEpisode,
   removeEpisodeMediaObjectsFromStorage,
   removeEpisodeMediaStorageObjectPathsBestEffort,
+  removeEpisodeMediaStorageObjectPathsWithResult,
   uploadConfirmedEpisodeMedia,
 } from './lib/episode-media-data.js';
 export {

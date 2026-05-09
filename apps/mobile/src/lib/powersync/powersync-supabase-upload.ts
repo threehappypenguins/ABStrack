@@ -2,7 +2,7 @@ import type { AbstrackSupabaseClient } from '@abstrack/supabase';
 import {
   listEpisodeMediaBucketPathsForEpisodeMediaId,
   listEpisodeMediaBucketPathsForEpisodeSymptomId,
-  removeEpisodeMediaStorageObjectPathsBestEffort,
+  removeEpisodeMediaStorageObjectPathsWithResult,
 } from '@abstrack/supabase';
 import type {
   AbstractPowerSyncDatabase,
@@ -163,8 +163,8 @@ function pendingEpisodeMediaStorageCleanupRowId(
 
 /**
  * Persists bucket-relative paths **after** the matching PostgREST DELETE succeeds so a crash before
- * {@link removeEpisodeMediaStorageObjectPathsBestEffort} can still complete Storage cleanup on the next
- * {@link drainPendingEpisodeMediaStorageCleanupQueue} run (retries can no longer list paths once CASCADE
+ * Storage `remove` can still complete on the next {@link drainPendingEpisodeMediaStorageCleanupQueue} run
+ * (retries can no longer list paths once CASCADE
  * removed `episode_media`). Rows live in the local-only `pending_episode_media_storage_cleanup` table.
  */
 async function persistEpisodeMediaStorageCleanupPlanAfterRemoteDelete(
@@ -206,8 +206,9 @@ async function clearEpisodeMediaStorageCleanupPlan(
 }
 
 /**
- * Best-effort drain of the local-only `pending_episode_media_storage_cleanup` SQLite queue. No-op when
- * `database` is missing SQL helpers (Jest doubles).
+ * Drain of the local-only `pending_episode_media_storage_cleanup` SQLite queue. No-op when
+ * `database` is missing SQL helpers (Jest doubles). Drops a row only after Storage `remove` reports
+ * success; on transient failure the row is kept and `created_at` is bumped so other rows can drain first.
  *
  * @param client - Supabase client for Storage `remove`.
  * @param database - PowerSync database handle from the upload connector.
@@ -250,7 +251,17 @@ export async function drainPendingEpisodeMediaStorageCleanupQueue(
       );
       continue;
     }
-    await removeEpisodeMediaStorageObjectPathsBestEffort(client, paths);
+    const removed = await removeEpisodeMediaStorageObjectPathsWithResult(
+      client,
+      paths,
+    );
+    if (!removed.ok) {
+      await database.execute(
+        `UPDATE pending_episode_media_storage_cleanup SET created_at = ? WHERE id = ?`,
+        [new Date().toISOString(), row.id],
+      );
+      continue;
+    }
     await database.execute(
       `DELETE FROM pending_episode_media_storage_cleanup WHERE id = ?`,
       [row.id],
@@ -271,8 +282,9 @@ export async function drainPendingEpisodeMediaStorageCleanupQueue(
  * {@link deleteCurrentPassEpisodeSymptomAnswer} ordering).
  *
  * After a successful symptom/media row delete with non-empty listed paths, paths are written to the
- * local-only `pending_episode_media_storage_cleanup` table **before** Storage `remove` so a crash between
- * DELETE and `remove` can still delete blobs on the next {@link drainPendingEpisodeMediaStorageCleanupQueue} run.
+ * local-only `pending_episode_media_storage_cleanup` table **before** {@link removeEpisodeMediaStorageObjectPathsWithResult}
+ * so a crash between DELETE and Storage remove can still delete blobs on the next {@link drainPendingEpisodeMediaStorageCleanupQueue} run.
+ * The local cleanup row is cleared only when that helper returns success; otherwise it remains for drain/retry.
  * That matters especially for `episode_media`: after the row is deleted, a retry cannot re-list
  * `storage_object_key` / `thumbnail_storage_key` from PostgREST, so the queued JSON paths are the only
  * durable source for idempotent Storage cleanup.
@@ -349,11 +361,15 @@ export async function applyPowerSyncCrudEntryToSupabase(
             },
           );
         }
-        await removeEpisodeMediaStorageObjectPathsBestEffort(
-          client,
-          listed.data,
-        );
-        if (isExecuteCapablePowerSyncDatabase(powerSyncDatabase)) {
+        const removedSymptomMedia =
+          await removeEpisodeMediaStorageObjectPathsWithResult(
+            client,
+            listed.data,
+          );
+        if (
+          removedSymptomMedia.ok &&
+          isExecuteCapablePowerSyncDatabase(powerSyncDatabase)
+        ) {
           await clearEpisodeMediaStorageCleanupPlan(
             powerSyncDatabase,
             'episode_symptoms',
@@ -394,11 +410,15 @@ export async function applyPowerSyncCrudEntryToSupabase(
             },
           );
         }
-        await removeEpisodeMediaStorageObjectPathsBestEffort(
-          client,
-          listed.data,
-        );
-        if (isExecuteCapablePowerSyncDatabase(powerSyncDatabase)) {
+        const removedEpisodeMedia =
+          await removeEpisodeMediaStorageObjectPathsWithResult(
+            client,
+            listed.data,
+          );
+        if (
+          removedEpisodeMedia.ok &&
+          isExecuteCapablePowerSyncDatabase(powerSyncDatabase)
+        ) {
           await clearEpisodeMediaStorageCleanupPlan(
             powerSyncDatabase,
             'episode_media',

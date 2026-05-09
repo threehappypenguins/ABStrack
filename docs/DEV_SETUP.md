@@ -8,11 +8,11 @@ This guide covers getting the ABStrack monorepo running on a new machine and onb
 
 ### All platforms
 
-| Requirement      | Notes                                                                                                              |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------ |
-| **Git**          | For clone and version control.                                                                                     |
-| **Node.js 20.x** | Matches [CI](../.github/workflows/ci.yml). Use [nodejs.org](https://nodejs.org/) or a version manager (see below). |
-| **pnpm 10.29.2** | Matches CI. Install via [pnpm.io/installation](https://pnpm.io/installation) or Corepack (below).                  |
+| Requirement           | Notes                                                                                                                                                                               |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Git**               | For clone and version control.                                                                                                                                                      |
+| **Node.js ≥ 20.19.0** | Matches [CI](../.github/workflows/ci.yml) and `engines` in the repo root `package.json` (`@noble/*` 2.2.x). Use [nodejs.org](https://nodejs.org/) or a version manager (see below). |
+| **pnpm 10.29.2**      | Matches CI. Install via [pnpm.io/installation](https://pnpm.io/installation) or Corepack (below).                                                                                   |
 
 Optional but common:
 
@@ -24,7 +24,7 @@ Optional but common:
 
 ### macOS and Linux (including Ubuntu)
 
-1. Install **Node.js 20** — e.g. [nvm](https://github.com/nvm-sh/nvm), [fnm](https://github.com/Schniz/fnm), [mise](https://mise.jdx.dev/), or your distro’s packages (ensure the major version is 20).
+1. Install **Node.js 20.19 or newer** (20.x LTS line) — e.g. [nvm](https://github.com/nvm-sh/nvm) with `.nvmrc` in the repo root, [fnm](https://github.com/Schniz/fnm), [mise](https://mise.jdx.dev/), or your distro’s packages.
 2. Enable **Corepack** (ships with Node) and activate the repo’s pnpm version:
 
    ```bash
@@ -37,13 +37,13 @@ Optional but common:
 3. Confirm versions:
 
    ```bash
-   node -v    # expect v20.x.x
+   node -v    # expect v20.19.0 or newer (see root package.json engines)
    pnpm -v    # expect 10.29.2
    ```
 
 ### Windows
 
-1. Install **Node.js 20 LTS** from [nodejs.org](https://nodejs.org/) (includes **npm**).
+1. Install **Node.js 20.19+ LTS** from [nodejs.org](https://nodejs.org/) (includes **npm**).
 2. Open **PowerShell** or **Command Prompt** as appropriate and enable Corepack, then pnpm:
 
    ```powershell

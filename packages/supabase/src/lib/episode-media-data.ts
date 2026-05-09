@@ -1080,6 +1080,42 @@ export async function removeEpisodeMediaStorageObjectPathsBestEffort(
   await removeBucketObjectsBestEffort(client, paths);
 }
 
+/**
+ * Result of {@link removeEpisodeMediaStorageObjectPathsWithResult} (strict Storage `remove`, no throw).
+ */
+export type RemoveEpisodeMediaStorageObjectPathsResult =
+  | { ok: true }
+  | { ok: false; error: PresetDataError };
+
+/**
+ * Deletes `episode-media` Storage objects for the given bucket-relative keys and reports whether
+ * `remove` succeeded. Does **not** throw — use when callers must keep durable state (e.g. a local
+ * cleanup queue row) until Storage confirms removal, unlike {@link removeEpisodeMediaStorageObjectPathsBestEffort}.
+ *
+ * @param client - Supabase client (RLS applies to Storage DELETE).
+ * @param paths - Bucket-relative keys under `episode-media`.
+ */
+export async function removeEpisodeMediaStorageObjectPathsWithResult(
+  client: AbstrackSupabaseClient,
+  paths: string[],
+): Promise<RemoveEpisodeMediaStorageObjectPathsResult> {
+  const unique = [...new Set(paths.map((k) => k.trim()).filter(Boolean))];
+  if (unique.length === 0) {
+    return { ok: true };
+  }
+  try {
+    const { error } = await client.storage
+      .from(EPISODE_MEDIA_BUCKET)
+      .remove(unique);
+    if (error) {
+      return { ok: false, error: toPresetDataError(error) };
+    }
+    return { ok: true };
+  } catch (caught) {
+    return { ok: false, error: toPresetDataError(caught) };
+  }
+}
+
 export type RemoveEpisodeMediaObjectsFromStorageResult =
   | { ok: true }
   | { ok: false; error: PresetDataError };

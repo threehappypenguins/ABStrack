@@ -6,7 +6,7 @@ import {
   listEpisodeMediaBucketPathsForEpisodeMediaId,
   listEpisodeMediaBucketPathsForEpisodeSymptomId,
   PresetDataError,
-  removeEpisodeMediaStorageObjectPathsBestEffort,
+  removeEpisodeMediaStorageObjectPathsWithResult,
 } from '@abstrack/supabase';
 import type { AbstractPowerSyncDatabase } from '@powersync/react-native';
 import { CrudBatch, CrudEntry, UpdateType } from '@powersync/react-native';
@@ -26,7 +26,7 @@ jest.mock('@abstrack/supabase', () => ({
   ),
   listEpisodeMediaBucketPathsForEpisodeSymptomId: jest.fn(),
   listEpisodeMediaBucketPathsForEpisodeMediaId: jest.fn(),
-  removeEpisodeMediaStorageObjectPathsBestEffort: jest.fn(),
+  removeEpisodeMediaStorageObjectPathsWithResult: jest.fn(),
 }));
 
 const mockListEpisodeMediaBucketPathsForEpisodeSymptomId = jest.mocked(
@@ -35,8 +35,8 @@ const mockListEpisodeMediaBucketPathsForEpisodeSymptomId = jest.mocked(
 const mockListEpisodeMediaBucketPathsForEpisodeMediaId = jest.mocked(
   listEpisodeMediaBucketPathsForEpisodeMediaId,
 );
-const mockRemoveEpisodeMediaStorageObjectPathsBestEffort = jest.mocked(
-  removeEpisodeMediaStorageObjectPathsBestEffort,
+const mockRemoveEpisodeMediaStorageObjectPathsWithResult = jest.mocked(
+  removeEpisodeMediaStorageObjectPathsWithResult,
 );
 
 const mobilePackageJsonPath = join(__dirname, '../../../package.json');
@@ -298,9 +298,9 @@ describe('applyPowerSyncCrudEntryToSupabase', () => {
         ok: true,
         data: paths,
       });
-      mockRemoveEpisodeMediaStorageObjectPathsBestEffort.mockResolvedValue(
-        undefined,
-      );
+      mockRemoveEpisodeMediaStorageObjectPathsWithResult.mockResolvedValue({
+        ok: true,
+      });
 
       const { client, ops } = createSupabaseUploadMock();
       const execute = jest.fn().mockResolvedValue(undefined);
@@ -321,13 +321,13 @@ describe('applyPowerSyncCrudEntryToSupabase', () => {
         { kind: 'delete', table: 'episode_symptoms', id: 'sym-1' },
       ]);
       expect(
-        mockRemoveEpisodeMediaStorageObjectPathsBestEffort,
+        mockRemoveEpisodeMediaStorageObjectPathsWithResult,
       ).toHaveBeenCalledWith(client, paths);
       expect(
         mockListEpisodeMediaBucketPathsForEpisodeSymptomId.mock
           .invocationCallOrder[0],
       ).toBeLessThan(
-        mockRemoveEpisodeMediaStorageObjectPathsBestEffort.mock
+        mockRemoveEpisodeMediaStorageObjectPathsWithResult.mock
           .invocationCallOrder[0],
       );
       expect(execute).toHaveBeenCalledTimes(2);
@@ -342,11 +342,39 @@ describe('applyPowerSyncCrudEntryToSupabase', () => {
       ]);
       const persistOrder = execute.mock.invocationCallOrder[0];
       const removeOrder =
-        mockRemoveEpisodeMediaStorageObjectPathsBestEffort.mock
+        mockRemoveEpisodeMediaStorageObjectPathsWithResult.mock
           .invocationCallOrder[0];
       const clearOrder = execute.mock.invocationCallOrder[1];
       expect(persistOrder).toBeLessThan(removeOrder);
       expect(removeOrder).toBeLessThan(clearOrder);
+    });
+
+    it('keeps durable cleanup row when Storage remove fails (no clear)', async () => {
+      const paths = ['user/u1/ep/e1/s/a/keep-for-retry.jpg'];
+      mockListEpisodeMediaBucketPathsForEpisodeSymptomId.mockResolvedValue({
+        ok: true,
+        data: paths,
+      });
+      mockRemoveEpisodeMediaStorageObjectPathsWithResult.mockResolvedValue({
+        ok: false,
+        error: new PresetDataError('unknown', 'storage 503'),
+      });
+
+      const { client, ops } = createSupabaseUploadMock();
+      const execute = jest.fn().mockResolvedValue(undefined);
+      await applyPowerSyncCrudEntryToSupabase(
+        client,
+        new CrudEntry(10, UpdateType.DELETE, 'episode_symptoms', 'sym-fail'),
+        { execute } as unknown as AbstractPowerSyncDatabase,
+      );
+
+      expect(ops).toEqual([
+        { kind: 'delete', table: 'episode_symptoms', id: 'sym-fail' },
+      ]);
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(String(execute.mock.calls[0][0])).toContain(
+        'INSERT OR REPLACE INTO pending_episode_media_storage_cleanup',
+      );
     });
 
     it('skips Storage cleanup when listed paths are empty', async () => {
@@ -365,7 +393,7 @@ describe('applyPowerSyncCrudEntryToSupabase', () => {
         { kind: 'delete', table: 'episode_symptoms', id: 'sym-2' },
       ]);
       expect(
-        mockRemoveEpisodeMediaStorageObjectPathsBestEffort,
+        mockRemoveEpisodeMediaStorageObjectPathsWithResult,
       ).not.toHaveBeenCalled();
     });
 
@@ -392,7 +420,7 @@ describe('applyPowerSyncCrudEntryToSupabase', () => {
         { kind: 'delete', table: 'episode_symptoms', id: 'sym-3' },
       ]);
       expect(
-        mockRemoveEpisodeMediaStorageObjectPathsBestEffort,
+        mockRemoveEpisodeMediaStorageObjectPathsWithResult,
       ).not.toHaveBeenCalled();
     });
 
@@ -415,7 +443,7 @@ describe('applyPowerSyncCrudEntryToSupabase', () => {
         { kind: 'delete', table: 'episode_symptoms', id: 'sym-3b' },
       ]);
       expect(
-        mockRemoveEpisodeMediaStorageObjectPathsBestEffort,
+        mockRemoveEpisodeMediaStorageObjectPathsWithResult,
       ).not.toHaveBeenCalled();
     });
 
@@ -436,7 +464,7 @@ describe('applyPowerSyncCrudEntryToSupabase', () => {
 
       expect(ops).toEqual([]);
       expect(
-        mockRemoveEpisodeMediaStorageObjectPathsBestEffort,
+        mockRemoveEpisodeMediaStorageObjectPathsWithResult,
       ).not.toHaveBeenCalled();
     });
   });
@@ -452,9 +480,9 @@ describe('applyPowerSyncCrudEntryToSupabase', () => {
         ok: true,
         data: paths,
       });
-      mockRemoveEpisodeMediaStorageObjectPathsBestEffort.mockResolvedValue(
-        undefined,
-      );
+      mockRemoveEpisodeMediaStorageObjectPathsWithResult.mockResolvedValue({
+        ok: true,
+      });
 
       const { client, ops } = createSupabaseUploadMock();
       const execute = jest.fn().mockResolvedValue(undefined);
@@ -475,13 +503,13 @@ describe('applyPowerSyncCrudEntryToSupabase', () => {
         { kind: 'delete', table: 'episode_media', id: 'med-1' },
       ]);
       expect(
-        mockRemoveEpisodeMediaStorageObjectPathsBestEffort,
+        mockRemoveEpisodeMediaStorageObjectPathsWithResult,
       ).toHaveBeenCalledWith(client, paths);
       expect(
         mockListEpisodeMediaBucketPathsForEpisodeMediaId.mock
           .invocationCallOrder[0],
       ).toBeLessThan(
-        mockRemoveEpisodeMediaStorageObjectPathsBestEffort.mock
+        mockRemoveEpisodeMediaStorageObjectPathsWithResult.mock
           .invocationCallOrder[0],
       );
       expect(execute).toHaveBeenCalledTimes(2);
@@ -494,7 +522,7 @@ describe('applyPowerSyncCrudEntryToSupabase', () => {
       expect(execute.mock.calls[1][1]).toEqual(['pemsc:episode_media:med-1']);
       const persistOrder = execute.mock.invocationCallOrder[0];
       const removeOrder =
-        mockRemoveEpisodeMediaStorageObjectPathsBestEffort.mock
+        mockRemoveEpisodeMediaStorageObjectPathsWithResult.mock
           .invocationCallOrder[0];
       const clearOrder = execute.mock.invocationCallOrder[1];
       expect(persistOrder).toBeLessThan(removeOrder);
@@ -517,7 +545,7 @@ describe('applyPowerSyncCrudEntryToSupabase', () => {
         { kind: 'delete', table: 'episode_media', id: 'med-2' },
       ]);
       expect(
-        mockRemoveEpisodeMediaStorageObjectPathsBestEffort,
+        mockRemoveEpisodeMediaStorageObjectPathsWithResult,
       ).not.toHaveBeenCalled();
     });
 
@@ -544,7 +572,7 @@ describe('applyPowerSyncCrudEntryToSupabase', () => {
         { kind: 'delete', table: 'episode_media', id: 'med-3' },
       ]);
       expect(
-        mockRemoveEpisodeMediaStorageObjectPathsBestEffort,
+        mockRemoveEpisodeMediaStorageObjectPathsWithResult,
       ).not.toHaveBeenCalled();
     });
 
@@ -567,7 +595,7 @@ describe('applyPowerSyncCrudEntryToSupabase', () => {
         { kind: 'delete', table: 'episode_media', id: 'med-3b' },
       ]);
       expect(
-        mockRemoveEpisodeMediaStorageObjectPathsBestEffort,
+        mockRemoveEpisodeMediaStorageObjectPathsWithResult,
       ).not.toHaveBeenCalled();
     });
 
@@ -588,7 +616,7 @@ describe('applyPowerSyncCrudEntryToSupabase', () => {
 
       expect(ops).toEqual([]);
       expect(
-        mockRemoveEpisodeMediaStorageObjectPathsBestEffort,
+        mockRemoveEpisodeMediaStorageObjectPathsWithResult,
       ).not.toHaveBeenCalled();
     });
   });
@@ -605,14 +633,14 @@ describe('drainPendingEpisodeMediaStorageCleanupQueue', () => {
       handleCrudCheckpoint: jest.fn(),
     } as unknown as AbstractPowerSyncDatabase);
     expect(
-      mockRemoveEpisodeMediaStorageObjectPathsBestEffort,
+      mockRemoveEpisodeMediaStorageObjectPathsWithResult,
     ).not.toHaveBeenCalled();
   });
 
   it('removes Storage for each queued row then deletes the queue row by id', async () => {
-    mockRemoveEpisodeMediaStorageObjectPathsBestEffort.mockResolvedValue(
-      undefined,
-    );
+    mockRemoveEpisodeMediaStorageObjectPathsWithResult.mockResolvedValue({
+      ok: true,
+    });
     const { client } = createSupabaseUploadMock();
     const execute = jest.fn().mockResolvedValue(undefined);
     const getAll = jest
@@ -634,7 +662,7 @@ describe('drainPendingEpisodeMediaStorageCleanupQueue', () => {
       [],
     );
     expect(
-      mockRemoveEpisodeMediaStorageObjectPathsBestEffort,
+      mockRemoveEpisodeMediaStorageObjectPathsWithResult,
     ).toHaveBeenCalledWith(client, ['a/b.jpg']);
     const deleteByIdIdx = execute.mock.calls.findIndex(
       (c) =>
@@ -644,11 +672,50 @@ describe('drainPendingEpisodeMediaStorageCleanupQueue', () => {
     );
     expect(deleteByIdIdx).toBeGreaterThanOrEqual(0);
     const removeCallOrder =
-      mockRemoveEpisodeMediaStorageObjectPathsBestEffort.mock
+      mockRemoveEpisodeMediaStorageObjectPathsWithResult.mock
         .invocationCallOrder[0];
     expect(execute.mock.invocationCallOrder[deleteByIdIdx]).toBeGreaterThan(
       removeCallOrder,
     );
+  });
+
+  it('on Storage remove failure bumps created_at and does not delete the row', async () => {
+    mockRemoveEpisodeMediaStorageObjectPathsWithResult.mockResolvedValue({
+      ok: false,
+      error: new PresetDataError('unknown', 'network'),
+    });
+    const { client } = createSupabaseUploadMock();
+    const execute = jest.fn().mockResolvedValue(undefined);
+    const getAll = jest
+      .fn()
+      .mockResolvedValue([
+        { id: 'q2', storage_paths_json: JSON.stringify(['x/y.png']) },
+      ]);
+    const database = {
+      getAll,
+      execute,
+    } as unknown as AbstractPowerSyncDatabase;
+
+    await drainPendingEpisodeMediaStorageCleanupQueue(client, database);
+
+    expect(
+      mockRemoveEpisodeMediaStorageObjectPathsWithResult,
+    ).toHaveBeenCalledWith(client, ['x/y.png']);
+    const updateIdx = execute.mock.calls.findIndex(
+      (c) =>
+        String(c[0]).includes(
+          'UPDATE pending_episode_media_storage_cleanup SET created_at',
+        ) && (c[1] as unknown[] | undefined)?.[1] === 'q2',
+    );
+    expect(updateIdx).toBeGreaterThanOrEqual(0);
+    expect(
+      execute.mock.calls.some(
+        (c) =>
+          String(c[0]).includes(
+            'DELETE FROM pending_episode_media_storage_cleanup WHERE id = ?',
+          ) && (c[1] as unknown[] | undefined)?.[0] === 'q2',
+      ),
+    ).toBe(false);
   });
 });
 
