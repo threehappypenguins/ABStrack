@@ -20,6 +20,15 @@ const jestExpo = require('jest-expo/jest-preset');
 
 module.exports = {
   ...jestExpo,
+  /**
+   * `@noble/ciphers` and `@noble/hashes` v2 ship ESM-only `.js` entrypoints. Hoisted installs live
+   * under `node_modules/@noble/…`, which default `jest-expo` ignore rules would skip — Jest then
+   * executes raw `import` and throws. Keep them in the same allowlist as `.pnpm` / Expo packages.
+   */
+  transformIgnorePatterns: [
+    '/node_modules/(?!(.pnpm|@noble|react-native|@react-native|@react-native-community|expo|@expo|@expo-google-fonts|react-navigation|@react-navigation|@sentry/react-native|native-base))',
+    '/node_modules/react-native-reanimated/plugin/',
+  ],
   displayName: '@abstrack/mobile',
   setupFiles: [
     '<rootDir>/src/jest-expo-os-setup.js',

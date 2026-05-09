@@ -1,5 +1,5 @@
-import { gcm } from '@noble/ciphers/aes';
-import { sha256 } from '@noble/hashes/sha256';
+import { gcm } from '@noble/ciphers/aes.js';
+import { sha256 } from '@noble/hashes/sha2.js';
 import { File, Paths } from 'expo-file-system';
 
 const FORMAT_V1 = 1;

@@ -252,7 +252,7 @@ jest.mock('../../lib/episodes/mobile-offline-first-gateway', () => ({
   insertEpisodeHealthMarkerLineOfflineFirst: jest.fn(
     async (client: unknown, _db: unknown, args: unknown) =>
       (
-        require('@abstrack/supabase') as typeof import('@abstrack/supabase')
+        jest.requireMock('@abstrack/supabase') as any
       ).insertEpisodeHealthMarkerForLine(client as never, args as never),
   ),
   listEpisodeHealthMarkersForEpisodeOfflineFirst: jest.fn(
@@ -262,8 +262,7 @@ jest.mock('../../lib/episodes/mobile-offline-first-gateway', () => ({
       episodeId: unknown,
       options: { limit?: number } = {},
     ) => {
-      const supabase =
-        require('@abstrack/supabase') as typeof import('@abstrack/supabase');
+      const supabase = jest.requireMock('@abstrack/supabase') as any;
       const r = await supabase.listEpisodeHealthMarkersForEpisode(
         client as never,
         episodeId as never,
@@ -287,7 +286,7 @@ jest.mock('../../lib/episodes/mobile-offline-first-gateway', () => ({
       fields: unknown,
     ) =>
       (
-        require('@abstrack/supabase') as typeof import('@abstrack/supabase')
+        jest.requireMock('@abstrack/supabase') as any
       ).completeEpisodePostMarkerStep(
         client as never,
         episodeId as never,
@@ -302,9 +301,7 @@ jest.mock('../../lib/episodes/mobile-offline-first-gateway', () => ({
       endedAt?: unknown,
       startedAt?: unknown,
     ) =>
-      (
-        require('@abstrack/supabase') as typeof import('@abstrack/supabase')
-      ).endEpisodeIfStillActive(
+      (jest.requireMock('@abstrack/supabase') as any).endEpisodeIfStillActive(
         client as never,
         episodeId as never,
         endedAt as never,
@@ -313,9 +310,10 @@ jest.mock('../../lib/episodes/mobile-offline-first-gateway', () => ({
   ),
   cancelActiveEpisodeByIdOfflineFirst: jest.fn(
     async (client: unknown, _db: unknown, episodeId: unknown) =>
-      (
-        require('@abstrack/supabase') as typeof import('@abstrack/supabase')
-      ).cancelActiveEpisodeById(client as never, episodeId as never),
+      (jest.requireMock('@abstrack/supabase') as any).cancelActiveEpisodeById(
+        client as never,
+        episodeId as never,
+      ),
   ),
   listFoodDiaryEntriesForEpisodeOfflineFirst: jest.fn(
     async (
@@ -325,7 +323,7 @@ jest.mock('../../lib/episodes/mobile-offline-first-gateway', () => ({
       options: { limit?: number; trustEmptyLocalReplica?: boolean } = {},
     ) =>
       (
-        require('@abstrack/supabase') as typeof import('@abstrack/supabase')
+        jest.requireMock('@abstrack/supabase') as any
       ).listFoodDiaryEntriesForEpisode(
         client as never,
         episodeId as never,
@@ -334,8 +332,7 @@ jest.mock('../../lib/episodes/mobile-offline-first-gateway', () => ({
   ),
   createFoodDiaryEntryOfflineFirst: jest.fn(
     async (client: unknown, _db: unknown, row: Record<string, unknown>) => {
-      const supabase =
-        require('@abstrack/supabase') as typeof import('@abstrack/supabase');
+      const supabase = jest.requireMock('@abstrack/supabase') as any;
       const core = supabase.validateAndNormalizeFoodDiaryCreateCore(
         row as never,
       );
@@ -354,8 +351,7 @@ jest.mock('../../lib/episodes/mobile-offline-first-gateway', () => ({
   ),
   updateFoodDiaryEntryOfflineFirst: jest.fn(
     async (client: unknown, _db: unknown, entryId: unknown, patch: unknown) => {
-      const supabase =
-        require('@abstrack/supabase') as typeof import('@abstrack/supabase');
+      const supabase = jest.requireMock('@abstrack/supabase') as any;
       const normalized = supabase.normalizeFoodDiaryEntryUpdate(patch as never);
       if (!normalized.ok) {
         return normalized;
@@ -369,9 +365,10 @@ jest.mock('../../lib/episodes/mobile-offline-first-gateway', () => ({
   ),
   deleteFoodDiaryEntryOfflineFirst: jest.fn(
     async (client: unknown, _db: unknown, entryId: unknown) =>
-      (
-        require('@abstrack/supabase') as typeof import('@abstrack/supabase')
-      ).deleteFoodDiaryEntry(client as never, entryId as never),
+      (jest.requireMock('@abstrack/supabase') as any).deleteFoodDiaryEntry(
+        client as never,
+        entryId as never,
+      ),
   ),
 }));
 
