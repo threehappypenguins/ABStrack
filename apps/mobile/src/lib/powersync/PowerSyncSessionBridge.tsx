@@ -338,7 +338,10 @@ export function PowerSyncSessionBridge({
         flush();
         void NetInfo.fetch()
           .then((state) => {
-            if (!state.isConnected || state.isInternetReachable === false) {
+            if (
+              state.isConnected === false ||
+              state.isInternetReachable === false
+            ) {
               return;
             }
             flush();
@@ -364,12 +367,16 @@ export function PowerSyncSessionBridge({
       isConnected: boolean | null;
       isInternetReachable: boolean | null;
     }) => {
-      if (state.isConnected !== true) {
+      if (state.isConnected === false) {
         netAllowsPeriodicDrainRef.current = false;
         return;
       }
       if (state.isInternetReachable === false) {
         netAllowsPeriodicDrainRef.current = false;
+        return;
+      }
+      if (state.isConnected !== true) {
+        netAllowsPeriodicDrainRef.current = null;
         return;
       }
       netAllowsPeriodicDrainRef.current = true;
@@ -383,7 +390,7 @@ export function PowerSyncSessionBridge({
 
     const subNet = NetInfo.addEventListener((state) => {
       syncNetAllowsPeriodicDrain(state);
-      if (!state.isConnected) {
+      if (state.isConnected === false) {
         return;
       }
       if (state.isInternetReachable === false) {
