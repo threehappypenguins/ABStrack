@@ -29,6 +29,7 @@ const REPLICA_DIAGNOSTICS_TABLES = [
   'food_diary_entries',
   'episode_media',
   'practitioner_access',
+  'practitioner_observation_notes',
   'caretaker_access',
   'access_log',
 ] as const;

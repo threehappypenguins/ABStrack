@@ -463,6 +463,44 @@ export type Database = {
         }
         Relationships: []
       }
+      practitioner_observation_notes: {
+        Row: {
+          body: string
+          created_at: string
+          episode_id: string | null
+          id: string
+          patient_user_id: string
+          practitioner_user_id: string
+          updated_at: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          episode_id?: string | null
+          id?: string
+          patient_user_id: string
+          practitioner_user_id: string
+          updated_at?: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          episode_id?: string | null
+          id?: string
+          patient_user_id?: string
+          practitioner_user_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "practitioner_observation_notes_episode_owner_fk"
+            columns: ["patient_user_id", "episode_id"]
+            isOneToOne: false
+            referencedRelation: "episodes"
+            referencedColumns: ["user_id", "id"]
+          },
+        ]
+      }
       preset_health_markers: {
         Row: {
           created_at: string
