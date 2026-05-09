@@ -54,25 +54,42 @@ jest.mock('@abstrack/supabase', () => ({
   uploadConfirmedEpisodeMedia: jest.fn(),
 }));
 
-jest.mock('../../lib/supabase-wiring-core', () => {
-  const actual = jest.requireActual(
-    '../../lib/supabase-wiring-core',
-  ) as typeof import('../../lib/supabase-wiring-core');
-  return {
-    ...actual,
-    getMobileSupabaseClient: jest.fn(() => ({
-      mockClient: true,
-      auth: {
-        getUser: jest.fn(async () => ({
-          data: { user: { id: 'test-user-1' } },
-        })),
-        getSession: jest.fn(async () => ({
-          data: { session: { user: { id: 'test-user-1' } } },
-        })),
-      },
-    })),
-  };
-});
+/**
+ * Mock the **barrel** (`supabase-wiring.ts`), not `supabase-wiring-core` alone: the screen and
+ * `pending-episode-media-upload` import from `../../lib/supabase-wiring`. Jest treats that as a
+ * separate module from `supabase-wiring-core`; mocking only the core file still loads the real
+ * barrel → real chunking store + post-teardown async noise.
+ */
+jest.mock('../../lib/supabase-wiring', () => ({
+  __esModule: true,
+  getMobileSupabaseClient: jest.fn(() => ({
+    mockClient: true,
+    auth: {
+      storageKey: 'sb-test-auth-token',
+      getUser: jest.fn(async () => ({
+        data: { user: { id: 'test-user-1' } },
+      })),
+      getSession: jest.fn(async () => ({
+        data: { session: { user: { id: 'test-user-1' } } },
+      })),
+    },
+  })),
+  getMobileAuthSessionSafe: jest.fn(async () => ({
+    data: { session: { user: { id: 'test-user-1' } } },
+    error: null,
+  })),
+  readPersistedMobileAuthUserId: jest.fn(async () => 'test-user-1'),
+  mobileAuthStorage: {
+    getItem: jest.fn(async () => null),
+    setItem: jest.fn(async () => undefined),
+    removeItem: jest.fn(async () => undefined),
+  },
+  createMobileSupabaseClient: jest.fn(() => {
+    throw new Error(
+      'createMobileSupabaseClient not used in SymptomPromptScreen tests',
+    );
+  }),
+}));
 
 jest.mock('../../lib/episodes/symptom-prompt-session-store', () => ({
   getSymptomPromptSession: jest.fn(),

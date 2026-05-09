@@ -4,6 +4,37 @@ import { Base64 } from 'js-base64';
 import { createSupabaseNativeClient } from '@abstrack/supabase/native';
 
 /**
+ * ChunkingSecureStore reads can finish after Jest tears down a test; Jest's console shim then throws
+ * "Cannot log after tests are done". Swallow that failure so late async SecureStore resolution does not
+ * poison the worker.
+ *
+ * @param message - Same text previously passed to `console.warn`.
+ */
+function chunkingSecureStoreWarn(message: string): void {
+  try {
+    console.warn(message);
+  } catch {
+    /* noop */
+  }
+}
+
+/**
+ * @param message - Primary log line.
+ * @param error - Optional details for `console.error` parity.
+ */
+function chunkingSecureStoreError(message: string, error?: unknown): void {
+  try {
+    if (error !== undefined) {
+      console.error(message, error);
+    } else {
+      console.error(message);
+    }
+  } catch {
+    /* noop */
+  }
+}
+
+/**
  * Chunking storage adapter for expo-secure-store.
  *
  * Supabase's persistSession: true stores the full session (access token, refresh token, user metadata)
@@ -123,7 +154,7 @@ class ChunkingSecureStore {
           );
           const chunk = await SecureStore.getItemAsync(chunkKey);
           if (!chunk) {
-            console.warn(
+            chunkingSecureStoreWarn(
               `[ChunkingSecureStore] Missing chunk ${i}/${parsedMeta.chunkCount} for key: ${key} (incomplete write/crash recovery)`,
             );
             await this.removeChunks(key);
@@ -138,7 +169,7 @@ class ChunkingSecureStore {
 
       const chunkCount = parseInt(meta, 10);
       if (isNaN(chunkCount) || chunkCount < 1) {
-        console.warn(
+        chunkingSecureStoreWarn(
           `[ChunkingSecureStore] Invalid chunk metadata for key: ${key}`,
         );
         await this.removeChunks(key);
@@ -146,7 +177,7 @@ class ChunkingSecureStore {
       }
 
       if (chunkCount > ChunkingSecureStore.MAX_CHUNKS) {
-        console.warn(
+        chunkingSecureStoreWarn(
           `[ChunkingSecureStore] Metadata chunk count exceeds supported max for key: ${key}`,
         );
         await this.removeChunks(key);
@@ -156,7 +187,7 @@ class ChunkingSecureStore {
       const firstChunkKey = ChunkingSecureStore.buildLegacyChunkKey(key, 0);
       const firstChunk = await SecureStore.getItemAsync(firstChunkKey);
       if (!firstChunk) {
-        console.warn(
+        chunkingSecureStoreWarn(
           `[ChunkingSecureStore] Missing first chunk for key: ${key} (falling back to unchunked value)`,
         );
         await this.removeChunks(key);
@@ -176,7 +207,7 @@ class ChunkingSecureStore {
         const chunkKey = ChunkingSecureStore.buildLegacyChunkKey(key, i);
         const chunk = await SecureStore.getItemAsync(chunkKey);
         if (!chunk) {
-          console.warn(
+          chunkingSecureStoreWarn(
             `[ChunkingSecureStore] Missing chunk ${i}/${chunkCount} for key: ${key} (incomplete write/crash recovery)`,
           );
           await this.removeChunks(key);
@@ -189,7 +220,10 @@ class ChunkingSecureStore {
       const base64 = chunks.join('');
       return ChunkingSecureStore.fromBase64(base64);
     } catch (error) {
-      console.error(`[ChunkingSecureStore] Error reading key ${key}:`, error);
+      chunkingSecureStoreError(
+        `[ChunkingSecureStore] Error reading key ${key}:`,
+        error,
+      );
       await this.removeChunks(key);
       try {
         return await SecureStore.getItemAsync(key);
@@ -277,12 +311,15 @@ class ChunkingSecureStore {
         }),
       );
     } catch (error) {
-      console.error(`[ChunkingSecureStore] Error writing key ${key}:`, error);
+      chunkingSecureStoreError(
+        `[ChunkingSecureStore] Error writing key ${key}:`,
+        error,
+      );
       try {
         // Only clean the in-progress prefix. Preserve metadata and the last committed prefix.
         await this.deletePrefixedChunks(key, nextPrefix);
       } catch (cleanupError) {
-        console.error(
+        chunkingSecureStoreError(
           `[ChunkingSecureStore] Error rolling back failed write for key ${key}:`,
           cleanupError,
         );
@@ -296,7 +333,7 @@ class ChunkingSecureStore {
       await this.deletePrefixedChunks(key, oldPrefix);
       await this.deleteLegacyChunks(key);
     } catch (cleanupError) {
-      console.error(
+      chunkingSecureStoreError(
         `[ChunkingSecureStore] Error cleaning up committed write for key ${key}:`,
         cleanupError,
       );
@@ -309,7 +346,10 @@ class ChunkingSecureStore {
       await SecureStore.deleteItemAsync(key);
       await this.removeChunks(key);
     } catch (error) {
-      console.error(`[ChunkingSecureStore] Error removing key ${key}:`, error);
+      chunkingSecureStoreError(
+        `[ChunkingSecureStore] Error removing key ${key}:`,
+        error,
+      );
       // Don't throw on remove failures; best-effort cleanup
     }
   }
@@ -321,7 +361,7 @@ class ChunkingSecureStore {
       await this.deletePrefixedChunks(key, ChunkingSecureStore.PREFIX_B);
       await SecureStore.deleteItemAsync(key + ChunkingSecureStore.META_SUFFIX);
     } catch (error) {
-      console.error(
+      chunkingSecureStoreError(
         `[ChunkingSecureStore] Error cleaning up chunks for key ${key}:`,
         error,
       );

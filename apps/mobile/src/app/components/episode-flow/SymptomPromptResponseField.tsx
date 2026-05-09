@@ -44,7 +44,11 @@ export type SymptomPromptResponseFieldProps = {
   onClearUploadedEpisodeMedia?: () => void;
 };
 
-function isPersistedEpisodeMediaLocalUri(
+/**
+ * True when `localUri` is a persisted Supabase Storage object ref (`storage:…`) that must be
+ * resolved to a signed HTTPS URL for preview — not a device `file:` / `content:` capture path.
+ */
+function isEpisodeMediaStorageRef(
   localUri: string | null | undefined,
 ): boolean {
   return Boolean(localUri?.trim().startsWith('storage:'));
@@ -290,7 +294,7 @@ export function SymptomPromptResponseField({
     if (
       !cap ||
       !resolveEpisodeMediaPreviewUrl ||
-      !isPersistedEpisodeMediaLocalUri(cap.localUri)
+      !isEpisodeMediaStorageRef(cap.localUri)
     ) {
       setCommittedMediaPreviewUrl(null);
       setCommittedMediaPreviewError(null);
@@ -459,13 +463,21 @@ export function SymptomPromptResponseField({
       const canRemovePersistedUploadedPhoto =
         Boolean(onClearUploadedEpisodeMedia) &&
         capturedPhoto !== null &&
-        isPersistedEpisodeMediaLocalUri(capturedPhoto.localUri);
+        isEpisodeMediaStorageRef(capturedPhoto.localUri);
       const showPhotoPreviewPanel =
         !pendingPhotoReview &&
         (confirmPhotoUseTapPending ||
           (capturedPhoto !== null &&
             typeof capturedPhoto.localUri === 'string' &&
             capturedPhoto.localUri.trim().length > 0));
+      /** Device-local capture path (`file:` / `content:`) for offline or pre-upload preview. */
+      const localEpisodePhotoPreviewUri =
+        capturedPhoto &&
+        typeof capturedPhoto.localUri === 'string' &&
+        capturedPhoto.localUri.trim().length > 0 &&
+        !isEpisodeMediaStorageRef(capturedPhoto.localUri)
+          ? capturedPhoto.localUri.trim()
+          : null;
       return (
         <View className="gap-3 rounded-xl border border-app-border bg-app-bg p-4 dark:border-app-border-dark dark:bg-app-bg-dark">
           <Pressable
@@ -611,8 +623,27 @@ export function SymptomPromptResponseField({
               className="relative overflow-hidden rounded-xl border-2 border-dashed border-app-border bg-black/10 dark:bg-black/30"
               style={{ minHeight: EPISODE_MEDIA_PREVIEW_SLOT_HEIGHT_DP }}
             >
-              {!capturedPhoto ||
-              !isPersistedEpisodeMediaLocalUri(capturedPhoto.localUri) ? (
+              {localEpisodePhotoPreviewUri ? (
+                <View
+                  className="overflow-hidden rounded-lg bg-black"
+                  style={{
+                    width: '100%',
+                    height: EPISODE_MEDIA_PREVIEW_SLOT_HEIGHT_DP,
+                  }}
+                >
+                  <Image
+                    source={{ uri: localEpisodePhotoPreviewUri }}
+                    accessibilityLabel={`${line.symptom_name} photo preview`}
+                    accessibilityIgnoresInvertColors
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      borderRadius: 12,
+                    }}
+                    resizeMode="contain"
+                  />
+                </View>
+              ) : !capturedPhoto || !capturedPhoto.localUri?.trim() ? (
                 <View
                   accessibilityLabel="Loading preview"
                   className="items-center justify-center px-4 py-8"
@@ -879,7 +910,7 @@ export function SymptomPromptResponseField({
       const canRemovePersistedUploadedVideo =
         Boolean(onClearUploadedEpisodeMedia) &&
         captured !== null &&
-        isPersistedEpisodeMediaLocalUri(captured.localUri);
+        isEpisodeMediaStorageRef(captured.localUri);
       const elapsedLabel = `${String(Math.floor(elapsedSeconds / 60)).padStart(
         2,
         '0',
@@ -890,6 +921,13 @@ export function SymptomPromptResponseField({
           (captured !== null &&
             typeof captured.localUri === 'string' &&
             captured.localUri.trim().length > 0));
+      const localEpisodeVideoPreviewUri =
+        captured &&
+        typeof captured.localUri === 'string' &&
+        captured.localUri.trim().length > 0 &&
+        !isEpisodeMediaStorageRef(captured.localUri)
+          ? captured.localUri.trim()
+          : null;
       return (
         <View className="gap-3 rounded-xl border border-app-border bg-app-bg p-4 dark:border-app-border-dark dark:bg-app-bg-dark">
           <Pressable
@@ -1004,8 +1042,20 @@ export function SymptomPromptResponseField({
               className="relative overflow-hidden rounded-xl border-2 border-dashed border-app-border bg-black/10 dark:bg-black/30"
               style={{ minHeight: EPISODE_MEDIA_PREVIEW_SLOT_HEIGHT_DP }}
             >
-              {!captured ||
-              !isPersistedEpisodeMediaLocalUri(captured.localUri) ? (
+              {localEpisodeVideoPreviewUri ? (
+                <View
+                  className="overflow-hidden rounded-lg bg-black"
+                  style={{
+                    width: '100%',
+                    height: EPISODE_MEDIA_PREVIEW_SLOT_HEIGHT_DP,
+                  }}
+                >
+                  <PendingVideoPreview
+                    uri={localEpisodeVideoPreviewUri}
+                    accessibilityLabel={`${line.symptom_name} video preview`}
+                  />
+                </View>
+              ) : !captured || !captured.localUri?.trim() ? (
                 <View
                   accessibilityLabel="Loading video preview"
                   className="items-center justify-center px-4 py-8"

@@ -35,6 +35,10 @@ import {
 import type { PowerSyncDatabase } from '@powersync/react-native';
 
 import {
+  removePendingEpisodeMediaUploadsForEpisodeId,
+  removePendingEpisodeMediaUploadsForSymptomIds,
+} from '../media/pending-episode-media-upload';
+import {
   EPISODE_COLUMNS,
   mapSqliteRowToEpisodeRow,
 } from './episode-powersync-read';
@@ -42,29 +46,10 @@ import {
   mapSqliteRowToEpisodeSymptomRow,
   mapSqliteRowToHealthMarkerRow,
 } from './powersync-episode-flow-reads';
+import { newRandomUuidV4 } from '../random-uuid';
 
-/**
- * UUID v4 for local PowerSync rows. React Native usually has `getRandomValues` (via
- * `react-native-get-random-values` in app entry `apps/mobile/index.js`) but not always `randomUUID`.
- */
 function newLocalUuid(): string {
-  const c = globalThis.crypto;
-  if (typeof c?.randomUUID === 'function') {
-    return c.randomUUID();
-  }
-  if (typeof c?.getRandomValues === 'function') {
-    const bytes = new Uint8Array(16);
-    c.getRandomValues(bytes);
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join(
-      '',
-    );
-    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-  }
-  throw new Error(
-    'Neither crypto.randomUUID nor crypto.getRandomValues is available; ensure react-native-get-random-values is imported at app entry.',
-  );
+  return newRandomUuidV4();
 }
 
 function trimCustomField(value: string | null | undefined): string | null {
@@ -707,6 +692,7 @@ async function deleteEpisodeChildRowsPowerSyncDb(
   episodeId: Uuid,
 ): Promise<void> {
   const now = new Date().toISOString();
+  await removePendingEpisodeMediaUploadsForEpisodeId(db, episodeId);
   await db.execute(`DELETE FROM episode_media WHERE episode_id = ?`, [
     episodeId,
   ]);
@@ -724,8 +710,9 @@ async function deleteEpisodeChildRowsPowerSyncDb(
 
 /**
  * Deletes `episode_symptoms` for the current pass (same filter as Supabase
- * {@link deleteCurrentPassEpisodeSymptomAnswer}). Removes matching `episode_media` rows first.
- * Storage cleanup is skipped offline (handled when online in a later pass).
+ * {@link deleteCurrentPassEpisodeSymptomAnswer}). Removes matching `episode_media` rows first, and
+ * drops any pending offline media upload entries for those symptom steps. Remote Storage cleanup when
+ * these deletes upload is handled in `applyPowerSyncCrudEntryToSupabase` (mobile PowerSync upload).
  *
  * @param db - PowerSync database.
  * @param args - Episode id, preset line id, and pass boundary from `episodes.post_marker_step_completed_at`.
@@ -754,6 +741,7 @@ export async function deleteCurrentPassEpisodeSymptomAnswerPowerSyncDb(
     const idRows = await db.getAll<{ id: string }>(idSql, idParams);
     const symptomIds = idRows.map((r) => r.id).filter(Boolean);
     if (symptomIds.length > 0) {
+      await removePendingEpisodeMediaUploadsForSymptomIds(db, symptomIds);
       const placeholders = symptomIds.map(() => '?').join(', ');
       await db.execute(
         `DELETE FROM episode_media WHERE episode_id = ? AND episode_symptom_id IN (${placeholders})`,

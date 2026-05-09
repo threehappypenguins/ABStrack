@@ -1,4 +1,9 @@
 import type { AbstrackSupabaseClient } from '@abstrack/supabase';
+import {
+  listEpisodeMediaBucketPathsForEpisodeMediaId,
+  listEpisodeMediaBucketPathsForEpisodeSymptomId,
+  removeEpisodeMediaStorageObjectPathsWithResult,
+} from '@abstrack/supabase';
 import type {
   AbstractPowerSyncDatabase,
   CrudBatch,
@@ -114,20 +119,184 @@ export function normalizePowerSyncRowForSupabase(
   return out;
 }
 
+type ExecuteCapablePowerSyncDatabase = AbstractPowerSyncDatabase & {
+  execute: (sql: string, params?: unknown[]) => Promise<void>;
+};
+
+type SqlReadWriteCapablePowerSyncDatabase = ExecuteCapablePowerSyncDatabase & {
+  getAll: <T>(sql: string, params?: unknown[]) => Promise<T[]>;
+};
+
+function isExecuteCapablePowerSyncDatabase(
+  database: AbstractPowerSyncDatabase | null | undefined,
+): database is ExecuteCapablePowerSyncDatabase {
+  return (
+    database != null &&
+    typeof (database as { execute?: unknown }).execute === 'function'
+  );
+}
+
+function isSqlReadWriteCapablePowerSyncDatabase(
+  database: AbstractPowerSyncDatabase | null | undefined,
+): database is SqlReadWriteCapablePowerSyncDatabase {
+  return (
+    isExecuteCapablePowerSyncDatabase(database) &&
+    typeof (database as { getAll?: unknown }).getAll === 'function'
+  );
+}
+
+/**
+ * Stable row id for `pending_episode_media_storage_cleanup` so persistence uses a single
+ * `INSERT OR REPLACE` (atomic in SQLite) instead of DELETE-then-INSERT, which could lose the queue row
+ * if the app crashed between those two statements.
+ *
+ * @param targetKind - Parent table whose remote row was deleted.
+ * @param targetId - Remote row id.
+ * @returns Primary key string stored in the cleanup table's `id` column.
+ */
+function pendingEpisodeMediaStorageCleanupRowId(
+  targetKind: 'episode_symptoms' | 'episode_media',
+  targetId: string,
+): string {
+  return `pemsc:${targetKind}:${targetId}`;
+}
+
+/**
+ * Persists bucket-relative paths **after** the matching PostgREST DELETE succeeds so a crash before
+ * Storage `remove` can still complete on the next {@link drainPendingEpisodeMediaStorageCleanupQueue} run
+ * (retries can no longer list paths once CASCADE
+ * removed `episode_media`). Rows live in the local-only `pending_episode_media_storage_cleanup` table.
+ */
+async function persistEpisodeMediaStorageCleanupPlanAfterRemoteDelete(
+  database: ExecuteCapablePowerSyncDatabase,
+  args: {
+    targetKind: 'episode_symptoms' | 'episode_media';
+    targetId: string;
+    paths: string[];
+  },
+): Promise<void> {
+  await database.execute(
+    `INSERT OR REPLACE INTO pending_episode_media_storage_cleanup (id, storage_paths_json, target_kind, target_id, created_at) VALUES (?, ?, ?, ?, ?)`,
+    [
+      pendingEpisodeMediaStorageCleanupRowId(args.targetKind, args.targetId),
+      JSON.stringify(args.paths),
+      args.targetKind,
+      args.targetId,
+      new Date().toISOString(),
+    ],
+  );
+}
+
+/**
+ * Drops the durable cleanup plan for `targetKind`/`targetId` after Storage `remove` succeeds.
+ *
+ * @param database - PowerSync SQLite handle.
+ * @param targetKind - Which parent row was deleted on the server.
+ * @param targetId - Server row id (symptom or `episode_media` id).
+ */
+async function clearEpisodeMediaStorageCleanupPlan(
+  database: ExecuteCapablePowerSyncDatabase,
+  targetKind: 'episode_symptoms' | 'episode_media',
+  targetId: string,
+): Promise<void> {
+  await database.execute(
+    `DELETE FROM pending_episode_media_storage_cleanup WHERE id = ?`,
+    [pendingEpisodeMediaStorageCleanupRowId(targetKind, targetId)],
+  );
+}
+
+/**
+ * Drain of the local-only `pending_episode_media_storage_cleanup` SQLite queue. No-op when
+ * `database` is missing SQL helpers (Jest doubles). Drops a row only after Storage `remove` reports
+ * success; on transient failure the row is kept and `created_at` is bumped so other rows can drain first.
+ *
+ * @param client - Supabase client for Storage `remove`.
+ * @param database - PowerSync database handle from the upload connector.
+ */
+export async function drainPendingEpisodeMediaStorageCleanupQueue(
+  client: AbstrackSupabaseClient,
+  database: AbstractPowerSyncDatabase,
+): Promise<void> {
+  if (!isSqlReadWriteCapablePowerSyncDatabase(database)) {
+    return;
+  }
+  const rows = await database.getAll<{
+    id: string;
+    storage_paths_json: string;
+  }>(
+    `SELECT id, storage_paths_json FROM pending_episode_media_storage_cleanup ORDER BY created_at ASC LIMIT 100`,
+    [],
+  );
+  for (const row of rows) {
+    let paths: string[];
+    try {
+      const parsed = JSON.parse(row.storage_paths_json) as unknown;
+      if (!Array.isArray(parsed)) {
+        throw new Error('expected json array');
+      }
+      paths = parsed.filter(
+        (p): p is string => typeof p === 'string' && p.trim() !== '',
+      );
+    } catch {
+      await database.execute(
+        `DELETE FROM pending_episode_media_storage_cleanup WHERE id = ?`,
+        [row.id],
+      );
+      continue;
+    }
+    if (paths.length === 0) {
+      await database.execute(
+        `DELETE FROM pending_episode_media_storage_cleanup WHERE id = ?`,
+        [row.id],
+      );
+      continue;
+    }
+    const removed = await removeEpisodeMediaStorageObjectPathsWithResult(
+      client,
+      paths,
+    );
+    if (!removed.ok) {
+      await database.execute(
+        `UPDATE pending_episode_media_storage_cleanup SET created_at = ? WHERE id = ?`,
+        [new Date().toISOString(), row.id],
+      );
+      continue;
+    }
+    await database.execute(
+      `DELETE FROM pending_episode_media_storage_cleanup WHERE id = ?`,
+      [row.id],
+    );
+  }
+}
+
 /**
  * Applies one PowerSync CRUD entry to Supabase REST (RLS). {@link uploadPowerSyncCrudBatchToSupabase}
  * checkpoints after each entry; {@link CrudBatch#complete} runs on the success path in the backend connector.
  *
- * PATCH and DELETE use PostgREST `select('id').single()` after `update` / `delete` so zero-row
- * effects (deleted row, RLS hiding the row, predicate mismatch) return an error instead of succeeding
- * silently before {@link CrudBatch#complete}.
+ * PATCH and DELETE use `select('id').maybeSingle()` so 0-row effects (replay, ordering, idempotent
+ * deletes) do not return **PGRST116**, which is classified as a permanent API failure and would dequeue
+ * ops incorrectly. For `episode_symptoms` / `episode_media`, bucket paths are listed first, then
+ * PostgREST DELETE runs; **Storage** objects are removed only when the DELETE response includes a row
+ * (`data` from `maybeSingle`) **and** listed paths were non-empty — so RLS “0 rows” or predicate
+ * mismatch never deletes blobs for a row that may still exist (same intent as
+ * {@link deleteCurrentPassEpisodeSymptomAnswer} ordering).
+ *
+ * After a successful symptom/media row delete with non-empty listed paths, paths are written to the
+ * local-only `pending_episode_media_storage_cleanup` table **before** {@link removeEpisodeMediaStorageObjectPathsWithResult}
+ * so a crash between DELETE and Storage remove can still delete blobs on the next {@link drainPendingEpisodeMediaStorageCleanupQueue} run.
+ * The local cleanup row is cleared only when that helper returns success; otherwise it remains for drain/retry.
+ * That matters especially for `episode_media`: after the row is deleted, a retry cannot re-list
+ * `storage_object_key` / `thumbnail_storage_key` from PostgREST, so the queued JSON paths are the only
+ * durable source for idempotent Storage cleanup.
  *
  * @param client - Authenticated Supabase client (user JWT).
  * @param entry - Local change from {@link CrudBatch}.
+ * @param powerSyncDatabase - Optional PowerSync DB for durable Storage cleanup (omit in unit tests).
  */
 export async function applyPowerSyncCrudEntryToSupabase(
   client: AbstrackSupabaseClient,
   entry: CrudEntry,
+  powerSyncDatabase?: AbstractPowerSyncDatabase | null,
 ): Promise<void> {
   const table = entry.table;
   const id = entry.id;
@@ -153,7 +322,7 @@ export async function applyPowerSyncCrudEntryToSupabase(
       .update(patch as never)
       .eq('id', id)
       .select('id')
-      .single();
+      .maybeSingle();
     if (error) {
       throw error;
     }
@@ -161,12 +330,111 @@ export async function applyPowerSyncCrudEntryToSupabase(
   }
 
   if (entry.op === UpdateType.DELETE) {
+    if (table === 'episode_symptoms') {
+      const listed = await listEpisodeMediaBucketPathsForEpisodeSymptomId(
+        client,
+        id,
+      );
+      if (!listed.ok) {
+        throw listed.error;
+      }
+      const { data: deletedSymptomRow, error } = await client
+        .from('episode_symptoms')
+        .delete()
+        .eq('id', id)
+        .select('id')
+        .maybeSingle();
+      if (error) {
+        throw error;
+      }
+      if (deletedSymptomRow == null) {
+        return;
+      }
+      if (listed.data.length > 0) {
+        if (isExecuteCapablePowerSyncDatabase(powerSyncDatabase)) {
+          await persistEpisodeMediaStorageCleanupPlanAfterRemoteDelete(
+            powerSyncDatabase,
+            {
+              targetKind: 'episode_symptoms',
+              targetId: id,
+              paths: listed.data,
+            },
+          );
+        }
+        const removedSymptomMedia =
+          await removeEpisodeMediaStorageObjectPathsWithResult(
+            client,
+            listed.data,
+          );
+        if (
+          removedSymptomMedia.ok &&
+          isExecuteCapablePowerSyncDatabase(powerSyncDatabase)
+        ) {
+          await clearEpisodeMediaStorageCleanupPlan(
+            powerSyncDatabase,
+            'episode_symptoms',
+            id,
+          );
+        }
+      }
+      return;
+    }
+    if (table === 'episode_media') {
+      const listed = await listEpisodeMediaBucketPathsForEpisodeMediaId(
+        client,
+        id,
+      );
+      if (!listed.ok) {
+        throw listed.error;
+      }
+      const { data: deletedMediaRow, error } = await client
+        .from('episode_media')
+        .delete()
+        .eq('id', id)
+        .select('id')
+        .maybeSingle();
+      if (error) {
+        throw error;
+      }
+      if (deletedMediaRow == null) {
+        return;
+      }
+      if (listed.data.length > 0) {
+        if (isExecuteCapablePowerSyncDatabase(powerSyncDatabase)) {
+          await persistEpisodeMediaStorageCleanupPlanAfterRemoteDelete(
+            powerSyncDatabase,
+            {
+              targetKind: 'episode_media',
+              targetId: id,
+              paths: listed.data,
+            },
+          );
+        }
+        const removedEpisodeMedia =
+          await removeEpisodeMediaStorageObjectPathsWithResult(
+            client,
+            listed.data,
+          );
+        if (
+          removedEpisodeMedia.ok &&
+          isExecuteCapablePowerSyncDatabase(powerSyncDatabase)
+        ) {
+          await clearEpisodeMediaStorageCleanupPlan(
+            powerSyncDatabase,
+            'episode_media',
+            id,
+          );
+        }
+      }
+      return;
+    }
+
     const { error } = await client
       .from(table as never)
       .delete()
       .eq('id', id)
       .select('id')
-      .single();
+      .maybeSingle();
     if (error) {
       throw error;
     }
@@ -193,9 +461,10 @@ export async function uploadPowerSyncCrudBatchToSupabase(
   database: AbstractPowerSyncDatabase,
 ): Promise<void> {
   warnIfPowerSyncSdkDriftsFromUploadContract();
+  await drainPendingEpisodeMediaStorageCleanupQueue(client, database);
   const dequeueThrough = resolvePowerSyncHandleCrudCheckpoint(database);
   for (const entry of batch.crud) {
-    await applyPowerSyncCrudEntryToSupabase(client, entry);
+    await applyPowerSyncCrudEntryToSupabase(client, entry, database);
     await dequeueThrough(entry.clientId);
   }
 }

@@ -22,6 +22,63 @@ import { useAppTheme } from '../theme/AppThemeContext';
 import { lightAppColors } from '../theme/app-colors';
 import { HealthMarkerPromptScreen } from './HealthMarkerPromptScreen';
 
+/**
+ * In-memory timeline sort/merge matching {@link compareEpisodeTimelineItems} /
+ * {@link upsertEpisodeTimelineItem} in `@abstrack/supabase` (avoids loading the full package barrel in Jest).
+ */
+type MockTimelineItem = {
+  kind: string;
+  sortAt: string;
+  id: string;
+  label: string;
+  detail: string;
+};
+
+/**
+ * Mirrors {@link compareEpisodeTimelineItems} ordering closely enough for tests.
+ *
+ * **Important:** `Array.sort` requires a **consistent** comparator (transitivity). The naive split
+ * “both finite → numeric else string” is wrong when exactly one side parses: you must not compare
+ * parsed vs unparsed timestamps in the string branch. A broken comparator can make V8’s sort spin or
+ * misbehave badly under load.
+ */
+function mockCompareEpisodeTimelineItems(
+  a: MockTimelineItem,
+  b: MockTimelineItem,
+): number {
+  const aMs = Date.parse(a.sortAt);
+  const bMs = Date.parse(b.sortAt);
+  const aValid = Number.isFinite(aMs);
+  const bValid = Number.isFinite(bMs);
+
+  if (aValid && bValid) {
+    const c = aMs - bMs;
+    if (c !== 0) {
+      return c;
+    }
+  } else if (!aValid && !bValid) {
+    const c = a.sortAt.localeCompare(b.sortAt);
+    if (c !== 0) {
+      return c;
+    }
+  } else {
+    // Exactly one parses: order deterministically without mixing number vs string compare.
+    return aValid ? -1 : 1;
+  }
+
+  return a.id.localeCompare(b.id);
+}
+
+function mockUpsertEpisodeTimelineItem(
+  prev: MockTimelineItem[],
+  next: MockTimelineItem,
+): MockTimelineItem[] {
+  const rows = prev.filter((r) => !(r.kind === next.kind && r.id === next.id));
+  rows.push(next);
+  rows.sort(mockCompareEpisodeTimelineItems);
+  return rows;
+}
+
 jest.mock('@react-navigation/native', () => ({
   ...jest.requireActual('@react-navigation/native'),
   useRoute: jest.fn(),
@@ -29,31 +86,299 @@ jest.mock('@react-navigation/native', () => ({
 }));
 
 jest.mock('@abstrack/supabase', () => {
-  const actual =
-    jest.requireActual<typeof import('@abstrack/supabase')>(
-      '@abstrack/supabase',
-    );
+  const preset = jest.requireActual<
+    typeof import('../../../../../packages/supabase/src/lib/preset-data-error')
+  >('../../../../../packages/supabase/src/lib/preset-data-error.ts');
+  const { isMealTag } =
+    jest.requireActual<typeof import('@abstrack/types')>('@abstrack/types');
+  const { PresetDataError } = preset;
+
+  /**
+   * Subset of {@link validateAndNormalizeFoodDiaryCreateCore} / {@link normalizeFoodDiaryEntryUpdate}
+   * (Jest cannot load `food-diary-data.ts` via `requireActual` because that module uses `.js` specifiers).
+   */
+  function mockNormalizeFoodNote(note: string): string | null {
+    const next = note.trim();
+    return next.length > 0 ? next : null;
+  }
+
+  function mockNormalizeOptionalIso(
+    value: string | null | undefined,
+  ): string | null {
+    if (value == null) {
+      return null;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const ms = Date.parse(trimmed);
+    if (!Number.isFinite(ms)) {
+      return null;
+    }
+    return new Date(ms).toISOString();
+  }
+
+  function mockValidateAndNormalizeFoodDiaryCreateCore(payload: {
+    meal_tag: string;
+    food_note: string;
+    logged_at: string;
+  }):
+    | { ok: true; food_note: string; logged_at: string }
+    | { ok: false; error: InstanceType<typeof PresetDataError> } {
+    if (!isMealTag(payload.meal_tag)) {
+      return {
+        ok: false,
+        error: new PresetDataError(
+          'validation_error',
+          'Choose a valid meal tag (Breakfast, Lunch, Dinner, Snack, or Other).',
+        ),
+      };
+    }
+    const foodNote = mockNormalizeFoodNote(payload.food_note);
+    if (!foodNote) {
+      return {
+        ok: false,
+        error: new PresetDataError(
+          'validation_error',
+          'Enter what you ate or drank before saving.',
+        ),
+      };
+    }
+    const loggedAt = mockNormalizeOptionalIso(payload.logged_at);
+    if (!loggedAt) {
+      return {
+        ok: false,
+        error: new PresetDataError(
+          'validation_error',
+          'Enter a valid date and time.',
+        ),
+      };
+    }
+    return { ok: true, food_note: foodNote, logged_at: loggedAt };
+  }
+
+  function mockNormalizeFoodDiaryEntryUpdate(patch: Record<string, unknown>):
+    | {
+        ok: true;
+        data: Record<string, unknown>;
+      }
+    | { ok: false; error: InstanceType<typeof PresetDataError> } {
+    const normalizedPatch: Record<string, unknown> = { ...patch };
+    if (normalizedPatch.food_note !== undefined) {
+      const next = mockNormalizeFoodNote(String(normalizedPatch.food_note));
+      if (!next) {
+        return {
+          ok: false,
+          error: new PresetDataError(
+            'validation_error',
+            'Enter what you ate or drank before saving.',
+          ),
+        };
+      }
+      normalizedPatch.food_note = next;
+    }
+    if (
+      normalizedPatch.meal_tag !== undefined &&
+      !isMealTag(normalizedPatch.meal_tag)
+    ) {
+      return {
+        ok: false,
+        error: new PresetDataError(
+          'validation_error',
+          'Choose a valid meal tag (Breakfast, Lunch, Dinner, Snack, or Other).',
+        ),
+      };
+    }
+    if (normalizedPatch.logged_at !== undefined) {
+      const loggedAt = mockNormalizeOptionalIso(
+        normalizedPatch.logged_at as string,
+      );
+      if (!loggedAt) {
+        return {
+          ok: false,
+          error: new PresetDataError(
+            'validation_error',
+            'Enter a valid date and time.',
+          ),
+        };
+      }
+      normalizedPatch.logged_at = loggedAt;
+    }
+    return { ok: true, data: normalizedPatch };
+  }
+
   return {
-    ...actual,
+    PresetDataError,
+    toPresetDataError: preset.toPresetDataError,
+    mapSupabaseErrorToPresetDataError: preset.mapSupabaseErrorToPresetDataError,
+    normalizeFoodDiaryEntryUpdate: mockNormalizeFoodDiaryEntryUpdate,
+    validateAndNormalizeFoodDiaryCreateCore:
+      mockValidateAndNormalizeFoodDiaryCreateCore,
+    compareEpisodeTimelineItems: mockCompareEpisodeTimelineItems,
+    upsertEpisodeTimelineItem: mockUpsertEpisodeTimelineItem,
     cancelActiveEpisodeById: jest.fn(),
     completeEpisodePostMarkerStep: jest.fn(),
     createFoodDiaryEntry: jest.fn(),
+    deleteCurrentPassEpisodeSymptomAnswer: jest.fn(),
+    deleteEpisodeById: jest.fn(),
+    deleteFoodDiaryEntry: jest.fn(),
     endEpisodeIfStillActive: jest.fn(),
     getEpisodeById: jest.fn(),
-    listFoodDiaryEntriesForEpisode: jest.fn(),
+    insertEpisodeHealthMarkerForLine: jest.fn(),
+    insertEpisodeSymptomAnswer: jest.fn(),
     listEpisodeHealthMarkersForEpisode: jest.fn(),
-    listPresetHealthMarkersForPreset: jest.fn(),
     listEpisodeObservationTimeline: jest.fn(async () => ({
       ok: true,
       data: [],
     })),
+    listFoodDiaryEntriesForEpisode: jest.fn(),
+    listPresetHealthMarkersForPreset: jest.fn(),
     updateFoodDiaryEntry: jest.fn(),
-    insertEpisodeHealthMarkerForLine: jest.fn(),
   };
 });
 
-jest.mock('../../lib/powersync/PowerSyncSessionBridge', () => ({
-  usePowerSyncBridgeState: jest.fn(() => ({
+jest.mock('../../lib/network/mobile-device-netinfo', () => ({
+  __esModule: true,
+  fetchMobileDeviceIsConnected: jest.fn(async () => true),
+}));
+
+/**
+ * Avoid loading the real gateway (PowerSync writes, NetInfo gating, extra deps). Delegate REST
+ * paths to the same `@abstrack/supabase` jest mocks {@link beforeEach} configures.
+ */
+jest.mock('../../lib/episodes/mobile-offline-first-gateway', () => ({
+  __esModule: true,
+  insertEpisodeHealthMarkerLineOfflineFirst: jest.fn(
+    async (client: unknown, _db: unknown, args: unknown) =>
+      (
+        jest.requireMock('@abstrack/supabase') as any
+      ).insertEpisodeHealthMarkerForLine(client as never, args as never),
+  ),
+  listEpisodeHealthMarkersForEpisodeOfflineFirst: jest.fn(
+    async (
+      client: unknown,
+      _db: unknown,
+      episodeId: unknown,
+      options: { limit?: number } = {},
+    ) => {
+      const supabase = jest.requireMock('@abstrack/supabase') as any;
+      const r = await supabase.listEpisodeHealthMarkersForEpisode(
+        client as never,
+        episodeId as never,
+        options,
+      );
+      if (!r.ok) {
+        return r;
+      }
+      return {
+        ok: true as const,
+        data: r.data,
+        markersReadFromLocalReplica: false,
+      };
+    },
+  ),
+  completeEpisodePostMarkerStepOfflineFirst: jest.fn(
+    async (
+      client: unknown,
+      _db: unknown,
+      episodeId: unknown,
+      fields: unknown,
+    ) =>
+      (
+        jest.requireMock('@abstrack/supabase') as any
+      ).completeEpisodePostMarkerStep(
+        client as never,
+        episodeId as never,
+        fields as never,
+      ),
+  ),
+  endEpisodeIfStillActiveOfflineFirst: jest.fn(
+    async (
+      client: unknown,
+      _db: unknown,
+      episodeId: unknown,
+      endedAt?: unknown,
+      startedAt?: unknown,
+    ) =>
+      (jest.requireMock('@abstrack/supabase') as any).endEpisodeIfStillActive(
+        client as never,
+        episodeId as never,
+        endedAt as never,
+        startedAt as never,
+      ),
+  ),
+  cancelActiveEpisodeByIdOfflineFirst: jest.fn(
+    async (client: unknown, _db: unknown, episodeId: unknown) =>
+      (jest.requireMock('@abstrack/supabase') as any).cancelActiveEpisodeById(
+        client as never,
+        episodeId as never,
+      ),
+  ),
+  listFoodDiaryEntriesForEpisodeOfflineFirst: jest.fn(
+    async (
+      client: unknown,
+      _db: unknown,
+      episodeId: unknown,
+      options: { limit?: number; trustEmptyLocalReplica?: boolean } = {},
+    ) =>
+      (
+        jest.requireMock('@abstrack/supabase') as any
+      ).listFoodDiaryEntriesForEpisode(
+        client as never,
+        episodeId as never,
+        options,
+      ),
+  ),
+  createFoodDiaryEntryOfflineFirst: jest.fn(
+    async (client: unknown, _db: unknown, row: Record<string, unknown>) => {
+      const supabase = jest.requireMock('@abstrack/supabase') as any;
+      const core = supabase.validateAndNormalizeFoodDiaryCreateCore(
+        row as never,
+      );
+      if (!core.ok) {
+        return core;
+      }
+      return supabase.createFoodDiaryEntry(
+        client as never,
+        {
+          ...row,
+          food_note: core.food_note,
+          logged_at: core.logged_at,
+        } as never,
+      );
+    },
+  ),
+  updateFoodDiaryEntryOfflineFirst: jest.fn(
+    async (client: unknown, _db: unknown, entryId: unknown, patch: unknown) => {
+      const supabase = jest.requireMock('@abstrack/supabase') as any;
+      const normalized = supabase.normalizeFoodDiaryEntryUpdate(patch as never);
+      if (!normalized.ok) {
+        return normalized;
+      }
+      return supabase.updateFoodDiaryEntry(
+        client as never,
+        entryId as never,
+        normalized.data as never,
+      );
+    },
+  ),
+  deleteFoodDiaryEntryOfflineFirst: jest.fn(
+    async (client: unknown, _db: unknown, entryId: unknown) =>
+      (jest.requireMock('@abstrack/supabase') as any).deleteFoodDiaryEntry(
+        client as never,
+        entryId as never,
+      ),
+  ),
+}));
+
+jest.mock('../../lib/powersync/PowerSyncSessionBridge', () => {
+  /**
+   * Single object identity: {@link HealthMarkerPromptScreen} puts `psBridge` in `useEffect` /
+   * `useMemo` deps; a fresh literal from the mock each render changes the dependency every time and
+   * retriggers load → `setStatus` → infinite updates.
+   */
+  const stablePsBridgeState = {
     syncChromeEnabled: false,
     powerSyncUrlConfigured: false,
     database: null,
@@ -63,24 +388,63 @@ jest.mock('../../lib/powersync/PowerSyncSessionBridge', () => ({
     syncError: null,
     firstSyncLandedOnDevice: false,
     firstSyncLandingHydrated: true,
-  })),
-  usePowerSyncManualResync: jest.fn(() => ({
+  };
+
+  const stableManualResync = {
     requestManualResync: jest.fn().mockResolvedValue(true),
     manualResyncBusy: false,
+  };
+
+  return {
+    usePowerSyncBridgeState: jest.fn(() => stablePsBridgeState),
+    usePowerSyncManualResync: jest.fn(() => stableManualResync),
+    powerSyncOfflineReplicaReadsEnabled: jest.fn(() => false),
+    powerSyncReplicaSqliteReady: jest.fn(() => false),
+  };
+});
+
+/**
+ * `use-health-marker-food-diary` imports `get-mobile-auth-session-safe` **directly** (not the
+ * barrel). Mock it so that module never pulls `supabase-wiring-core` / ChunkingSecureStore.
+ */
+jest.mock('../../lib/get-mobile-auth-session-safe', () => ({
+  __esModule: true,
+  MOBILE_AUTH_SESSION_RECOVERY_USER_MESSAGE:
+    "We couldn't verify your sign-in. Try again in a moment, or sign out and sign back in.",
+  isAuthSessionRecoveryFailure: (error: unknown): boolean =>
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: string }).code === 'auth_session_recovery_failed',
+  isPersistedSupabaseSessionAccessExpired: jest.fn(() => false),
+  hasUsableSupabaseAccessTokenForNetwork: jest.fn(() => true),
+  persistedSessionIdentityWithRedactedAccessJwt: (session: {
+    access_token?: string;
+    user?: { id: string };
+  }) => ({
+    ...session,
+    access_token: '',
+  }),
+  getMobileAuthSessionSafe: jest.fn(async () => ({
+    data: { session: { user: { id: 'test-user-1' } } },
+    error: null,
   })),
-  powerSyncOfflineReplicaReadsEnabled: jest.fn(() => false),
-  powerSyncReplicaSqliteReady: jest.fn(() => false),
+  readPersistedMobileAuthUserId: jest.fn(async () => 'test-user-1'),
 }));
 
-jest.mock('../../lib/supabase-wiring-core', () => {
-  const actual = jest.requireActual(
-    '../../lib/supabase-wiring-core',
-  ) as typeof import('../../lib/supabase-wiring-core');
+/**
+ * Mock the **barrel** so `HealthMarkerPromptScreen`’s `from '../../lib/supabase-wiring'` never loads
+ * the real re-export graph (which would execute `supabase-wiring-core` at module scope).
+ */
+jest.mock('../../lib/supabase-wiring', () => {
+  const safe =
+    require('../../lib/get-mobile-auth-session-safe') as typeof import('../../lib/get-mobile-auth-session-safe');
   return {
-    ...actual,
+    __esModule: true,
     getMobileSupabaseClient: jest.fn(() => ({
       mockClient: true,
       auth: {
+        storageKey: 'sb-test-auth-token',
         getUser: jest.fn(async () => ({
           data: { user: { id: 'test-user-1' } },
         })),
@@ -89,6 +453,27 @@ jest.mock('../../lib/supabase-wiring-core', () => {
         })),
       },
     })),
+    mobileAuthStorage: {
+      getItem: jest.fn(async () => null),
+      setItem: jest.fn(async () => undefined),
+      removeItem: jest.fn(async () => undefined),
+    },
+    createMobileSupabaseClient: jest.fn(() => {
+      throw new Error(
+        'createMobileSupabaseClient not used in HealthMarkerPromptScreen tests',
+      );
+    }),
+    getMobileAuthSessionSafe: safe.getMobileAuthSessionSafe,
+    readPersistedMobileAuthUserId: safe.readPersistedMobileAuthUserId,
+    isAuthSessionRecoveryFailure: safe.isAuthSessionRecoveryFailure,
+    MOBILE_AUTH_SESSION_RECOVERY_USER_MESSAGE:
+      safe.MOBILE_AUTH_SESSION_RECOVERY_USER_MESSAGE,
+    isPersistedSupabaseSessionAccessExpired:
+      safe.isPersistedSupabaseSessionAccessExpired,
+    hasUsableSupabaseAccessTokenForNetwork:
+      safe.hasUsableSupabaseAccessTokenForNetwork,
+    persistedSessionIdentityWithRedactedAccessJwt:
+      safe.persistedSessionIdentityWithRedactedAccessJwt,
   };
 });
 
@@ -96,13 +481,12 @@ jest.mock('../theme/AppThemeContext', () => ({
   useAppTheme: jest.fn(),
 }));
 
-jest.mock('@abstrack/ui/native', () => {
-  const actual = jest.requireActual('@abstrack/ui/native');
-  return {
-    ...actual,
-    announce: jest.fn(async () => undefined),
-  };
-});
+jest.mock('@abstrack/ui/native', () => ({
+  __esModule: true,
+  announce: jest.fn(async () => undefined),
+  /** Same value as {@link COMFORTABLE_TOUCH_TARGET_DP} in `@abstrack/ui/native` (screen layout only). */
+  COMFORTABLE_TOUCH_TARGET_DP: 48,
+}));
 
 const episodeId = 'episode-1';
 const markerPresetId = 'hm-preset-1';

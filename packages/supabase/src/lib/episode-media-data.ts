@@ -355,6 +355,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
+/**
+ * Row shape from `select('storage_object_key, thumbnail_storage_key')`: both columns are nullable in
+ * Postgres, and the client may surface `undefined` for missing cells — always normalize with `?? ''`
+ * (or trim checks) before {@link normalizeStoragePath}.
+ */
+type EpisodeMediaStorageKeyPick = {
+  storage_object_key: string | null | undefined;
+  thumbnail_storage_key: string | null | undefined;
+};
+
 function httpStatusFromStorageError(error: unknown): number | null {
   if (!isRecord(error)) {
     return null;
@@ -522,10 +532,7 @@ async function deleteSupersededOpenPassEpisodeSymptomsAndTheirEpisodeMedia(
 
   const keysToRemove = new Set<string>();
   for (const raw of mediaRows ?? []) {
-    const row = raw as {
-      storage_object_key: string;
-      thumbnail_storage_key: string | null;
-    };
+    const row = raw as EpisodeMediaStorageKeyPick;
     for (const k of normalizeStoragePath(row.storage_object_key ?? '')) {
       keysToRemove.add(k);
     }
@@ -920,10 +927,7 @@ export async function listEpisodeMediaBucketPathsForEpisodeSymptomIds(
 
     const keys = new Set<string>();
     for (const raw of rows ?? []) {
-      const row = raw as {
-        storage_object_key: string;
-        thumbnail_storage_key: string | null;
-      };
+      const row = raw as EpisodeMediaStorageKeyPick;
       for (const normalized of normalizeStoragePath(
         row.storage_object_key ?? '',
       )) {
@@ -936,6 +940,82 @@ export async function listEpisodeMediaBucketPathsForEpisodeSymptomIds(
       }
     }
     return { ok: true, data: [...keys] };
+  } catch (caught) {
+    return { ok: false, error: toPresetDataError(caught) };
+  }
+}
+
+/**
+ * Lists normalized bucket-relative paths for a single `episode_media` row before a remote delete
+ * (used when PowerSync uploads a local `episode_media` DELETE so Storage matches Postgres).
+ *
+ * @param client - Supabase client (RLS applies).
+ * @param episodeMediaId - `episode_media.id`.
+ */
+export async function listEpisodeMediaBucketPathsForEpisodeMediaId(
+  client: AbstrackSupabaseClient,
+  episodeMediaId: Uuid,
+): Promise<PresetDataResult<string[]>> {
+  try {
+    const { data: row, error } = await client
+      .from('episode_media')
+      .select('storage_object_key, thumbnail_storage_key')
+      .eq('id', episodeMediaId)
+      .maybeSingle();
+    if (error) {
+      return { ok: false, error: toPresetDataError(error) };
+    }
+    if (!row) {
+      return { ok: true, data: [] };
+    }
+    const typed = row as EpisodeMediaStorageKeyPick;
+    const keys = new Set<string>();
+    for (const normalized of normalizeStoragePath(
+      typed.storage_object_key ?? '',
+    )) {
+      keys.add(normalized);
+    }
+    for (const normalized of normalizeStoragePath(
+      typed.thumbnail_storage_key ?? '',
+    )) {
+      keys.add(normalized);
+    }
+    return { ok: true, data: [...keys] };
+  } catch (caught) {
+    return { ok: false, error: toPresetDataError(caught) };
+  }
+}
+
+/**
+ * Lists normalized bucket-relative paths for `episode_media` rows tied to one
+ * `episode_symptoms` row (resolves `episode_id` first). Call before PostgREST DELETE; remove Storage
+ * only after DELETE succeeds (same order as {@link deleteCurrentPassEpisodeSymptomAnswer}).
+ *
+ * @param client - Supabase client (RLS applies).
+ * @param episodeSymptomId - `episode_symptoms.id`.
+ */
+export async function listEpisodeMediaBucketPathsForEpisodeSymptomId(
+  client: AbstrackSupabaseClient,
+  episodeSymptomId: Uuid,
+): Promise<PresetDataResult<string[]>> {
+  try {
+    const { data: sym, error: symErr } = await client
+      .from('episode_symptoms')
+      .select('episode_id')
+      .eq('id', episodeSymptomId)
+      .maybeSingle();
+    if (symErr) {
+      return { ok: false, error: toPresetDataError(symErr) };
+    }
+    const eid = sym?.episode_id;
+    if (typeof eid !== 'string' || eid.trim() === '') {
+      return { ok: true, data: [] };
+    }
+    return listEpisodeMediaBucketPathsForEpisodeSymptomIds(
+      client,
+      eid as Uuid,
+      [episodeSymptomId],
+    );
   } catch (caught) {
     return { ok: false, error: toPresetDataError(caught) };
   }
@@ -967,10 +1047,7 @@ export async function listEpisodeMediaStorageObjectPathsForEpisode(
 
     const keys = new Set<string>();
     for (const raw of rows ?? []) {
-      const row = raw as {
-        storage_object_key: string;
-        thumbnail_storage_key: string | null;
-      };
+      const row = raw as EpisodeMediaStorageKeyPick;
       for (const normalized of normalizeStoragePath(
         row.storage_object_key ?? '',
       )) {
@@ -1001,6 +1078,42 @@ export async function removeEpisodeMediaStorageObjectPathsBestEffort(
   paths: string[],
 ): Promise<void> {
   await removeBucketObjectsBestEffort(client, paths);
+}
+
+/**
+ * Result of {@link removeEpisodeMediaStorageObjectPathsWithResult} (strict Storage `remove`, no throw).
+ */
+export type RemoveEpisodeMediaStorageObjectPathsResult =
+  | { ok: true }
+  | { ok: false; error: PresetDataError };
+
+/**
+ * Deletes `episode-media` Storage objects for the given bucket-relative keys and reports whether
+ * `remove` succeeded. Does **not** throw — use when callers must keep durable state (e.g. a local
+ * cleanup queue row) until Storage confirms removal, unlike {@link removeEpisodeMediaStorageObjectPathsBestEffort}.
+ *
+ * @param client - Supabase client (RLS applies to Storage DELETE).
+ * @param paths - Bucket-relative keys under `episode-media`.
+ */
+export async function removeEpisodeMediaStorageObjectPathsWithResult(
+  client: AbstrackSupabaseClient,
+  paths: string[],
+): Promise<RemoveEpisodeMediaStorageObjectPathsResult> {
+  const unique = [...new Set(paths.map((k) => k.trim()).filter(Boolean))];
+  if (unique.length === 0) {
+    return { ok: true };
+  }
+  try {
+    const { error } = await client.storage
+      .from(EPISODE_MEDIA_BUCKET)
+      .remove(unique);
+    if (error) {
+      return { ok: false, error: toPresetDataError(error) };
+    }
+    return { ok: true };
+  } catch (caught) {
+    return { ok: false, error: toPresetDataError(caught) };
+  }
 }
 
 export type RemoveEpisodeMediaObjectsFromStorageResult =

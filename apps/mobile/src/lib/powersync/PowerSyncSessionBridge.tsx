@@ -9,13 +9,20 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { AppState } from 'react-native';
 import type { AbstractPowerSyncDatabase } from '@powersync/common';
 import { PowerSyncContext } from '@powersync/react';
 import type {
   PowerSyncBackendConnector,
   PowerSyncDatabase,
 } from '@powersync/react-native';
+import NetInfo from '@react-native-community/netinfo';
 
+import {
+  createDebouncedPendingEpisodeMediaFlush,
+  runPendingEpisodeMediaUploadWorker,
+  type PendingEpisodeMediaFlushHandle,
+} from '../media/pending-episode-media-upload';
 import {
   getMobileAuthSessionSafe,
   getMobileSupabaseClient,
@@ -272,6 +279,13 @@ export function PowerSyncSessionBridge({
    */
   const accountSwitchPrevUserIdRef = useRef<string | null>(null);
 
+  /**
+   * Throttled pending episode-media flush ({@link createDebouncedPendingEpisodeMediaFlush}): call
+   * {@link PendingEpisodeMediaFlushHandle.flush} after trusted sync; {@link PendingEpisodeMediaFlushHandle.cancel} on effect teardown.
+   */
+  const pendingEpisodeMediaFlushRef =
+    useRef<PendingEpisodeMediaFlushHandle | null>(null);
+
   const [db, setDb] = useState<PowerSyncDatabase | null>(null);
   const [firstSyncCompleted, setFirstSyncCompleted] = useState(false);
   const [localSqliteInitialized, setLocalSqliteInitialized] = useState(false);
@@ -307,6 +321,107 @@ export function PowerSyncSessionBridge({
         )
       : baseConnector;
   }, [powerSyncUrl]);
+
+  useEffect(() => {
+    if (!db) {
+      pendingEpisodeMediaFlushRef.current = null;
+      return;
+    }
+    const flushHandle = createDebouncedPendingEpisodeMediaFlush(() => db);
+    pendingEpisodeMediaFlushRef.current = flushHandle;
+    void runPendingEpisodeMediaUploadWorker(db, {
+      signal: flushHandle.signal,
+    });
+    const { flush } = flushHandle;
+    const subApp = AppState.addEventListener('change', (next) => {
+      if (next === 'active') {
+        flush();
+        void NetInfo.fetch()
+          .then((state) => {
+            if (
+              state.isConnected === false ||
+              state.isInternetReachable === false
+            ) {
+              return;
+            }
+            flush();
+          })
+          .catch(() => {
+            flush();
+          });
+      }
+    });
+    /**
+     * Do not require `mapNetInfoStateToAppOnline === true`: while `isInternetReachable` is still
+     * `null`, that helper returns `null` and we would never drain the queue after reconnect. Pending
+     * uploads already retry with backoff on failure; skip only definitive "no route" (`false`).
+     */
+    /**
+     * Mirrors the same “not definitively offline” gate used before {@link flush} so the periodic
+     * worker does not spin while backgrounded or on airplane mode / no route.
+     */
+    const netAllowsPeriodicDrainRef: { current: boolean | null } = {
+      current: null,
+    };
+    const syncNetAllowsPeriodicDrain = (state: {
+      isConnected: boolean | null;
+      isInternetReachable: boolean | null;
+    }) => {
+      if (state.isConnected === false) {
+        netAllowsPeriodicDrainRef.current = false;
+        return;
+      }
+      if (state.isInternetReachable === false) {
+        netAllowsPeriodicDrainRef.current = false;
+        return;
+      }
+      if (state.isConnected !== true) {
+        netAllowsPeriodicDrainRef.current = null;
+        return;
+      }
+      netAllowsPeriodicDrainRef.current = true;
+    };
+
+    void NetInfo.fetch()
+      .then(syncNetAllowsPeriodicDrain)
+      .catch(() => {
+        netAllowsPeriodicDrainRef.current = null;
+      });
+
+    const subNet = NetInfo.addEventListener((state) => {
+      syncNetAllowsPeriodicDrain(state);
+      if (state.isConnected === false) {
+        return;
+      }
+      if (state.isInternetReachable === false) {
+        return;
+      }
+      flush();
+    });
+    /**
+     * Last-resort if NetInfo misses a reconnect on some devices. Skips while **inactive** (saves
+     * wakeups in background) and while NetInfo reports **definitively offline**; unknown / maybe-online
+     * still runs so we do not starve uploads before the first NetInfo snapshot.
+     */
+    const interval = setInterval(() => {
+      if (AppState.currentState !== 'active') {
+        return;
+      }
+      if (netAllowsPeriodicDrainRef.current === false) {
+        return;
+      }
+      void runPendingEpisodeMediaUploadWorker(db, {
+        signal: flushHandle.signal,
+      });
+    }, 60_000);
+    return () => {
+      flushHandle.cancel();
+      pendingEpisodeMediaFlushRef.current = null;
+      clearInterval(interval);
+      subApp.remove();
+      subNet();
+    };
+  }, [db]);
 
   /** Latest session for connect-effect cleanup (skip redundant disconnect on sign-out). */
   const sessionRef = useRef(session);
@@ -489,6 +604,9 @@ export function PowerSyncSessionBridge({
               recordFirstSyncLanded(userIdAtTrusted);
             });
             return true;
+          });
+          queueMicrotask(() => {
+            pendingEpisodeMediaFlushRef.current?.flush();
           });
         }
       },

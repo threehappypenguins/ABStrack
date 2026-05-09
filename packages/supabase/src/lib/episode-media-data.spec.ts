@@ -1,11 +1,15 @@
+import type { Uuid } from '@abstrack/types';
 import { describe, expect, it, vi } from 'vitest';
 import {
   createEpisodeMediaObjectKey,
   createEpisodeMediaSignedDisplayUrl,
   createEpisodeMediaThumbnailObjectKey,
+  listEpisodeMediaBucketPathsForEpisodeMediaId,
+  listEpisodeMediaBucketPathsForEpisodeSymptomId,
   listEpisodeMediaForEpisode,
   normalizedEpisodeMediaBucketKeysFromHints,
   removeEpisodeMediaObjectsFromStorage,
+  removeEpisodeMediaStorageObjectPathsWithResult,
   uploadConfirmedEpisodeMedia,
 } from './episode-media-data.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
@@ -77,6 +81,379 @@ describe('normalizedEpisodeMediaBucketKeysFromHints', () => {
       '11111111-1111-4111-8111-111111111111/ep/v.webm',
       '11111111-1111-4111-8111-111111111111/ep/th.jpg',
     ]);
+  });
+});
+
+describe('listEpisodeMediaBucketPathsForEpisodeMediaId', () => {
+  const episodeMediaId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' as Uuid;
+
+  it('returns deduped normalized bucket paths for primary and thumbnail', async () => {
+    const primary =
+      '11111111-1111-4111-8111-111111111111/7b222222-2222-4222-8222-222222222222/photo-main.jpg';
+    const thumb =
+      '11111111-1111-4111-8111-111111111111/7b222222-2222-4222-8222-222222222222/thumb.jpg';
+    const maybeSingle = vi.fn(async () => ({
+      data: {
+        storage_object_key: primary,
+        thumbnail_storage_key: thumb,
+      },
+      error: null,
+    }));
+    const client = {
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({ maybeSingle })),
+        })),
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const r = await listEpisodeMediaBucketPathsForEpisodeMediaId(
+      client,
+      episodeMediaId,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect([...r.data].sort()).toEqual([primary, thumb].sort());
+    }
+    expect(maybeSingle).toHaveBeenCalled();
+  });
+
+  it('returns ok true with empty data when maybeSingle has no row', async () => {
+    const maybeSingle = vi.fn(async () => ({
+      data: null,
+      error: null,
+    }));
+    const client = {
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({ maybeSingle })),
+        })),
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const r = await listEpisodeMediaBucketPathsForEpisodeMediaId(
+      client,
+      episodeMediaId,
+    );
+    expect(r).toEqual({ ok: true, data: [] });
+  });
+
+  it('returns ok true with empty data when keys are empty after normalization', async () => {
+    const maybeSingle = vi.fn(async () => ({
+      data: {
+        storage_object_key: '',
+        thumbnail_storage_key: null,
+      },
+      error: null,
+    }));
+    const client = {
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({ maybeSingle })),
+        })),
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const r = await listEpisodeMediaBucketPathsForEpisodeMediaId(
+      client,
+      episodeMediaId,
+    );
+    expect(r).toEqual({ ok: true, data: [] });
+  });
+
+  it('returns ok false with PresetDataError when PostgREST returns error', async () => {
+    const maybeSingle = vi.fn(async () => ({
+      data: null,
+      error: { message: 'JWT expired' },
+    }));
+    const client = {
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({ maybeSingle })),
+        })),
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const r = await listEpisodeMediaBucketPathsForEpisodeMediaId(
+      client,
+      episodeMediaId,
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.message.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('returns ok false when the query chain throws', async () => {
+    const client = {
+      from: vi.fn(() => {
+        throw new Error('fetch failed');
+      }),
+    } as unknown as AbstrackSupabaseClient;
+
+    const r = await listEpisodeMediaBucketPathsForEpisodeMediaId(
+      client,
+      episodeMediaId,
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.message).toMatch(/fetch failed/i);
+    }
+  });
+});
+
+describe('listEpisodeMediaBucketPathsForEpisodeSymptomId', () => {
+  const episodeSymptomId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' as Uuid;
+  const episodeId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' as Uuid;
+
+  it('returns ok true with empty data when symptom row is missing or hidden', async () => {
+    const symptomMaybeSingle = vi.fn(async () => ({
+      data: null,
+      error: null,
+    }));
+    const from = vi.fn((table: string) => {
+      expect(table).toBe('episode_symptoms');
+      return {
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({ maybeSingle: symptomMaybeSingle })),
+        })),
+      };
+    });
+    const client = { from } as unknown as AbstrackSupabaseClient;
+
+    const r = await listEpisodeMediaBucketPathsForEpisodeSymptomId(
+      client,
+      episodeSymptomId,
+    );
+    expect(r).toEqual({ ok: true, data: [] });
+    expect(from).toHaveBeenCalledTimes(1);
+    expect(from).toHaveBeenCalledWith('episode_symptoms');
+  });
+
+  it('returns ok true with empty data when episode_id is blank on the symptom row', async () => {
+    const symptomMaybeSingle = vi.fn(async () => ({
+      data: { episode_id: '   ' },
+      error: null,
+    }));
+    const from = vi.fn((table: string) => {
+      expect(table).toBe('episode_symptoms');
+      return {
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({ maybeSingle: symptomMaybeSingle })),
+        })),
+      };
+    });
+    const client = { from } as unknown as AbstrackSupabaseClient;
+
+    const r = await listEpisodeMediaBucketPathsForEpisodeSymptomId(
+      client,
+      episodeSymptomId,
+    );
+    expect(r).toEqual({ ok: true, data: [] });
+    expect(from).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns ok false when episode_symptoms select returns PostgREST error', async () => {
+    const symptomMaybeSingle = vi.fn(async () => ({
+      data: null,
+      error: { message: 'JWT expired' },
+    }));
+    const from = vi.fn(() => ({
+      select: vi.fn(() => ({
+        eq: vi.fn(() => ({ maybeSingle: symptomMaybeSingle })),
+      })),
+    }));
+    const client = { from } as unknown as AbstrackSupabaseClient;
+
+    const r = await listEpisodeMediaBucketPathsForEpisodeSymptomId(
+      client,
+      episodeSymptomId,
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.message.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('delegates to episode_media listing when episode_id is resolved', async () => {
+    const primary =
+      '11111111-1111-4111-8111-111111111111/7b222222-2222-4222-8222-222222222222/symptom-line.jpg';
+    const symptomMaybeSingle = vi.fn(async () => ({
+      data: { episode_id: episodeId },
+      error: null,
+    }));
+    const mediaIn = vi.fn(async () => ({
+      data: [{ storage_object_key: primary, thumbnail_storage_key: null }],
+      error: null,
+    }));
+    const from = vi.fn((table: string) => {
+      if (table === 'episode_symptoms') {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({ maybeSingle: symptomMaybeSingle })),
+          })),
+        };
+      }
+      if (table === 'episode_media') {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              in: mediaIn,
+            })),
+          })),
+        };
+      }
+      throw new Error(`unexpected table ${table}`);
+    });
+    const client = { from } as unknown as AbstrackSupabaseClient;
+
+    const r = await listEpisodeMediaBucketPathsForEpisodeSymptomId(
+      client,
+      episodeSymptomId,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.data).toEqual([primary]);
+    }
+    expect(from).toHaveBeenCalledWith('episode_symptoms');
+    expect(from).toHaveBeenCalledWith('episode_media');
+    expect(mediaIn).toHaveBeenCalledWith('episode_symptom_id', [
+      episodeSymptomId,
+    ]);
+  });
+
+  it('propagates episode_media select error after episode_id resolves', async () => {
+    const symptomMaybeSingle = vi.fn(async () => ({
+      data: { episode_id: episodeId },
+      error: null,
+    }));
+    const mediaIn = vi.fn(async () => ({
+      data: null,
+      error: { message: 'relation episode_media does not exist' },
+    }));
+    const from = vi.fn((table: string) => {
+      if (table === 'episode_symptoms') {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({ maybeSingle: symptomMaybeSingle })),
+          })),
+        };
+      }
+      if (table === 'episode_media') {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              in: mediaIn,
+            })),
+          })),
+        };
+      }
+      throw new Error(`unexpected table ${table}`);
+    });
+    const client = { from } as unknown as AbstrackSupabaseClient;
+
+    const r = await listEpisodeMediaBucketPathsForEpisodeSymptomId(
+      client,
+      episodeSymptomId,
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.message.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('returns ok false when episode_symptoms chain throws', async () => {
+    const from = vi.fn((table: string) => {
+      if (table === 'episode_symptoms') {
+        throw new Error('transport failure');
+      }
+      throw new Error(`unexpected table ${table}`);
+    });
+    const client = { from } as unknown as AbstrackSupabaseClient;
+
+    const r = await listEpisodeMediaBucketPathsForEpisodeSymptomId(
+      client,
+      episodeSymptomId,
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.message).toMatch(/transport failure/i);
+    }
+  });
+});
+
+describe('removeEpisodeMediaStorageObjectPathsWithResult', () => {
+  it('returns ok true without calling Storage when paths are empty after trim', async () => {
+    const remove = vi.fn();
+    const from = vi.fn(() => ({ remove }));
+    const client = {
+      storage: { from },
+    } as unknown as AbstrackSupabaseClient;
+
+    const r = await removeEpisodeMediaStorageObjectPathsWithResult(client, [
+      '',
+      '   ',
+      '\t',
+    ]);
+    expect(r).toEqual({ ok: true });
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it('trims, drops blanks, and dedupes keys before a single remove call', async () => {
+    const remove = vi.fn(async () => ({ error: null }));
+    const from = vi.fn(() => ({ remove }));
+    const client = {
+      storage: { from },
+    } as unknown as AbstrackSupabaseClient;
+
+    const key =
+      '11111111-1111-4111-8111-111111111111/7b222222-2222-4222-8222-222222222222/x.jpg';
+    const r = await removeEpisodeMediaStorageObjectPathsWithResult(client, [
+      `  ${key}  `,
+      key,
+      '',
+      '   ',
+    ]);
+    expect(r).toEqual({ ok: true });
+    expect(from).toHaveBeenCalledWith('episode-media');
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveBeenCalledWith([key]);
+  });
+
+  it('returns ok false when Storage remove resolves with error (does not throw)', async () => {
+    const remove = vi.fn(async () => ({
+      error: { message: 'Object not found' },
+    }));
+    const from = vi.fn(() => ({ remove }));
+    const client = {
+      storage: { from },
+    } as unknown as AbstrackSupabaseClient;
+
+    const r = await removeEpisodeMediaStorageObjectPathsWithResult(client, [
+      '11111111-1111-4111-8111-111111111111/ep/missing.bin',
+    ]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.message.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('returns ok false when Storage remove throws (does not throw)', async () => {
+    const remove = vi.fn(async () => {
+      throw new Error('socket hang up');
+    });
+    const from = vi.fn(() => ({ remove }));
+    const client = {
+      storage: { from },
+    } as unknown as AbstrackSupabaseClient;
+
+    const r = await removeEpisodeMediaStorageObjectPathsWithResult(client, [
+      '11111111-1111-4111-8111-111111111111/ep/a.jpg',
+    ]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.message.length).toBeGreaterThan(0);
+    }
   });
 });
 

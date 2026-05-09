@@ -103,15 +103,19 @@ export type {
   EpisodeMediaListRow,
   EpisodeMediaUploadBody,
   RemoveEpisodeMediaObjectsFromStorageResult,
+  RemoveEpisodeMediaStorageObjectPathsResult,
 } from './lib/episode-media-data.js';
 export {
   createEpisodeMediaSignedDisplayUrl,
   createEpisodeMediaObjectKey,
   createEpisodeMediaThumbnailObjectKey,
+  listEpisodeMediaBucketPathsForEpisodeMediaId,
+  listEpisodeMediaBucketPathsForEpisodeSymptomId,
   listEpisodeMediaForEpisode,
   listEpisodeMediaStorageObjectPathsForEpisode,
   removeEpisodeMediaObjectsFromStorage,
   removeEpisodeMediaStorageObjectPathsBestEffort,
+  removeEpisodeMediaStorageObjectPathsWithResult,
   uploadConfirmedEpisodeMedia,
 } from './lib/episode-media-data.js';
 export {

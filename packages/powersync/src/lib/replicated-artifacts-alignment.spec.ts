@@ -3,7 +3,10 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { REPLICATED_PUBLIC_TABLE_NAMES } from './replicated-public-tables.js';
+import {
+  MOBILE_LOCAL_ONLY_POWER_SYNC_SCHEMA_TABLE_NAMES,
+  REPLICATED_PUBLIC_TABLE_NAMES,
+} from './replicated-public-tables.js';
 
 const resolveFromSpec = (relativePath: string) =>
   fileURLToPath(new URL(relativePath, import.meta.url));
@@ -88,6 +91,10 @@ describe('Replicated table allowlist alignment', () => {
     );
     const ts = readFileSync(schemaPath, 'utf8');
     const keys = [...parsePowerSyncSchemaKeys(ts)].sort();
-    expect(keys).toEqual(allowlistSorted);
+    const mobileExpected = [
+      ...REPLICATED_PUBLIC_TABLE_NAMES,
+      ...MOBILE_LOCAL_ONLY_POWER_SYNC_SCHEMA_TABLE_NAMES,
+    ].sort();
+    expect(keys).toEqual(mobileExpected);
   });
 });

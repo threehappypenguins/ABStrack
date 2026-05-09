@@ -243,6 +243,65 @@ const access_log = new Table(
 );
 
 /**
+ * Local-only queue for offline captured episode media: encrypted files on disk plus linkage metadata.
+ * Not replicated to Postgres (`localOnly`). The worker uploads via Supabase Storage when online.
+ */
+const pending_episode_media_upload = new Table(
+  {
+    id: column.text,
+    user_id: column.text,
+    episode_id: column.text,
+    episode_symptom_id: column.text,
+    preset_symptom_id: column.text,
+    /** `episodes.post_marker_step_completed_at` snapshot for supersede cleanup on upload. */
+    last_post_marker_step_completed_at: column.text,
+    media_type: column.text,
+    content_type_primary: column.text,
+    extension: column.text,
+    duration_seconds: column.integer,
+    /** Relative path segments from app documents root to ciphertext primary media file. */
+    primary_cipher_relative_path: column.text,
+    thumbnail_cipher_relative_path: column.text,
+    attempt_count: column.integer,
+    last_attempt_at: column.text,
+    last_error: column.text,
+    created_at: column.text,
+    updated_at: column.text,
+  },
+  {
+    localOnly: true,
+    indexes: {
+      pending_media_episode_idx: ['episode_id'],
+      pending_media_symptom_idx: ['episode_symptom_id'],
+    },
+  },
+);
+
+/**
+ * Durable list of `episode-media` object keys to remove after Postgres rows are gone. Survives a
+ * process crash between PostgREST DELETE success and Storage `remove` so retries that can no longer
+ * list paths (CASCADE cleared `episode_media`) still complete cleanup ({@link drainPendingEpisodeMediaStorageCleanupQueue}).
+ */
+const pending_episode_media_storage_cleanup = new Table(
+  {
+    id: column.text,
+    /** JSON array of bucket-relative paths (same strings as {@link listEpisodeMediaBucketPathsForEpisodeSymptomId}). */
+    storage_paths_json: column.text,
+    /** `episode_symptoms` or `episode_media` — matches the PowerSync CRUD table for the delete op. */
+    target_kind: column.text,
+    /** Remote row id that was deleted (PostgREST `id`). */
+    target_id: column.text,
+    created_at: column.text,
+  },
+  {
+    localOnly: true,
+    indexes: {
+      pending_media_storage_cleanup_target_idx: ['target_kind', 'target_id'],
+    },
+  },
+);
+
+/**
  * Client-side PowerSync schema aligned with Supabase `public` PHI tables listed in
  * `packages/powersync/sync-rules.yaml`.
  *
@@ -267,6 +326,8 @@ export const abstrackPowerSyncSchema = new Schema({
   practitioner_access,
   caretaker_access,
   access_log,
+  pending_episode_media_storage_cleanup,
+  pending_episode_media_upload,
 });
 
 export type AbstrackPowerSyncDatabase =

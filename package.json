@@ -38,6 +38,9 @@
     "ios": "cd apps/mobile && pnpm expo run:ios"
   },
   "private": true,
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.1",
     "@babel/runtime": "~7.27.6",
