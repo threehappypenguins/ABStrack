@@ -104,6 +104,26 @@ Then the migration hits cloud when **CI runs `db push` on `main`** after merge. 
 
 ---
 
+## Patient caretaker Edge Function (`patient-caretaker-access`)
+
+Caretaker **email invites** use `auth.admin.inviteUserByEmail` with `redirectTo` = **`{ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN}/auth/callback?next=/caretaker/join`** (see `supabase/functions/patient-caretaker-access/index.ts`). The invitee finishes access on user web **`/caretaker/join`** after `exchangeCodeForSession` on `/auth/callback`.
+
+### Order of operations (cloud)
+
+1. Apply the migration that creates **`public.caretaker_invites`** (same as any other migration): **`pnpm dlx supabase db push`** when you are ready (see [Recommended workflow](#recommended-workflow-one-pr-manual-db-push--gen-types-ci-as-backstop) above), then regenerate types if you use them for that table.
+2. Set Edge **secrets** (Dashboard → Edge Functions → **Secrets**, or CLI): at minimum hosted defaults **`SUPABASE_URL`** + **`SUPABASE_SECRET_KEYS`** (see [Edge secrets](https://supabase.com/docs/guides/functions/secrets)). Also set **`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN`** to your **user web** base URL with **no** trailing slash (e.g. `http://localhost:3000` locally, `https://your-production-host` in prod). Without it, invite-by-email returns **`server_misconfigured`**.
+3. **Deploy the function** from the repo root (after login + link if using CLI):
+
+   ```bash
+   pnpm dlx supabase functions deploy patient-caretaker-access
+   ```
+
+### Auth redirect URLs (Dashboard → Authentication → URL Configuration)
+
+Add the **callback** URL(s) your app uses. For local Next.js user web, **`http://localhost:3000/auth/callback`** is the correct path; invites append **`?next=/caretaker/join`** to that URL. If Supabase rejects redirects with a “redirect URL not allowed” style error, add a **wildcard** pattern from the [Redirect URLs](https://supabase.com/docs/guides/auth/redirect-urls) guide (e.g. **`http://localhost:3000/**`** for local dev, or a pattern that explicitly allows query strings on the callback if your project’s matcher is strict). **Production** hosts need their own **`https://…/auth/callback`** (or wildcard) entries as well.
+
+---
+
 ## Day-to-day: no database work
 
 - Ordinary app code: no Supabase CLI.
