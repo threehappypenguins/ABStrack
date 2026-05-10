@@ -7,6 +7,7 @@ import * as SecureStore from 'expo-secure-store';
 import type { AbstrackSupabaseClient, Session } from '@abstrack/supabase';
 
 import App from './App';
+import { completeCaretakerInviteAfterAuth } from '../lib/caretaker-invite-complete';
 import {
   createMobileSupabaseClient,
   getMobileSupabaseClient,
@@ -33,6 +34,10 @@ jest.mock('../lib/supabase-wiring-core', () => {
     getMobileSupabaseClient: jest.fn(),
   };
 });
+
+jest.mock('../lib/caretaker-invite-complete', () => ({
+  completeCaretakerInviteAfterAuth: jest.fn(async () => ({ ok: true })),
+}));
 
 const ENV_KEYS = [
   'EXPO_PUBLIC_SUPABASE_URL',
@@ -222,6 +227,46 @@ describe('mobile auth state sync', () => {
       expect(getByText('Login')).toBeTruthy();
       expect(queryByText('Welcome to ABStrack')).toBeNull();
     });
+  });
+
+  test('caretaker invite deep link exchanges code and completes invite', async () => {
+    const exchangeCodeForSession = jest.fn(async () => ({ error: null }));
+
+    const mockClient = {
+      auth: {
+        getSession: jest.fn(async () => ({ data: { session: null } })),
+        exchangeCodeForSession,
+        setSession: jest.fn(async () => ({ error: null })),
+        onAuthStateChange: jest.fn(() => ({
+          data: {
+            subscription: {
+              unsubscribe: jest.fn(),
+            },
+          },
+        })),
+      },
+    } as unknown as AbstrackSupabaseClient;
+
+    jest.mocked(getMobileSupabaseClient).mockReturnValue(mockClient);
+
+    const getInitialUrlSpy = jest
+      .spyOn(Linking, 'getInitialURL')
+      .mockResolvedValue(
+        'abstrack:///caretaker-invite?code=caretaker-invite-code',
+      );
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(exchangeCodeForSession).toHaveBeenCalledWith(
+        'caretaker-invite-code',
+      );
+    });
+    await waitFor(() => {
+      expect(completeCaretakerInviteAfterAuth).toHaveBeenCalled();
+    });
+
+    getInitialUrlSpy.mockRestore();
   });
 
   test('does not enter recovery flow for unrelated deep links that only contain code', async () => {

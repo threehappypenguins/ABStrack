@@ -106,12 +106,26 @@ Then the migration hits cloud when **CI runs `db push` on `main`** after merge. 
 
 ## Patient caretaker Edge Function (`patient-caretaker-access`)
 
-Caretaker **email invites** use `auth.admin.inviteUserByEmail` with `redirectTo` = **`{ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN}/auth/callback?next=/caretaker/join`** (see `supabase/functions/patient-caretaker-access/index.ts`). The invitee finishes access on user web **`/caretaker/join`** after `exchangeCodeForSession` on `/auth/callback`.
+Product default: **patients and caretakers are mobile-primary** (Expo app in `apps/mobile/`). User web is optional.
+
+Caretaker **email invites** use `auth.admin.inviteUserByEmail`. **`redirectTo`** is **`ABSTRACK_CARETAKER_INVITE_REDIRECT_TO`** when set (this repo uses **`abstrack:///caretaker-invite`**, matching Expo **`scheme`: `abstrack`** in `apps/mobile/app.json`). If that secret is unset, the function falls back to **`{ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN}/auth/callback?next=/caretaker/join`**. See `supabase/functions/patient-caretaker-access/index.ts`.
+
+**Invitee completion:** Mobile handles **`abstrack:///caretaker-invite?code=…`** in `apps/mobile/src/app/App.tsx` (exchange code → caretaker profile if needed → Edge **finalize**). Web **`/caretaker/join`** applies only when the web fallback secret is used.
+
+### Caretaker invite: Supabase checklist (mobile-primary)
+
+Do **not** put `ABSTRACK_CARETAKER_INVITE_*` in `apps/web/.env.local`; nothing in Next.js reads them. Set them as **Supabase Edge Function secrets** (Dashboard → **Edge Functions** → **Secrets**, project-wide for functions—or CLI `secrets set` for the linked project).
+
+1. **Edge secret** `ABSTRACK_CARETAKER_INVITE_REDIRECT_TO` = **`abstrack:///caretaker-invite`** (exact string; three slashes after `abstrack:`).
+2. **Supabase Dashboard → Authentication → URL Configuration → Redirect URLs:** add the **same** value **`abstrack:///caretaker-invite`** (Auth only allows redirects that are listed here). If the UI rejects it, add a documented wildcard such as **`abstrack://**`\*\* per [Redirect URLs](https://supabase.com/docs/guides/auth/redirect-urls).
+3. **Deploy** `patient-caretaker-access` after changing secrets so the function picks them up: `pnpm dlx supabase functions deploy patient-caretaker-access` (from repo root, linked project).
+
+Optional web fallback only: set Edge secret **`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN`** (no trailing slash) and omit **`REDIRECT_TO`**; then also allow-list **`https://<your-user-web-host>/auth/callback`** (and local **`http://localhost:3000/auth/callback`** if needed).
 
 ### Order of operations (cloud)
 
 1. Apply the migration that creates **`public.caretaker_invites`** (same as any other migration): **`pnpm dlx supabase db push`** when you are ready (see [Recommended workflow](#recommended-workflow-one-pr-manual-db-push--gen-types-ci-as-backstop) above), then regenerate types if you use them for that table.
-2. Set Edge **secrets** (Dashboard → Edge Functions → **Secrets**, or CLI): at minimum hosted defaults **`SUPABASE_URL`** + **`SUPABASE_SECRET_KEYS`** (see [Edge secrets](https://supabase.com/docs/guides/functions/secrets)). Also set **`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN`** to your **user web** base URL with **no** trailing slash (e.g. `http://localhost:3000` locally, `https://your-production-host` in prod). Without it, invite-by-email returns **`server_misconfigured`**.
+2. Configure caretaker invite secrets and Auth redirect URLs as in **[Caretaker invite: Supabase checklist (mobile-primary)](#caretaker-invite-supabase-checklist-mobile-primary)** above.
 3. **Deploy the function** from the repo root (after login + link if using CLI):
 
    ```bash
@@ -120,7 +134,8 @@ Caretaker **email invites** use `auth.admin.inviteUserByEmail` with `redirectTo`
 
 ### Auth redirect URLs (Dashboard → Authentication → URL Configuration)
 
-Add the **callback** URL(s) your app uses. For local Next.js user web, **`http://localhost:3000/auth/callback`** is the correct path; invites append **`?next=/caretaker/join`** to that URL. If Supabase rejects redirects with a “redirect URL not allowed” style error, add a **wildcard** pattern from the [Redirect URLs](https://supabase.com/docs/guides/auth/redirect-urls) guide (e.g. **`http://localhost:3000/**`** for local dev, or a pattern that explicitly allows query strings on the callback if your project’s matcher is strict). **Production** hosts need their own **`https://…/auth/callback`** (or wildcard) entries as well.
+- **Mobile (this repo’s default):** **`abstrack:///caretaker-invite`** (and/or **`abstrack://**`\*\* if you use a wildcard).
+- **Web (only if you use `ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN` instead of `REDIRECT_TO`):** **`http://localhost:3000/auth/callback`**, production **`https://…/auth/callback`**; invites append **`?next=/caretaker/join`**. Wildcard **`http://localhost:3000/**`\*\* if the dashboard rejects query-only differences.
 
 ---
 

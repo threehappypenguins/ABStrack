@@ -496,8 +496,9 @@ export function SettingsScreen() {
             flows as you when you need help—on web or mobile, with the same data
             access as you once they accept an invite or you link them. This is
             not the same as a healthcare practitioner (separate practitioner
-            app, read-only). New caretakers finish the email invite on the web
-            link first; then they can use mobile too.
+            app, read-only). New caretakers open the invite link on this phone
+            to finish in the app (optional user web redirect if your project
+            uses it).
           </Text>
           {!patientCaretakerApiUrl ? (
             <Text

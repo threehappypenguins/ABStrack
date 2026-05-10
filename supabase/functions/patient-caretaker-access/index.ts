@@ -8,7 +8,7 @@
  * - **POST** — patient: `{ caretakerEmail }` send invite or link existing caretaker; `{ cancelPendingCaretakerInvite: true }` cancel pending invite; caretaker: `{ finalizeCaretakerInvite: true, inviteId }` after accepting email invite.
  * - **DELETE** — patient: revoke active caretaker grant (clears pending invites too).
  *
- * **Invite email:** uses `auth.admin.inviteUserByEmail` with `redirectTo` `${ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN}/auth/callback?next=/caretaker/join` (set Edge secret; must match Supabase Auth redirect allow list).
+ * **Invite email:** `auth.admin.inviteUserByEmail` `redirectTo` is **`ABSTRACK_CARETAKER_INVITE_REDIRECT_TO`** when set (e.g. `abstrack:///caretaker-invite` for Expo). Otherwise falls back to **`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN`/auth/callback?next=/caretaker/join** for web. Values must appear in Supabase Auth **Redirect URLs**.
  *
  * @see https://supabase.com/docs/guides/functions/secrets
  *
@@ -649,19 +649,25 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  const inviteOrigin = (
+  const explicitRedirect = (
+    Deno.env.get('ABSTRACK_CARETAKER_INVITE_REDIRECT_TO') ?? ''
+  ).trim();
+  const inviteWebOrigin = (
     Deno.env.get('ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN') ?? ''
   ).replace(/\/$/, '');
-  if (!inviteOrigin) {
+  const redirectTo =
+    explicitRedirect ||
+    (inviteWebOrigin
+      ? `${inviteWebOrigin}/auth/callback?next=${encodeURIComponent('/caretaker/join')}`
+      : '');
+  if (!redirectTo) {
     console.error(
-      'Missing ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN (e.g. https://your-user-web.example)',
+      'Missing ABSTRACK_CARETAKER_INVITE_REDIRECT_TO (e.g. abstrack:///caretaker-invite) or ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN for web fallback.',
     );
     return jsonResponse(500, {
       error: 'server_misconfigured',
     });
   }
-
-  const redirectTo = `${inviteOrigin}/auth/callback?next=${encodeURIComponent('/caretaker/join')}`;
 
   await clearPendingInvitesForPatient(admin, user.id);
 

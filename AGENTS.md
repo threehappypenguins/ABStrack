@@ -6,6 +6,10 @@
 
 **Default to current documentation, not training data.** Before implementing Supabase (or any fast-moving stack), use the **MCP servers** this workspace provides — for example **Supabase** (`search_docs`, etc.) and **Context7** — so behavior matches **today’s** platform, not an outdated mental model.
 
+## Product default: patients and caretakers are mobile-primary
+
+The **Expo app** (`apps/mobile`) is the **primary** surface for **patients and caretakers**. **User web** (`apps/web`) is supplementary. The **practitioner** app is web-only. For auth redirects, invites, and onboarding, default to mobile unless the task explicitly targets web. See **[docs/PRD.md](docs/PRD.md)** and the caretaker checklist in **[docs/SUPABASE_CLOUD_DEVELOPER.md](docs/SUPABASE_CLOUD_DEVELOPER.md)**.
+
 ### Example: Supabase secret keys vs legacy `service_role` JWT
 
 Supabase moved to **publishable** (`sb_publishable_…`) and **secret** (`sb_secret_…`) API keys. The old **JWT-based `service_role` key and `SUPABASE_SERVICE_ROLE_KEY`** are **legacy**. Edge Functions should use the injected **`SUPABASE_SECRET_KEYS`** JSON (typically the **`default`** entry) with `createClient`, **not** `SUPABASE_SERVICE_ROLE_KEY`. Shipping or suggesting the legacy env var in new work is the kind of mistake this section is meant to prevent.

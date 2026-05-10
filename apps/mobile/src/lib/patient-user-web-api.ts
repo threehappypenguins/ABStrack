@@ -113,6 +113,22 @@ export async function fetchCaretakerAccessCancelPendingInvite(
 }
 
 /**
+ * Calls **POST** `{ finalizeCaretakerInvite: true, inviteId }` (caretaker session after invite email).
+ *
+ * @param accessToken - Supabase session access token (JWT).
+ * @param inviteId - `caretaker_invites.id` from `user_metadata.abstrack_caretaker_invite_id`.
+ */
+export async function fetchCaretakerAccessFinalize(
+  accessToken: string,
+  inviteId: string,
+) {
+  return fetchCaretakerAccessPostJson(accessToken, {
+    finalizeCaretakerInvite: true,
+    inviteId,
+  });
+}
+
+/**
  * Calls **DELETE** to revoke the active caretaker grant.
  *
  * @param accessToken - Supabase session access token (JWT).

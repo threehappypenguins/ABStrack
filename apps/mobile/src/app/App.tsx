@@ -1,11 +1,19 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, Linking, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  AppState,
+  Linking,
+  Text,
+  View,
+} from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import type { Session } from '@abstrack/supabase';
 import { fetchMobileDeviceIsConnected } from '../lib/network/mobile-device-netinfo';
+import { completeCaretakerInviteAfterAuth } from '../lib/caretaker-invite-complete';
 import {
   getMobileAuthSessionSafe,
   getMobileSupabaseClient,
@@ -107,6 +115,21 @@ function isRecoveryTargetPath(pathname: string, hostname: string): boolean {
   const normalizedPath = pathname.replace(/\/+$/, '') || '/';
   return (
     normalizedPath === '/update-password' || hostname === 'update-password'
+  );
+}
+
+/**
+ * Patient-sent caretaker invite: open app via `abstrack:///caretaker-invite?code=…` (matches Expo
+ * `scheme` + Edge `ABSTRACK_CARETAKER_INVITE_REDIRECT_TO`).
+ */
+function isCaretakerInviteDeepLink(url: string): boolean {
+  if (!url.startsWith('abstrack:')) {
+    return false;
+  }
+  const { pathname, hostname } = parseDeepLink(url);
+  const normalizedPath = pathname.replace(/\/+$/, '') || '/';
+  return (
+    normalizedPath === '/caretaker-invite' || hostname === 'caretaker-invite'
   );
 }
 
@@ -295,6 +318,55 @@ function AppBootstrap() {
       );
     };
 
+    /**
+     * Caretaker email invite deep link (`abstrack:///caretaker-invite?code=…`). Exchanges the code,
+     * creates caretaker profile if needed, and finalizes `caretaker_access` via Edge.
+     *
+     * @returns `true` when this URL was a caretaker invite link (handled or failed in-app).
+     */
+    const handleCaretakerInviteLink = async (url: string): Promise<boolean> => {
+      if (!isCaretakerInviteDeepLink(url) || !mounted) {
+        return false;
+      }
+      const { params } = parseDeepLink(url);
+      const code = params.get('code');
+      const providerError =
+        params.get('error_description') ?? params.get('error');
+      if (providerError) {
+        Alert.alert('Invite link problem', providerError);
+        return true;
+      }
+      if (!code) {
+        Alert.alert(
+          'Invite link problem',
+          'This invite link is missing a sign-in code. Ask the patient to send a new invite.',
+        );
+        return true;
+      }
+
+      const { error: exchangeErr } =
+        await mobileSupabase.auth.exchangeCodeForSession(code);
+      if (exchangeErr) {
+        Alert.alert(
+          'Invite link problem',
+          'This invite link is invalid or expired. Ask the patient to send a new invite.',
+        );
+        return true;
+      }
+
+      const result = await completeCaretakerInviteAfterAuth();
+      if (!result.ok) {
+        Alert.alert('Could not finish setup', result.message);
+        return true;
+      }
+
+      Alert.alert(
+        'Caretaker access ready',
+        'You are linked to this patient and can help log episodes for them.',
+      );
+      return true;
+    };
+
     const bootstrap = async () => {
       try {
         // Prime session read in parallel with deep link; do not `setSession` until after
@@ -305,7 +377,11 @@ function AppBootstrap() {
         ]);
 
         if (initialUrl) {
-          await handleRecoveryLink(initialUrl);
+          const caretakerInviteHandled =
+            await handleCaretakerInviteLink(initialUrl);
+          if (!caretakerInviteHandled) {
+            await handleRecoveryLink(initialUrl);
+          }
         }
 
         const connectedAtBoot = await fetchMobileDeviceIsConnected();
@@ -333,9 +409,16 @@ function AppBootstrap() {
     void bootstrap();
 
     const urlSubscription = Linking.addEventListener('url', ({ url }) => {
-      void handleRecoveryLink(url).catch(() => {
-        /* Deep link handling must not reject unhandled */
-      });
+      void (async () => {
+        try {
+          const caretakerInviteHandled = await handleCaretakerInviteLink(url);
+          if (!caretakerInviteHandled) {
+            await handleRecoveryLink(url);
+          }
+        } catch {
+          /* Deep link handling must not reject unhandled */
+        }
+      })();
     });
 
     const appStateSubscription = AppState.addEventListener(
