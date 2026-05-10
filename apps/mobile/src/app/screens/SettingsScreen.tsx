@@ -211,7 +211,7 @@ export function SettingsScreen() {
   const onInviteCaretaker = async () => {
     const trimmed = caretakerEmail.trim();
     if (!trimmed) {
-      setCaretakerFormError('Enter the caretaker’s email address.');
+      setCaretakerFormError('Enter the caretaker email address.');
       return;
     }
     setCaretakerBusy(true);
@@ -244,7 +244,7 @@ export function SettingsScreen() {
       setCaretakerEmail('');
       if (maybe.outcome === 'invite_sent') {
         announce(
-          'Invite email sent. They should open the link in that message to finish as a caretaker.',
+          'Invite email sent. The link in that message finishes caretaker setup in the mobile app or on user web.',
           { politeness: 'polite' },
         );
       } else if (maybe.outcome === 'already_linked') {
@@ -253,7 +253,7 @@ export function SettingsScreen() {
         });
       } else {
         announce(
-          'Caretaker linked. They can sign in on their own device to help log for you.',
+          'Caretaker linked. The caretaker can sign in on another device to help log for you.',
           { politeness: 'polite' },
         );
       }
@@ -312,7 +312,7 @@ export function SettingsScreen() {
   const onConfirmRevokeCaretaker = () => {
     Alert.alert(
       'Revoke caretaker access?',
-      'They will no longer be able to read or log your health data. Nothing already saved is deleted. You can link someone again later.',
+      'The caretaker will no longer be able to read or log your health data. Nothing already saved is deleted. You can link a caretaker again later.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -492,13 +492,13 @@ export function SettingsScreen() {
         </Text>
         <>
           <Text className={`text-base ${nw.textMuted}`}>
-            A caretaker uses their own ABStrack account to run the same logging
-            flows as you when you need help—on web or mobile, with the same data
-            access as you once they accept an invite or you link them. This is
-            not the same as a healthcare practitioner (separate practitioner
-            app, read-only). New caretakers open the invite link on this phone
-            to finish in the app (optional user web redirect if your project
-            uses it).
+            A caretaker signs in with his or her own ABStrack account and uses
+            the same logging flows as you, with matching data access, once the
+            invite completes. Invite links open the ABStrack mobile app when
+            tapped on a phone (mobile-first), and the same link completes
+            caretaker sign-up on user web when opened in a browser. This is
+            separate from a healthcare practitioner: the practitioner web app is
+            read-only and does not replace you in patient flows.
           </Text>
           {!patientCaretakerApiUrl ? (
             <Text
@@ -538,8 +538,9 @@ export function SettingsScreen() {
                 Invite pending
               </Text>
               <Text className={`text-sm ${nw.textMuted}`}>
-                We sent an email to {caretakerPendingInvite.inviteeEmail}. They
-                should use the link in that message to finish setup.
+                We sent an email to {caretakerPendingInvite.inviteeEmail}. The
+                link in that message finishes setup in the mobile app or on user
+                web.
               </Text>
               <Pressable
                 accessibilityRole="button"
@@ -560,16 +561,20 @@ export function SettingsScreen() {
               <Text className={`text-base font-semibold ${nw.textInk}`}>
                 Active caretaker
               </Text>
+              <Text className={`text-sm ${nw.textMuted}`}>
+                You can have one active caretaker. Access stays in place until
+                you revoke below.
+              </Text>
               <Text
                 className={`text-base ${nw.textInk}`}
                 accessibilityLabel={`Caretaker display name: ${
                   caretakerGrant.caretakerDisplayName?.trim() ||
-                  'Not set on their profile'
+                  'Not set on the caretaker profile'
                 }`}
               >
                 {caretakerGrant.caretakerDisplayName?.trim()
                   ? caretakerGrant.caretakerDisplayName
-                  : 'Display name not set on their profile'}
+                  : 'No display name on the caretaker profile'}
               </Text>
               <Pressable
                 accessibilityRole="button"
@@ -595,13 +600,11 @@ export function SettingsScreen() {
                 Invite or link a caretaker
               </Text>
               <Text className={`text-sm ${nw.textMuted}`}>
-                Enter their email. If they are new to ABStrack, we send an
-                invite. If they already have a caretaker account, we link them
-                right away.
+                Enter your support person's email, and we will send an invite.
               </Text>
               <TextInput
                 accessibilityLabel="Caretaker email"
-                accessibilityHint="Email they used to sign up as a caretaker"
+                accessibilityHint="Caretaker sign-up email address"
                 value={caretakerEmail}
                 onChangeText={setCaretakerEmail}
                 keyboardType="email-address"

@@ -138,7 +138,7 @@ export function CaretakerAccessPage() {
     }
     const trimmed = email.trim();
     if (!trimmed) {
-      setFormError('Enter the caretaker’s email address.');
+      setFormError('Enter the caretaker email address.');
       return;
     }
     setBusy(true);
@@ -171,7 +171,7 @@ export function CaretakerAccessPage() {
     const outcome = maybeJson.outcome;
     if (outcome === 'invite_sent') {
       announce(
-        'Invite email sent. They should open the link in that message to create their caretaker account and connect to you.',
+        'Invite email sent. The link in that message finishes caretaker setup in the mobile app or on user web.',
         { politeness: 'polite' },
       );
     } else if (outcome === 'already_linked') {
@@ -180,7 +180,7 @@ export function CaretakerAccessPage() {
       });
     } else {
       announce(
-        'Caretaker linked. They can sign in on their own device with full access to log episodes for you.',
+        'Caretaker linked. The caretaker can sign in on another device with full access to log episodes for you.',
         { politeness: 'polite' },
       );
     }
@@ -249,11 +249,13 @@ export function CaretakerAccessPage() {
           Caretaker access
         </h1>
         <p className="mt-2 text-sm text-app-muted">
-          A caretaker signs in with their own ABStrack account and can use the
-          same logging flows as you—helpful when you are impaired or need
-          someone to record an episode on your behalf. This is separate from a
-          healthcare practitioner: practitioners have their own app, read-only
-          access, and cannot replace you in the patient prompt flows.
+          A caretaker signs in with his or her own ABStrack account and uses the
+          same logging flows as you, with matching data access, once the invite
+          completes. Invite links open the ABStrack mobile app when tapped on a
+          phone (mobile-first), and the same link completes caretaker sign-up on
+          user web when opened in a browser. This is separate from a healthcare
+          practitioner: the practitioner web app is read-only and does not
+          replace you in patient flows.
         </p>
       </div>
 
@@ -285,8 +287,9 @@ export function CaretakerAccessPage() {
             <span className="font-medium text-app-ink">
               {pendingInvite.inviteeEmail}
             </span>
-            . They should use the link in that message to finish setup. Invite
-            expires {formatInviteExpiry(pendingInvite.expiresAt)}.
+            . The link in that message finishes setup in the mobile app or on
+            user web. Invite expires{' '}
+            {formatInviteExpiry(pendingInvite.expiresAt)}.
           </p>
           <button
             type="button"
@@ -311,15 +314,15 @@ export function CaretakerAccessPage() {
             Active caretaker
           </h2>
           <p className="mt-2 text-sm text-app-muted">
-            You can have one active caretaker. They stay authorized until you
-            revoke access below.
+            You can have one active caretaker. Access stays in place until you
+            revoke below.
           </p>
           <dl className="mt-4 space-y-2 text-sm text-app-ink">
             <div>
               <dt className="font-medium text-app-muted">Display name</dt>
               <dd>
                 {grant.caretakerDisplayName?.trim() ||
-                  'Not set on their profile'}
+                  'No display name on the caretaker profile'}
               </dd>
             </div>
           </dl>
@@ -346,10 +349,7 @@ export function CaretakerAccessPage() {
             Invite or link a caretaker
           </h2>
           <p className="mt-2 text-sm text-app-muted">
-            Enter their email. If they do not have an ABStrack account yet, we
-            send an invite so they can create a caretaker account and connect to
-            you. If they already signed up as a caretaker, we link them
-            immediately instead.
+            Enter your support person's email, and we will send an invite.
           </p>
           <form
             className="mt-6 space-y-4"
@@ -397,7 +397,7 @@ export function CaretakerAccessPage() {
       <ConfirmDialog
         open={revokeOpen}
         title="Revoke caretaker access?"
-        description="They will no longer be able to read or log your health data. This does not delete anything already saved. You can link a caretaker again later if you need to."
+        description="The caretaker will no longer be able to read or log your health data. This does not delete anything already saved. You can link a caretaker again later if you need to."
         confirmLabel="Revoke access"
         cancelLabel="Keep caretaker"
         confirmBusyLabel="Revoking…"
