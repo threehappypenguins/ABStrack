@@ -79,6 +79,18 @@ function mockUpsertEpisodeTimelineItem(
   return rows;
 }
 
+/**
+ * Typed access to the Jest mock for `@abstrack/supabase` (see {@link jest.mock} factory below).
+ * Prefixed `mock` so {@link jest.mock} factories may reference it (Jest restriction).
+ *
+ * @returns The mocked module object with the same export surface as `@abstrack/supabase`.
+ */
+function mockAbstrackSupabaseModule(): typeof import('@abstrack/supabase') {
+  return jest.requireMock(
+    '@abstrack/supabase',
+  ) as typeof import('@abstrack/supabase');
+}
+
 jest.mock('@react-navigation/native', () => ({
   ...jest.requireActual('@react-navigation/native'),
   useRoute: jest.fn(),
@@ -251,9 +263,10 @@ jest.mock('../../lib/episodes/mobile-offline-first-gateway', () => ({
   __esModule: true,
   insertEpisodeHealthMarkerLineOfflineFirst: jest.fn(
     async (client: unknown, _db: unknown, args: unknown) =>
-      (
-        jest.requireMock('@abstrack/supabase') as any
-      ).insertEpisodeHealthMarkerForLine(client as never, args as never),
+      mockAbstrackSupabaseModule().insertEpisodeHealthMarkerForLine(
+        client as never,
+        args as never,
+      ),
   ),
   listEpisodeHealthMarkersForEpisodeOfflineFirst: jest.fn(
     async (
@@ -262,7 +275,7 @@ jest.mock('../../lib/episodes/mobile-offline-first-gateway', () => ({
       episodeId: unknown,
       options: { limit?: number } = {},
     ) => {
-      const supabase = jest.requireMock('@abstrack/supabase') as any;
+      const supabase = mockAbstrackSupabaseModule();
       const r = await supabase.listEpisodeHealthMarkersForEpisode(
         client as never,
         episodeId as never,
@@ -285,9 +298,7 @@ jest.mock('../../lib/episodes/mobile-offline-first-gateway', () => ({
       episodeId: unknown,
       fields: unknown,
     ) =>
-      (
-        jest.requireMock('@abstrack/supabase') as any
-      ).completeEpisodePostMarkerStep(
+      mockAbstrackSupabaseModule().completeEpisodePostMarkerStep(
         client as never,
         episodeId as never,
         fields as never,
@@ -301,7 +312,7 @@ jest.mock('../../lib/episodes/mobile-offline-first-gateway', () => ({
       endedAt?: unknown,
       startedAt?: unknown,
     ) =>
-      (jest.requireMock('@abstrack/supabase') as any).endEpisodeIfStillActive(
+      mockAbstrackSupabaseModule().endEpisodeIfStillActive(
         client as never,
         episodeId as never,
         endedAt as never,
@@ -310,7 +321,7 @@ jest.mock('../../lib/episodes/mobile-offline-first-gateway', () => ({
   ),
   cancelActiveEpisodeByIdOfflineFirst: jest.fn(
     async (client: unknown, _db: unknown, episodeId: unknown) =>
-      (jest.requireMock('@abstrack/supabase') as any).cancelActiveEpisodeById(
+      mockAbstrackSupabaseModule().cancelActiveEpisodeById(
         client as never,
         episodeId as never,
       ),
@@ -322,9 +333,7 @@ jest.mock('../../lib/episodes/mobile-offline-first-gateway', () => ({
       episodeId: unknown,
       options: { limit?: number; trustEmptyLocalReplica?: boolean } = {},
     ) =>
-      (
-        jest.requireMock('@abstrack/supabase') as any
-      ).listFoodDiaryEntriesForEpisode(
+      mockAbstrackSupabaseModule().listFoodDiaryEntriesForEpisode(
         client as never,
         episodeId as never,
         options,
@@ -332,7 +341,7 @@ jest.mock('../../lib/episodes/mobile-offline-first-gateway', () => ({
   ),
   createFoodDiaryEntryOfflineFirst: jest.fn(
     async (client: unknown, _db: unknown, row: Record<string, unknown>) => {
-      const supabase = jest.requireMock('@abstrack/supabase') as any;
+      const supabase = mockAbstrackSupabaseModule();
       const core = supabase.validateAndNormalizeFoodDiaryCreateCore(
         row as never,
       );
@@ -351,7 +360,7 @@ jest.mock('../../lib/episodes/mobile-offline-first-gateway', () => ({
   ),
   updateFoodDiaryEntryOfflineFirst: jest.fn(
     async (client: unknown, _db: unknown, entryId: unknown, patch: unknown) => {
-      const supabase = jest.requireMock('@abstrack/supabase') as any;
+      const supabase = mockAbstrackSupabaseModule();
       const normalized = supabase.normalizeFoodDiaryEntryUpdate(patch as never);
       if (!normalized.ok) {
         return normalized;
@@ -365,7 +374,7 @@ jest.mock('../../lib/episodes/mobile-offline-first-gateway', () => ({
   ),
   deleteFoodDiaryEntryOfflineFirst: jest.fn(
     async (client: unknown, _db: unknown, entryId: unknown) =>
-      (jest.requireMock('@abstrack/supabase') as any).deleteFoodDiaryEntry(
+      mockAbstrackSupabaseModule().deleteFoodDiaryEntry(
         client as never,
         entryId as never,
       ),
@@ -794,6 +803,10 @@ describe('HealthMarkerPromptScreen', () => {
       ),
     ).toBeTruthy();
 
+    await waitFor(() => {
+      const skip = screen.getByLabelText('Skip food diary entry');
+      expect(skip.props.accessibilityState?.disabled).not.toBe(true);
+    });
     fireEvent.press(screen.getByLabelText('Skip food diary entry'));
 
     await waitFor(() => {

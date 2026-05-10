@@ -8,6 +8,7 @@ const protectedRoutes = [
   '/episode',
   '/episodes',
   '/manage',
+  '/settings',
 ];
 
 /**

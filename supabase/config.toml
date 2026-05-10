@@ -373,6 +373,10 @@ deno_version = 2
 [functions.practitioner-mfa-auth-audit]
 verify_jwt = false
 
+# Patient caretaker invites + grants: validates Bearer in-handler; elevated DB + Auth Admin (secret key).
+[functions.patient-caretaker-access]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

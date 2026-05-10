@@ -1,5 +1,20 @@
 # Repository instructions for AI coding agents
 
+## No deprecated APIs, env vars, or platform patterns
+
+**Do not add or keep deprecated Supabase, framework, or library APIs anywhere in this repo** — not in app code, Edge Functions, tests, comments that teach the wrong pattern, or “optional” fallbacks for “compatibility.” If official docs mark something as **legacy** or **deprecated**, **do not use it** unless Sarah explicitly asks for a documented, time-boxed exception.
+
+**Default to current documentation, not training data.** Before implementing Supabase (or any fast-moving stack), use the **MCP servers** this workspace provides — for example **Supabase** (`search_docs`, etc.) and **Context7** — so behavior matches **today’s** platform, not an outdated mental model.
+
+### Example: Supabase secret keys vs legacy `service_role` JWT
+
+Supabase moved to **publishable** (`sb_publishable_…`) and **secret** (`sb_secret_…`) API keys. The old **JWT-based `service_role` key and `SUPABASE_SERVICE_ROLE_KEY`** are **legacy**. Edge Functions should use the injected **`SUPABASE_SECRET_KEYS`** JSON (typically the **`default`** entry) with `createClient`, **not** `SUPABASE_SERVICE_ROLE_KEY`. Shipping or suggesting the legacy env var in new work is the kind of mistake this section is meant to prevent.
+
+- **Current docs:** [Edge Function secrets / env vars](https://supabase.com/docs/guides/functions/secrets), [Understanding API keys](https://supabase.com/docs/guides/getting-started/api-keys)
+- **Why keys changed (discussion):** https://github.com/orgs/supabase/discussions/29260
+
+If you almost reached for `SUPABASE_SERVICE_ROLE_KEY`, `anon`/`service_role` JWT snippets, or any other **legacy** Supabase surface: **stop**, open MCP or those links, and implement the **non-deprecated** path.
+
 ## Never run Git or Supabase database commands on Sarah’s behalf
 
 **Do not** run **`git commit`**, **`git push`**, **`git merge`**, or any other **Git** command that updates history or remotes. **Do not** run **`pnpm dlx supabase db push`**, **`supabase migration repair`**, or any command that **applies migrations** or **mutates migration history** on her linked/cloud project. **Do not** perform **releases**, **tags**, or **PR merges** for her.
@@ -57,6 +72,8 @@ Do **not** add **`week_`** (or other week-number-style prefixes) to **code, iden
 ## MCP servers (documentation and APIs)
 
 This workspace has **MCP servers** (for example Context7 for library and framework docs, Nx, Supabase, Next.js devtools, and the in-editor browser). **Use them** to pull **current** documentation and API details instead of relying only on training data. That helps avoid **deprecated** patterns, outdated APIs, and wrong version-specific behavior.
+
+**Hard rule:** follow **[No deprecated APIs, env vars, or platform patterns](#no-deprecated-apis-env-vars-or-platform-patterns)** above. MCP is not optional polish — it is how you verify you are not wiring **legacy** Supabase (or other) APIs because they “look familiar” from training cutoffs. When in doubt, **query MCP first**, then implement.
 
 ## Accessibility & screen readers
 

@@ -501,7 +501,7 @@ Accessibility is the primary design concern for the food diary. Users may be unw
 
 **MVP**
 
-- A patient can create a caretaker account from their settings.
+- A patient can **invite a caretaker by email** or **link an existing caretaker account** from settings (invite sends a Supabase Auth email when that address has no user yet; after the caretaker completes the link, an active `caretaker_access` grant applies).
 - The caretaker logs in with their own credentials on their own device. **Authorization** is an **active `caretaker_access` grant** from the patient; **RLS enforces** it on queries (see Security section)—there is no shared encryption key between patient and caretaker.
 - The caretaker has full read and write access to the patient's data — they can complete episode logging on the patient's behalf.
 - The caretaker sees the same home screen and prompt flows as the patient.
