@@ -19,10 +19,12 @@ import { useAppTheme } from '../theme/AppThemeContext';
 import { nw } from '../theme/app-nativewind-classes';
 import type { ThemePreference } from '../theme-preference';
 import {
+  CARETAKER_EDGE_PUBLISHABLE_KEY_ENV_HELP,
   fetchCaretakerAccessCancelPendingInvite,
   fetchCaretakerAccessDelete,
   fetchCaretakerAccessGet,
   fetchCaretakerAccessPost,
+  isMissingPublishableKeyForCaretakerEdge,
   resolvePatientCaretakerAccessUrl,
 } from '../../lib/patient-user-web-api';
 import { getMobileAuthSessionSafe } from '../../lib/supabase-wiring';
@@ -142,12 +144,14 @@ export function SettingsScreen() {
         setCaretakerGrant(body.grant);
         setCaretakerPendingInvite(body.pendingInvite ?? null);
       }
-    } catch {
+    } catch (e) {
       if (isMountedRef.current) {
         setCaretakerGrant(null);
         setCaretakerPendingInvite(null);
         setCaretakerLoadError(
-          'Unable to load caretaker access. Check your network connection.',
+          isMissingPublishableKeyForCaretakerEdge(e)
+            ? CARETAKER_EDGE_PUBLISHABLE_KEY_ENV_HELP
+            : 'Unable to load caretaker access. Check your network connection.',
         );
       }
     }
@@ -197,9 +201,11 @@ export function SettingsScreen() {
       }
       announce('Pending caretaker invite cancelled.', { politeness: 'polite' });
       await loadCaretakerGrant();
-    } catch {
+    } catch (e) {
       setCaretakerFormError(
-        'Something went wrong. Check EXPO_PUBLIC_SUPABASE_URL, Edge Function deploy, and network, then try again.',
+        isMissingPublishableKeyForCaretakerEdge(e)
+          ? CARETAKER_EDGE_PUBLISHABLE_KEY_ENV_HELP
+          : 'Something went wrong. Check EXPO_PUBLIC_SUPABASE_URL, Edge Function deploy, and network, then try again.',
       );
     } finally {
       if (isMountedRef.current) {
@@ -258,9 +264,11 @@ export function SettingsScreen() {
         );
       }
       await loadCaretakerGrant();
-    } catch {
+    } catch (e) {
       setCaretakerFormError(
-        'Something went wrong. Check EXPO_PUBLIC_SUPABASE_URL, Edge Function deploy, and network, then try again.',
+        isMissingPublishableKeyForCaretakerEdge(e)
+          ? CARETAKER_EDGE_PUBLISHABLE_KEY_ENV_HELP
+          : 'Something went wrong. Check EXPO_PUBLIC_SUPABASE_URL, Edge Function deploy, and network, then try again.',
       );
     } finally {
       if (isMountedRef.current) {
@@ -298,9 +306,11 @@ export function SettingsScreen() {
       }
       announce('Caretaker access revoked.', { politeness: 'polite' });
       await loadCaretakerGrant();
-    } catch {
+    } catch (e) {
       setCaretakerFormError(
-        'Something went wrong. Check EXPO_PUBLIC_SUPABASE_URL, Edge Function deploy, and network, then try again.',
+        isMissingPublishableKeyForCaretakerEdge(e)
+          ? CARETAKER_EDGE_PUBLISHABLE_KEY_ENV_HELP
+          : 'Something went wrong. Check EXPO_PUBLIC_SUPABASE_URL, Edge Function deploy, and network, then try again.',
       );
     } finally {
       if (isMountedRef.current) {

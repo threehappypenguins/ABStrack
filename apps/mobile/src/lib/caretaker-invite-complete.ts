@@ -1,5 +1,7 @@
 import {
+  CARETAKER_EDGE_PUBLISHABLE_KEY_ENV_HELP,
   fetchCaretakerAccessPostJson,
+  isMissingPublishableKeyForCaretakerEdge,
   resolvePatientCaretakerAccessUrl,
 } from './patient-user-web-api';
 import { getMobileSupabaseClient } from './supabase-wiring';
@@ -87,10 +89,18 @@ export async function completeCaretakerInviteAfterAuth(): Promise<CompleteCareta
     };
   }
 
-  const res = await fetchCaretakerAccessPostJson(session.access_token, {
-    finalizeCaretakerInvite: true,
-    inviteId,
-  });
+  let res: Response;
+  try {
+    res = await fetchCaretakerAccessPostJson(session.access_token, {
+      finalizeCaretakerInvite: true,
+      inviteId,
+    });
+  } catch (e) {
+    if (isMissingPublishableKeyForCaretakerEdge(e)) {
+      return { ok: false, message: CARETAKER_EDGE_PUBLISHABLE_KEY_ENV_HELP };
+    }
+    throw e;
+  }
   const body = (await res.json().catch(() => ({}))) as { error?: string };
   if (!res.ok) {
     const msg =

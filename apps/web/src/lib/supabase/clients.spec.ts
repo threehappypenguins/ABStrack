@@ -151,18 +151,6 @@ describe('web supabase clients env wiring', () => {
     ).not.toThrow();
   });
 
-  it('falls back to NEXT_PUBLIC_SUPABASE_ANON_KEY when publishable key is not set', () => {
-    delete process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'legacy-anon-key';
-
-    createBrowserClient();
-
-    expect(createBrowserClientMock).toHaveBeenCalledWith(
-      'https://example.supabase.co',
-      'legacy-anon-key',
-    );
-  });
-
   it('throws clear errors when required env vars are missing', async () => {
     delete process.env.NEXT_PUBLIC_SUPABASE_URL;
     expect(() => createBrowserClient()).toThrow(
@@ -171,10 +159,9 @@ describe('web supabase clients env wiring', () => {
 
     process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://example.supabase.co';
     delete process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-    delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
     expect(() => createBrowserClient()).toThrow(
-      'Missing NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY (or legacy NEXT_PUBLIC_SUPABASE_ANON_KEY)',
+      'Missing NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
     );
 
     delete process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -189,15 +176,12 @@ describe('web supabase clients env wiring', () => {
 
     process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://example.supabase.co';
     delete process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-    delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
     await expect(
       createServerClient({
         getAll: () => [],
         setAll: () => undefined,
       }),
-    ).rejects.toThrow(
-      'Missing NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY (or legacy NEXT_PUBLIC_SUPABASE_ANON_KEY)',
-    );
+    ).rejects.toThrow('Missing NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY');
   });
 });

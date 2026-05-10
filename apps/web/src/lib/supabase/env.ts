@@ -7,17 +7,10 @@ export function getSupabaseUrl(): string {
 }
 
 export function getSupabaseClientKey(): string {
-  const publishable = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  const publishable = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim();
   if (publishable) {
     return publishable;
   }
 
-  const legacyAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (legacyAnon) {
-    return legacyAnon;
-  }
-
-  throw new Error(
-    'Missing NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY (or legacy NEXT_PUBLIC_SUPABASE_ANON_KEY)',
-  );
+  throw new Error('Missing NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY');
 }

@@ -1,4 +1,4 @@
-import { normalizeEmailForLookup } from './resolve-auth-user-id-by-email';
+import { normalizeEmailForLookup } from './normalize-email-for-lookup';
 
 describe('normalizeEmailForLookup', () => {
   it('trims and lowercases', () => {

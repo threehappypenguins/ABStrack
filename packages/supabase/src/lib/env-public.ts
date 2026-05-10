@@ -1,5 +1,5 @@
 /**
- * Client-safe Supabase URL and publishable (anon) key resolution.
+ * Client-safe Supabase URL and **publishable** key resolution.
  * Documented names: `packages/supabase/README.md`, `.env.example`, `docs/DEV_SETUP.md`.
  *
  * **Static `process.env.NEXT_PUBLIC_*` / `EXPO_PUBLIC_*` reads only** — Next.js and Expo
@@ -34,18 +34,16 @@ export function getSupabaseUrl(): string {
 }
 
 /**
- * Publishable or legacy anon JWT — safe for browsers and mobile bundles.
- * Never use the service role / secret key here.
+ * Publishable key (`sb_publishable_…`) for browsers and mobile bundles.
+ * Never use the secret key or legacy JWT anon env vars here.
  */
 export function getSupabasePublishableKey(): string {
   const key =
     normalizeEnv(process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) ??
-    normalizeEnv(process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY) ??
-    normalizeEnv(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) ??
-    normalizeEnv(process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY);
+    normalizeEnv(process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
   if (!key) {
     throw new Error(
-      'Missing Supabase publishable/anon key. Set NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY or EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY (or legacy *_ANON_KEY).',
+      'Missing Supabase publishable key. Set NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY (Next.js) or EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY (Expo).',
     );
   }
   return key;

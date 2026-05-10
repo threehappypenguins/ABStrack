@@ -9,7 +9,7 @@ export type { CookieMethodsServer };
 /**
  * Next.js server components, route handlers, and middleware: pass cookie methods from
  * `next/headers` / `NextRequest` / `NextResponse` per Supabase SSR guides.
- * Use **publishable/anon** key only — never the service role key.
+ * Use the **publishable** key only — never the secret / service-role key.
  */
 export function createSupabaseServerClient(
   cookies: CookieMethodsServer,

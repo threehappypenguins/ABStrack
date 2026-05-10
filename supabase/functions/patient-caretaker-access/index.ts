@@ -1,6 +1,9 @@
 /**
  * Patient caretaker grants (`caretaker_access`) and **email invites** (`caretaker_invites`).
  * Verified session + elevated Supabase client (default secret key from `SUPABASE_SECRET_KEYS`).
+ * Table writes use **service_role**; RLS includes explicit `TO service_role` policies in
+ * `supabase/migrations/20260510120000_caretaker_invites.sql` (with `caretaker_invites`) so inserts
+ * succeed when that role is subject to RLS, matching the `access_log` pattern.
  * User web + mobile call `…/functions/v1/patient-caretaker-access` with user JWT + `apikey` (publishable).
  *
  * HTTP:
@@ -92,9 +95,11 @@ function isUuidString(s: string): boolean {
   return UUID_RE.test(s);
 }
 
-const LIST_USERS_PER_PAGE = 500;
-const LIST_USERS_MAX_PAGES = 40;
-
+/**
+ * Resolves `auth.users.id` for a normalized email via one Postgres round trip
+ * (`public.resolve_auth_user_id_by_normalized_email`), avoiding paginated
+ * `auth.admin.listUsers` scans as the Auth user count grows.
+ */
 async function resolveAuthUserIdByEmail(
   admin: SupabaseClient,
   rawEmail: string,
@@ -103,24 +108,15 @@ async function resolveAuthUserIdByEmail(
   if (!target) {
     return null;
   }
-  for (let page = 1; page <= LIST_USERS_MAX_PAGES; page += 1) {
-    const { data, error } = await admin.auth.admin.listUsers({
-      page,
-      perPage: LIST_USERS_PER_PAGE,
-    });
-    if (error) {
-      throw error;
-    }
-    const users: User[] = data.users;
-    const hit = users.find(
-      (u) => typeof u.email === 'string' && u.email.toLowerCase() === target,
-    );
-    if (hit) {
-      return hit.id;
-    }
-    if (users.length < LIST_USERS_PER_PAGE) {
-      return null;
-    }
+  const { data, error } = await admin.rpc(
+    'resolve_auth_user_id_by_normalized_email',
+    { p_normalized: target },
+  );
+  if (error) {
+    throw error;
+  }
+  if (typeof data === 'string' && data.length > 0) {
+    return data;
   }
   return null;
 }
@@ -134,15 +130,42 @@ function isPostgresUniqueViolation(err: unknown): boolean {
   );
 }
 
+/**
+ * Deletes unconsumed caretaker invite rows for a patient (best-effort cleanup).
+ *
+ * @returns Supabase error when the delete fails; callers must not treat success as committed otherwise.
+ */
 async function clearPendingInvitesForPatient(
   admin: SupabaseClient,
   patientUserId: string,
-): Promise<void> {
-  await admin
+): Promise<{ error: unknown | null }> {
+  const { error } = await admin
     .from('caretaker_invites')
     .delete()
     .eq('patient_user_id', patientUserId)
     .is('consumed_at', null);
+  return { error };
+}
+
+/**
+ * Marks a caretaker invite row consumed (caretaker finished join / link path).
+ *
+ * @returns Supabase error when the update fails.
+ */
+async function markCaretakerInviteConsumed(
+  admin: SupabaseClient,
+  inviteId: string,
+  caretakerUserId: string,
+  consumedAtIso: string,
+): Promise<{ error: unknown | null }> {
+  const { error } = await admin
+    .from('caretaker_invites')
+    .update({
+      consumed_at: consumedAtIso,
+      consumed_caretaker_user_id: caretakerUserId,
+    })
+    .eq('id', inviteId);
+  return { error };
 }
 
 async function handleFinalizeCaretakerInvite(
@@ -265,13 +288,18 @@ async function handleFinalizeCaretakerInvite(
   const nowIso = new Date().toISOString();
 
   if (existingPair?.revoked_at == null && existingPair) {
-    await admin
-      .from('caretaker_invites')
-      .update({
-        consumed_at: nowIso,
-        consumed_caretaker_user_id: user.id,
-      })
-      .eq('id', inviteId);
+    const { error: consumeErr } = await markCaretakerInviteConsumed(
+      admin,
+      inviteId,
+      user.id,
+      nowIso,
+    );
+    if (consumeErr) {
+      console.error('finalize consume invite (already_linked)', consumeErr);
+      return jsonResponse(500, {
+        error: 'Unable to complete the invite. Try again in a moment.',
+      });
+    }
     return jsonResponse(200, { ok: true, outcome: 'already_linked' });
   }
 
@@ -305,13 +333,18 @@ async function handleFinalizeCaretakerInvite(
     }
   }
 
-  await admin
-    .from('caretaker_invites')
-    .update({
-      consumed_at: nowIso,
-      consumed_caretaker_user_id: user.id,
-    })
-    .eq('id', inviteId);
+  const { error: consumeErr } = await markCaretakerInviteConsumed(
+    admin,
+    inviteId,
+    user.id,
+    nowIso,
+  );
+  if (consumeErr) {
+    console.error('finalize consume invite (linked)', consumeErr);
+    return jsonResponse(500, {
+      error: 'Unable to complete the invite. Try again in a moment.',
+    });
+  }
 
   return jsonResponse(200, { ok: true, outcome: 'linked' });
 }
@@ -472,7 +505,16 @@ Deno.serve(async (req: Request) => {
     }
 
     if (!active) {
-      await clearPendingInvitesForPatient(admin, user.id);
+      const { error: clearPendingErr } = await clearPendingInvitesForPatient(
+        admin,
+        user.id,
+      );
+      if (clearPendingErr) {
+        console.error('caretaker_access DELETE clear pending', clearPendingErr);
+        return jsonResponse(500, {
+          error: 'Unable to clear pending caretaker invite.',
+        });
+      }
       return jsonResponse(404, {
         error: 'There is no active caretaker to revoke.',
       });
@@ -491,7 +533,17 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    await clearPendingInvitesForPatient(admin, user.id);
+    const { error: clearPendingErr } = await clearPendingInvitesForPatient(
+      admin,
+      user.id,
+    );
+    if (clearPendingErr) {
+      console.error('caretaker_access revoke clear pending', clearPendingErr);
+      return jsonResponse(500, {
+        error:
+          'Caretaker access was revoked but pending invites could not be cleared. Try again or cancel the pending invite from settings.',
+      });
+    }
 
     return jsonResponse(200, { ok: true });
   }
@@ -502,7 +554,16 @@ Deno.serve(async (req: Request) => {
   }
 
   if (postBody.cancelPendingCaretakerInvite === true) {
-    await clearPendingInvitesForPatient(admin, user.id);
+    const { error: clearPendingErr } = await clearPendingInvitesForPatient(
+      admin,
+      user.id,
+    );
+    if (clearPendingErr) {
+      console.error('cancel pending caretaker invite', clearPendingErr);
+      return jsonResponse(500, {
+        error: 'Unable to cancel the pending invite. Try again in a moment.',
+      });
+    }
     return jsonResponse(200, { ok: true, outcome: 'invite_cancelled' });
   }
 
@@ -593,7 +654,17 @@ Deno.serve(async (req: Request) => {
     }
 
     if (existingPair?.revoked_at == null && existingPair) {
-      await clearPendingInvitesForPatient(admin, user.id);
+      const { error: clearPendingErr } = await clearPendingInvitesForPatient(
+        admin,
+        user.id,
+      );
+      if (clearPendingErr) {
+        console.error('link caretaker clear pending', clearPendingErr);
+        return jsonResponse(500, {
+          error:
+            'Unable to clear pending caretaker invite. Try again in a moment.',
+        });
+      }
       return jsonResponse(200, { ok: true, outcome: 'already_linked' });
     }
 
@@ -609,7 +680,20 @@ Deno.serve(async (req: Request) => {
           error: 'Unable to restore caretaker access.',
         });
       }
-      await clearPendingInvitesForPatient(admin, user.id);
+      const { error: clearPendingErr } = await clearPendingInvitesForPatient(
+        admin,
+        user.id,
+      );
+      if (clearPendingErr) {
+        console.error(
+          'link caretaker reactivate clear pending',
+          clearPendingErr,
+        );
+        return jsonResponse(500, {
+          error:
+            'Unable to clear pending caretaker invite. Try again in a moment.',
+        });
+      }
       return jsonResponse(200, {
         ok: true,
         outcome: 'linked',
@@ -633,7 +717,17 @@ Deno.serve(async (req: Request) => {
       return jsonResponse(500, { error: 'Unable to link caretaker access.' });
     }
 
-    await clearPendingInvitesForPatient(admin, user.id);
+    const { error: clearPendingErr } = await clearPendingInvitesForPatient(
+      admin,
+      user.id,
+    );
+    if (clearPendingErr) {
+      console.error('link caretaker insert clear pending', clearPendingErr);
+      return jsonResponse(500, {
+        error:
+          'Unable to clear pending caretaker invite. Try again in a moment.',
+      });
+    }
     return jsonResponse(200, {
       ok: true,
       outcome: 'linked',
@@ -669,25 +763,72 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  await clearPendingInvitesForPatient(admin, user.id);
+  const { error: clearBeforeInviteErr } = await clearPendingInvitesForPatient(
+    admin,
+    user.id,
+  );
+  if (clearBeforeInviteErr) {
+    console.error('invite caretaker clear pending', clearBeforeInviteErr);
+    return jsonResponse(500, {
+      error: 'Unable to clear previous pending invite. Try again in a moment.',
+    });
+  }
 
-  const expiresAt = inviteExpiresAtIso();
+  const newExpiresAt = inviteExpiresAtIso();
   const { data: invRow, error: insInvErr } = await admin
     .from('caretaker_invites')
     .insert({
       patient_user_id: user.id,
       invitee_email_normalized: normalizedTarget,
-      expires_at: expiresAt,
+      expires_at: newExpiresAt,
     })
     .select('id')
     .single();
 
-  if (insInvErr || !invRow?.id) {
-    console.error('caretaker_invites insert', insInvErr);
-    return jsonResponse(500, { error: 'Unable to create caretaker invite.' });
-  }
+  let inviteId: string;
+  let inviteExpiresAt: string;
 
-  const inviteId = invRow.id as string;
+  if (insInvErr) {
+    if (isPostgresUniqueViolation(insInvErr)) {
+      const { data: pending, error: pendSelErr } = await admin
+        .from('caretaker_invites')
+        .select('id, invitee_email_normalized, expires_at')
+        .eq('patient_user_id', user.id)
+        .is('consumed_at', null)
+        .maybeSingle();
+
+      if (pendSelErr || !pending?.id) {
+        console.error(
+          'caretaker_invites insert race recover',
+          pendSelErr,
+          insInvErr,
+        );
+        return jsonResponse(500, {
+          error: 'Unable to create caretaker invite.',
+        });
+      }
+
+      if ((pending.invitee_email_normalized as string) !== normalizedTarget) {
+        return jsonResponse(409, {
+          error:
+            'A pending invite is already in progress for a different email. Cancel the pending invite first.',
+        });
+      }
+
+      inviteId = pending.id as string;
+      inviteExpiresAt = pending.expires_at as string;
+    } else {
+      console.error('caretaker_invites insert', insInvErr);
+      return jsonResponse(500, { error: 'Unable to create caretaker invite.' });
+    }
+  } else {
+    if (!invRow?.id) {
+      console.error('caretaker_invites insert missing id', insInvErr);
+      return jsonResponse(500, { error: 'Unable to create caretaker invite.' });
+    }
+    inviteId = invRow.id as string;
+    inviteExpiresAt = newExpiresAt;
+  }
 
   const { error: invMailErr } = await admin.auth.admin.inviteUserByEmail(
     normalizedTarget,
@@ -705,28 +846,62 @@ Deno.serve(async (req: Request) => {
       lower.includes('registered') ||
       lower.includes('exists')
     ) {
-      await admin.from('caretaker_invites').delete().eq('id', inviteId);
+      const { error: rollbackDelErr } = await admin
+        .from('caretaker_invites')
+        .delete()
+        .eq('id', inviteId);
+      if (rollbackDelErr) {
+        console.error(
+          'caretaker_invites rollback delete (account exists)',
+          rollbackDelErr,
+        );
+        return jsonResponse(500, {
+          error:
+            'Unable to clean up the invite after that error. Try again or contact support.',
+        });
+      }
       return jsonResponse(409, {
         error:
           'An account already exists for that email. Ask them to sign in as a caretaker, or use “link” after they finish signup.',
       });
     }
     console.error('inviteUserByEmail', invMailErr);
-    await admin.from('caretaker_invites').delete().eq('id', inviteId);
+    const { error: rollbackDelErr } = await admin
+      .from('caretaker_invites')
+      .delete()
+      .eq('id', inviteId);
+    if (rollbackDelErr) {
+      console.error(
+        'caretaker_invites rollback delete (invite email failed)',
+        rollbackDelErr,
+      );
+      return jsonResponse(500, {
+        error:
+          'Invite email failed and the pending row could not be removed. Try again or contact support.',
+      });
+    }
     return jsonResponse(500, {
       error:
         'Unable to send the invite email right now. Try again in a moment.',
     });
   }
 
-  await admin
+  const { error: stampErr } = await admin
     .from('caretaker_invites')
     .update({ last_invite_sent_at: new Date().toISOString() })
     .eq('id', inviteId);
 
+  if (stampErr) {
+    console.error('caretaker_invites last_invite_sent_at', stampErr);
+    return jsonResponse(500, {
+      error:
+        'The invite email was sent but the invite could not be finalized in the database. Try sending again or contact support.',
+    });
+  }
+
   return jsonResponse(200, {
     ok: true,
     outcome: 'invite_sent',
-    inviteExpiresAt: expiresAt,
+    inviteExpiresAt,
   });
 });
