@@ -15,6 +15,7 @@ import {
   fetchPatientCaretakerAccessGet,
   fetchPatientCaretakerAccessPost,
 } from '@/lib/patient/caretaker-edge-client';
+import { normalizeEmailForLookup } from '@/lib/patient/normalize-email-for-lookup';
 import { useAuth } from '@/lib/auth-provider';
 
 /**
@@ -172,8 +173,8 @@ export function CaretakerAccessPage() {
     if (!session) {
       return;
     }
-    const trimmed = email.trim();
-    if (!trimmed) {
+    const normalized = normalizeEmailForLookup(email);
+    if (!normalized) {
       setFormError('Enter the caretaker email address.');
       return;
     }
@@ -181,7 +182,7 @@ export function CaretakerAccessPage() {
     setFormError(null);
     let res: Response;
     try {
-      res = await fetchPatientCaretakerAccessPost(trimmed);
+      res = await fetchPatientCaretakerAccessPost(normalized);
     } catch (err) {
       setBusy(false);
       setFormError(

@@ -11,7 +11,7 @@
  * - **POST** — patient: `{ caretakerEmail }` send invite or link existing caretaker; `{ cancelPendingCaretakerInvite: true }` cancel pending invite; caretaker: `{ finalizeCaretakerInvite: true, inviteId }` after accepting email invite.
  * - **DELETE** — patient: revoke active caretaker grant (clears pending invites too).
  *
- * **Invite email:** `auth.admin.inviteUserByEmail` `redirectTo` is **`ABSTRACK_CARETAKER_INVITE_REDIRECT_TO`** when set (trimmed; e.g. `abstrack:///caretaker-invite` for Expo). Otherwise falls back to **`{origin}/auth/callback?next=/caretaker/join`** where `origin` is parsed from **`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN`** (trimmed, trailing slash removed, must be absolute **http** or **https**). Values must appear in Supabase Auth **Redirect URLs**. Resends for the same patient + invitee email are limited to once per **`CARETAKER_INVITE_MIN_RESEND_INTERVAL_MS`** after **`last_invite_sent_at`** (**429** + **`Retry-After`**).
+ * **Invite email:** `auth.admin.inviteUserByEmail` `redirectTo` is **`ABSTRACK_CARETAKER_INVITE_REDIRECT_TO`** when set (trimmed; e.g. `abstrack:///caretaker-invite` for Expo). Otherwise falls back to **`{origin}/auth/callback?next=/caretaker/join`** where `origin` is parsed from **`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN`** (trimmed, trailing slash removed, must be absolute **http** or **https**). Values must appear in Supabase Auth **Redirect URLs**. Resends for the same patient + invitee email are limited to once per **`CARETAKER_INVITE_MIN_RESEND_INTERVAL_MS`** after **`last_invite_sent_at`**, which is written **before** the Auth invite call so throttle state still applies if the email succeeds but the handler would otherwise error (**429** + **`Retry-After`**).
  *
  * @see https://supabase.com/docs/guides/functions/secrets
  *
@@ -44,7 +44,7 @@ const INVITE_VALID_DAYS = 14;
 const CARETAKER_INVITE_MIN_RESEND_INTERVAL_MS = 90_000;
 
 /**
- * @param lastInviteSentAt - `caretaker_invites.last_invite_sent_at` after a successful send.
+ * @param lastInviteSentAt - `caretaker_invites.last_invite_sent_at` from the last recorded send attempt (stamped before Auth mail).
  * @param nowMs - Current epoch milliseconds.
  */
 function caretakerInviteResendTooSoon(
@@ -208,10 +208,12 @@ function isPostgresUniqueViolation(err: unknown): boolean {
 }
 
 /**
- * Sends `inviteUserByEmail` and stamps **`last_invite_sent_at`**. When
- * **`deletePendingInviteOnMailFailure`** is true, failed sends roll back by deleting the pending
- * invite row (new-invite path). When false, the row is kept (resend while invitee has Auth user but
- * no profile yet).
+ * Stamps **`last_invite_sent_at`** before **`inviteUserByEmail`** so resend throttle applies even if
+ * Auth succeeds and a later failure would return **500** (stamp-after-send allowed unthrottled retries).
+ * When **`deletePendingInviteOnMailFailure`** is true, failed sends roll back by deleting the pending
+ * invite row (new-invite path), dropping the stamp with the row. When false, the row is kept (resend
+ * while invitee has Auth user but no profile yet); a stamp without a delivered mail still enforces
+ * throttle until the interval passes.
  */
 async function sendCaretakerInviteEmailAndStamp(
   admin: SupabaseClient,
@@ -232,6 +234,21 @@ async function sendCaretakerInviteEmailAndStamp(
     inviteExpiresAt,
     deletePendingInviteOnMailFailure,
   } = options;
+
+  const { error: stampErr } = await admin
+    .from('caretaker_invites')
+    .update({ last_invite_sent_at: new Date().toISOString() })
+    .eq('id', inviteId);
+
+  if (stampErr) {
+    console.error('caretaker_invites last_invite_sent_at (pre-send)', stampErr);
+    return {
+      ok: false,
+      response: jsonResponse(500, {
+        error: 'Unable to record the invite send. Try again in a moment.',
+      }),
+    };
+  }
 
   const { error: invMailErr } = await admin.auth.admin.inviteUserByEmail(
     normalizedTarget,
@@ -301,22 +318,6 @@ async function sendCaretakerInviteEmailAndStamp(
       response: jsonResponse(500, {
         error:
           'Unable to send the invite email right now. Try again in a moment.',
-      }),
-    };
-  }
-
-  const { error: stampErr } = await admin
-    .from('caretaker_invites')
-    .update({ last_invite_sent_at: new Date().toISOString() })
-    .eq('id', inviteId);
-
-  if (stampErr) {
-    console.error('caretaker_invites last_invite_sent_at', stampErr);
-    return {
-      ok: false,
-      response: jsonResponse(500, {
-        error:
-          'The invite email was sent but the invite could not be finalized in the database. Try sending again or contact support.',
       }),
     };
   }
