@@ -27,6 +27,14 @@ function bearerHeaders(
   return headers;
 }
 
+/**
+ * `Error.message` from {@link requireAccessToken} when there is no usable session
+ * (Supabase `getSession` error or empty `access_token`). Callers can treat other
+ * thrown errors as connectivity / unexpected failures.
+ */
+export const PATIENT_CARETAKER_ACCESS_ERROR_MISSING_TOKEN =
+  'missing_access_token';
+
 async function requireAccessToken(): Promise<string> {
   const supabase = createBrowserClient();
   const {
@@ -34,7 +42,7 @@ async function requireAccessToken(): Promise<string> {
     error,
   } = await supabase.auth.getSession();
   if (error || !session?.access_token?.trim()) {
-    throw new Error('missing_access_token');
+    throw new Error(PATIENT_CARETAKER_ACCESS_ERROR_MISSING_TOKEN);
   }
   return session.access_token;
 }

@@ -15,6 +15,7 @@
     "./nativewind-env.d.ts"
   ],
   "exclude": [
+    "app.config.ts",
     "out-tsc",
     "dist",
     "**/*.test.ts",

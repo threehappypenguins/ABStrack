@@ -42,6 +42,7 @@ jest.mock('../lib/caretaker-invite-complete', () => ({
 const ENV_KEYS = [
   'EXPO_PUBLIC_SUPABASE_URL',
   'EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
+  'EXPO_PUBLIC_USER_WEB_ORIGIN',
 ] as const;
 const snapshot: Record<string, string | undefined> = {};
 
@@ -261,6 +262,46 @@ describe('mobile auth state sync', () => {
       expect(exchangeCodeForSession).toHaveBeenCalledWith(
         'caretaker-invite-code',
       );
+    });
+    await waitFor(() => {
+      expect(completeCaretakerInviteAfterAuth).toHaveBeenCalled();
+    });
+
+    getInitialUrlSpy.mockRestore();
+  });
+
+  test('caretaker HTTPS App Link exchanges code and completes invite', async () => {
+    process.env.EXPO_PUBLIC_USER_WEB_ORIGIN = 'https://invite.example.com';
+
+    const exchangeCodeForSession = jest.fn(async () => ({ error: null }));
+
+    const mockClient = {
+      auth: {
+        getSession: jest.fn(async () => ({ data: { session: null } })),
+        exchangeCodeForSession,
+        setSession: jest.fn(async () => ({ error: null })),
+        onAuthStateChange: jest.fn(() => ({
+          data: {
+            subscription: {
+              unsubscribe: jest.fn(),
+            },
+          },
+        })),
+      },
+    } as unknown as AbstrackSupabaseClient;
+
+    jest.mocked(getMobileSupabaseClient).mockReturnValue(mockClient);
+
+    const getInitialUrlSpy = jest
+      .spyOn(Linking, 'getInitialURL')
+      .mockResolvedValue(
+        'https://invite.example.com/auth/callback?code=https-invite-code&next=%2Fcaretaker%2Fjoin',
+      );
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(exchangeCodeForSession).toHaveBeenCalledWith('https-invite-code');
     });
     await waitFor(() => {
       expect(completeCaretakerInviteAfterAuth).toHaveBeenCalled();

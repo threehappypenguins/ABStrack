@@ -11,7 +11,7 @@
  * - **POST** — patient: `{ caretakerEmail }` send invite or link existing caretaker; `{ cancelPendingCaretakerInvite: true }` cancel pending invite; caretaker: `{ finalizeCaretakerInvite: true, inviteId }` after accepting email invite.
  * - **DELETE** — patient: revoke active caretaker grant (clears pending invites too).
  *
- * **Invite email:** `auth.admin.inviteUserByEmail` `redirectTo` is **`ABSTRACK_CARETAKER_INVITE_REDIRECT_TO`** when set (e.g. `abstrack:///caretaker-invite` for Expo). Otherwise falls back to **`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN`/auth/callback?next=/caretaker/join** for web. Values must appear in Supabase Auth **Redirect URLs**.
+ * **Invite email:** `auth.admin.inviteUserByEmail` `redirectTo` is **`ABSTRACK_CARETAKER_INVITE_REDIRECT_TO`** when set (trimmed; e.g. `abstrack:///caretaker-invite` for Expo). Otherwise falls back to **`{origin}/auth/callback?next=/caretaker/join`** where `origin` is parsed from **`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN`** (trimmed, trailing slash removed, must be absolute **http** or **https**). Values must appear in Supabase Auth **Redirect URLs**.
  *
  * @see https://supabase.com/docs/guides/functions/secrets
  *
@@ -91,6 +91,30 @@ function inviteExpiresAtIso(): string {
   return d.toISOString();
 }
 
+/**
+ * Normalizes **`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN`**: trims, strips a trailing slash, parses as
+ * an absolute **http** or **https** URL, and returns **`URL.origin`** (no path) for building
+ * `/auth/callback`. Returns `null` when unset, invalid, or not http(s).
+ */
+function normalizeInviteWebOriginForRedirect(raw: string): string | null {
+  const base = raw.trim().replace(/\/$/, '');
+  if (!base) {
+    return null;
+  }
+  if (!/^https?:\/\//i.test(base)) {
+    console.error(
+      'ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN must be an absolute http(s) URL (e.g. https://app.example.com).',
+    );
+    return null;
+  }
+  try {
+    return new URL(base).origin;
+  } catch {
+    console.error('Invalid ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN after trim.');
+    return null;
+  }
+}
+
 function isUuidString(s: string): boolean {
   return UUID_RE.test(s);
 }
@@ -148,24 +172,94 @@ async function clearPendingInvitesForPatient(
 }
 
 /**
- * Marks a caretaker invite row consumed (caretaker finished join / link path).
+ * Atomically marks a caretaker invite consumed (`consumed_at IS NULL` in the UPDATE filter).
+ * Under concurrency, at most one caller wins the row; another gets zero updated rows and is
+ * resolved via refetch (same caretaker → idempotent success; otherwise 409 / 404 / 500).
  *
- * @returns Supabase error when the update fails.
+ * @param admin Elevated Supabase client.
+ * @param inviteId Invite primary key.
+ * @param caretakerUserId Authenticated caretaker (`auth.users.id`).
+ * @param consumedAtIso Timestamp for `consumed_at`.
+ * @returns `ok: true` when this request consumed the row or the row was already consumed by the same caretaker.
  */
-async function markCaretakerInviteConsumed(
+async function consumeCaretakerInviteForFinalize(
   admin: SupabaseClient,
   inviteId: string,
   caretakerUserId: string,
   consumedAtIso: string,
-): Promise<{ error: unknown | null }> {
-  const { error } = await admin
+): Promise<{ ok: true } | { ok: false; response: Response }> {
+  const { data, error } = await admin
     .from('caretaker_invites')
     .update({
       consumed_at: consumedAtIso,
       consumed_caretaker_user_id: caretakerUserId,
     })
-    .eq('id', inviteId);
-  return { error };
+    .eq('id', inviteId)
+    .is('consumed_at', null)
+    .select('id');
+
+  if (error) {
+    console.error('finalize consume invite', error);
+    return {
+      ok: false,
+      response: jsonResponse(500, {
+        error: 'Unable to complete the invite. Try again in a moment.',
+      }),
+    };
+  }
+
+  const updatedCount = Array.isArray(data) ? data.length : 0;
+  if (updatedCount >= 1) {
+    return { ok: true };
+  }
+
+  const { data: row, error: refetchErr } = await admin
+    .from('caretaker_invites')
+    .select('consumed_at, consumed_caretaker_user_id')
+    .eq('id', inviteId)
+    .maybeSingle();
+
+  if (refetchErr) {
+    console.error('finalize consume invite refetch', refetchErr);
+    return {
+      ok: false,
+      response: jsonResponse(500, {
+        error: 'Unable to complete the invite. Try again in a moment.',
+      }),
+    };
+  }
+
+  if (!row) {
+    return {
+      ok: false,
+      response: jsonResponse(404, {
+        error: 'Invite not found or already used.',
+      }),
+    };
+  }
+
+  if (row.consumed_at != null) {
+    if (row.consumed_caretaker_user_id === caretakerUserId) {
+      return { ok: true };
+    }
+    return {
+      ok: false,
+      response: jsonResponse(409, {
+        error: 'This invite was already completed.',
+      }),
+    };
+  }
+
+  console.error(
+    'finalize consume invite: update matched no rows but invite still pending',
+    inviteId,
+  );
+  return {
+    ok: false,
+    response: jsonResponse(500, {
+      error: 'Unable to complete the invite. Try again in a moment.',
+    }),
+  };
 }
 
 async function handleFinalizeCaretakerInvite(
@@ -288,17 +382,14 @@ async function handleFinalizeCaretakerInvite(
   const nowIso = new Date().toISOString();
 
   if (existingPair?.revoked_at == null && existingPair) {
-    const { error: consumeErr } = await markCaretakerInviteConsumed(
+    const consumed = await consumeCaretakerInviteForFinalize(
       admin,
       inviteId,
       user.id,
       nowIso,
     );
-    if (consumeErr) {
-      console.error('finalize consume invite (already_linked)', consumeErr);
-      return jsonResponse(500, {
-        error: 'Unable to complete the invite. Try again in a moment.',
-      });
+    if (!consumed.ok) {
+      return consumed.response;
     }
     return jsonResponse(200, { ok: true, outcome: 'already_linked' });
   }
@@ -333,17 +424,14 @@ async function handleFinalizeCaretakerInvite(
     }
   }
 
-  const { error: consumeErr } = await markCaretakerInviteConsumed(
+  const consumed = await consumeCaretakerInviteForFinalize(
     admin,
     inviteId,
     user.id,
     nowIso,
   );
-  if (consumeErr) {
-    console.error('finalize consume invite (linked)', consumeErr);
-    return jsonResponse(500, {
-      error: 'Unable to complete the invite. Try again in a moment.',
-    });
+  if (!consumed.ok) {
+    return consumed.response;
   }
 
   return jsonResponse(200, { ok: true, outcome: 'linked' });
@@ -746,9 +834,11 @@ Deno.serve(async (req: Request) => {
   const explicitRedirect = (
     Deno.env.get('ABSTRACK_CARETAKER_INVITE_REDIRECT_TO') ?? ''
   ).trim();
-  const inviteWebOrigin = (
-    Deno.env.get('ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN') ?? ''
-  ).replace(/\/$/, '');
+  const inviteWebOrigin = explicitRedirect
+    ? null
+    : normalizeInviteWebOriginForRedirect(
+        Deno.env.get('ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN') ?? '',
+      );
   const redirectTo =
     explicitRedirect ||
     (inviteWebOrigin

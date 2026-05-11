@@ -8,6 +8,7 @@ import {
   type CaretakerAccessGetResponse,
   type CaretakerGrantDto,
   type CaretakerPendingInviteDto,
+  PATIENT_CARETAKER_ACCESS_ERROR_MISSING_TOKEN,
   fetchPatientCaretakerAccessCancelPendingInvite,
   fetchPatientCaretakerAccessDelete,
   fetchPatientCaretakerAccessGet,
@@ -56,10 +57,17 @@ export function CaretakerAccessPage() {
     let res: Response;
     try {
       res = await fetchPatientCaretakerAccessGet();
-    } catch {
+    } catch (err) {
       setGrant(null);
       setPendingInvite(null);
-      setLoadError('You must be signed in to manage caretaker access.');
+      const missingToken =
+        err instanceof Error &&
+        err.message === PATIENT_CARETAKER_ACCESS_ERROR_MISSING_TOKEN;
+      setLoadError(
+        missingToken
+          ? 'You must be signed in to manage caretaker access.'
+          : 'Unable to reach the caretaker service. Check your connection and try again.',
+      );
       return;
     }
     if (res.status === 401) {

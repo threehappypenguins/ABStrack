@@ -14,6 +14,7 @@ import { StatusBar } from 'expo-status-bar';
 import type { Session } from '@abstrack/supabase';
 import { fetchMobileDeviceIsConnected } from '../lib/network/mobile-device-netinfo';
 import { completeCaretakerInviteAfterAuth } from '../lib/caretaker-invite-complete';
+import { isCaretakerInviteLinkUrl } from '../lib/caretaker-invite-deep-link';
 import {
   getMobileAuthSessionSafe,
   getMobileSupabaseClient,
@@ -115,21 +116,6 @@ function isRecoveryTargetPath(pathname: string, hostname: string): boolean {
   const normalizedPath = pathname.replace(/\/+$/, '') || '/';
   return (
     normalizedPath === '/update-password' || hostname === 'update-password'
-  );
-}
-
-/**
- * Patient-sent caretaker invite: open app via `abstrack:///caretaker-invite?code=…` (matches Expo
- * `scheme` + Edge `ABSTRACK_CARETAKER_INVITE_REDIRECT_TO`).
- */
-function isCaretakerInviteDeepLink(url: string): boolean {
-  if (!url.startsWith('abstrack:')) {
-    return false;
-  }
-  const { pathname, hostname } = parseDeepLink(url);
-  const normalizedPath = pathname.replace(/\/+$/, '') || '/';
-  return (
-    normalizedPath === '/caretaker-invite' || hostname === 'caretaker-invite'
   );
 }
 
@@ -319,13 +305,20 @@ function AppBootstrap() {
     };
 
     /**
-     * Caretaker email invite deep link (`abstrack:///caretaker-invite?code=…`). Exchanges the code,
-     * creates caretaker profile if needed, and finalizes `caretaker_access` via Edge.
+     * Caretaker email invite: `abstrack:///caretaker-invite?code=…` and/or HTTPS App Links to
+     * user web (`EXPO_PUBLIC_USER_WEB_ORIGIN` + `/auth/callback?…&next=/caretaker/join`). Exchanges
+     * the code, creates caretaker profile if needed, and finalizes `caretaker_access` via Edge.
      *
      * @returns `true` when this URL was a caretaker invite link (handled or failed in-app).
      */
     const handleCaretakerInviteLink = async (url: string): Promise<boolean> => {
-      if (!isCaretakerInviteDeepLink(url) || !mounted) {
+      if (
+        !isCaretakerInviteLinkUrl(
+          url,
+          process.env.EXPO_PUBLIC_USER_WEB_ORIGIN,
+        ) ||
+        !mounted
+      ) {
         return false;
       }
       const { params } = parseDeepLink(url);

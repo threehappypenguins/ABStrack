@@ -108,19 +108,49 @@ Then the migration hits cloud when **CI runs `db push` on `main`** after merge. 
 
 Product default: **patients and caretakers are mobile-primary** (Expo app in `apps/mobile/`). User web is optional.
 
-Caretaker **email invites** use `auth.admin.inviteUserByEmail`. **`redirectTo`** is **`ABSTRACK_CARETAKER_INVITE_REDIRECT_TO`** when set (this repo uses **`abstrack:///caretaker-invite`**, matching Expo **`scheme`: `abstrack`** in `apps/mobile/app.json`). If that secret is unset, the function falls back to **`{ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN}/auth/callback?next=/caretaker/join`**. See `supabase/functions/patient-caretaker-access/index.ts`.
+Caretaker **email invites** use `auth.admin.inviteUserByEmail`. **`redirectTo`** is trimmed **`ABSTRACK_CARETAKER_INVITE_REDIRECT_TO`** when set (this repo uses **`abstrack:///caretaker-invite`**, matching Expo **`scheme`: `abstrack`** in `apps/mobile/app.json`). If that secret is unset, the function falls back to **`{trimmed-validated-origin}/auth/callback?next=/caretaker/join`** from **`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN`** (must be absolute `http://` or `https://`; trailing slash and surrounding whitespace are normalized). See `supabase/functions/patient-caretaker-access/index.ts`.
 
-**Invitee completion:** Mobile handles **`abstrack:///caretaker-invite?code=…`** in `apps/mobile/src/app/App.tsx` (exchange code → caretaker profile if needed → Edge **finalize**). Web **`/caretaker/join`** applies only when the web fallback secret is used.
+**Invitee completion:** Mobile `apps/mobile/src/app/App.tsx` handles **`abstrack:///caretaker-invite?code=…`** and, when **`EXPO_PUBLIC_USER_WEB_ORIGIN`** matches the invite **`redirectTo`** origin, **`http(s)://…/auth/callback?…&next=/caretaker/join`** (Universal Links / App Links). User web **`/caretaker/join`** still applies when the session completes in the browser.
+
+### HTTPS invite → same link opens browser (desktop) and native app (phone)
+
+When invite emails use **`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN`** (HTTPS **`…/auth/callback?next=/caretaker/join`**), you need **iOS Universal Links** + **Android App Links** so the **same** URL opens the **installed app** on a phone instead of only Safari/Chrome. This repo wires the native side and verification files as follows.
+
+1. **Mobile env** `EXPO_PUBLIC_USER_WEB_ORIGIN` — same origin as the Edge secret **`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN`** (e.g. `https://app.example.com`). Used at build time in `apps/mobile/app.config.ts` for `associatedDomains` / `intentFilters`. Rebuild native after changing it (`pnpm android` / `pnpm ios` from `apps/mobile/`, or your CI native build).
+2. **User web (Next.js)** — public routes (no secrets in the JSON body):
+   - **`/.well-known/apple-app-site-association`** — set server env **`APPLE_APP_SITE_ASSOCIATION_TEAM_ID`** (and optional **`APPLE_IOS_BUNDLE_ID`**, default `com.abstrack.mobile`). Returns **404** until set.
+   - **`/.well-known/assetlinks.json`** — set **`ANDROID_APP_LINKS_SHA256_CERT_FINGERPRINTS`** (one or more SHA-256 cert fingerprints; optional **`ANDROID_APPLICATION_ID`**, default `com.abstrack.mobile`). Returns **404** until set.
+3. **Verify** over **HTTPS** (no redirects): Apple and Google fetch these paths from your **production** user-web host. See [Expo iOS Universal Links](https://docs.expo.dev/linking/ios-universal-links/) and [Android App Links](https://docs.expo.dev/linking/android-app-links/).
+
+#### Local dev: physical Android + USB (no deploy)
+
+Use this when you test on a **real phone over `adb`**, user web runs on your laptop at **port 3000**, and you are **not** deploying user web yet.
+
+1. **Same origin in two places** (must match exactly, including scheme and port):
+   - **`apps/mobile/.env`:** `EXPO_PUBLIC_USER_WEB_ORIGIN=http://localhost:3000`
+   - **Supabase Edge secret** **`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN`:** `http://localhost:3000` (omit **`ABSTRACK_CARETAKER_INVITE_REDIRECT_TO`** if you want the HTTPS invite path for this test).
+2. **Supabase Auth → Redirect URLs:** add **`http://localhost:3000/auth/callback`** (invite emails use `…/auth/callback?next=/caretaker/join`).
+3. **Port reverse** (so `localhost` on the **phone** reaches Next on the **laptop**):
+
+   ```bash
+   adb reverse tcp:3000 tcp:3000
+   ```
+
+   Re-run that when you reconnect the device if the reverse mapping drops.
+
+4. Start user web on the host on **port 3000**, then **`pnpm android`** from **`apps/mobile/`** again whenever you change **`EXPO_PUBLIC_USER_WEB_ORIGIN`** (native `intentFilters` / `associatedDomains` are build-time).
+
+**Notes:** **`/.well-known/apple-app-site-association`** and **`/.well-known/assetlinks.json`** often stay **404** locally until you set **`APPLE_APP_SITE_ASSOCIATION_TEAM_ID`** / **`ANDROID_APP_LINKS_SHA256_CERT_FINGERPRINTS`** on the Next server—full **verified** App Links against `localhost` is limited; the app still recognizes matching **`http://localhost:3000/auth/callback?…`** URLs in **`App.tsx`** when the OS hands them to the app. For **iOS device** dev without deploy, use a **tunnel or LAN IP** instead of `localhost` (no `adb reverse` on iOS).
 
 ### Caretaker invite: Supabase checklist (mobile-primary)
 
 Do **not** put `ABSTRACK_CARETAKER_INVITE_*` in `apps/web/.env.local`; nothing in Next.js reads them. Set them as **Supabase Edge Function secrets** (Dashboard → **Edge Functions** → **Secrets**, project-wide for functions—or CLI `secrets set` for the linked project).
 
 1. **Edge secret** `ABSTRACK_CARETAKER_INVITE_REDIRECT_TO` = **`abstrack:///caretaker-invite`** (exact string; three slashes after `abstrack:`).
-2. **Supabase Dashboard → Authentication → URL Configuration → Redirect URLs:** add the **same** value **`abstrack:///caretaker-invite`** (Auth only allows redirects that are listed here). If the UI rejects it, add a documented wildcard such as **`abstrack://**`\*\* per [Redirect URLs](https://supabase.com/docs/guides/auth/redirect-urls).
+2. **Supabase Dashboard → Authentication → URL Configuration → Redirect URLs:** add the **same** value `abstrack:///caretaker-invite` (Auth only allows redirects that are listed here). If the UI rejects it, add a documented wildcard such as `abstrack://**` (see [Redirect URLs](https://supabase.com/docs/guides/auth/redirect-urls)).
 3. **Deploy** `patient-caretaker-access` after changing secrets so the function picks them up: `pnpm dlx supabase functions deploy patient-caretaker-access` (from repo root, linked project).
 
-Optional web fallback only: set Edge secret **`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN`** (no trailing slash) and omit **`REDIRECT_TO`**; then also allow-list **`https://<your-user-web-host>/auth/callback`** (and local **`http://localhost:3000/auth/callback`** if needed).
+**`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN` (alternate setup, skip for mobile-primary):** Every invite email must include a Supabase Auth **`redirectTo`**. With **`ABSTRACK_CARETAKER_INVITE_REDIRECT_TO`** set (checklist above), **all** invites use that value—whether the patient sent the invite from **mobile Settings or user web Settings**—because only the Edge Function reads these secrets; Next.js does not override it. Set **`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN`** **only** when you **omit** **`REDIRECT_TO`** so magic links open **user web** at **`{origin}/auth/callback?next=/caretaker/join`** instead of `abstrack://…`. Use an absolute **`http://` or `https://`** origin (trailing slash trimmed). Allow-list **`https://<your-user-web-host>/auth/callback`** (and **`http://localhost:3000/auth/callback`** locally if needed).
 
 ### Order of operations (cloud)
 
@@ -134,8 +164,8 @@ Optional web fallback only: set Edge secret **`ABSTRACK_CARETAKER_INVITE_WEB_ORI
 
 ### Auth redirect URLs (Dashboard → Authentication → URL Configuration)
 
-- **Mobile (this repo’s default):** **`abstrack:///caretaker-invite`** (and/or **`abstrack://**`\*\* if you use a wildcard).
-- **Web (only if you use `ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN` instead of `REDIRECT_TO`):** **`http://localhost:3000/auth/callback`**, production **`https://…/auth/callback`**; invites append **`?next=/caretaker/join`**. Wildcard **`http://localhost:3000/**`\*\* if the dashboard rejects query-only differences.
+- **Mobile (this repo’s default):** `abstrack:///caretaker-invite` (optional `abstrack://**` wildcard; see [Redirect URLs](https://supabase.com/docs/guides/auth/redirect-urls)).
+- **Web (only if you use `ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN` instead of `REDIRECT_TO`):** `http://localhost:3000/auth/callback`, production `https://…/auth/callback`; invites append `?next=/caretaker/join`. Wildcard `http://localhost:3000/**` if the dashboard rejects query-only differences.
 
 ---
 
