@@ -116,6 +116,38 @@ function normalizeEmailForLookup(raw: string): string {
   return raw.trim().toLowerCase();
 }
 
+/**
+ * Minimal shape check for **`caretakerEmail`** before Auth Admin / DB writes so malformed input
+ * returns **400** instead of failing later with **500** + rollback. Not a full RFC 5322 validator.
+ *
+ * @param normalized - Output of {@link normalizeEmailForLookup}.
+ * @returns `true` when the string looks like a deliverable email (local@domain with a dot in domain).
+ */
+function isPlausibleCaretakerInviteEmail(normalized: string): boolean {
+  if (normalized.length < 3 || normalized.length > 254) {
+    return false;
+  }
+  if (/\s/.test(normalized)) {
+    return false;
+  }
+  const at = normalized.indexOf('@');
+  if (at <= 0 || at !== normalized.lastIndexOf('@')) {
+    return false;
+  }
+  const local = normalized.slice(0, at);
+  const domain = normalized.slice(at + 1);
+  if (local.length === 0 || domain.length === 0) {
+    return false;
+  }
+  if (!domain.includes('.')) {
+    return false;
+  }
+  if (domain.startsWith('.') || domain.endsWith('.') || domain.includes('..')) {
+    return false;
+  }
+  return true;
+}
+
 function inviteExpiresAtIso(): string {
   const d = new Date();
   d.setUTCDate(d.getUTCDate() + INVITE_VALID_DAYS);
@@ -210,6 +242,8 @@ function isPostgresUniqueViolation(err: unknown): boolean {
 /**
  * Stamps **`last_invite_sent_at`** before **`inviteUserByEmail`** so resend throttle applies even if
  * Auth succeeds and a later failure would return **500** (stamp-after-send allowed unthrottled retries).
+ * The stamp **`UPDATE`** filters **`consumed_at IS NULL`** and **`.select('id')`** so we only proceed
+ * when exactly one pending row matched (PostgREST can return **`error: null`** on zero rows updated).
  * When **`deletePendingInviteOnMailFailure`** is true, failed sends roll back by deleting the pending
  * invite row (new-invite path), dropping the stamp with the row. When false, the row is kept (resend
  * while invitee has Auth user but no profile yet); a stamp without a delivered mail still enforces
@@ -235,10 +269,12 @@ async function sendCaretakerInviteEmailAndStamp(
     deletePendingInviteOnMailFailure,
   } = options;
 
-  const { error: stampErr } = await admin
+  const { data: stampedRows, error: stampErr } = await admin
     .from('caretaker_invites')
     .update({ last_invite_sent_at: new Date().toISOString() })
-    .eq('id', inviteId);
+    .eq('id', inviteId)
+    .is('consumed_at', null)
+    .select('id');
 
   if (stampErr) {
     console.error('caretaker_invites last_invite_sent_at (pre-send)', stampErr);
@@ -246,6 +282,70 @@ async function sendCaretakerInviteEmailAndStamp(
       ok: false,
       response: jsonResponse(500, {
         error: 'Unable to record the invite send. Try again in a moment.',
+      }),
+    };
+  }
+
+  const stampedCount = Array.isArray(stampedRows) ? stampedRows.length : 0;
+  if (stampedCount !== 1) {
+    if (stampedCount > 1) {
+      console.error(
+        'caretaker_invites pre-send stamp unexpected row count',
+        inviteId,
+        stampedCount,
+      );
+      return {
+        ok: false,
+        response: jsonResponse(500, {
+          error: 'Unable to verify the invite. Try again in a moment.',
+        }),
+      };
+    }
+
+    const { data: inviteRow, error: inviteReadErr } = await admin
+      .from('caretaker_invites')
+      .select('id, consumed_at')
+      .eq('id', inviteId)
+      .maybeSingle();
+
+    if (inviteReadErr) {
+      console.error('caretaker_invites pre-send stale read', inviteReadErr);
+      return {
+        ok: false,
+        response: jsonResponse(500, {
+          error: 'Unable to verify the invite. Try again in a moment.',
+        }),
+      };
+    }
+
+    if (!inviteRow) {
+      return {
+        ok: false,
+        response: jsonResponse(404, {
+          error:
+            'That invite is no longer available. Ask the patient to send a new invite from their settings.',
+        }),
+      };
+    }
+
+    if (inviteRow.consumed_at != null) {
+      return {
+        ok: false,
+        response: jsonResponse(409, {
+          error: 'This invite was already completed.',
+        }),
+      };
+    }
+
+    console.warn(
+      'caretaker_invites pre-send stamp matched no pending row',
+      inviteId,
+    );
+    return {
+      ok: false,
+      response: jsonResponse(409, {
+        error:
+          'This invite is no longer pending. Ask the patient to send a new invite from their settings.',
       }),
     };
   }
@@ -926,6 +1026,12 @@ Deno.serve(async (req: Request) => {
   }
 
   const normalizedTarget = normalizeEmailForLookup(rawEmail);
+  if (!isPlausibleCaretakerInviteEmail(normalizedTarget)) {
+    return jsonResponse(400, {
+      error:
+        'Enter a valid email address for the caretaker (for example, name@example.com).',
+    });
+  }
 
   const { data: otherActive, error: otherActiveError } = await admin
     .from('caretaker_access')

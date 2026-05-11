@@ -68,6 +68,19 @@ describe('env-public', () => {
     expect(getSupabasePublishableKey()).toBe('sb_publishable_x');
   });
 
+  it('getSupabasePublishableKey rejects sb_secret_… (miswired client env)', () => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://x.test';
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = 'sb_secret_default';
+    expect(() => getSupabasePublishableKey()).toThrow(/secret key/);
+  });
+
+  it('getSupabasePublishableKey rejects non-publishable shapes', () => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://x.test';
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY =
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.fake';
+    expect(() => getSupabasePublishableKey()).toThrow(/sb_publishable_/);
+  });
+
   it('getSupabaseUrl treats whitespace-only NEXT_PUBLIC as unset and falls back', () => {
     process.env.NEXT_PUBLIC_SUPABASE_URL = '   \n';
     process.env.EXPO_PUBLIC_SUPABASE_URL = 'https://fallback.test';

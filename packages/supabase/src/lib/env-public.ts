@@ -23,6 +23,26 @@ function normalizeEnv(value: string | undefined): string | undefined {
 }
 
 /**
+ * Ensures the resolved key is a Supabase **publishable** Data API key, mirroring the **`sb_secret_`**
+ * guard in `readDefaultSupabaseSecretKeyFromEnv` for Edge secrets.
+ *
+ * @param key - Trimmed value from public env (never log the full string).
+ * @throws Error when the value is a secret key or not a **`sb_publishable_`** key.
+ */
+function assertValidSupabasePublishableKeyShape(key: string): void {
+  if (key.startsWith('sb_secret_')) {
+    throw new Error(
+      'Invalid Supabase publishable key: the value looks like a secret key (sb_secret_…). Use NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY / EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY with the project publishable key only—never the secret key in client or mobile bundles.',
+    );
+  }
+  if (!key.startsWith('sb_publishable_')) {
+    throw new Error(
+      'Invalid Supabase publishable key: expected a trimmed sb_publishable_… key (see packages/supabase/README.md and Supabase dashboard API keys).',
+    );
+  }
+}
+
+/**
  * Project URL. Prefer **`NEXT_PUBLIC_SUPABASE_URL`** (Next) or **`EXPO_PUBLIC_SUPABASE_URL`** (Expo)
  * so the value is available in client bundles. **`SUPABASE_URL`** is only read in environments
  * with a full `process.env` (e.g. Node server); it is **not** exposed to browser or Expo client code.
@@ -42,7 +62,10 @@ export function getSupabaseUrl(): string {
 
 /**
  * Publishable key (`sb_publishable_…`) for browsers and mobile bundles.
- * Never use the secret key or legacy JWT anon env vars here.
+ * Rejects **`sb_secret_…`** and any value that does not start with **`sb_publishable_`** so a secret
+ * key is not accidentally shipped in a client bundle. Never use legacy JWT anon env vars here.
+ *
+ * @throws Error when missing, wrong shape, or a secret key.
  */
 export function getSupabasePublishableKey(): string {
   const key =
@@ -53,5 +76,6 @@ export function getSupabasePublishableKey(): string {
       'Missing Supabase publishable key. Set NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY (Next.js) or EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY (Expo).',
     );
   }
+  assertValidSupabasePublishableKeyShape(key);
   return key;
 }

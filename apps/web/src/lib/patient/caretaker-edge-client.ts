@@ -52,7 +52,8 @@ function isSupabaseClientMisconfigurationError(e: unknown): boolean {
     m.includes('Missing NEXT_PUBLIC_SUPABASE_URL') ||
     m.includes('Missing NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY') ||
     m.includes('Missing Supabase URL') ||
-    m.includes('Missing Supabase publishable key')
+    m.includes('Missing Supabase publishable key') ||
+    m.includes('Invalid Supabase publishable key')
   );
 }
 
