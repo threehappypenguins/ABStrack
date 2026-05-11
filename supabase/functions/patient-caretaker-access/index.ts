@@ -440,6 +440,28 @@ async function handleFinalizeCaretakerInvite(
       .eq('id', existingPair.id);
 
     if (updError) {
+      if (isPostgresUniqueViolation(updError)) {
+        const { data: activeGrant, error: activeErr } = await admin
+          .from('caretaker_access')
+          .select('caretaker_user_id')
+          .eq('patient_user_id', patientId)
+          .is('revoked_at', null)
+          .maybeSingle();
+        if (!activeErr && activeGrant?.caretaker_user_id === user.id) {
+          return await finalizeConsumeInviteAfterGrant(
+            admin,
+            inviteId,
+            user.id,
+            patientId,
+            nowIso,
+            'linked',
+          );
+        }
+        return jsonResponse(409, {
+          error:
+            'This patient already has another active caretaker. They must revoke access before you can join.',
+        });
+      }
       console.error('finalize reactivate', updError);
       return jsonResponse(500, {
         error: 'Unable to restore caretaker access.',
@@ -799,6 +821,40 @@ Deno.serve(async (req: Request) => {
         .eq('id', existingPair.id);
 
       if (updError) {
+        if (isPostgresUniqueViolation(updError)) {
+          const { data: activeGrant, error: activeErr } = await admin
+            .from('caretaker_access')
+            .select('caretaker_user_id')
+            .eq('patient_user_id', user.id)
+            .is('revoked_at', null)
+            .maybeSingle();
+          if (
+            !activeErr &&
+            activeGrant?.caretaker_user_id === caretakerUserId
+          ) {
+            const { error: clearPendingErr } =
+              await clearPendingInvitesForPatient(admin, user.id);
+            if (clearPendingErr) {
+              console.error(
+                'link caretaker reactivate concurrent clear pending',
+                clearPendingErr,
+              );
+              return jsonResponse(500, {
+                error:
+                  'Unable to clear pending caretaker invite. Try again in a moment.',
+              });
+            }
+            return jsonResponse(200, {
+              ok: true,
+              outcome: 'linked',
+              reactivated: true,
+            });
+          }
+          return jsonResponse(409, {
+            error:
+              'You already have an active caretaker. Revoke access before linking someone else.',
+          });
+        }
         console.error('caretaker_access reactivate', updError);
         return jsonResponse(500, {
           error: 'Unable to restore caretaker access.',
