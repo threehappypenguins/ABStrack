@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import { useEffect, useId, useState } from 'react';
-import type { Session } from '@abstrack/supabase';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
 import {
   caretakerEdgeClientPreflightErrorMessage,
@@ -40,22 +39,139 @@ export default function CaretakerJoinPage() {
     const run = async () => {
       setState({ kind: 'loading' });
 
-      const supabase = createBrowserClient();
-      let session: Session | null = null;
-
       try {
+        const supabase = createBrowserClient();
         const {
-          data: { session: s },
+          data: { session },
           error: sessionError,
         } = await supabase.auth.getSession();
 
-        if (sessionError || !s?.user) {
+        if (sessionError || !session?.user) {
           if (!cancelled) {
             setState({ kind: 'need_sign_in' });
           }
           return;
         }
-        session = s;
+
+        const inviteIdRaw =
+          session.user.user_metadata?.abstrack_caretaker_invite_id;
+        const inviteId =
+          typeof inviteIdRaw === 'string' && inviteIdRaw.trim().length > 0
+            ? inviteIdRaw.trim()
+            : null;
+
+        if (!inviteId) {
+          if (!cancelled) {
+            setState({ kind: 'missing_invite' });
+          }
+          return;
+        }
+
+        const { data: profile, error: profileReadErr } = await supabase
+          .from('profiles')
+          .select('app_role')
+          .eq('id', session.user.id)
+          .maybeSingle();
+
+        if (profileReadErr) {
+          if (!cancelled) {
+            setState({
+              kind: 'error',
+              message: 'Unable to read your profile. Try again in a moment.',
+            });
+          }
+          return;
+        }
+
+        if (!profile) {
+          const { error: insErr } = await supabase.from('profiles').insert({
+            id: session.user.id,
+            app_role: 'caretaker',
+          });
+          if (insErr) {
+            if (isPostgresUniqueViolation(insErr)) {
+              const { data: afterRace, error: raceReadErr } = await supabase
+                .from('profiles')
+                .select('app_role')
+                .eq('id', session.user.id)
+                .maybeSingle();
+              if (raceReadErr || !afterRace) {
+                if (!cancelled) {
+                  setState({
+                    kind: 'error',
+                    message:
+                      'Unable to verify your profile after sign-up. Try again in a moment.',
+                  });
+                }
+                return;
+              }
+              if (afterRace.app_role !== 'caretaker') {
+                if (!cancelled) {
+                  setState({
+                    kind: 'wrong_role',
+                    message:
+                      'This invite is for a caretaker account, but your profile is not set to caretaker. Use the account your patient invited, or contact support.',
+                  });
+                }
+                return;
+              }
+            } else {
+              if (!cancelled) {
+                setState({
+                  kind: 'error',
+                  message:
+                    insErr.message ||
+                    'Unable to create your caretaker profile. Try again or contact support.',
+                });
+              }
+              return;
+            }
+          }
+        } else if (profile.app_role !== 'caretaker') {
+          if (!cancelled) {
+            setState({
+              kind: 'wrong_role',
+              message:
+                'This invite is for a caretaker account, but your profile is not set to caretaker. Use the account your patient invited, or contact support.',
+            });
+          }
+          return;
+        }
+
+        let res: Response;
+        try {
+          res = await fetchPatientCaretakerAccessFinalize(inviteId);
+        } catch (err) {
+          if (!cancelled) {
+            const msg = caretakerEdgeClientPreflightErrorMessage(
+              err,
+              'Your session token is missing or expired. Open the invite link from your email again to sign in, then return to this page.',
+            );
+            setState({ kind: 'error', message: msg });
+            announce(msg, { politeness: 'assertive' });
+          }
+          return;
+        }
+
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok) {
+          const raw =
+            typeof body.error === 'string'
+              ? body.error
+              : 'Invite could not be completed.';
+          if (!cancelled) {
+            setState({ kind: 'error', message: raw });
+            announce(raw, { politeness: 'assertive' });
+          }
+          return;
+        }
+
+        if (!cancelled) {
+          setState({ kind: 'done' });
+          announce('You are now linked as this patient’s caretaker.', {
+            politeness: 'polite',
+          });
+        }
       } catch (err) {
         if (!cancelled) {
           const msg = caretakerEdgeClientPreflightErrorMessage(
@@ -65,131 +181,6 @@ export default function CaretakerJoinPage() {
           setState({ kind: 'error', message: msg });
           announce(msg, { politeness: 'assertive' });
         }
-        return;
-      }
-
-      if (!session?.user) {
-        return;
-      }
-
-      const inviteIdRaw =
-        session.user.user_metadata?.abstrack_caretaker_invite_id;
-      const inviteId =
-        typeof inviteIdRaw === 'string' && inviteIdRaw.trim().length > 0
-          ? inviteIdRaw.trim()
-          : null;
-
-      if (!inviteId) {
-        if (!cancelled) {
-          setState({ kind: 'missing_invite' });
-        }
-        return;
-      }
-
-      const { data: profile, error: profileReadErr } = await supabase
-        .from('profiles')
-        .select('app_role')
-        .eq('id', session.user.id)
-        .maybeSingle();
-
-      if (profileReadErr) {
-        if (!cancelled) {
-          setState({
-            kind: 'error',
-            message: 'Unable to read your profile. Try again in a moment.',
-          });
-        }
-        return;
-      }
-
-      if (!profile) {
-        const { error: insErr } = await supabase.from('profiles').insert({
-          id: session.user.id,
-          app_role: 'caretaker',
-        });
-        if (insErr) {
-          if (isPostgresUniqueViolation(insErr)) {
-            const { data: afterRace, error: raceReadErr } = await supabase
-              .from('profiles')
-              .select('app_role')
-              .eq('id', session.user.id)
-              .maybeSingle();
-            if (raceReadErr || !afterRace) {
-              if (!cancelled) {
-                setState({
-                  kind: 'error',
-                  message:
-                    'Unable to verify your profile after sign-up. Try again in a moment.',
-                });
-              }
-              return;
-            }
-            if (afterRace.app_role !== 'caretaker') {
-              if (!cancelled) {
-                setState({
-                  kind: 'wrong_role',
-                  message:
-                    'This invite is for a caretaker account, but your profile is not set to caretaker. Use the account your patient invited, or contact support.',
-                });
-              }
-              return;
-            }
-          } else {
-            if (!cancelled) {
-              setState({
-                kind: 'error',
-                message:
-                  insErr.message ||
-                  'Unable to create your caretaker profile. Try again or contact support.',
-              });
-            }
-            return;
-          }
-        }
-      } else if (profile.app_role !== 'caretaker') {
-        if (!cancelled) {
-          setState({
-            kind: 'wrong_role',
-            message:
-              'This invite is for a caretaker account, but your profile is not set to caretaker. Use the account your patient invited, or contact support.',
-          });
-        }
-        return;
-      }
-
-      let res: Response;
-      try {
-        res = await fetchPatientCaretakerAccessFinalize(inviteId);
-      } catch (err) {
-        if (!cancelled) {
-          const msg = caretakerEdgeClientPreflightErrorMessage(
-            err,
-            'Your session token is missing or expired. Open the invite link from your email again to sign in, then return to this page.',
-          );
-          setState({ kind: 'error', message: msg });
-          announce(msg, { politeness: 'assertive' });
-        }
-        return;
-      }
-
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        const raw =
-          typeof body.error === 'string'
-            ? body.error
-            : 'Invite could not be completed.';
-        if (!cancelled) {
-          setState({ kind: 'error', message: raw });
-          announce(raw, { politeness: 'assertive' });
-        }
-        return;
-      }
-
-      if (!cancelled) {
-        setState({ kind: 'done' });
-        announce('You are now linked as this patient’s caretaker.', {
-          politeness: 'polite',
-        });
       }
     };
 
