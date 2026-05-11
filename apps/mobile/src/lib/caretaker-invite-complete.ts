@@ -126,7 +126,14 @@ export async function completeCaretakerInviteAfterAuth(): Promise<CompleteCareta
     if (isMissingPublishableKeyForCaretakerEdge(e)) {
       return { ok: false, message: CARETAKER_EDGE_PUBLISHABLE_KEY_ENV_HELP };
     }
-    throw e;
+    const detail =
+      e instanceof Error && e.message.trim().length > 0 ? ` ${e.message}` : '';
+    return {
+      ok: false,
+      message:
+        'Unable to reach the server to finish linking to the patient right now. ' +
+        `Please check your connection and try again.${detail}`,
+    };
   }
   const body = (await res.json().catch(() => ({}))) as { error?: string };
   if (!res.ok) {

@@ -1,10 +1,12 @@
 -- Caretaker email invites (PRD §7): patient sends invite before `caretaker_access` row exists.
 -- Consumed when the invitee completes join (Edge finalization). RLS deny-by-default for
--- PostgREST roles; explicit service_role policies mirror access_log (20260327130000_rls_policies.sql)
--- for trusted Edge path when service_role is subject to RLS.
+-- PostgREST roles; explicit per-operation service_role policies match the narrow style used for
+-- access_log (20260327130000_rls_policies.sql) and practitioner_access SELECT-only automation
+-- (20260416120000_practitioner_mfa_assurance_rls.sql) when service_role is subject to RLS.
 --
 -- Also adds service_role policies on public.caretaker_access: patient-caretaker-access uses the
 -- elevated client for grant rows; base migration only defines TO authenticated policies.
+-- Edge uses SELECT/INSERT/UPDATE on grants (revocation sets revoked_at); no service_role DELETE.
 --
 -- resolve_auth_user_id_by_normalized_email: single-query auth.users email lookup for the Edge
 -- Function (replaces paginated auth.admin.listUsers scans as user count grows).
@@ -36,22 +38,52 @@ COMMENT ON TABLE public.caretaker_invites IS 'Patient-sent caretaker invite befo
 
 ALTER TABLE public.caretaker_invites ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY caretaker_invites_service_role_all ON public.caretaker_invites
-  FOR ALL
+CREATE POLICY caretaker_invites_service_role_select ON public.caretaker_invites
+  FOR SELECT
+  TO service_role
+  USING (TRUE);
+
+CREATE POLICY caretaker_invites_service_role_insert ON public.caretaker_invites
+  FOR INSERT
+  TO service_role
+  WITH CHECK (TRUE);
+
+CREATE POLICY caretaker_invites_service_role_update ON public.caretaker_invites
+  FOR UPDATE
   TO service_role
   USING (TRUE)
   WITH CHECK (TRUE);
 
-COMMENT ON POLICY caretaker_invites_service_role_all ON public.caretaker_invites IS 'Trusted path for patient-caretaker-access Edge Function; mirrors access_log service_role pattern.';
+CREATE POLICY caretaker_invites_service_role_delete ON public.caretaker_invites
+  FOR DELETE
+  TO service_role
+  USING (TRUE);
 
--- caretaker_access: Edge Function reads/writes grants with service_role (same rationale as above).
-CREATE POLICY caretaker_access_service_role_all ON public.caretaker_access
-  FOR ALL
+COMMENT ON POLICY caretaker_invites_service_role_select ON public.caretaker_invites IS 'Trusted SELECT for patient-caretaker-access Edge Function when service_role is subject to RLS.';
+COMMENT ON POLICY caretaker_invites_service_role_insert ON public.caretaker_invites IS 'Trusted INSERT for patient-caretaker-access Edge Function when service_role is subject to RLS.';
+COMMENT ON POLICY caretaker_invites_service_role_update ON public.caretaker_invites IS 'Trusted UPDATE (consume invite, stamp resend) for patient-caretaker-access when service_role is subject to RLS.';
+COMMENT ON POLICY caretaker_invites_service_role_delete ON public.caretaker_invites IS 'Trusted DELETE (clear pending / rollback) for patient-caretaker-access when service_role is subject to RLS.';
+
+-- caretaker_access: Edge uses SELECT/INSERT/UPDATE only (revoke = UPDATE revoked_at; no row DELETE).
+CREATE POLICY caretaker_access_service_role_select ON public.caretaker_access
+  FOR SELECT
+  TO service_role
+  USING (TRUE);
+
+CREATE POLICY caretaker_access_service_role_insert ON public.caretaker_access
+  FOR INSERT
+  TO service_role
+  WITH CHECK (TRUE);
+
+CREATE POLICY caretaker_access_service_role_update ON public.caretaker_access
+  FOR UPDATE
   TO service_role
   USING (TRUE)
   WITH CHECK (TRUE);
 
-COMMENT ON POLICY caretaker_access_service_role_all ON public.caretaker_access IS 'Trusted path for patient-caretaker-access Edge Function; mirrors access_log service_role pattern.';
+COMMENT ON POLICY caretaker_access_service_role_select ON public.caretaker_access IS 'Trusted SELECT for patient-caretaker-access Edge Function when service_role is subject to RLS.';
+COMMENT ON POLICY caretaker_access_service_role_insert ON public.caretaker_access IS 'Trusted INSERT for patient-caretaker-access Edge Function when service_role is subject to RLS.';
+COMMENT ON POLICY caretaker_access_service_role_update ON public.caretaker_access IS 'Trusted UPDATE (revoke, reactivate, finalize rollback) for patient-caretaker-access when service_role is subject to RLS.';
 
 CREATE OR REPLACE FUNCTION public.resolve_auth_user_id_by_normalized_email(p_normalized text)
 RETURNS uuid
