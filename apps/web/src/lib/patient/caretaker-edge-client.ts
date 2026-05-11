@@ -57,6 +57,35 @@ function isSupabaseClientMisconfigurationError(e: unknown): boolean {
   );
 }
 
+/**
+ * Maps preflight errors from caretaker Edge client helpers (`fetchPatientCaretakerAccess*` before
+ * `fetch` returns) to user-facing copy: missing session token, Supabase public env misconfiguration,
+ * or connectivity.
+ *
+ * @param err - Caught rejection from those helpers.
+ * @param missingTokenMessage - Copy when the Edge call could not read a usable `access_token`
+ * ({@link PATIENT_CARETAKER_ACCESS_ERROR_MISSING_TOKEN}).
+ * @returns Message suitable for UI or live regions.
+ */
+export function caretakerEdgeClientPreflightErrorMessage(
+  err: unknown,
+  missingTokenMessage: string,
+): string {
+  if (
+    err instanceof Error &&
+    err.message === PATIENT_CARETAKER_ACCESS_ERROR_MISSING_TOKEN
+  ) {
+    return missingTokenMessage;
+  }
+  if (
+    err instanceof Error &&
+    err.message === PATIENT_CARETAKER_ACCESS_ERROR_SUPABASE_CLIENT_CONFIG
+  ) {
+    return 'Supabase is misconfigured for this app build. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY in apps/web/.env.local (see docs/DEV_SETUP.md).';
+  }
+  return 'Unable to reach the caretaker service. Check your connection and try again.';
+}
+
 async function requireAccessToken(): Promise<string> {
   const supabase = createBrowserClient();
   const {

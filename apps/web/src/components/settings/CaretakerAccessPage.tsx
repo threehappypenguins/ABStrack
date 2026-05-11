@@ -8,8 +8,7 @@ import {
   type CaretakerAccessGetResponse,
   type CaretakerGrantDto,
   type CaretakerPendingInviteDto,
-  PATIENT_CARETAKER_ACCESS_ERROR_MISSING_TOKEN,
-  PATIENT_CARETAKER_ACCESS_ERROR_SUPABASE_CLIENT_CONFIG,
+  caretakerEdgeClientPreflightErrorMessage,
   fetchPatientCaretakerAccessCancelPendingInvite,
   fetchPatientCaretakerAccessDelete,
   fetchPatientCaretakerAccessGet,
@@ -17,32 +16,6 @@ import {
 } from '@/lib/patient/caretaker-edge-client';
 import { normalizeEmailForLookup } from '@/lib/patient/normalize-email-for-lookup';
 import { useAuth } from '@/lib/auth-provider';
-
-/**
- * Maps caretaker Edge client preflight throws (`fetchPatientCaretakerAccessGet` / POST / DELETE)
- * to user-facing copy.
- *
- * @param err - Caught rejection from caretaker Edge client helpers.
- * @param signedInMessage - Copy when the session token is missing (`missing_access_token`).
- */
-function caretakerEdgeClientCatchMessage(
-  err: unknown,
-  signedInMessage: string,
-): string {
-  if (
-    err instanceof Error &&
-    err.message === PATIENT_CARETAKER_ACCESS_ERROR_MISSING_TOKEN
-  ) {
-    return signedInMessage;
-  }
-  if (
-    err instanceof Error &&
-    err.message === PATIENT_CARETAKER_ACCESS_ERROR_SUPABASE_CLIENT_CONFIG
-  ) {
-    return 'Supabase is misconfigured for this app build. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY in apps/web/.env.local (see docs/DEV_SETUP.md).';
-  }
-  return 'Unable to reach the caretaker service. Check your connection and try again.';
-}
 
 function formatInviteExpiry(iso: string): string {
   const t = Date.parse(iso);
@@ -89,7 +62,7 @@ export function CaretakerAccessPage() {
       setGrant(null);
       setPendingInvite(null);
       setLoadError(
-        caretakerEdgeClientCatchMessage(
+        caretakerEdgeClientPreflightErrorMessage(
           err,
           'You must be signed in to manage caretaker access.',
         ),
@@ -157,7 +130,7 @@ export function CaretakerAccessPage() {
       announce('Pending caretaker invite cancelled.', { politeness: 'polite' });
       await loadGrant();
     } catch (err) {
-      const msg = caretakerEdgeClientCatchMessage(
+      const msg = caretakerEdgeClientPreflightErrorMessage(
         err,
         'You must be signed in to cancel an invite.',
       );
@@ -186,7 +159,7 @@ export function CaretakerAccessPage() {
     } catch (err) {
       setBusy(false);
       setFormError(
-        caretakerEdgeClientCatchMessage(
+        caretakerEdgeClientPreflightErrorMessage(
           err,
           'You must be signed in to invite or link a caretaker.',
         ),
@@ -242,7 +215,7 @@ export function CaretakerAccessPage() {
     } catch (err) {
       setBusy(false);
       announce(
-        caretakerEdgeClientCatchMessage(
+        caretakerEdgeClientPreflightErrorMessage(
           err,
           'You must be signed in to revoke caretaker access.',
         ),

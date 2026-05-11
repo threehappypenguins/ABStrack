@@ -155,12 +155,97 @@ function inviteExpiresAtIso(): string {
 }
 
 /**
- * Normalizes **`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN`**: trims, strips a trailing slash, parses as
- * an absolute **http** or **https** URL, and returns **`URL.origin`** (no path) for building
- * `/auth/callback`. Returns `null` when unset, invalid, or not http(s).
+ * When the wall‑clock time until **`expires_at`** falls below this threshold, a resend refreshes
+ * **`caretaker_invites.expires_at`** so finalize does not immediately return **410** on an old row.
+ */
+const CARETAKER_INVITE_RESEND_REFRESH_EXPIRY_REMAINING_MS = 48 * 60 * 60 * 1000;
+
+/**
+ * @param expiresAtIso - `caretaker_invites.expires_at`.
+ * @param nowMs - Current epoch milliseconds.
+ * @returns `true` when expired, unparseable, or within the refresh window of expiry.
+ */
+function caretakerInviteShouldRefreshExpiry(
+  expiresAtIso: string,
+  nowMs: number,
+): boolean {
+  const t = Date.parse(expiresAtIso);
+  if (!Number.isFinite(t)) {
+    return true;
+  }
+  return t - nowMs < CARETAKER_INVITE_RESEND_REFRESH_EXPIRY_REMAINING_MS;
+}
+
+/**
+ * Extends **`expires_at`** to a new **`INVITE_VALID_DAYS`** window when the pending row is expired
+ * or near expiry (see {@link caretakerInviteShouldRefreshExpiry}).
+ */
+async function refreshCaretakerInviteExpiryIfNeeded(
+  admin: SupabaseClient,
+  inviteId: string,
+  currentExpiresAtIso: string,
+  nowMs: number,
+): Promise<
+  { ok: true; expiresAt: string } | { ok: false; response: Response }
+> {
+  if (!caretakerInviteShouldRefreshExpiry(currentExpiresAtIso, nowMs)) {
+    return { ok: true, expiresAt: currentExpiresAtIso };
+  }
+  const fresh = inviteExpiresAtIso();
+  const { data: rows, error } = await admin
+    .from('caretaker_invites')
+    .update({ expires_at: fresh })
+    .eq('id', inviteId)
+    .is('consumed_at', null)
+    .select('expires_at');
+
+  if (error) {
+    console.error('caretaker_invites resend extend expires_at', error);
+    return {
+      ok: false,
+      response: jsonResponse(500, {
+        error: 'Unable to refresh the invite expiry. Try again in a moment.',
+      }),
+    };
+  }
+  const n = Array.isArray(rows) ? rows.length : 0;
+  if (n !== 1) {
+    console.warn(
+      'caretaker_invites extend expiry matched no pending row',
+      inviteId,
+    );
+    return {
+      ok: false,
+      response: jsonResponse(409, {
+        error:
+          'This invite is no longer pending. Ask the patient to send a new invite from their settings.',
+      }),
+    };
+  }
+  const row = rows[0] as { expires_at?: string };
+  if (typeof row.expires_at !== 'string' || row.expires_at === '') {
+    console.error(
+      'caretaker_invites extend expiry missing expires_at column',
+      inviteId,
+    );
+    return {
+      ok: false,
+      response: jsonResponse(500, {
+        error: 'Unable to refresh the invite expiry. Try again in a moment.',
+      }),
+    };
+  }
+  return { ok: true, expiresAt: row.expires_at };
+}
+
+/**
+ * Normalizes **`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN`**: trims, strips **all** trailing slashes so
+ * pasted values like `https://app.example.com///` do not yield `…//auth/callback` (redirect
+ * allow-list mismatch). Parses as an absolute **http** or **https** URL and returns **`URL.origin`**
+ * (no path) for building `/auth/callback`. Returns `null` when unset, invalid, or not http(s).
  */
 function normalizeInviteWebOriginForRedirect(raw: string): string | null {
-  const base = raw.trim().replace(/\/$/, '');
+  const base = raw.trim().replace(/\/+$/, '');
   if (!base) {
     return null;
   }
@@ -1131,11 +1216,20 @@ Deno.serve(async (req: Request) => {
             },
           );
         }
+        const refreshedResend = await refreshCaretakerInviteExpiryIfNeeded(
+          admin,
+          pendingResend.id as string,
+          pendingResend.expires_at as string,
+          Date.now(),
+        );
+        if (!refreshedResend.ok) {
+          return refreshedResend.response;
+        }
         const mailResend = await sendCaretakerInviteEmailAndStamp(admin, {
           inviteId: pendingResend.id as string,
           normalizedTarget,
           redirectTo: redirectResend,
-          inviteExpiresAt: pendingResend.expires_at as string,
+          inviteExpiresAt: refreshedResend.expiresAt,
           deletePendingInviteOnMailFailure: false,
         });
         if (!mailResend.ok) {
@@ -1416,7 +1510,16 @@ Deno.serve(async (req: Request) => {
       }
 
       inviteId = pending.id as string;
-      inviteExpiresAt = pending.expires_at as string;
+      const refreshedRace = await refreshCaretakerInviteExpiryIfNeeded(
+        admin,
+        inviteId,
+        pending.expires_at as string,
+        Date.now(),
+      );
+      if (!refreshedRace.ok) {
+        return refreshedRace.response;
+      }
+      inviteExpiresAt = refreshedRace.expiresAt;
     } else {
       console.error('caretaker_invites insert', insInvErr);
       return jsonResponse(500, { error: 'Unable to create caretaker invite.' });

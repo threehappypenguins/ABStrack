@@ -3,7 +3,10 @@
 import Link from 'next/link';
 import { useEffect, useId, useState } from 'react';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
-import { fetchPatientCaretakerAccessFinalize } from '@/lib/patient/caretaker-edge-client';
+import {
+  caretakerEdgeClientPreflightErrorMessage,
+  fetchPatientCaretakerAccessFinalize,
+} from '@/lib/patient/caretaker-edge-client';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
 
 type JoinState =
@@ -136,12 +139,14 @@ export default function CaretakerJoinPage() {
       let res: Response;
       try {
         res = await fetchPatientCaretakerAccessFinalize(inviteId);
-      } catch {
+      } catch (err) {
         if (!cancelled) {
-          setState({
-            kind: 'error',
-            message: 'You must be signed in to complete the invite.',
-          });
+          const msg = caretakerEdgeClientPreflightErrorMessage(
+            err,
+            'Your session token is missing or expired. Open the invite link from your email again to sign in, then return to this page.',
+          );
+          setState({ kind: 'error', message: msg });
+          announce(msg, { politeness: 'assertive' });
         }
         return;
       }
