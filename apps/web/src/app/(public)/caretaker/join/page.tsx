@@ -40,11 +40,10 @@ export default function CaretakerJoinPage() {
     const run = async () => {
       setState({ kind: 'loading' });
 
-      let supabase: ReturnType<typeof createBrowserClient>;
+      const supabase = createBrowserClient();
       let session: Session | null = null;
 
       try {
-        supabase = createBrowserClient();
         const {
           data: { session: s },
           error: sessionError,
