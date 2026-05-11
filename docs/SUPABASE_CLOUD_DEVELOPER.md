@@ -179,7 +179,7 @@ Pick **one** invite redirect strategy per Supabase project (or use the same valu
 
 1. **Edge secret** `ABSTRACK_CARETAKER_INVITE_REDIRECT_TO` = **`abstrack:///caretaker-invite`** (exact string; three slashes after `abstrack:`).
 2. **Edge secret** `ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN`: **omit** (delete/unset) so invites do not fall back to web `auth/callback` unless you intentionally support both.
-3. **Auth → Redirect URLs:** allow **`abstrack:///caretaker-invite`** (or **`abstrack://**`** if the dashboard requires a wildcard).
+3. **Auth → Redirect URLs:** allow **`abstrack:///caretaker-invite`** (or **`abstrack://**`\*\* if the dashboard requires a wildcard).
 4. **`apps/mobile/.env` (or EAS secrets for release builds):** set **`EXPO_PUBLIC_USER_WEB_ORIGIN`** to the **same HTTPS origin** as production user web (e.g. `https://app.example.com`) so Universal Links / App Links in `app.config.ts` match invite completion URLs. **Rebuild** native (`pnpm ios` / `pnpm android` from `apps/mobile/`, or your CI/EAS build) after changing this—`associatedDomains` / `intentFilters` are build-time.
 5. **User web hosting (`apps/web`):** set **`APPLE_APP_SITE_ASSOCIATION_TEAM_ID`** (and optionally **`APPLE_IOS_BUNDLE_ID`**) plus **`ANDROID_APP_LINKS_SHA256_CERT_FINGERPRINTS`** (and optionally **`ANDROID_APPLICATION_ID`**) on the **deployed** Next server so **`/.well-known/*`** is served over **HTTPS** without redirects (Apple/Google requirements). See [HTTPS invite → same link opens browser (desktop) and native app (phone)](#https-invite--same-link-opens-browser-desktop-and-native-app-phone) above.
 6. **Deploy** `patient-caretaker-access` after any Edge secret change: `pnpm dlx supabase functions deploy patient-caretaker-access` (repo root, linked project).
@@ -188,7 +188,7 @@ Pick **one** invite redirect strategy per Supabase project (or use the same valu
 
 1. **Edge secret** `ABSTRACK_CARETAKER_INVITE_REDIRECT_TO`: **omit** (delete/unset).
 2. **Edge secret** `ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN` = your **public user-web origin only** (no path), e.g. **`https://app.example.com`** (scheme + host; trailing slash optional, it is trimmed). For local laptop-only testing, **`http://localhost:3000`** is valid; hosted deploys should use **`https://…`**.
-3. **Auth → Redirect URLs:** add **`https://app.example.com/auth/callback`** (replace host with yours). If the UI rejects query strings, add **`https://app.example.com/**`** as documented above.
+3. **Auth → Redirect URLs:** add **`https://app.example.com/auth/callback`** (replace host with yours). If the UI rejects query strings, add **`https://app.example.com/**`\*\* as documented above.
 4. **`apps/mobile/.env`:** set **`EXPO_PUBLIC_USER_WEB_ORIGIN`** to the **same origin** as **`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN`** so phones opening the same `https://…/auth/callback?…` link can hand off to the app where configured. Rebuild native after changes.
 5. **Deploy** `patient-caretaker-access` after secret changes (same command as A).
 
