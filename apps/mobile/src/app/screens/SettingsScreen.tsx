@@ -116,6 +116,16 @@ export function SettingsScreen() {
         return;
       }
       const res = await fetchCaretakerAccessGet(session.access_token);
+      if (res.status === 401) {
+        if (isMountedRef.current) {
+          setCaretakerGrant(null);
+          setCaretakerPendingInvite(null);
+          setCaretakerLoadError(
+            'Your session expired or is no longer valid. Sign in again to manage caretaker access.',
+          );
+        }
+        return;
+      }
       if (res.status === 403) {
         if (isMountedRef.current) {
           setCaretakerGrant(null);
@@ -130,8 +140,13 @@ export function SettingsScreen() {
         if (isMountedRef.current) {
           setCaretakerGrant(null);
           setCaretakerPendingInvite(null);
+          const body = (await res.json().catch(() => ({}))) as {
+            error?: string;
+          };
           setCaretakerLoadError(
-            'Unable to load caretaker access. Confirm EXPO_PUBLIC_SUPABASE_URL, deploy the patient-caretaker-access Edge Function, and try again.',
+            body.error === 'server_misconfigured'
+              ? 'Caretaker access is temporarily unavailable (Supabase Edge Function or secrets).'
+              : 'Unable to load caretaker access. Try again in a moment.',
           );
         }
         return;
@@ -237,12 +252,17 @@ export function SettingsScreen() {
       const maybe = (await res.json().catch(() => ({}))) as {
         error?: string;
         outcome?: string;
+        retryAfterSeconds?: number;
       };
       if (!res.ok) {
         const msg =
-          typeof maybe.error === 'string'
-            ? maybe.error
-            : 'Unable to invite or link caretaker access.';
+          res.status === 429 &&
+          typeof maybe.retryAfterSeconds === 'number' &&
+          Number.isFinite(maybe.retryAfterSeconds)
+            ? `Please wait about ${Math.max(1, Math.round(maybe.retryAfterSeconds))} seconds before resending the invite.`
+            : typeof maybe.error === 'string'
+              ? maybe.error
+              : 'Unable to invite or link caretaker access.';
         setCaretakerFormError(msg);
         announce(msg, { politeness: 'assertive' });
         return;

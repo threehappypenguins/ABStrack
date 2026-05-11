@@ -162,15 +162,20 @@ export function CaretakerAccessPage() {
     const maybeJson = (await res.json().catch(() => ({}))) as {
       error?: string;
       outcome?: string;
+      retryAfterSeconds?: number;
     };
     setBusy(false);
     if (!res.ok) {
       const raw =
         typeof maybeJson.error === 'string' ? maybeJson.error : undefined;
       const msg =
-        maybeJson.error === 'server_misconfigured'
-          ? 'Caretaker access is temporarily unavailable (Supabase Edge Function or secrets).'
-          : (raw ?? 'Unable to invite or link caretaker access.');
+        res.status === 429 &&
+        typeof maybeJson.retryAfterSeconds === 'number' &&
+        Number.isFinite(maybeJson.retryAfterSeconds)
+          ? `Please wait about ${Math.max(1, Math.round(maybeJson.retryAfterSeconds))} seconds before resending the invite.`
+          : maybeJson.error === 'server_misconfigured'
+            ? 'Caretaker access is temporarily unavailable (Supabase Edge Function or secrets).'
+            : (raw ?? 'Unable to invite or link caretaker access.');
       setFormError(msg);
       announce(msg, { politeness: 'assertive' });
       return;

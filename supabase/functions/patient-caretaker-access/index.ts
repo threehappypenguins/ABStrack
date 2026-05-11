@@ -11,7 +11,7 @@
  * - **POST** — patient: `{ caretakerEmail }` send invite or link existing caretaker; `{ cancelPendingCaretakerInvite: true }` cancel pending invite; caretaker: `{ finalizeCaretakerInvite: true, inviteId }` after accepting email invite.
  * - **DELETE** — patient: revoke active caretaker grant (clears pending invites too).
  *
- * **Invite email:** `auth.admin.inviteUserByEmail` `redirectTo` is **`ABSTRACK_CARETAKER_INVITE_REDIRECT_TO`** when set (trimmed; e.g. `abstrack:///caretaker-invite` for Expo). Otherwise falls back to **`{origin}/auth/callback?next=/caretaker/join`** where `origin` is parsed from **`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN`** (trimmed, trailing slash removed, must be absolute **http** or **https**). Values must appear in Supabase Auth **Redirect URLs**.
+ * **Invite email:** `auth.admin.inviteUserByEmail` `redirectTo` is **`ABSTRACK_CARETAKER_INVITE_REDIRECT_TO`** when set (trimmed; e.g. `abstrack:///caretaker-invite` for Expo). Otherwise falls back to **`{origin}/auth/callback?next=/caretaker/join`** where `origin` is parsed from **`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN`** (trimmed, trailing slash removed, must be absolute **http** or **https**). Values must appear in Supabase Auth **Redirect URLs**. Resends for the same patient + invitee email are limited to once per **`CARETAKER_INVITE_MIN_RESEND_INTERVAL_MS`** after **`last_invite_sent_at`** (**429** + **`Retry-After`**).
  *
  * @see https://supabase.com/docs/guides/functions/secrets
  *
@@ -39,6 +39,37 @@ const ALLOW_METHODS = 'GET, POST, DELETE, OPTIONS';
 const BEARER_AUTH_RE = /^\s*Bearer\s+(.*)$/i;
 
 const INVITE_VALID_DAYS = 14;
+
+/** Minimum time between successful caretaker invite emails for the same patient + email (ms). */
+const CARETAKER_INVITE_MIN_RESEND_INTERVAL_MS = 90_000;
+
+/**
+ * @param lastInviteSentAt - `caretaker_invites.last_invite_sent_at` after a successful send.
+ * @param nowMs - Current epoch milliseconds.
+ */
+function caretakerInviteResendTooSoon(
+  lastInviteSentAt: string | null | undefined,
+  nowMs: number,
+): { tooSoon: true; retryAfterSec: number } | { tooSoon: false } {
+  if (lastInviteSentAt == null || lastInviteSentAt === '') {
+    return { tooSoon: false };
+  }
+  const t = Date.parse(lastInviteSentAt);
+  if (!Number.isFinite(t)) {
+    return { tooSoon: false };
+  }
+  const elapsed = nowMs - t;
+  if (elapsed >= CARETAKER_INVITE_MIN_RESEND_INTERVAL_MS) {
+    return { tooSoon: false };
+  }
+  return {
+    tooSoon: true,
+    retryAfterSec: Math.max(
+      1,
+      Math.ceil((CARETAKER_INVITE_MIN_RESEND_INTERVAL_MS - elapsed) / 1000),
+    ),
+  };
+}
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -263,10 +294,15 @@ async function consumeCaretakerInviteForFinalize(
 }
 
 /**
- * Runs {@link consumeCaretakerInviteForFinalize} after `caretaker_access` was written. If the
- * invite row disappeared concurrently (e.g. patient cancelled), consume returns **404** while
- * access may still be valid — when an **active** grant row exists for this pair, treat finalize
- * as idempotent **200** instead of surfacing “invite not found”.
+ * Runs {@link consumeCaretakerInviteForFinalize} after optional `caretaker_access` mutation.
+ *
+ * When **`rollbackActiveGrantOnConsume404`** is true (this request just **inserted** or
+ * **reactivated** a grant), a consume **404** (invite row gone, e.g. patient cancelled) **revokes**
+ * that new active row so cancel semantics win, then returns the **404** response.
+ *
+ * When false, a consume **404** with an existing active grant for this pair is treated as
+ * idempotent **200** (e.g. **`already_linked`** or a **23505** race where this request did not
+ * apply the grant write).
  */
 async function finalizeConsumeInviteAfterGrant(
   admin: SupabaseClient,
@@ -275,6 +311,7 @@ async function finalizeConsumeInviteAfterGrant(
   patientUserId: string,
   nowIso: string,
   outcome: 'already_linked' | 'linked',
+  rollbackActiveGrantOnConsume404: boolean,
 ): Promise<Response> {
   const consumed = await consumeCaretakerInviteForFinalize(
     admin,
@@ -285,7 +322,28 @@ async function finalizeConsumeInviteAfterGrant(
   if (consumed.ok) {
     return jsonResponse(200, { ok: true, outcome });
   }
-  if (consumed.response.status === 404) {
+  if (consumed.response.status === 404 && rollbackActiveGrantOnConsume404) {
+    const { error: rbErr } = await admin
+      .from('caretaker_access')
+      .update({ revoked_at: nowIso })
+      .eq('patient_user_id', patientUserId)
+      .eq('caretaker_user_id', caretakerUserId)
+      .is('revoked_at', null);
+    if (rbErr) {
+      console.error(
+        'finalize rollback grant after consume 404',
+        inviteId,
+        rbErr,
+      );
+    } else {
+      console.warn(
+        'finalize: rolled back grant after invite missing (consume 404)',
+        inviteId,
+      );
+    }
+    return consumed.response;
+  }
+  if (consumed.response.status === 404 && !rollbackActiveGrantOnConsume404) {
     const { data: link, error: linkErr } = await admin
       .from('caretaker_access')
       .select('id, revoked_at')
@@ -294,7 +352,7 @@ async function finalizeConsumeInviteAfterGrant(
       .maybeSingle();
     if (!linkErr && link && link.revoked_at == null) {
       console.warn(
-        'finalize: invite row missing after grant; idempotent success',
+        'finalize: invite row missing; idempotent success (no grant rollback)',
         inviteId,
       );
       return jsonResponse(200, { ok: true, outcome });
@@ -436,6 +494,7 @@ async function handleFinalizeCaretakerInvite(
       patientId,
       nowIso,
       'already_linked',
+      false,
     );
   }
 
@@ -461,6 +520,7 @@ async function handleFinalizeCaretakerInvite(
             patientId,
             nowIso,
             'linked',
+            false,
           );
         }
         return jsonResponse(409, {
@@ -498,6 +558,7 @@ async function handleFinalizeCaretakerInvite(
     patientId,
     nowIso,
     'linked',
+    true,
   );
 }
 
@@ -951,6 +1012,43 @@ Deno.serve(async (req: Request) => {
     });
   }
 
+  const nowMs = Date.now();
+  const { data: pendingForThrottle, error: throttleReadErr } = await admin
+    .from('caretaker_invites')
+    .select('invitee_email_normalized, last_invite_sent_at')
+    .eq('patient_user_id', user.id)
+    .is('consumed_at', null)
+    .maybeSingle();
+
+  if (throttleReadErr) {
+    console.error('caretaker_invites resend throttle read', throttleReadErr);
+    return jsonResponse(500, {
+      error: 'Unable to verify pending invite. Try again in a moment.',
+    });
+  }
+
+  if (
+    pendingForThrottle &&
+    (pendingForThrottle.invitee_email_normalized as string) === normalizedTarget
+  ) {
+    const throttle = caretakerInviteResendTooSoon(
+      pendingForThrottle.last_invite_sent_at as string | null | undefined,
+      nowMs,
+    );
+    if (throttle.tooSoon) {
+      return jsonResponse(
+        429,
+        {
+          error: 'Please wait before resending the invite.',
+          retryAfterSeconds: throttle.retryAfterSec,
+        },
+        {
+          'Retry-After': String(throttle.retryAfterSec),
+        },
+      );
+    }
+  }
+
   const { error: clearBeforeInviteErr } = await clearPendingInvitesForPatient(
     admin,
     user.id,
@@ -980,7 +1078,7 @@ Deno.serve(async (req: Request) => {
     if (isPostgresUniqueViolation(insInvErr)) {
       const { data: pending, error: pendSelErr } = await admin
         .from('caretaker_invites')
-        .select('id, invitee_email_normalized, expires_at')
+        .select('id, invitee_email_normalized, expires_at, last_invite_sent_at')
         .eq('patient_user_id', user.id)
         .is('consumed_at', null)
         .maybeSingle();
@@ -1001,6 +1099,23 @@ Deno.serve(async (req: Request) => {
           error:
             'A pending invite is already in progress for a different email. Cancel the pending invite first.',
         });
+      }
+
+      const raceThrottle = caretakerInviteResendTooSoon(
+        pending.last_invite_sent_at as string | null | undefined,
+        Date.now(),
+      );
+      if (raceThrottle.tooSoon) {
+        return jsonResponse(
+          429,
+          {
+            error: 'Please wait before resending the invite.',
+            retryAfterSeconds: raceThrottle.retryAfterSec,
+          },
+          {
+            'Retry-After': String(raceThrottle.retryAfterSec),
+          },
+        );
       }
 
       inviteId = pending.id as string;
