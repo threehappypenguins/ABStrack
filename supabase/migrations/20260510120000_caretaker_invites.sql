@@ -22,6 +22,7 @@ CREATE TABLE public.caretaker_invites (
   last_invite_sent_at timestamptz,
   CONSTRAINT caretaker_invites_invitee_email_normalized_check CHECK (
     invitee_email_normalized = lower(trim(invitee_email_normalized))
+    AND char_length(invitee_email_normalized) BETWEEN 1 AND 254
   ),
   CONSTRAINT caretaker_invites_expires_at_check CHECK (expires_at > created_at)
 );
@@ -95,11 +96,11 @@ AS $$
   SELECT u.id
   FROM auth.users AS u
   WHERE u.email IS NOT NULL
-    AND lower(trim(u.email::text)) = p_normalized
+    AND u.email = p_normalized
   LIMIT 1;
 $$;
 
-COMMENT ON FUNCTION public.resolve_auth_user_id_by_normalized_email (text) IS 'Maps normalized email to auth.users.id for patient-caretaker-access; SECURITY DEFINER; service_role EXECUTE only.';
+COMMENT ON FUNCTION public.resolve_auth_user_id_by_normalized_email (text) IS 'Maps normalized email to auth.users.id for patient-caretaker-access; callers MUST pass lower(trim(email)). Uses equality on auth.users.email so Postgres can use the btree index (GoTrue stores emails lowercase; trimming matches signup-normalized values). SECURITY DEFINER; service_role EXECUTE only.';
 
 REVOKE ALL ON FUNCTION public.resolve_auth_user_id_by_normalized_email (text) FROM PUBLIC;
 
