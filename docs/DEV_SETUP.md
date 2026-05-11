@@ -286,6 +286,8 @@ Easier:
 
 Default ports depend on Nx/Next/Expo; watch the terminal output. For **mobile**, the app includes **native-only** dependencies (`@op-engineering/op-sqlite` / PowerSync SQLCipher). They are **not** in the store **Expo Go** app — opening the dev-server QR code in Expo Go often fails at runtime with errors like **“Base module not found”** (pod/Gradle hints in the message are a red herring on a physical device). Use one of: **(1)** a **development build** installed on the device ([`apps/mobile/eas.json`](../apps/mobile/eas.json) profile `development` has `developmentClient: true` — build with EAS and install that APK/IPA, then open the same Metro URL/QR from **that** dev client), **(2)** from the repo root **`pnpm ios`** or **`pnpm android`** (runs `expo run:ios` / `expo run:android` in `apps/mobile` with a USB device or emulator), or **(3)** the same against a simulator. Do **not** rely on Expo Go for this repo’s mobile app.
 
+**Nx project graph (`Failed to process project graph` / `@nx/expo/plugin` / `Invalid string length`):** From the repo root run **`pnpm exec nx reset`** (clears the daemon and cache). The repo root **`.nxignore`** keeps **`apps/mobile/android/**`**, **`apps/mobile/ios/**`**, and common mobile caches out of Nx’s Expo plugin file hashing so local native build trees do not blow up graph processing.
+
 Useful references:
 
 - [Nx run-many](https://nx.dev/nx-api/nx/documents/run-many)
