@@ -52,18 +52,18 @@ CREATE POLICY caretaker_invites_service_role_insert ON public.caretaker_invites
 CREATE POLICY caretaker_invites_service_role_update ON public.caretaker_invites
   FOR UPDATE
   TO service_role
-  USING (TRUE)
+  USING (consumed_at IS NULL)
   WITH CHECK (TRUE);
 
 CREATE POLICY caretaker_invites_service_role_delete ON public.caretaker_invites
   FOR DELETE
   TO service_role
-  USING (TRUE);
+  USING (consumed_at IS NULL);
 
 COMMENT ON POLICY caretaker_invites_service_role_select ON public.caretaker_invites IS 'Trusted SELECT for patient-caretaker-access Edge Function when service_role is subject to RLS.';
 COMMENT ON POLICY caretaker_invites_service_role_insert ON public.caretaker_invites IS 'Trusted INSERT for patient-caretaker-access Edge Function when service_role is subject to RLS.';
-COMMENT ON POLICY caretaker_invites_service_role_update ON public.caretaker_invites IS 'Trusted UPDATE (consume invite, stamp resend) for patient-caretaker-access when service_role is subject to RLS.';
-COMMENT ON POLICY caretaker_invites_service_role_delete ON public.caretaker_invites IS 'Trusted DELETE (clear pending / rollback) for patient-caretaker-access when service_role is subject to RLS.';
+COMMENT ON POLICY caretaker_invites_service_role_update ON public.caretaker_invites IS 'Trusted UPDATE for pending rows only (USING consumed_at IS NULL): resend stamp, extend expiry, consume; consumed rows are immutable via UPDATE.';
+COMMENT ON POLICY caretaker_invites_service_role_delete ON public.caretaker_invites IS 'Trusted DELETE for pending rows only (USING consumed_at IS NULL): clear pending / rollback; consumed rows are retained.';
 
 -- caretaker_access: Edge uses SELECT/INSERT/UPDATE only (revoke = UPDATE revoked_at; no row DELETE).
 CREATE POLICY caretaker_access_service_role_select ON public.caretaker_access

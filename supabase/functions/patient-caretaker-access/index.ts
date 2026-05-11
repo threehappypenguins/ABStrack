@@ -9,7 +9,9 @@
  * HTTP:
  * - **GET** — patient: active grant + pending invite (if any).
  * - **POST** — patient: `{ caretakerEmail }` send invite or link existing caretaker; `{ cancelPendingCaretakerInvite: true }` cancel pending invite; caretaker: `{ finalizeCaretakerInvite: true, inviteId }` after accepting email invite (**200** retry-safe when that invite is already consumed by this caretaker).
- * - **DELETE** — patient: revoke active caretaker grant (clears pending invites too).
+ * - **DELETE** — patient: revoke active caretaker grant (clears pending invites too). Returns
+ *   **200** with optional **`pendingInviteCleanupFailed: true`** when the grant revoke committed
+ *   but best-effort pending-invite cleanup failed.
  * - **POST patient link (200 `linked` / `already_linked`):** body may include **`pendingInviteCleanupFailed: true`** when **`caretaker_access`** is already committed but deleting **`caretaker_invites`** best-effort failed—clients should still treat the link as success.
  *
  * **Invite email:** `auth.admin.inviteUserByEmail` `redirectTo` is **`ABSTRACK_CARETAKER_INVITE_REDIRECT_TO`** when set (trimmed; e.g. `abstrack:///caretaker-invite` for Expo). Otherwise falls back to **`{origin}/auth/callback?next=/caretaker/join`** where `origin` is parsed from **`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN`** (trimmed, trailing slash removed, must be absolute **http** or **https**). Values must appear in Supabase Auth **Redirect URLs**. Resends for the same patient + invitee email are limited to once per **`CARETAKER_INVITE_MIN_RESEND_INTERVAL_MS`** after **`last_invite_sent_at`**, which is written **before** the Auth invite call so throttle state still applies if the email succeeds but the handler would otherwise error (**429** + **`Retry-After`**).
@@ -1188,9 +1190,9 @@ Deno.serve(async (req: Request) => {
     );
     if (clearPendingErr) {
       console.error('caretaker_access revoke clear pending', clearPendingErr);
-      return jsonResponse(500, {
-        error:
-          'Caretaker access was revoked but pending invites could not be cleared. Try again or cancel the pending invite from settings.',
+      return jsonResponse(200, {
+        ok: true,
+        pendingInviteCleanupFailed: true,
       });
     }
 
