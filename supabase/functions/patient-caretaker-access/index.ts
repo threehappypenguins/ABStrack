@@ -339,7 +339,13 @@ async function handleFinalizeCaretakerInvite(
     .eq('id', inviteId)
     .maybeSingle();
 
-  if (invErr || !invite) {
+  if (invErr) {
+    console.error('finalize invite lookup', invErr);
+    return jsonResponse(500, {
+      error: 'Unable to load the invite. Try again in a moment.',
+    });
+  }
+  if (!invite) {
     return jsonResponse(404, {
       error: 'Invite not found or already used.',
     });

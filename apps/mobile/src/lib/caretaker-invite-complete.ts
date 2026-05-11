@@ -6,6 +6,11 @@ import {
 } from './patient-user-web-api';
 import { getMobileSupabaseClient } from './supabase-wiring';
 
+/** PostgREST duplicate key — profile row may have been created concurrently. */
+function isPostgresUniqueViolation(err: { code?: string } | null): boolean {
+  return err?.code === '23505';
+}
+
 /**
  * Result of finishing a patient-sent caretaker invite after the invitee has a Supabase session.
  */
@@ -66,12 +71,34 @@ export async function completeCaretakerInviteAfterAuth(): Promise<CompleteCareta
       app_role: 'caretaker',
     });
     if (insPErr) {
-      return {
-        ok: false,
-        message:
-          insPErr.message ||
-          'Unable to create your caretaker profile. Try again or contact support.',
-      };
+      if (isPostgresUniqueViolation(insPErr)) {
+        const { data: afterRace, error: raceReadErr } = await supabase
+          .from('profiles')
+          .select('app_role')
+          .eq('id', session.user.id)
+          .maybeSingle();
+        if (raceReadErr || !afterRace) {
+          return {
+            ok: false,
+            message:
+              'Unable to verify your profile after sign-up. Try again in a moment.',
+          };
+        }
+        if (afterRace.app_role !== 'caretaker') {
+          return {
+            ok: false,
+            message:
+              'This ABStrack account is not a caretaker profile. Use the email address the patient invited, or contact support.',
+          };
+        }
+      } else {
+        return {
+          ok: false,
+          message:
+            insPErr.message ||
+            'Unable to create your caretaker profile. Try again or contact support.',
+        };
+      }
     }
   } else if (profile.app_role !== 'caretaker') {
     return {

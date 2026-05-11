@@ -14,6 +14,11 @@ type JoinState =
   | { kind: 'error'; message: string }
   | { kind: 'done' };
 
+/** True when PostgREST reports a duplicate key (concurrent profile insert). */
+function isPostgresUniqueViolation(err: { code?: string } | null): boolean {
+  return err?.code === '23505';
+}
+
 /**
  * Post-invite landing: after the caretaker accepts the Supabase email link, the session may need a
  * caretaker profile row and a call to finalize the `caretaker_invites` row into `caretaker_access`.
@@ -79,15 +84,43 @@ export default function CaretakerJoinPage() {
           app_role: 'caretaker',
         });
         if (insErr) {
-          if (!cancelled) {
-            setState({
-              kind: 'error',
-              message:
-                insErr.message ||
-                'Unable to create your caretaker profile. Try again or contact support.',
-            });
+          if (isPostgresUniqueViolation(insErr)) {
+            const { data: afterRace, error: raceReadErr } = await supabase
+              .from('profiles')
+              .select('app_role')
+              .eq('id', session.user.id)
+              .maybeSingle();
+            if (raceReadErr || !afterRace) {
+              if (!cancelled) {
+                setState({
+                  kind: 'error',
+                  message:
+                    'Unable to verify your profile after sign-up. Try again in a moment.',
+                });
+              }
+              return;
+            }
+            if (afterRace.app_role !== 'caretaker') {
+              if (!cancelled) {
+                setState({
+                  kind: 'wrong_role',
+                  message:
+                    'This invite is for a caretaker account, but your profile is not set to caretaker. Use the account your patient invited, or contact support.',
+                });
+              }
+              return;
+            }
+          } else {
+            if (!cancelled) {
+              setState({
+                kind: 'error',
+                message:
+                  insErr.message ||
+                  'Unable to create your caretaker profile. Try again or contact support.',
+              });
+            }
+            return;
           }
-          return;
         }
       } else if (profile.app_role !== 'caretaker') {
         if (!cancelled) {
