@@ -8,7 +8,7 @@
  *
  * HTTP:
  * - **GET** — patient: active grant + pending invite (if any).
- * - **POST** — patient: `{ caretakerEmail }` send invite or link existing caretaker; `{ cancelPendingCaretakerInvite: true }` cancel pending invite; caretaker: `{ finalizeCaretakerInvite: true, inviteId }` after accepting email invite.
+ * - **POST** — patient: `{ caretakerEmail }` send invite or link existing caretaker; `{ cancelPendingCaretakerInvite: true }` cancel pending invite; caretaker: `{ finalizeCaretakerInvite: true, inviteId }` after accepting email invite (**200** retry-safe when that invite is already consumed by this caretaker).
  * - **DELETE** — patient: revoke active caretaker grant (clears pending invites too).
  * - **POST patient link (200 `linked` / `already_linked`):** body may include **`pendingInviteCleanupFailed: true`** when **`caretaker_access`** is already committed but deleting **`caretaker_invites`** best-effort failed—clients should still treat the link as success.
  *
@@ -789,7 +789,7 @@ async function handleFinalizeCaretakerInvite(
   const { data: invite, error: invErr } = await admin
     .from('caretaker_invites')
     .select(
-      'id, patient_user_id, invitee_email_normalized, expires_at, consumed_at',
+      'id, patient_user_id, invitee_email_normalized, expires_at, consumed_at, consumed_caretaker_user_id',
     )
     .eq('id', inviteId)
     .maybeSingle();
@@ -807,6 +807,26 @@ async function handleFinalizeCaretakerInvite(
   }
 
   if (invite.consumed_at != null) {
+    if (invite.consumed_caretaker_user_id === user.id) {
+      const patientIdDone = invite.patient_user_id as string;
+      const { data: pairActive, error: pairDoneErr } = await admin
+        .from('caretaker_access')
+        .select('id')
+        .eq('patient_user_id', patientIdDone)
+        .eq('caretaker_user_id', user.id)
+        .is('revoked_at', null)
+        .maybeSingle();
+      if (pairDoneErr) {
+        console.error('finalize idempotent consumed pair lookup', pairDoneErr);
+        return jsonResponse(500, {
+          error: 'Unable to verify caretaker access. Try again in a moment.',
+        });
+      }
+      return jsonResponse(200, {
+        ok: true,
+        outcome: pairActive ? 'already_linked' : 'linked',
+      });
+    }
     return jsonResponse(409, { error: 'This invite was already completed.' });
   }
 

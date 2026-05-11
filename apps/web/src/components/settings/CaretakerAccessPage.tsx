@@ -52,6 +52,7 @@ export function CaretakerAccessPage() {
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [revokeOpen, setRevokeOpen] = useState(false);
+  const [revokeError, setRevokeError] = useState<string | null>(null);
 
   const loadGrant = useCallback(async () => {
     setLoadError(null);
@@ -208,19 +209,19 @@ export function CaretakerAccessPage() {
   };
 
   const onRevoke = async () => {
+    setRevokeError(null);
     setBusy(true);
     let res: Response;
     try {
       res = await fetchPatientCaretakerAccessDelete();
     } catch (err) {
       setBusy(false);
-      announce(
-        caretakerEdgeClientPreflightErrorMessage(
-          err,
-          'You must be signed in to revoke caretaker access.',
-        ),
-        { politeness: 'assertive' },
+      const msg = caretakerEdgeClientPreflightErrorMessage(
+        err,
+        'You must be signed in to revoke caretaker access.',
       );
+      setRevokeError(msg);
+      announce(msg, { politeness: 'assertive' });
       return false;
     }
     const maybeJson = (await res.json().catch(() => ({}))) as {
@@ -234,9 +235,11 @@ export function CaretakerAccessPage() {
         maybeJson.error === 'server_misconfigured'
           ? 'Caretaker access is temporarily unavailable (Supabase Edge Function or secrets).'
           : (raw ?? 'Unable to revoke caretaker access.');
+      setRevokeError(msg);
       announce(msg, { politeness: 'assertive' });
       return false;
     }
+    setRevokeError(null);
     announce('Caretaker access revoked.', { politeness: 'polite' });
     await loadGrant();
     return undefined;
@@ -354,7 +357,10 @@ export function CaretakerAccessPage() {
             type="button"
             className="mt-6 min-h-[44px] rounded-full bg-red-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-70 dark:bg-red-700 dark:hover:bg-red-600"
             disabled={busy}
-            onClick={() => setRevokeOpen(true)}
+            onClick={() => {
+              setRevokeError(null);
+              setRevokeOpen(true);
+            }}
           >
             Revoke caretaker access
           </button>
@@ -426,8 +432,17 @@ export function CaretakerAccessPage() {
         cancelLabel="Keep caretaker"
         confirmBusyLabel="Revoking…"
         onConfirm={() => onRevoke()}
-        onClose={() => setRevokeOpen(false)}
-      />
+        onClose={() => {
+          setRevokeOpen(false);
+          setRevokeError(null);
+        }}
+      >
+        {revokeError ? (
+          <p role="alert" className="text-sm text-red-700 dark:text-red-300">
+            {revokeError}
+          </p>
+        ) : null}
+      </ConfirmDialog>
     </div>
   );
 }

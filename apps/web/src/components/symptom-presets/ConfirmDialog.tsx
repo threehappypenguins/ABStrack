@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useId, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 
 /**
  * `HTMLDialogElement.close()` / `showModal()` throw `InvalidStateError` if the dialog
@@ -29,6 +29,8 @@ export type ConfirmDialogProps = {
   title: string;
   /** Optional supporting text below the title. */
   description?: string;
+  /** Optional body below the description (e.g. inline validation or error from {@link onConfirm}). */
+  children?: ReactNode;
   /** Label for the destructive or primary confirm control. */
   confirmLabel: string;
   /** Label for dismiss (default: Cancel). */
@@ -54,13 +56,14 @@ export type ConfirmDialogProps = {
  * provided by the user agent. {@link ConfirmDialogProps.onClose} runs on every close, not
  * only on dismiss.
  *
- * @param props - Dialog copy and handlers.
+ * @param props - Dialog copy and handlers; optional **`children`** for extra body content.
  * @returns A modal dialog element.
  */
 export function ConfirmDialog({
   open,
   title,
   description,
+  children,
   confirmLabel,
   cancelLabel = 'Cancel',
   confirmBusyLabel = 'Please wait…',
@@ -122,6 +125,7 @@ export function ConfirmDialog({
         {description ? (
           <p className="text-sm text-app-muted">{description}</p>
         ) : null}
+        {children}
         <div className="flex flex-wrap justify-end gap-3">
           <button
             type="button"
