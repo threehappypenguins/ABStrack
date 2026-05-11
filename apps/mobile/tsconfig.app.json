@@ -15,6 +15,7 @@
     "./nativewind-env.d.ts"
   ],
   "exclude": [
+    // Typechecked via `tsconfig.config.json` (`rootDir` here is `src/`).
     "app.config.ts",
     "out-tsc",
     "dist",

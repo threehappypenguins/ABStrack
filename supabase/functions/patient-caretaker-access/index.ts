@@ -328,12 +328,14 @@ function isPostgresUniqueViolation(err: unknown): boolean {
 /**
  * Stamps **`last_invite_sent_at`** before **`inviteUserByEmail`** so resend throttle applies even if
  * Auth succeeds and a later failure would return **500** (stamp-after-send allowed unthrottled retries).
- * The stamp **`UPDATE`** filters **`consumed_at IS NULL`** and **`.select('id')`** so we only proceed
- * when exactly one pending row matched (PostgREST can return **`error: null`** on zero rows updated).
- * When **`deletePendingInviteOnMailFailure`** is true, failed sends roll back by deleting the pending
- * invite row (new-invite path), dropping the stamp with the row. When false, the row is kept (resend
- * while invitee has Auth user but no profile yet); a stamp without a delivered mail still enforces
- * throttle until the interval passes.
+ * The stamp **`UPDATE`** filters **`consumed_at IS NULL`** and an **atomic resend window** on
+ * **`last_invite_sent_at`** (`NULL` or older than **`CARETAKER_INVITE_MIN_RESEND_INTERVAL_MS`**) so two
+ * concurrent callers cannot both pass a non-atomic throttle read and send duplicate Auth emails.
+ * **`.select('id')`** requires exactly one updated row; zero rows → **429** if still throttled, else
+ * **404** / **409** (see handler). When **`deletePendingInviteOnMailFailure`** is true, failed sends
+ * roll back by deleting the pending invite row (new-invite path), dropping the stamp with the row.
+ * When false, the row is kept (resend while invitee has Auth user but no profile yet); a stamp without
+ * a delivered mail still enforces throttle until the interval passes.
  */
 async function sendCaretakerInviteEmailAndStamp(
   admin: SupabaseClient,
@@ -355,11 +357,20 @@ async function sendCaretakerInviteEmailAndStamp(
     deletePendingInviteOnMailFailure,
   } = options;
 
+  const nowMs = Date.now();
+  const stampNowIso = new Date(nowMs).toISOString();
+  const throttleCutoffIso = new Date(
+    nowMs - CARETAKER_INVITE_MIN_RESEND_INTERVAL_MS,
+  ).toISOString();
+
   const { data: stampedRows, error: stampErr } = await admin
     .from('caretaker_invites')
-    .update({ last_invite_sent_at: new Date().toISOString() })
+    .update({ last_invite_sent_at: stampNowIso })
     .eq('id', inviteId)
     .is('consumed_at', null)
+    .or(
+      `last_invite_sent_at.is.null,last_invite_sent_at.lt."${throttleCutoffIso}"`,
+    )
     .select('id');
 
   if (stampErr) {
@@ -390,7 +401,7 @@ async function sendCaretakerInviteEmailAndStamp(
 
     const { data: inviteRow, error: inviteReadErr } = await admin
       .from('caretaker_invites')
-      .select('id, consumed_at')
+      .select('id, consumed_at, last_invite_sent_at')
       .eq('id', inviteId)
       .maybeSingle();
 
@@ -423,8 +434,28 @@ async function sendCaretakerInviteEmailAndStamp(
       };
     }
 
+    const lostRaceThrottle = caretakerInviteResendTooSoon(
+      inviteRow.last_invite_sent_at as string | null | undefined,
+      nowMs,
+    );
+    if (lostRaceThrottle.tooSoon) {
+      return {
+        ok: false,
+        response: jsonResponse(
+          429,
+          {
+            error: 'Please wait before resending the invite.',
+            retryAfterSeconds: lostRaceThrottle.retryAfterSec,
+          },
+          {
+            'Retry-After': String(lostRaceThrottle.retryAfterSec),
+          },
+        ),
+      };
+    }
+
     console.warn(
-      'caretaker_invites pre-send stamp matched no pending row',
+      'caretaker_invites pre-send atomic stamp matched no row (unexpected)',
       inviteId,
     );
     return {

@@ -1,6 +1,14 @@
 import type { ConfigContext, ExpoConfig } from 'expo/config';
 
 /**
+ * Expo passes a **partial** `config` into dynamic `app.config` (static `app.json` / defaults);
+ * the evaluated result is still a full {@link ExpoConfig} after the config pipeline merges.
+ */
+function mergedExpoConfig(config: Partial<ExpoConfig>): ExpoConfig {
+  return config as ExpoConfig;
+}
+
+/**
  * Hostname from `EXPO_PUBLIC_USER_WEB_ORIGIN` for iOS Universal Links + Android App Links
  * (`applinks:` / `autoVerify` intent filters on **`/auth/callback` only** — not `/caretaker/join`,
  * because the web callback exchanges `code` then redirects to `/caretaker/join` without `code`).
@@ -34,7 +42,7 @@ function userWebHostAndSchemeFromEnv(): {
 export default ({ config }: ConfigContext): ExpoConfig => {
   const parsed = userWebHostAndSchemeFromEnv();
   if (!parsed) {
-    return config;
+    return mergedExpoConfig(config);
   }
   const { host, schemes } = parsed;
 
@@ -52,7 +60,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     category: ['BROWSABLE' as const, 'DEFAULT' as const],
   }));
 
-  return {
+  return mergedExpoConfig({
     ...config,
     ios: {
       ...config.ios,
@@ -62,5 +70,5 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       ...config.android,
       intentFilters: [...existingFilters, ...caretakerInviteFilters],
     },
-  };
+  });
 };
