@@ -99,7 +99,9 @@ export function SettingsScreen() {
     if (!patientCaretakerApiUrl) {
       return;
     }
-    setCaretakerLoadError(null);
+    if (isMountedRef.current) {
+      setCaretakerLoadError(null);
+    }
     try {
       const {
         data: { session },
@@ -137,12 +139,12 @@ export function SettingsScreen() {
         return;
       }
       if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as {
+          error?: string;
+        };
         if (isMountedRef.current) {
           setCaretakerGrant(null);
           setCaretakerPendingInvite(null);
-          const body = (await res.json().catch(() => ({}))) as {
-            error?: string;
-          };
           setCaretakerLoadError(
             body.error === 'server_misconfigured'
               ? 'Caretaker access is temporarily unavailable (Supabase Edge Function or secrets).'
@@ -186,17 +188,21 @@ export function SettingsScreen() {
   }, [patientCaretakerApiUrl, loadCaretakerGrant]);
 
   const onCancelPendingCaretakerInvite = async () => {
-    setCaretakerBusy(true);
-    setCaretakerFormError(null);
+    if (isMountedRef.current) {
+      setCaretakerBusy(true);
+      setCaretakerFormError(null);
+    }
     try {
       const {
         data: { session },
         error: sessionError,
       } = await getMobileAuthSessionSafe();
       if (sessionError || !session?.access_token?.trim()) {
-        setCaretakerFormError(
-          'You must be signed in with a valid session to cancel an invite.',
-        );
+        if (isMountedRef.current) {
+          setCaretakerFormError(
+            'You must be signed in with a valid session to cancel an invite.',
+          );
+        }
         return;
       }
       const res = await fetchCaretakerAccessCancelPendingInvite(
@@ -210,18 +216,26 @@ export function SettingsScreen() {
           typeof maybe.error === 'string'
             ? maybe.error
             : 'Unable to cancel the invite.';
-        setCaretakerFormError(msg);
-        announce(msg, { politeness: 'assertive' });
+        if (isMountedRef.current) {
+          setCaretakerFormError(msg);
+          announce(msg, { politeness: 'assertive' });
+        }
         return;
       }
-      announce('Pending caretaker invite cancelled.', { politeness: 'polite' });
+      if (isMountedRef.current) {
+        announce('Pending caretaker invite cancelled.', {
+          politeness: 'polite',
+        });
+      }
       await loadCaretakerGrant();
     } catch (e) {
-      setCaretakerFormError(
-        isMissingPublishableKeyForCaretakerEdge(e)
-          ? CARETAKER_EDGE_PUBLISHABLE_KEY_ENV_HELP
-          : 'Something went wrong. Check EXPO_PUBLIC_SUPABASE_URL, Edge Function deploy, and network, then try again.',
-      );
+      if (isMountedRef.current) {
+        setCaretakerFormError(
+          isMissingPublishableKeyForCaretakerEdge(e)
+            ? CARETAKER_EDGE_PUBLISHABLE_KEY_ENV_HELP
+            : 'Something went wrong. Check EXPO_PUBLIC_SUPABASE_URL, Edge Function deploy, and network, then try again.',
+        );
+      }
     } finally {
       if (isMountedRef.current) {
         setCaretakerBusy(false);
@@ -232,20 +246,26 @@ export function SettingsScreen() {
   const onInviteCaretaker = async () => {
     const trimmed = caretakerEmail.trim();
     if (!trimmed) {
-      setCaretakerFormError('Enter the caretaker email address.');
+      if (isMountedRef.current) {
+        setCaretakerFormError('Enter the caretaker email address.');
+      }
       return;
     }
-    setCaretakerBusy(true);
-    setCaretakerFormError(null);
+    if (isMountedRef.current) {
+      setCaretakerBusy(true);
+      setCaretakerFormError(null);
+    }
     try {
       const {
         data: { session },
         error: sessionError,
       } = await getMobileAuthSessionSafe();
       if (sessionError || !session?.access_token?.trim()) {
-        setCaretakerFormError(
-          'You must be signed in with a valid session to invite or link a caretaker.',
-        );
+        if (isMountedRef.current) {
+          setCaretakerFormError(
+            'You must be signed in with a valid session to invite or link a caretaker.',
+          );
+        }
         return;
       }
       const res = await fetchCaretakerAccessPost(session.access_token, trimmed);
@@ -263,33 +283,39 @@ export function SettingsScreen() {
             : typeof maybe.error === 'string'
               ? maybe.error
               : 'Unable to invite or link caretaker access.';
-        setCaretakerFormError(msg);
-        announce(msg, { politeness: 'assertive' });
+        if (isMountedRef.current) {
+          setCaretakerFormError(msg);
+          announce(msg, { politeness: 'assertive' });
+        }
         return;
       }
-      setCaretakerEmail('');
-      if (maybe.outcome === 'invite_sent') {
-        announce(
-          'Invite email sent. The link in that message finishes caretaker setup in the mobile app or on user web.',
-          { politeness: 'polite' },
-        );
-      } else if (maybe.outcome === 'already_linked') {
-        announce('That caretaker is already linked to your account.', {
-          politeness: 'polite',
-        });
-      } else {
-        announce(
-          'Caretaker linked. The caretaker can sign in on another device to help log for you.',
-          { politeness: 'polite' },
-        );
+      if (isMountedRef.current) {
+        setCaretakerEmail('');
+        if (maybe.outcome === 'invite_sent') {
+          announce(
+            'Invite email sent. The link in that message finishes caretaker setup in the mobile app or on user web.',
+            { politeness: 'polite' },
+          );
+        } else if (maybe.outcome === 'already_linked') {
+          announce('That caretaker is already linked to your account.', {
+            politeness: 'polite',
+          });
+        } else {
+          announce(
+            'Caretaker linked. The caretaker can sign in on another device to help log for you.',
+            { politeness: 'polite' },
+          );
+        }
       }
       await loadCaretakerGrant();
     } catch (e) {
-      setCaretakerFormError(
-        isMissingPublishableKeyForCaretakerEdge(e)
-          ? CARETAKER_EDGE_PUBLISHABLE_KEY_ENV_HELP
-          : 'Something went wrong. Check EXPO_PUBLIC_SUPABASE_URL, Edge Function deploy, and network, then try again.',
-      );
+      if (isMountedRef.current) {
+        setCaretakerFormError(
+          isMissingPublishableKeyForCaretakerEdge(e)
+            ? CARETAKER_EDGE_PUBLISHABLE_KEY_ENV_HELP
+            : 'Something went wrong. Check EXPO_PUBLIC_SUPABASE_URL, Edge Function deploy, and network, then try again.',
+        );
+      }
     } finally {
       if (isMountedRef.current) {
         setCaretakerBusy(false);
@@ -298,17 +324,21 @@ export function SettingsScreen() {
   };
 
   const runRevokeCaretaker = async () => {
-    setCaretakerBusy(true);
-    setCaretakerFormError(null);
+    if (isMountedRef.current) {
+      setCaretakerBusy(true);
+      setCaretakerFormError(null);
+    }
     try {
       const {
         data: { session },
         error: sessionError,
       } = await getMobileAuthSessionSafe();
       if (sessionError || !session?.access_token?.trim()) {
-        setCaretakerFormError(
-          'You must be signed in with a valid session to revoke caretaker access.',
-        );
+        if (isMountedRef.current) {
+          setCaretakerFormError(
+            'You must be signed in with a valid session to revoke caretaker access.',
+          );
+        }
         return;
       }
       const res = await fetchCaretakerAccessDelete(session.access_token);
@@ -320,18 +350,24 @@ export function SettingsScreen() {
           typeof maybe.error === 'string'
             ? maybe.error
             : 'Unable to revoke caretaker access.';
-        setCaretakerFormError(msg);
-        announce(msg, { politeness: 'assertive' });
+        if (isMountedRef.current) {
+          setCaretakerFormError(msg);
+          announce(msg, { politeness: 'assertive' });
+        }
         return;
       }
-      announce('Caretaker access revoked.', { politeness: 'polite' });
+      if (isMountedRef.current) {
+        announce('Caretaker access revoked.', { politeness: 'polite' });
+      }
       await loadCaretakerGrant();
     } catch (e) {
-      setCaretakerFormError(
-        isMissingPublishableKeyForCaretakerEdge(e)
-          ? CARETAKER_EDGE_PUBLISHABLE_KEY_ENV_HELP
-          : 'Something went wrong. Check EXPO_PUBLIC_SUPABASE_URL, Edge Function deploy, and network, then try again.',
-      );
+      if (isMountedRef.current) {
+        setCaretakerFormError(
+          isMissingPublishableKeyForCaretakerEdge(e)
+            ? CARETAKER_EDGE_PUBLISHABLE_KEY_ENV_HELP
+            : 'Something went wrong. Check EXPO_PUBLIC_SUPABASE_URL, Edge Function deploy, and network, then try again.',
+        );
+      }
     } finally {
       if (isMountedRef.current) {
         setCaretakerBusy(false);

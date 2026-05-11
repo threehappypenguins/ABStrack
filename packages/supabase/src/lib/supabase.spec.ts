@@ -56,6 +56,23 @@ describe('env-public', () => {
     delete process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
     expect(getSupabasePublishableKey()).toBe('sb_publishable_expo');
   });
+
+  it('getSupabaseUrl trims surrounding whitespace', () => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = '  https://trimmed.test  \n';
+    expect(getSupabaseUrl()).toBe('https://trimmed.test');
+  });
+
+  it('getSupabasePublishableKey trims surrounding whitespace', () => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://x.test';
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = '  sb_publishable_x  ';
+    expect(getSupabasePublishableKey()).toBe('sb_publishable_x');
+  });
+
+  it('getSupabaseUrl treats whitespace-only NEXT_PUBLIC as unset and falls back', () => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = '   \n';
+    process.env.EXPO_PUBLIC_SUPABASE_URL = 'https://fallback.test';
+    expect(getSupabaseUrl()).toBe('https://fallback.test');
+  });
 });
 
 describe('public entry', () => {

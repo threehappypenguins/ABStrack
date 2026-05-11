@@ -10,9 +10,16 @@
  * imported from the main package entry.
  */
 
-/** Treat missing or empty string as unset (`.env` often uses `VAR=` for optional keys). */
+/**
+ * Trims env values and treats missing, empty, or whitespace-only strings as unset (pasted secrets
+ * / `.env` lines often include trailing spaces or newlines).
+ */
 function normalizeEnv(value: string | undefined): string | undefined {
-  return value === undefined || value === '' ? undefined : value;
+  if (value === undefined) {
+    return undefined;
+  }
+  const t = value.trim();
+  return t === '' ? undefined : t;
 }
 
 /**
