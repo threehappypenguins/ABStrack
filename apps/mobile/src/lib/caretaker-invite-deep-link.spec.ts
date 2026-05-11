@@ -32,6 +32,15 @@ describe('isAbstrackCaretakerInviteUrl', () => {
     ).toBe(true);
   });
 
+  it('matches caretaker-invite with uppercased scheme', () => {
+    expect(
+      isAbstrackCaretakerInviteUrl('ABSTRACK:///caretaker-invite?code=x'),
+    ).toBe(true);
+    expect(
+      isAbstrackCaretakerInviteUrl('AbStrAcK:///caretaker-invite?code=x'),
+    ).toBe(true);
+  });
+
   it('rejects other abstrack paths', () => {
     expect(isAbstrackCaretakerInviteUrl('abstrack:///signup?code=x')).toBe(
       false,

@@ -44,6 +44,17 @@ function parseUrlParts(url: string): {
   }
 }
 
+/**
+ * True when `url` uses the **`abstrack:`** scheme (RFC 3986: schemes are case-insensitive).
+ */
+function schemeIsAbstrack(url: string): boolean {
+  const colon = url.indexOf(':');
+  if (colon <= 0) {
+    return false;
+  }
+  return url.slice(0, colon).toLowerCase() === 'abstrack';
+}
+
 function nextTargetsCaretakerJoin(params: URLSearchParams): boolean {
   const next = params.get('next');
   if (next == null || next === '') {
@@ -60,19 +71,22 @@ function nextTargetsCaretakerJoin(params: URLSearchParams): boolean {
 
 /**
  * `abstrack:///caretaker-invite?…` (matches Expo `scheme` + Edge `ABSTRACK_CARETAKER_INVITE_REDIRECT_TO`).
+ * Scheme matching is case-insensitive (e.g. **`ABSTRACK:///…`** from the OS).
  */
 export function isAbstrackCaretakerInviteUrl(url: string): boolean {
-  if (!url.startsWith('abstrack:')) {
+  if (!schemeIsAbstrack(url)) {
     return false;
   }
-  const parts = parseUrlParts(url);
+  const colon = url.indexOf(':');
+  const canonical = `abstrack${url.slice(colon)}`;
+  const parts = parseUrlParts(canonical);
   if (!parts) {
     return false;
   }
   const { pathname } = parts;
   const host = (() => {
     try {
-      return new URL(url).hostname;
+      return new URL(canonical).hostname;
     } catch {
       return '';
     }

@@ -10,6 +10,7 @@
  * - **GET** — patient: active grant + pending invite (if any).
  * - **POST** — patient: `{ caretakerEmail }` send invite or link existing caretaker; `{ cancelPendingCaretakerInvite: true }` cancel pending invite; caretaker: `{ finalizeCaretakerInvite: true, inviteId }` after accepting email invite.
  * - **DELETE** — patient: revoke active caretaker grant (clears pending invites too).
+ * - **POST patient link (200 `linked` / `already_linked`):** body may include **`pendingInviteCleanupFailed: true`** when **`caretaker_access`** is already committed but deleting **`caretaker_invites`** best-effort failed—clients should still treat the link as success.
  *
  * **Invite email:** `auth.admin.inviteUserByEmail` `redirectTo` is **`ABSTRACK_CARETAKER_INVITE_REDIRECT_TO`** when set (trimmed; e.g. `abstrack:///caretaker-invite` for Expo). Otherwise falls back to **`{origin}/auth/callback?next=/caretaker/join`** where `origin` is parsed from **`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN`** (trimmed, trailing slash removed, must be absolute **http** or **https**). Values must appear in Supabase Auth **Redirect URLs**. Resends for the same patient + invitee email are limited to once per **`CARETAKER_INVITE_MIN_RESEND_INTERVAL_MS`** after **`last_invite_sent_at`**, which is written **before** the Auth invite call so throttle state still applies if the email succeeds but the handler would otherwise error (**429** + **`Retry-After`**).
  *
@@ -1275,13 +1276,16 @@ Deno.serve(async (req: Request) => {
         user.id,
       );
       if (clearPendingErr) {
-        console.error('link caretaker clear pending', clearPendingErr);
-        return jsonResponse(500, {
-          error:
-            'Unable to clear pending caretaker invite. Try again in a moment.',
-        });
+        console.error(
+          'link caretaker clear pending (best-effort; grant already active)',
+          clearPendingErr,
+        );
       }
-      return jsonResponse(200, { ok: true, outcome: 'already_linked' });
+      return jsonResponse(200, {
+        ok: true,
+        outcome: 'already_linked',
+        ...(clearPendingErr ? { pendingInviteCleanupFailed: true } : {}),
+      });
     }
 
     if (existingPair && existingPair.revoked_at != null) {
@@ -1306,18 +1310,15 @@ Deno.serve(async (req: Request) => {
               await clearPendingInvitesForPatient(admin, user.id);
             if (clearPendingErr) {
               console.error(
-                'link caretaker reactivate concurrent clear pending',
+                'link caretaker reactivate concurrent clear pending (best-effort; grant linked)',
                 clearPendingErr,
               );
-              return jsonResponse(500, {
-                error:
-                  'Unable to clear pending caretaker invite. Try again in a moment.',
-              });
             }
             return jsonResponse(200, {
               ok: true,
               outcome: 'linked',
               reactivated: true,
+              ...(clearPendingErr ? { pendingInviteCleanupFailed: true } : {}),
             });
           }
           return jsonResponse(409, {
@@ -1336,18 +1337,15 @@ Deno.serve(async (req: Request) => {
       );
       if (clearPendingErr) {
         console.error(
-          'link caretaker reactivate clear pending',
+          'link caretaker reactivate clear pending (best-effort; grant reactivated)',
           clearPendingErr,
         );
-        return jsonResponse(500, {
-          error:
-            'Unable to clear pending caretaker invite. Try again in a moment.',
-        });
       }
       return jsonResponse(200, {
         ok: true,
         outcome: 'linked',
         reactivated: true,
+        ...(clearPendingErr ? { pendingInviteCleanupFailed: true } : {}),
       });
     }
 
@@ -1372,16 +1370,16 @@ Deno.serve(async (req: Request) => {
       user.id,
     );
     if (clearPendingErr) {
-      console.error('link caretaker insert clear pending', clearPendingErr);
-      return jsonResponse(500, {
-        error:
-          'Unable to clear pending caretaker invite. Try again in a moment.',
-      });
+      console.error(
+        'link caretaker insert clear pending (best-effort; grant inserted)',
+        clearPendingErr,
+      );
     }
     return jsonResponse(200, {
       ok: true,
       outcome: 'linked',
       reactivated: false,
+      ...(clearPendingErr ? { pendingInviteCleanupFailed: true } : {}),
     });
   }
 
