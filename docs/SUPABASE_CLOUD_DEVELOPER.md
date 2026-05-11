@@ -167,6 +167,40 @@ Do **not** put `ABSTRACK_CARETAKER_INVITE_*` in `apps/web/.env.local`; nothing i
 - **Mobile (this repo’s default):** `abstrack:///caretaker-invite` (optional `abstrack://**` wildcard; see [Redirect URLs](https://supabase.com/docs/guides/auth/redirect-urls)).
 - **Web (only if you use `ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN` instead of `REDIRECT_TO`):** `http://localhost:3000/auth/callback`, production `https://…/auth/callback`; invites append `?next=/caretaker/join`. Wildcard `http://localhost:3000/**` if the dashboard rejects query-only differences.
 
+<a id="caretaker-invite-deploy-checklist"></a>
+
+### Caretaker invite: production / staging (what to change when you deploy)
+
+Use this when user web and/or mobile move off **localhost** to a **hosted** user-web origin (e.g. `https://app.example.com`). Secrets live in **Supabase Dashboard → Edge Functions → Secrets** (project-wide). **Do not** put `ABSTRACK_CARETAKER_INVITE_*` in `apps/web/.env.local`—Next.js does not read them; only the Edge function does.
+
+Pick **one** invite redirect strategy per Supabase project (or use the same values in staging and production on **separate** projects).
+
+#### A — Mobile-primary (default): magic link opens the native app
+
+1. **Edge secret** `ABSTRACK_CARETAKER_INVITE_REDIRECT_TO` = **`abstrack:///caretaker-invite`** (exact string; three slashes after `abstrack:`).
+2. **Edge secret** `ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN`: **omit** (delete/unset) so invites do not fall back to web `auth/callback` unless you intentionally support both.
+3. **Auth → Redirect URLs:** allow **`abstrack:///caretaker-invite`** (or **`abstrack://**`** if the dashboard requires a wildcard).
+4. **`apps/mobile/.env` (or EAS secrets for release builds):** set **`EXPO_PUBLIC_USER_WEB_ORIGIN`** to the **same HTTPS origin** as production user web (e.g. `https://app.example.com`) so Universal Links / App Links in `app.config.ts` match invite completion URLs. **Rebuild** native (`pnpm ios` / `pnpm android` from `apps/mobile/`, or your CI/EAS build) after changing this—`associatedDomains` / `intentFilters` are build-time.
+5. **User web hosting (`apps/web`):** set **`APPLE_APP_SITE_ASSOCIATION_TEAM_ID`** (and optionally **`APPLE_IOS_BUNDLE_ID`**) plus **`ANDROID_APP_LINKS_SHA256_CERT_FINGERPRINTS`** (and optionally **`ANDROID_APPLICATION_ID`**) on the **deployed** Next server so **`/.well-known/*`** is served over **HTTPS** without redirects (Apple/Google requirements). See [HTTPS invite → same link opens browser (desktop) and native app (phone)](#https-invite--same-link-opens-browser-desktop-and-native-app-phone) above.
+6. **Deploy** `patient-caretaker-access` after any Edge secret change: `pnpm dlx supabase functions deploy patient-caretaker-access` (repo root, linked project).
+
+#### B — Web invite path: magic link opens user web (`/auth/callback` then `/caretaker/join`)
+
+1. **Edge secret** `ABSTRACK_CARETAKER_INVITE_REDIRECT_TO`: **omit** (delete/unset).
+2. **Edge secret** `ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN` = your **public user-web origin only** (no path), e.g. **`https://app.example.com`** (scheme + host; trailing slash optional, it is trimmed). For local laptop-only testing, **`http://localhost:3000`** is valid; hosted deploys should use **`https://…`**.
+3. **Auth → Redirect URLs:** add **`https://app.example.com/auth/callback`** (replace host with yours). If the UI rejects query strings, add **`https://app.example.com/**`** as documented above.
+4. **`apps/mobile/.env`:** set **`EXPO_PUBLIC_USER_WEB_ORIGIN`** to the **same origin** as **`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN`** so phones opening the same `https://…/auth/callback?…` link can hand off to the app where configured. Rebuild native after changes.
+5. **Deploy** `patient-caretaker-access` after secret changes (same command as A).
+
+#### C — Both paths in one project (unusual)
+
+If you **must** keep **`ABSTRACK_CARETAKER_INVITE_REDIRECT_TO`** set **and** use web fallback for some flows, note: when **`REDIRECT_TO`** is set, the Edge function **always** uses it for `inviteUserByEmail` `redirectTo`—**`WEB_ORIGIN` is ignored** for that field. Prefer **separate** Supabase projects or a single strategy (A or B) to avoid confusion.
+
+#### Staging vs production
+
+- Use **staging** URLs and secrets on a **staging** Supabase project (or the same project only if you accept shared Auth redirect noise).
+- **`NEXT_PUBLIC_SUPABASE_URL`** / **`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`** in `apps/web/.env.local` and **`EXPO_PUBLIC_*`** in `apps/mobile/.env` must point at the **same** project whose Edge secrets you configured.
+
 ---
 
 ## Day-to-day: no database work

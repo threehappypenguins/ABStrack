@@ -167,6 +167,8 @@ Get URLs and publishable keys from the [Supabase dashboard](https://supabase.com
 
 **Supabase workflow (cloud + CLI + GitHub Actions):** **[SUPABASE_CLOUD_DEVELOPER.md](SUPABASE_CLOUD_DEVELOPER.md)** — keep **Actions `db push` on `main`**; for a **single PR** with migrations + types, run **`db push`** and **`gen types --linked`** from your laptop **before merge**. **AI assistants:** **[AGENTS.md](../AGENTS.md)**.
 
+**Caretaker email invites** (Edge secrets `ABSTRACK_CARETAKER_INVITE_*`, Supabase Auth redirect URLs, `apps/mobile` **`EXPO_PUBLIC_USER_WEB_ORIGIN`**, production **`/.well-known`** env on user web): **[Caretaker deploy checklist](SUPABASE_CLOUD_DEVELOPER.md#caretaker-invite-deploy-checklist)** in the same doc (section **Patient caretaker Edge Function**).
+
 App environment variables (`NEXT_PUBLIC_SUPABASE_URL`, keys) let clients call the **Data API**; they do **not** apply SQL from the repo. Schema changes live in [`supabase/migrations/`](../supabase/migrations/) and must be applied to your hosted Postgres with the **Supabase CLI** (or an equivalent process).
 
 Official reference: [Managing Environments](https://supabase.com/docs/guides/cli/managing-environments) (CLI + GitHub Actions).
