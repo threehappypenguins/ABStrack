@@ -326,6 +326,46 @@ function isPostgresUniqueViolation(err: unknown): boolean {
 }
 
 /**
+ * After **`caretaker_access` INSERT** fails with **23505**, Postgres may be enforcing either
+ * **`UNIQUE (patient_user_id, caretaker_user_id)`** (concurrent finalize/link for the same pair) or
+ * the partial unique **one active caretaker per patient** index. Re-read the grant for this pair to
+ * tell them apart: an **active** row for **`(patientUserId, caretakerUserId)`** means the insert lost
+ * a race to an equivalent write—treat as idempotent success upstream; otherwise keep the
+ * “another caretaker already active” **409** path.
+ */
+async function caretakerAccessInsert23505PairRefetch(
+  admin: SupabaseClient,
+  patientUserId: string,
+  caretakerUserId: string,
+): Promise<
+  | { kind: 'same_pair_active' }
+  | { kind: 'other_constraint' }
+  | { kind: 'error'; response: Response }
+> {
+  const { data: pairRow, error } = await admin
+    .from('caretaker_access')
+    .select('id, revoked_at')
+    .eq('patient_user_id', patientUserId)
+    .eq('caretaker_user_id', caretakerUserId)
+    .maybeSingle();
+
+  if (error) {
+    console.error('caretaker_access insert 23505 pair refetch', error);
+    return {
+      kind: 'error',
+      response: jsonResponse(500, {
+        error: 'Unable to verify caretaker access. Try again in a moment.',
+      }),
+    };
+  }
+
+  if (pairRow != null && pairRow.revoked_at == null) {
+    return { kind: 'same_pair_active' };
+  }
+  return { kind: 'other_constraint' };
+}
+
+/**
  * Stamps **`last_invite_sent_at`** before **`inviteUserByEmail`** so resend throttle applies even if
  * Auth succeeds and a later failure would return **500** (stamp-after-send allowed unthrottled retries).
  * The stamp **`UPDATE`** filters **`consumed_at IS NULL`** and an **atomic resend window** on
@@ -898,6 +938,25 @@ async function handleFinalizeCaretakerInvite(
 
     if (insError) {
       if (isPostgresUniqueViolation(insError)) {
+        const dup = await caretakerAccessInsert23505PairRefetch(
+          admin,
+          patientId,
+          user.id,
+        );
+        if (dup.kind === 'error') {
+          return dup.response;
+        }
+        if (dup.kind === 'same_pair_active') {
+          return await finalizeConsumeInviteAfterGrant(
+            admin,
+            inviteId,
+            user.id,
+            patientId,
+            nowIso,
+            'linked',
+            false,
+          );
+        }
         return jsonResponse(409, {
           error:
             'This patient already has another active caretaker. They must revoke access before you can join.',
@@ -1387,6 +1446,29 @@ Deno.serve(async (req: Request) => {
 
     if (insError) {
       if (isPostgresUniqueViolation(insError)) {
+        const dup = await caretakerAccessInsert23505PairRefetch(
+          admin,
+          user.id,
+          caretakerUserId,
+        );
+        if (dup.kind === 'error') {
+          return dup.response;
+        }
+        if (dup.kind === 'same_pair_active') {
+          const { error: clearPendingErr } =
+            await clearPendingInvitesForPatient(admin, user.id);
+          if (clearPendingErr) {
+            console.error(
+              'link caretaker insert 23505 same-pair clear pending (best-effort; grant linked)',
+              clearPendingErr,
+            );
+          }
+          return jsonResponse(200, {
+            ok: true,
+            outcome: 'already_linked',
+            ...(clearPendingErr ? { pendingInviteCleanupFailed: true } : {}),
+          });
+        }
         return jsonResponse(409, {
           error:
             'You already have an active caretaker. Revoke access before linking someone else.',
