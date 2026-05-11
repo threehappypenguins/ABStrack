@@ -9,12 +9,39 @@ import {
   type CaretakerGrantDto,
   type CaretakerPendingInviteDto,
   PATIENT_CARETAKER_ACCESS_ERROR_MISSING_TOKEN,
+  PATIENT_CARETAKER_ACCESS_ERROR_SUPABASE_CLIENT_CONFIG,
   fetchPatientCaretakerAccessCancelPendingInvite,
   fetchPatientCaretakerAccessDelete,
   fetchPatientCaretakerAccessGet,
   fetchPatientCaretakerAccessPost,
 } from '@/lib/patient/caretaker-edge-client';
 import { useAuth } from '@/lib/auth-provider';
+
+/**
+ * Maps caretaker Edge client preflight throws (`fetchPatientCaretakerAccessGet` / POST / DELETE)
+ * to user-facing copy.
+ *
+ * @param err - Caught rejection from caretaker Edge client helpers.
+ * @param signedInMessage - Copy when the session token is missing (`missing_access_token`).
+ */
+function caretakerEdgeClientCatchMessage(
+  err: unknown,
+  signedInMessage: string,
+): string {
+  if (
+    err instanceof Error &&
+    err.message === PATIENT_CARETAKER_ACCESS_ERROR_MISSING_TOKEN
+  ) {
+    return signedInMessage;
+  }
+  if (
+    err instanceof Error &&
+    err.message === PATIENT_CARETAKER_ACCESS_ERROR_SUPABASE_CLIENT_CONFIG
+  ) {
+    return 'Supabase is misconfigured for this app build. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY in apps/web/.env.local (see docs/DEV_SETUP.md).';
+  }
+  return 'Unable to reach the caretaker service. Check your connection and try again.';
+}
 
 function formatInviteExpiry(iso: string): string {
   const t = Date.parse(iso);
@@ -60,13 +87,11 @@ export function CaretakerAccessPage() {
     } catch (err) {
       setGrant(null);
       setPendingInvite(null);
-      const missingToken =
-        err instanceof Error &&
-        err.message === PATIENT_CARETAKER_ACCESS_ERROR_MISSING_TOKEN;
       setLoadError(
-        missingToken
-          ? 'You must be signed in to manage caretaker access.'
-          : 'Unable to reach the caretaker service. Check your connection and try again.',
+        caretakerEdgeClientCatchMessage(
+          err,
+          'You must be signed in to manage caretaker access.',
+        ),
       );
       return;
     }
@@ -130,8 +155,11 @@ export function CaretakerAccessPage() {
       }
       announce('Pending caretaker invite cancelled.', { politeness: 'polite' });
       await loadGrant();
-    } catch {
-      const msg = 'You must be signed in to cancel an invite.';
+    } catch (err) {
+      const msg = caretakerEdgeClientCatchMessage(
+        err,
+        'You must be signed in to cancel an invite.',
+      );
       setFormError(msg);
       announce(msg, { politeness: 'assertive' });
     } finally {
@@ -154,9 +182,14 @@ export function CaretakerAccessPage() {
     let res: Response;
     try {
       res = await fetchPatientCaretakerAccessPost(trimmed);
-    } catch {
+    } catch (err) {
       setBusy(false);
-      setFormError('You must be signed in to invite or link a caretaker.');
+      setFormError(
+        caretakerEdgeClientCatchMessage(
+          err,
+          'You must be signed in to invite or link a caretaker.',
+        ),
+      );
       return;
     }
     const maybeJson = (await res.json().catch(() => ({}))) as {
@@ -205,11 +238,15 @@ export function CaretakerAccessPage() {
     let res: Response;
     try {
       res = await fetchPatientCaretakerAccessDelete();
-    } catch {
+    } catch (err) {
       setBusy(false);
-      announce('You must be signed in to revoke caretaker access.', {
-        politeness: 'assertive',
-      });
+      announce(
+        caretakerEdgeClientCatchMessage(
+          err,
+          'You must be signed in to revoke caretaker access.',
+        ),
+        { politeness: 'assertive' },
+      );
       return false;
     }
     const maybeJson = (await res.json().catch(() => ({}))) as {

@@ -30,10 +30,31 @@ function bearerHeaders(
 /**
  * `Error.message` from {@link requireAccessToken} when there is no usable session
  * (Supabase `getSession` error or empty `access_token`). Callers can treat other
- * thrown errors as connectivity / unexpected failures.
+ * thrown errors as connectivity / unexpected failures unless they match
+ * {@link PATIENT_CARETAKER_ACCESS_ERROR_SUPABASE_CLIENT_CONFIG}.
  */
 export const PATIENT_CARETAKER_ACCESS_ERROR_MISSING_TOKEN =
   'missing_access_token';
+
+/**
+ * `Error.message` when **`createBrowserClient()`**, **`getSupabaseUrl()`**, or
+ * **`getSupabasePublishableKey()`** fails due to missing/invalid public env (not a network error).
+ */
+export const PATIENT_CARETAKER_ACCESS_ERROR_SUPABASE_CLIENT_CONFIG =
+  'supabase_client_config';
+
+function isSupabaseClientMisconfigurationError(e: unknown): boolean {
+  if (!(e instanceof Error)) {
+    return false;
+  }
+  const m = e.message;
+  return (
+    m.includes('Missing NEXT_PUBLIC_SUPABASE_URL') ||
+    m.includes('Missing NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY') ||
+    m.includes('Missing Supabase URL') ||
+    m.includes('Missing Supabase publishable key')
+  );
+}
 
 async function requireAccessToken(): Promise<string> {
   const supabase = createBrowserClient();
@@ -45,6 +66,37 @@ async function requireAccessToken(): Promise<string> {
     throw new Error(PATIENT_CARETAKER_ACCESS_ERROR_MISSING_TOKEN);
   }
   return session.access_token;
+}
+
+/**
+ * Maps known Supabase browser/env init failures to {@link PATIENT_CARETAKER_ACCESS_ERROR_SUPABASE_CLIENT_CONFIG};
+ * rethrows {@link PATIENT_CARETAKER_ACCESS_ERROR_MISSING_TOKEN} and other errors unchanged.
+ */
+async function invokeWithCaretakerClientEnvGuards<T>(
+  fn: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (
+      e instanceof Error &&
+      e.message === PATIENT_CARETAKER_ACCESS_ERROR_MISSING_TOKEN
+    ) {
+      throw e;
+    }
+    if (
+      e instanceof Error &&
+      e.message === PATIENT_CARETAKER_ACCESS_ERROR_SUPABASE_CLIENT_CONFIG
+    ) {
+      throw e;
+    }
+    if (isSupabaseClientMisconfigurationError(e)) {
+      throw new Error(PATIENT_CARETAKER_ACCESS_ERROR_SUPABASE_CLIENT_CONFIG, {
+        cause: e,
+      });
+    }
+    throw e;
+  }
 }
 
 export type CaretakerGrantDto = {
@@ -72,9 +124,11 @@ export type CaretakerAccessGetResponse = {
  * @returns `fetch` Response (caller checks `ok` / `status`).
  */
 export async function fetchPatientCaretakerAccessGet(): Promise<Response> {
-  const token = await requireAccessToken();
-  return fetch(patientCaretakerEdgeFunctionsUrl(), {
-    headers: bearerHeaders(token, false),
+  return invokeWithCaretakerClientEnvGuards(async () => {
+    const token = await requireAccessToken();
+    return fetch(patientCaretakerEdgeFunctionsUrl(), {
+      headers: bearerHeaders(token, false),
+    });
   });
 }
 
@@ -86,11 +140,13 @@ export async function fetchPatientCaretakerAccessGet(): Promise<Response> {
 export async function fetchPatientCaretakerAccessPostJson(
   body: Record<string, unknown>,
 ): Promise<Response> {
-  const token = await requireAccessToken();
-  return fetch(patientCaretakerEdgeFunctionsUrl(), {
-    method: 'POST',
-    headers: bearerHeaders(token, true),
-    body: JSON.stringify(body),
+  return invokeWithCaretakerClientEnvGuards(async () => {
+    const token = await requireAccessToken();
+    return fetch(patientCaretakerEdgeFunctionsUrl(), {
+      method: 'POST',
+      headers: bearerHeaders(token, true),
+      body: JSON.stringify(body),
+    });
   });
 }
 
@@ -132,9 +188,11 @@ export async function fetchPatientCaretakerAccessFinalize(
  * DELETE revoke active caretaker grant.
  */
 export async function fetchPatientCaretakerAccessDelete(): Promise<Response> {
-  const token = await requireAccessToken();
-  return fetch(patientCaretakerEdgeFunctionsUrl(), {
-    method: 'DELETE',
-    headers: bearerHeaders(token, false),
+  return invokeWithCaretakerClientEnvGuards(async () => {
+    const token = await requireAccessToken();
+    return fetch(patientCaretakerEdgeFunctionsUrl(), {
+      method: 'DELETE',
+      headers: bearerHeaders(token, false),
+    });
   });
 }

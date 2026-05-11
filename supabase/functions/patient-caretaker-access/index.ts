@@ -146,6 +146,28 @@ function normalizeInviteWebOriginForRedirect(raw: string): string | null {
   }
 }
 
+/**
+ * Builds Supabase Auth **`redirectTo`** for caretaker invite emails from Edge secrets.
+ *
+ * @returns Non-empty redirect URL, or **`null`** when neither secret yields a valid value.
+ */
+function resolveCaretakerInviteRedirectTo(): string | null {
+  const explicitRedirect = (
+    Deno.env.get('ABSTRACK_CARETAKER_INVITE_REDIRECT_TO') ?? ''
+  ).trim();
+  const inviteWebOrigin = explicitRedirect
+    ? null
+    : normalizeInviteWebOriginForRedirect(
+        Deno.env.get('ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN') ?? '',
+      );
+  const redirectTo =
+    explicitRedirect ||
+    (inviteWebOrigin
+      ? `${inviteWebOrigin}/auth/callback?next=${encodeURIComponent('/caretaker/join')}`
+      : '');
+  return redirectTo.length > 0 ? redirectTo : null;
+}
+
 function isUuidString(s: string): boolean {
   return UUID_RE.test(s);
 }
@@ -183,6 +205,123 @@ function isPostgresUniqueViolation(err: unknown): boolean {
     'code' in err &&
     (err as { code?: string }).code === '23505'
   );
+}
+
+/**
+ * Sends `inviteUserByEmail` and stamps **`last_invite_sent_at`**. When
+ * **`deletePendingInviteOnMailFailure`** is true, failed sends roll back by deleting the pending
+ * invite row (new-invite path). When false, the row is kept (resend while invitee has Auth user but
+ * no profile yet).
+ */
+async function sendCaretakerInviteEmailAndStamp(
+  admin: SupabaseClient,
+  options: {
+    inviteId: string;
+    normalizedTarget: string;
+    redirectTo: string;
+    inviteExpiresAt: string;
+    deletePendingInviteOnMailFailure: boolean;
+  },
+): Promise<
+  { ok: true; inviteExpiresAt: string } | { ok: false; response: Response }
+> {
+  const {
+    inviteId,
+    normalizedTarget,
+    redirectTo,
+    inviteExpiresAt,
+    deletePendingInviteOnMailFailure,
+  } = options;
+
+  const { error: invMailErr } = await admin.auth.admin.inviteUserByEmail(
+    normalizedTarget,
+    {
+      data: { abstrack_caretaker_invite_id: inviteId },
+      redirectTo,
+    },
+  );
+
+  if (invMailErr) {
+    const msg = (invMailErr as { message?: string }).message ?? '';
+    const lower = msg.toLowerCase();
+    if (
+      lower.includes('already') ||
+      lower.includes('registered') ||
+      lower.includes('exists')
+    ) {
+      if (deletePendingInviteOnMailFailure) {
+        const { error: rollbackDelErr } = await admin
+          .from('caretaker_invites')
+          .delete()
+          .eq('id', inviteId);
+        if (rollbackDelErr) {
+          console.error(
+            'caretaker_invites rollback delete (account exists)',
+            rollbackDelErr,
+          );
+          return {
+            ok: false,
+            response: jsonResponse(500, {
+              error:
+                'Unable to clean up the invite after that error. Try again or contact support.',
+            }),
+          };
+        }
+      }
+      return {
+        ok: false,
+        response: jsonResponse(409, {
+          error:
+            'An account already exists for that email. Ask them to sign in as a caretaker, or use “link” after they finish signup.',
+        }),
+      };
+    }
+    console.error('inviteUserByEmail', invMailErr);
+    if (deletePendingInviteOnMailFailure) {
+      const { error: rollbackDelErr } = await admin
+        .from('caretaker_invites')
+        .delete()
+        .eq('id', inviteId);
+      if (rollbackDelErr) {
+        console.error(
+          'caretaker_invites rollback delete (invite email failed)',
+          rollbackDelErr,
+        );
+        return {
+          ok: false,
+          response: jsonResponse(500, {
+            error:
+              'Invite email failed and the pending row could not be removed. Try again or contact support.',
+          }),
+        };
+      }
+    }
+    return {
+      ok: false,
+      response: jsonResponse(500, {
+        error:
+          'Unable to send the invite email right now. Try again in a moment.',
+      }),
+    };
+  }
+
+  const { error: stampErr } = await admin
+    .from('caretaker_invites')
+    .update({ last_invite_sent_at: new Date().toISOString() })
+    .eq('id', inviteId);
+
+  if (stampErr) {
+    console.error('caretaker_invites last_invite_sent_at', stampErr);
+    return {
+      ok: false,
+      response: jsonResponse(500, {
+        error:
+          'The invite email was sent but the invite could not be finalized in the database. Try sending again or contact support.',
+      }),
+    };
+  }
+
+  return { ok: true, inviteExpiresAt };
 }
 
 /**
@@ -839,6 +978,69 @@ Deno.serve(async (req: Request) => {
     }
 
     if (!caretakerProfile) {
+      const { data: pendingResend, error: pendResendErr } = await admin
+        .from('caretaker_invites')
+        .select('id, invitee_email_normalized, expires_at, last_invite_sent_at')
+        .eq('patient_user_id', user.id)
+        .is('consumed_at', null)
+        .maybeSingle();
+
+      if (pendResendErr) {
+        console.error(
+          'caretaker_invites resend (auth user, no profile) read',
+          pendResendErr,
+        );
+        return jsonResponse(500, {
+          error: 'Unable to verify pending invite. Try again in a moment.',
+        });
+      }
+
+      if (
+        pendingResend &&
+        (pendingResend.invitee_email_normalized as string) === normalizedTarget
+      ) {
+        const redirectResend = resolveCaretakerInviteRedirectTo();
+        if (!redirectResend) {
+          console.error(
+            'Missing ABSTRACK_CARETAKER_INVITE_REDIRECT_TO (e.g. abstrack:///caretaker-invite) or ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN for web fallback.',
+          );
+          return jsonResponse(500, {
+            error: 'server_misconfigured',
+          });
+        }
+        const resendThrottle = caretakerInviteResendTooSoon(
+          pendingResend.last_invite_sent_at as string | null | undefined,
+          Date.now(),
+        );
+        if (resendThrottle.tooSoon) {
+          return jsonResponse(
+            429,
+            {
+              error: 'Please wait before resending the invite.',
+              retryAfterSeconds: resendThrottle.retryAfterSec,
+            },
+            {
+              'Retry-After': String(resendThrottle.retryAfterSec),
+            },
+          );
+        }
+        const mailResend = await sendCaretakerInviteEmailAndStamp(admin, {
+          inviteId: pendingResend.id as string,
+          normalizedTarget,
+          redirectTo: redirectResend,
+          inviteExpiresAt: pendingResend.expires_at as string,
+          deletePendingInviteOnMailFailure: false,
+        });
+        if (!mailResend.ok) {
+          return mailResend.response;
+        }
+        return jsonResponse(200, {
+          ok: true,
+          outcome: 'invite_sent',
+          inviteExpiresAt: mailResend.inviteExpiresAt,
+        });
+      }
+
       return jsonResponse(404, {
         error:
           'That account exists but has no profile yet. Ask them to finish signing in once, then try again.',
@@ -990,19 +1192,7 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  const explicitRedirect = (
-    Deno.env.get('ABSTRACK_CARETAKER_INVITE_REDIRECT_TO') ?? ''
-  ).trim();
-  const inviteWebOrigin = explicitRedirect
-    ? null
-    : normalizeInviteWebOriginForRedirect(
-        Deno.env.get('ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN') ?? '',
-      );
-  const redirectTo =
-    explicitRedirect ||
-    (inviteWebOrigin
-      ? `${inviteWebOrigin}/auth/callback?next=${encodeURIComponent('/caretaker/join')}`
-      : '');
+  const redirectTo = resolveCaretakerInviteRedirectTo();
   if (!redirectTo) {
     console.error(
       'Missing ABSTRACK_CARETAKER_INVITE_REDIRECT_TO (e.g. abstrack:///caretaker-invite) or ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN for web fallback.',
@@ -1133,78 +1323,20 @@ Deno.serve(async (req: Request) => {
     inviteExpiresAt = newExpiresAt;
   }
 
-  const { error: invMailErr } = await admin.auth.admin.inviteUserByEmail(
+  const mailNew = await sendCaretakerInviteEmailAndStamp(admin, {
+    inviteId,
     normalizedTarget,
-    {
-      data: { abstrack_caretaker_invite_id: inviteId },
-      redirectTo,
-    },
-  );
-
-  if (invMailErr) {
-    const msg = (invMailErr as { message?: string }).message ?? '';
-    const lower = msg.toLowerCase();
-    if (
-      lower.includes('already') ||
-      lower.includes('registered') ||
-      lower.includes('exists')
-    ) {
-      const { error: rollbackDelErr } = await admin
-        .from('caretaker_invites')
-        .delete()
-        .eq('id', inviteId);
-      if (rollbackDelErr) {
-        console.error(
-          'caretaker_invites rollback delete (account exists)',
-          rollbackDelErr,
-        );
-        return jsonResponse(500, {
-          error:
-            'Unable to clean up the invite after that error. Try again or contact support.',
-        });
-      }
-      return jsonResponse(409, {
-        error:
-          'An account already exists for that email. Ask them to sign in as a caretaker, or use “link” after they finish signup.',
-      });
-    }
-    console.error('inviteUserByEmail', invMailErr);
-    const { error: rollbackDelErr } = await admin
-      .from('caretaker_invites')
-      .delete()
-      .eq('id', inviteId);
-    if (rollbackDelErr) {
-      console.error(
-        'caretaker_invites rollback delete (invite email failed)',
-        rollbackDelErr,
-      );
-      return jsonResponse(500, {
-        error:
-          'Invite email failed and the pending row could not be removed. Try again or contact support.',
-      });
-    }
-    return jsonResponse(500, {
-      error:
-        'Unable to send the invite email right now. Try again in a moment.',
-    });
-  }
-
-  const { error: stampErr } = await admin
-    .from('caretaker_invites')
-    .update({ last_invite_sent_at: new Date().toISOString() })
-    .eq('id', inviteId);
-
-  if (stampErr) {
-    console.error('caretaker_invites last_invite_sent_at', stampErr);
-    return jsonResponse(500, {
-      error:
-        'The invite email was sent but the invite could not be finalized in the database. Try sending again or contact support.',
-    });
+    redirectTo,
+    inviteExpiresAt,
+    deletePendingInviteOnMailFailure: true,
+  });
+  if (!mailNew.ok) {
+    return mailNew.response;
   }
 
   return jsonResponse(200, {
     ok: true,
     outcome: 'invite_sent',
-    inviteExpiresAt,
+    inviteExpiresAt: mailNew.inviteExpiresAt,
   });
 });
