@@ -5,10 +5,13 @@
  * (default secret key) and validates the caller’s Bearer JWT.
  *
  * The Functions gateway requires an **`apikey`** header: **`EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`**
- * (`sb_publishable_…`).
+ * (`sb_publishable_…`), validated via **`getSupabasePublishableKey`** from **`@abstrack/supabase`**
+ * (rejects **`sb_secret_…`** and other wrong shapes like web/package clients).
  *
  * @see supabase/functions/patient-caretaker-access/index.ts
  */
+
+import { getSupabasePublishableKey } from '@abstrack/supabase';
 
 /** Thrown when `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` is unset (Edge gateway needs `apikey`). */
 export const MISSING_SUPABASE_PUBLISHABLE_KEY_FOR_CARETAKER_API =
@@ -22,15 +25,19 @@ export const CARETAKER_EDGE_PUBLISHABLE_KEY_ENV_HELP =
 
 /**
  * @param error - Caught rejection from caretaker Edge fetch helpers.
- * @returns True when `error` is the missing publishable key misconfiguration.
+ * @returns True when `error` is a missing publishable key or an invalid publishable key shape from
+ * **`getSupabasePublishableKey`** (including **`sb_secret_…`** in client env).
  */
 export function isMissingPublishableKeyForCaretakerEdge(
   error: unknown,
 ): boolean {
-  return (
-    error instanceof Error &&
-    error.message === MISSING_SUPABASE_PUBLISHABLE_KEY_FOR_CARETAKER_API
-  );
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  if (error.message === MISSING_SUPABASE_PUBLISHABLE_KEY_FOR_CARETAKER_API) {
+    return true;
+  }
+  return error.message.startsWith('Invalid Supabase publishable key');
 }
 
 function trimTrailingSlash(url: string): string {
@@ -53,14 +60,21 @@ export function resolvePatientCaretakerAccessUrl(): string | null {
 /**
  * Publishable key for Supabase Edge `apikey` (required by the gateway alongside the user JWT).
  *
- * @throws {Error} When unset; `message` is `MISSING_SUPABASE_PUBLISHABLE_KEY_FOR_CARETAKER_API`.
+ * @throws {Error} When missing or invalid; missing uses `MISSING_SUPABASE_PUBLISHABLE_KEY_FOR_CARETAKER_API`
+ * so callers can match it; invalid shape rethrows **`getSupabasePublishableKey`** errors unchanged.
  */
 function requirePublishableKeyForFunctionsGateway(): string {
-  const pub = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim();
-  if (!pub) {
-    throw new Error(MISSING_SUPABASE_PUBLISHABLE_KEY_FOR_CARETAKER_API);
+  try {
+    return getSupabasePublishableKey();
+  } catch (err) {
+    if (
+      err instanceof Error &&
+      err.message.startsWith('Missing Supabase publishable key')
+    ) {
+      throw new Error(MISSING_SUPABASE_PUBLISHABLE_KEY_FOR_CARETAKER_API);
+    }
+    throw err;
   }
-  return pub;
 }
 
 /**
