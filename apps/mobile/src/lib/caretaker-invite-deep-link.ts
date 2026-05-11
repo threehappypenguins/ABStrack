@@ -1,7 +1,8 @@
 /**
  * Detects caretaker **email invite** URLs so the native app can finish auth + Edge finalize.
  * Supports Expo `scheme` deep links (`abstrack:///caretaker-invite`) and **HTTPS App Links /
- * Universal Links** to user web (`/auth/callback?…&next=/caretaker/join` or `/caretaker/join`).
+ * Universal Links** to user web **`/auth/callback?…&next=/caretaker/join`** (invite `code` is only
+ * on that URL; **`/caretaker/join`** after web exchange has no `code`, so it is not an App Link target).
  */
 
 /**
@@ -107,13 +108,34 @@ export function isHttpsCaretakerInviteUrl(
       nextTargetsCaretakerJoin(parts.params)
     );
   }
-  if (
-    parts.pathname === '/caretaker/join' ||
-    parts.pathname.startsWith('/caretaker/join/')
-  ) {
-    return Boolean(parts.params.get('code'));
-  }
   return false;
+}
+
+/**
+ * User web **`/caretaker/join`** after server-side exchange has **no** `code`. If the OS still
+ * delivers that URL to the app (stale association data, manual open), callers should show UX
+ * instead of ignoring the URL.
+ *
+ * @param url - Deep link from `Linking`.
+ * @param userWebOriginEnv - `EXPO_PUBLIC_USER_WEB_ORIGIN` at bundle time.
+ */
+export function isHttpsCaretakerJoinWithoutCodeUrl(
+  url: string,
+  userWebOriginEnv: string | undefined,
+): boolean {
+  const allowed = normalizeUserWebOrigin(userWebOriginEnv);
+  if (!allowed) {
+    return false;
+  }
+  const parts = parseUrlParts(url);
+  if (!parts || parts.origin !== allowed) {
+    return false;
+  }
+  const path = parts.pathname.replace(/\/+$/, '') || '/';
+  if (path !== '/caretaker/join' && !path.startsWith('/caretaker/join/')) {
+    return false;
+  }
+  return !parts.params.get('code');
 }
 
 /**

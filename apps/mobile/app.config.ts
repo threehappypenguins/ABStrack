@@ -2,7 +2,8 @@ import type { ConfigContext, ExpoConfig } from 'expo/config';
 
 /**
  * Hostname from `EXPO_PUBLIC_USER_WEB_ORIGIN` for iOS Universal Links + Android App Links
- * (`applinks:` / `autoVerify` intent filters on `/auth/callback` and `/caretaker/join`).
+ * (`applinks:` / `autoVerify` intent filters on **`/auth/callback` only** — not `/caretaker/join`,
+ * because the web callback exchanges `code` then redirects to `/caretaker/join` without `code`).
  */
 function userWebHostAndSchemeFromEnv(): {
   host: string;
@@ -44,20 +45,12 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     : [...existingDomains, applink];
 
   const existingFilters = config.android?.intentFilters ?? [];
-  const caretakerInviteFilters = schemes.flatMap((scheme) => [
-    {
-      action: 'VIEW' as const,
-      autoVerify: scheme === 'https',
-      data: [{ scheme, host, pathPrefix: '/auth/callback' }],
-      category: ['BROWSABLE' as const, 'DEFAULT' as const],
-    },
-    {
-      action: 'VIEW' as const,
-      autoVerify: scheme === 'https',
-      data: [{ scheme, host, pathPrefix: '/caretaker/join' }],
-      category: ['BROWSABLE' as const, 'DEFAULT' as const],
-    },
-  ]);
+  const caretakerInviteFilters = schemes.map((scheme) => ({
+    action: 'VIEW' as const,
+    autoVerify: scheme === 'https',
+    data: [{ scheme, host, pathPrefix: '/auth/callback' }],
+    category: ['BROWSABLE' as const, 'DEFAULT' as const],
+  }));
 
   return {
     ...config,

@@ -262,6 +262,47 @@ async function consumeCaretakerInviteForFinalize(
   };
 }
 
+/**
+ * Runs {@link consumeCaretakerInviteForFinalize} after `caretaker_access` was written. If the
+ * invite row disappeared concurrently (e.g. patient cancelled), consume returns **404** while
+ * access may still be valid — when an **active** grant row exists for this pair, treat finalize
+ * as idempotent **200** instead of surfacing “invite not found”.
+ */
+async function finalizeConsumeInviteAfterGrant(
+  admin: SupabaseClient,
+  inviteId: string,
+  caretakerUserId: string,
+  patientUserId: string,
+  nowIso: string,
+  outcome: 'already_linked' | 'linked',
+): Promise<Response> {
+  const consumed = await consumeCaretakerInviteForFinalize(
+    admin,
+    inviteId,
+    caretakerUserId,
+    nowIso,
+  );
+  if (consumed.ok) {
+    return jsonResponse(200, { ok: true, outcome });
+  }
+  if (consumed.response.status === 404) {
+    const { data: link, error: linkErr } = await admin
+      .from('caretaker_access')
+      .select('id, revoked_at')
+      .eq('patient_user_id', patientUserId)
+      .eq('caretaker_user_id', caretakerUserId)
+      .maybeSingle();
+    if (!linkErr && link && link.revoked_at == null) {
+      console.warn(
+        'finalize: invite row missing after grant; idempotent success',
+        inviteId,
+      );
+      return jsonResponse(200, { ok: true, outcome });
+    }
+  }
+  return consumed.response;
+}
+
 async function handleFinalizeCaretakerInvite(
   admin: SupabaseClient,
   user: User,
@@ -382,16 +423,14 @@ async function handleFinalizeCaretakerInvite(
   const nowIso = new Date().toISOString();
 
   if (existingPair?.revoked_at == null && existingPair) {
-    const consumed = await consumeCaretakerInviteForFinalize(
+    return await finalizeConsumeInviteAfterGrant(
       admin,
       inviteId,
       user.id,
+      patientId,
       nowIso,
+      'already_linked',
     );
-    if (!consumed.ok) {
-      return consumed.response;
-    }
-    return jsonResponse(200, { ok: true, outcome: 'already_linked' });
   }
 
   if (existingPair && existingPair.revoked_at != null) {
@@ -424,17 +463,14 @@ async function handleFinalizeCaretakerInvite(
     }
   }
 
-  const consumed = await consumeCaretakerInviteForFinalize(
+  return await finalizeConsumeInviteAfterGrant(
     admin,
     inviteId,
     user.id,
+    patientId,
     nowIso,
+    'linked',
   );
-  if (!consumed.ok) {
-    return consumed.response;
-  }
-
-  return jsonResponse(200, { ok: true, outcome: 'linked' });
 }
 
 Deno.serve(async (req: Request) => {

@@ -4,7 +4,8 @@ const DEFAULT_IOS_BUNDLE_ID = 'com.abstrack.mobile';
 
 /**
  * Serves Apple’s Universal Links association file for the user web host so iOS can open
- * `https://…/auth/callback` and `/caretaker/join` in the native app when installed.
+ * `https://…/auth/callback` in the native app when installed (not `/caretaker/join`, which has no
+ * `code` after the web exchange).
  *
  * Configure **`APPLE_APP_SITE_ASSOCIATION_TEAM_ID`** (10-character Apple Developer Team ID) on
  * the deployment that serves this host. Omit or leave unset to return **404** until configured.
@@ -28,7 +29,7 @@ export function GET() {
       details: [
         {
           appID: appId,
-          paths: ['/auth/callback*', '/caretaker/join*'],
+          paths: ['/auth/callback*'],
         },
       ],
     },

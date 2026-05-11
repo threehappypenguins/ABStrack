@@ -110,7 +110,7 @@ Product default: **patients and caretakers are mobile-primary** (Expo app in `ap
 
 Caretaker **email invites** use `auth.admin.inviteUserByEmail`. **`redirectTo`** is trimmed **`ABSTRACK_CARETAKER_INVITE_REDIRECT_TO`** when set (this repo uses **`abstrack:///caretaker-invite`**, matching Expo **`scheme`: `abstrack`** in `apps/mobile/app.json`). If that secret is unset, the function falls back to **`{trimmed-validated-origin}/auth/callback?next=/caretaker/join`** from **`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN`** (must be absolute `http://` or `https://`; trailing slash and surrounding whitespace are normalized). See `supabase/functions/patient-caretaker-access/index.ts`.
 
-**Invitee completion:** Mobile `apps/mobile/src/app/App.tsx` handles **`abstrack:///caretaker-invite?code=…`** and, when **`EXPO_PUBLIC_USER_WEB_ORIGIN`** matches the invite **`redirectTo`** origin, **`http(s)://…/auth/callback?…&next=/caretaker/join`** (Universal Links / App Links). User web **`/caretaker/join`** still applies when the session completes in the browser.
+**Invitee completion:** Mobile `apps/mobile/src/app/App.tsx` handles **`abstrack:///caretaker-invite?code=…`** and, when **`EXPO_PUBLIC_USER_WEB_ORIGIN`** matches the invite **`redirectTo`** origin, **`http(s)://…/auth/callback?…&next=/caretaker/join`** (Universal Links / App Links target **`/auth/callback` only** — not **`/caretaker/join`**, which has no `code` after the web exchange). If **`/caretaker/join`** still opens the app without a `code`, the app shows a short “continue in browser” message. User web **`/caretaker/join`** still applies when the session completes in the browser.
 
 ### HTTPS invite → same link opens browser (desktop) and native app (phone)
 

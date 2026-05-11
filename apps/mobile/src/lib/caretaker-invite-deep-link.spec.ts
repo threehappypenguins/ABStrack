@@ -2,6 +2,7 @@ import {
   isAbstrackCaretakerInviteUrl,
   isCaretakerInviteLinkUrl,
   isHttpsCaretakerInviteUrl,
+  isHttpsCaretakerJoinWithoutCodeUrl,
   normalizeUserWebOrigin,
 } from './caretaker-invite-deep-link';
 
@@ -48,15 +49,6 @@ describe('isHttpsCaretakerInviteUrl', () => {
     ).toBe(true);
   });
 
-  it('matches /caretaker/join with code', () => {
-    expect(
-      isHttpsCaretakerInviteUrl(
-        'https://app.example.com/caretaker/join?code=abc',
-        'https://app.example.com',
-      ),
-    ).toBe(true);
-  });
-
   it('rejects wrong origin', () => {
     expect(
       isHttpsCaretakerInviteUrl(
@@ -85,6 +77,35 @@ describe('isHttpsCaretakerInviteUrl', () => {
   });
 });
 
+describe('isHttpsCaretakerJoinWithoutCodeUrl', () => {
+  it('matches /caretaker/join without code on allowed origin', () => {
+    expect(
+      isHttpsCaretakerJoinWithoutCodeUrl(
+        'https://app.example.com/caretaker/join',
+        'https://app.example.com',
+      ),
+    ).toBe(true);
+  });
+
+  it('rejects /caretaker/join when code is present', () => {
+    expect(
+      isHttpsCaretakerJoinWithoutCodeUrl(
+        'https://app.example.com/caretaker/join?code=x',
+        'https://app.example.com',
+      ),
+    ).toBe(false);
+  });
+
+  it('rejects wrong origin', () => {
+    expect(
+      isHttpsCaretakerJoinWithoutCodeUrl(
+        'https://evil.com/caretaker/join',
+        'https://app.example.com',
+      ),
+    ).toBe(false);
+  });
+});
+
 describe('isCaretakerInviteLinkUrl', () => {
   it('combines abstrack and https', () => {
     expect(
@@ -99,5 +120,11 @@ describe('isCaretakerInviteLinkUrl', () => {
         'https://app.example.com',
       ),
     ).toBe(true);
+    expect(
+      isCaretakerInviteLinkUrl(
+        'https://app.example.com/caretaker/join',
+        'https://app.example.com',
+      ),
+    ).toBe(false);
   });
 });

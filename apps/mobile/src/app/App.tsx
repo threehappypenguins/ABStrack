@@ -14,7 +14,10 @@ import { StatusBar } from 'expo-status-bar';
 import type { Session } from '@abstrack/supabase';
 import { fetchMobileDeviceIsConnected } from '../lib/network/mobile-device-netinfo';
 import { completeCaretakerInviteAfterAuth } from '../lib/caretaker-invite-complete';
-import { isCaretakerInviteLinkUrl } from '../lib/caretaker-invite-deep-link';
+import {
+  isCaretakerInviteLinkUrl,
+  isHttpsCaretakerJoinWithoutCodeUrl,
+} from '../lib/caretaker-invite-deep-link';
 import {
   getMobileAuthSessionSafe,
   getMobileSupabaseClient,
@@ -305,9 +308,33 @@ function AppBootstrap() {
     };
 
     /**
+     * User web opened **`/caretaker/join`** in the app without a `code` (normal after server-side
+     * exchange). Explains switching back to the browser instead of failing silently.
+     *
+     * @returns `true` when this URL was recognized and surfaced to the user.
+     */
+    const handleCaretakerJoinWithoutCodeDeepLink = (url: string): boolean => {
+      if (
+        !isHttpsCaretakerJoinWithoutCodeUrl(
+          url,
+          process.env.EXPO_PUBLIC_USER_WEB_ORIGIN,
+        ) ||
+        !mounted
+      ) {
+        return false;
+      }
+      Alert.alert(
+        'Continue in your browser',
+        'After you sign in, caretaker setup continues in the browser tab that opened from your email. Switch back to that tab. If you only see this app, open the invite link from your email again.',
+      );
+      return true;
+    };
+
+    /**
      * Caretaker email invite: `abstrack:///caretaker-invite?code=…` and/or HTTPS App Links to
-     * user web (`EXPO_PUBLIC_USER_WEB_ORIGIN` + `/auth/callback?…&next=/caretaker/join`). Exchanges
-     * the code, creates caretaker profile if needed, and finalizes `caretaker_access` via Edge.
+     * **`/auth/callback?…&next=/caretaker/join`** (not `/caretaker/join`, which has no `code` after
+     * web exchange). Exchanges the code, creates caretaker profile if needed, and finalizes
+     * `caretaker_access` via Edge.
      *
      * @returns `true` when this URL was a caretaker invite link (handled or failed in-app).
      */
@@ -373,7 +400,11 @@ function AppBootstrap() {
           const caretakerInviteHandled =
             await handleCaretakerInviteLink(initialUrl);
           if (!caretakerInviteHandled) {
-            await handleRecoveryLink(initialUrl);
+            const joinHintHandled =
+              handleCaretakerJoinWithoutCodeDeepLink(initialUrl);
+            if (!joinHintHandled) {
+              await handleRecoveryLink(initialUrl);
+            }
           }
         }
 
@@ -406,7 +437,10 @@ function AppBootstrap() {
         try {
           const caretakerInviteHandled = await handleCaretakerInviteLink(url);
           if (!caretakerInviteHandled) {
-            await handleRecoveryLink(url);
+            const joinHintHandled = handleCaretakerJoinWithoutCodeDeepLink(url);
+            if (!joinHintHandled) {
+              await handleRecoveryLink(url);
+            }
           }
         } catch {
           /* Deep link handling must not reject unhandled */
