@@ -77,6 +77,39 @@ export type Database = {
         }
         Relationships: []
       }
+      caretaker_invites: {
+        Row: {
+          consumed_at: string | null
+          consumed_caretaker_user_id: string | null
+          created_at: string
+          expires_at: string
+          id: string
+          invitee_email_normalized: string
+          last_invite_sent_at: string | null
+          patient_user_id: string
+        }
+        Insert: {
+          consumed_at?: string | null
+          consumed_caretaker_user_id?: string | null
+          created_at?: string
+          expires_at: string
+          id?: string
+          invitee_email_normalized: string
+          last_invite_sent_at?: string | null
+          patient_user_id: string
+        }
+        Update: {
+          consumed_at?: string | null
+          consumed_caretaker_user_id?: string | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          invitee_email_normalized?: string
+          last_invite_sent_at?: string | null
+          patient_user_id?: string
+        }
+        Relationships: []
+      }
       episode_media: {
         Row: {
           created_at: string
@@ -656,6 +689,10 @@ export type Database = {
       reorder_preset_symptoms: {
         Args: { p_ordered_ids: string[]; p_preset_id: string }
         Returns: undefined
+      }
+      resolve_auth_user_id_by_normalized_email: {
+        Args: { p_normalized: string }
+        Returns: string
       }
       user_has_practitioner_access: {
         Args: { p_patient_user_id: string }
