@@ -3,7 +3,7 @@ import {
   fetchCaretakerAccessPostJson,
   isMissingPublishableKeyForCaretakerEdge,
   resolvePatientCaretakerAccessUrl,
-} from './patient-user-web-api';
+} from './patient-caretaker-edge-api';
 import { getMobileSupabaseClient } from './supabase-wiring';
 
 /** PostgREST duplicate key — profile row may have been created concurrently. */

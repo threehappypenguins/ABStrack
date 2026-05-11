@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useId, useState } from 'react';
+import type { Session } from '@abstrack/supabase';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
 import {
   caretakerEdgeClientPreflightErrorMessage,
@@ -38,16 +39,37 @@ export default function CaretakerJoinPage() {
 
     const run = async () => {
       setState({ kind: 'loading' });
-      const supabase = createBrowserClient();
-      const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession();
 
-      if (sessionError || !session?.user) {
-        if (!cancelled) {
-          setState({ kind: 'need_sign_in' });
+      let supabase: ReturnType<typeof createBrowserClient>;
+      let session: Session | null = null;
+
+      try {
+        supabase = createBrowserClient();
+        const {
+          data: { session: s },
+          error: sessionError,
+        } = await supabase.auth.getSession();
+
+        if (sessionError || !s?.user) {
+          if (!cancelled) {
+            setState({ kind: 'need_sign_in' });
+          }
+          return;
         }
+        session = s;
+      } catch (err) {
+        if (!cancelled) {
+          const msg = caretakerEdgeClientPreflightErrorMessage(
+            err,
+            'Unable to read your session. Open the invite link from your email again, or reload this page.',
+          );
+          setState({ kind: 'error', message: msg });
+          announce(msg, { politeness: 'assertive' });
+        }
+        return;
+      }
+
+      if (!session?.user) {
         return;
       }
 

@@ -26,7 +26,7 @@ import {
   fetchCaretakerAccessPost,
   isMissingPublishableKeyForCaretakerEdge,
   resolvePatientCaretakerAccessUrl,
-} from '../../lib/patient-user-web-api';
+} from '../../lib/patient-caretaker-edge-api';
 import { getMobileAuthSessionSafe } from '../../lib/supabase-wiring';
 
 const THEME_OPTIONS: {

@@ -1,8 +1,7 @@
 /**
- * Patient caretaker invite/revoke: calls the **Supabase Edge Function**
- * `patient-caretaker-access` on the same project as `EXPO_PUBLIC_SUPABASE_URL`, so mobile does not
- * depend on a separate Next.js host. The function runs with an elevated Supabase server client
- * (default secret key) and validates the caller’s Bearer JWT.
+ * HTTP client for the **`patient-caretaker-access`** Supabase Edge Function on the same project as
+ * `EXPO_PUBLIC_SUPABASE_URL` (no separate user-web host). The function runs with an elevated Supabase
+ * server client (default secret key) and validates the caller’s Bearer JWT.
  *
  * The Functions gateway requires an **`apikey`** header: **`EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`**
  * (`sb_publishable_…`), validated via **`getSupabasePublishableKey`** from **`@abstrack/supabase`**

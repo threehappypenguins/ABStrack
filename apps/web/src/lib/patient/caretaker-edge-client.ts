@@ -59,12 +59,12 @@ function isSupabaseClientMisconfigurationError(e: unknown): boolean {
 
 /**
  * Maps preflight errors from caretaker Edge client helpers (`fetchPatientCaretakerAccess*` before
- * `fetch` returns) to user-facing copy: missing session token, Supabase public env misconfiguration,
- * or connectivity.
+ * `fetch` returns), **`createBrowserClient()`**, or **`supabase.auth.getSession()`** throws, to
+ * user-facing copy: missing session token, Supabase public env misconfiguration, or connectivity.
  *
- * @param err - Caught rejection from those helpers.
+ * @param err - Caught rejection from those helpers or browser Supabase wiring.
  * @param missingTokenMessage - Copy when the Edge call could not read a usable `access_token`
- * ({@link PATIENT_CARETAKER_ACCESS_ERROR_MISSING_TOKEN}).
+ * ({@link PATIENT_CARETAKER_ACCESS_ERROR_MISSING_TOKEN}), or a session-read fallback when not an env error.
  * @returns Message suitable for UI or live regions.
  */
 export function caretakerEdgeClientPreflightErrorMessage(
@@ -79,7 +79,8 @@ export function caretakerEdgeClientPreflightErrorMessage(
   }
   if (
     err instanceof Error &&
-    err.message === PATIENT_CARETAKER_ACCESS_ERROR_SUPABASE_CLIENT_CONFIG
+    (err.message === PATIENT_CARETAKER_ACCESS_ERROR_SUPABASE_CLIENT_CONFIG ||
+      isSupabaseClientMisconfigurationError(err))
   ) {
     return 'Supabase is misconfigured for this app build. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY in apps/web/.env.local (see docs/DEV_SETUP.md).';
   }
