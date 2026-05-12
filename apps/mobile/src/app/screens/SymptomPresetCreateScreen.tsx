@@ -4,10 +4,8 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { announce } from '@abstrack/ui/native';
 import { COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
-import {
-  getCurrentUserId,
-  saveNewSymptomPreset,
-} from '../../lib/symptom-presets/symptom-preset-service';
+import { resolveMobilePhiSubjectUserContext } from '../../lib/phi-subject/resolve-mobile-phi-subject-user-context';
+import { saveNewSymptomPreset } from '../../lib/symptom-presets/symptom-preset-service';
 import type { SymptomPresetsStackParamList } from '../navigation/types';
 import { useAppTheme } from '../theme/AppThemeContext';
 import { nw } from '../theme/app-nativewind-classes';
@@ -36,16 +34,16 @@ export function SymptomPresetCreateScreen() {
     }
     setBusy(true);
     try {
-      const authResult = await getCurrentUserId();
-      if (!authResult.ok) {
-        announce(authResult.error.message);
+      const phiRes = await resolveMobilePhiSubjectUserContext();
+      if (!phiRes.ok) {
+        announce(phiRes.error.message);
         return;
       }
-      if (authResult.data === null) {
+      if (phiRes.data == null) {
         announce('You need to be signed in to create a preset.');
         return;
       }
-      const userId = authResult.data;
+      const userId = phiRes.data.phiSubjectUserId;
       const result = await saveNewSymptomPreset({
         user_id: userId,
         name: trimmed,

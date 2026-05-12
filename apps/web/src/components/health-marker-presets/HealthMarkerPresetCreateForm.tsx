@@ -3,7 +3,10 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { createHealthMarkerPreset } from '@abstrack/supabase';
+import {
+  createHealthMarkerPreset,
+  resolvePhiSubjectUserContextFromSupabase,
+} from '@abstrack/supabase';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
 import { useAuth } from '@/lib/auth-provider';
@@ -35,8 +38,21 @@ export function HealthMarkerPresetCreateForm() {
     setSaving(true);
     setError(null);
     const supabase = createBrowserClient();
+    const phiRes = await resolvePhiSubjectUserContextFromSupabase(
+      supabase,
+      session.user.id,
+    );
+    if (!phiRes.ok || phiRes.data == null) {
+      setSaving(false);
+      const msg = phiRes.ok
+        ? 'You must be signed in to create a preset.'
+        : phiRes.error.message;
+      setError(msg);
+      announce(msg, { politeness: 'assertive' });
+      return;
+    }
     const result = await createHealthMarkerPreset(supabase, {
-      user_id: session.user.id,
+      user_id: phiRes.data.phiSubjectUserId,
       name: trimmed,
     });
     setSaving(false);

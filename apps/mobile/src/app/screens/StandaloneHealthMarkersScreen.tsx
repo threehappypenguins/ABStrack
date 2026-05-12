@@ -36,6 +36,7 @@ import {
   getMobileAuthSessionSafe,
   getMobileSupabaseClient,
 } from '../../lib/supabase-wiring';
+import { useMobilePhiSubjectUserContext } from '../../lib/auth/use-mobile-phi-subject-user-context';
 import { ScreenShell } from '../components/ScreenShell';
 import type { MainStackParamList } from '../navigation/types';
 import { nw } from '../theme/app-nativewind-classes';
@@ -53,6 +54,11 @@ type StandaloneHealthMarkersNav = NativeStackNavigationProp<
 export function StandaloneHealthMarkersScreen() {
   const navigation = useNavigation<StandaloneHealthMarkersNav>();
   const supabase = useMemo(() => getMobileSupabaseClient(), []);
+  const {
+    phiSubjectUserId,
+    loading: phiScopeLoading,
+    errorMessage: phiScopeError,
+  } = useMobilePhiSubjectUserContext();
 
   const [authLoading, setAuthLoading] = useState(true);
   const [authUserId, setAuthUserId] = useState<string | null>(null);
@@ -124,7 +130,7 @@ export function StandaloneHealthMarkersScreen() {
   }, [supabase, authRetryTick]);
 
   useEffect(() => {
-    if (authLoading) {
+    if (authLoading || phiScopeLoading) {
       return;
     }
 
@@ -180,7 +186,7 @@ export function StandaloneHealthMarkersScreen() {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, authUserId, supabase, presetRefetchTick]);
+  }, [authLoading, phiScopeLoading, authUserId, supabase, presetRefetchTick]);
 
   useEffect(() => {
     setFeedback(null);
@@ -263,7 +269,7 @@ export function StandaloneHealthMarkersScreen() {
   };
 
   const saveCurrentLine = async (): Promise<boolean> => {
-    if (!currentLine || !authUserId) {
+    if (!currentLine || !phiSubjectUserId) {
       return false;
     }
     const customValidation = validatePresetHealthMarkerCustomFields(
@@ -285,7 +291,7 @@ export function StandaloneHealthMarkersScreen() {
     setSaving(true);
     setFeedback(null);
     const result = await createStandaloneHealthMarkerForLine(supabase, {
-      userId: authUserId,
+      userId: phiSubjectUserId,
       line: currentLine,
       valueNumeric: parsed.valueNumeric,
       systolicNumeric: parsed.systolicNumeric,
@@ -333,7 +339,7 @@ export function StandaloneHealthMarkersScreen() {
   const secondaryBtn =
     'min-h-[56px] items-center justify-center rounded-xl border border-app-border bg-app-surface px-4 dark:border-app-border-dark dark:bg-app-surface-dark';
 
-  if (authLoading) {
+  if (authLoading || phiScopeLoading) {
     return (
       <ScreenShell>
         <View className="min-h-[120px] items-center justify-center py-8">
@@ -377,6 +383,38 @@ export function StandaloneHealthMarkersScreen() {
             Try again
           </Text>
         </Pressable>
+      </ScreenShell>
+    );
+  }
+
+  if (phiScopeError) {
+    return (
+      <ScreenShell>
+        <Text
+          className={`text-xl font-semibold ${nw.textInk}`}
+          maxFontSizeMultiplier={2}
+        >
+          Log health markers
+        </Text>
+        <Text
+          className={`mt-2 text-sm ${nw.textMuted}`}
+          accessibilityRole="alert"
+        >
+          {phiScopeError}
+        </Text>
+      </ScreenShell>
+    );
+  }
+
+  if (!phiSubjectUserId) {
+    return (
+      <ScreenShell>
+        <View className="min-h-[120px] items-center justify-center py-8">
+          <ActivityIndicator size="large" />
+          <Text className={`mt-3 text-center text-sm ${nw.textMuted}`}>
+            Preparing your account…
+          </Text>
+        </View>
       </ScreenShell>
     );
   }

@@ -22,6 +22,11 @@ import {
   localDateTimeToIso,
   localTimeFromDate,
 } from '../../lib/food-diary/date-time';
+import { resolveMobilePhiSubjectUserContext } from '../../lib/phi-subject/resolve-mobile-phi-subject-user-context';
+import {
+  powerSyncReplicaSqliteReady,
+  usePowerSyncBridgeState,
+} from '../../lib/powersync/PowerSyncSessionBridge';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { ScreenShell } from '../components/ScreenShell';
 import type { MainStackParamList } from '../navigation/types';
@@ -47,6 +52,11 @@ type LastSavedSummary = {
 export function FoodDiaryEntryScreen() {
   const route = useRoute<FoodDiaryEntryRoute>();
   const { colors } = useAppTheme();
+  const psBridge = usePowerSyncBridgeState();
+  const powerSyncDb = useMemo(
+    () => (powerSyncReplicaSqliteReady(psBridge) ? psBridge.database : null),
+    [psBridge],
+  );
   const episodeId = route.params?.episodeId ?? null;
   const isStandalone = episodeId == null;
   const supabase = useMemo(() => getMobileSupabaseClient(), []);
@@ -144,6 +154,19 @@ export function FoodDiaryEntryScreen() {
       return;
     }
 
+    const phiRes = await resolveMobilePhiSubjectUserContext({
+      powerSyncDatabase: powerSyncDb,
+    });
+    if (!phiRes.ok || phiRes.data == null) {
+      const message = phiRes.ok
+        ? 'You must be signed in to save a food diary entry.'
+        : phiRes.error.message;
+      setErrorMessage(message);
+      await announce(message, { politeness: 'assertive' });
+      setSaving(false);
+      return;
+    }
+
     const loggedAtIso = localDateTimeToIso(loggedDate, loggedTime);
     if (!loggedAtIso) {
       const message = 'Enter a valid date and time.';
@@ -161,7 +184,7 @@ export function FoodDiaryEntryScreen() {
     }
 
     const result = await createFoodDiaryEntry(supabase, {
-      user_id: user.id,
+      user_id: phiRes.data.phiSubjectUserId,
       episode_id: episodeId,
       meal_tag: mealTag,
       food_note: foodNote,

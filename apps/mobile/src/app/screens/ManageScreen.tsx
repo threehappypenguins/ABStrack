@@ -6,6 +6,7 @@ import React, {
   useState,
 } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   FlatList,
   Pressable,
@@ -37,6 +38,7 @@ import {
   type UsePullToResyncPowerSyncOptions,
 } from '../../lib/powersync/use-pull-to-resync-powersync';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
+import { useMobilePhiSubjectUserContext } from '../../lib/auth/use-mobile-phi-subject-user-context';
 import { ScreenShell } from '../components/ScreenShell';
 import type { MainStackParamList, MainTabParamList } from '../navigation/types';
 import { useAppTheme } from '../theme/AppThemeContext';
@@ -128,6 +130,13 @@ export function ManageScreen() {
   }
   const route = useRoute<RouteProp<MainTabParamList, 'Manage'>>();
   const initialSegment = route.params?.initialSegment;
+  const { colors } = useAppTheme();
+
+  const {
+    phiSubjectUserId,
+    errorMessage: phiScopeError,
+    loading: phiScopeLoading,
+  } = useMobilePhiSubjectUserContext();
 
   const [segment, setSegment] = useState<ManageTabSegment>('episodes');
   const [filterDay, setFilterDay] = useState<Date | null>(null);
@@ -308,16 +317,42 @@ export function ManageScreen() {
             />
           ) : null}
           {segment === 'health' ? (
-            <StandaloneHealthMarkersManageList
-              recordedAtOrAfter={markerDateBounds.recordedAtOrAfter}
-              recordedAtOrBefore={markerDateBounds.recordedAtOrBefore}
-            />
+            phiScopeError ? (
+              <Text
+                className={`text-sm ${nw.textError}`}
+                accessibilityRole="alert"
+                maxFontSizeMultiplier={2}
+              >
+                {phiScopeError}
+              </Text>
+            ) : phiScopeLoading || !phiSubjectUserId ? (
+              <ActivityIndicator size="large" color={colors.primary} />
+            ) : (
+              <StandaloneHealthMarkersManageList
+                scopeUserId={phiSubjectUserId}
+                recordedAtOrAfter={markerDateBounds.recordedAtOrAfter}
+                recordedAtOrBefore={markerDateBounds.recordedAtOrBefore}
+              />
+            )
           ) : null}
           {segment === 'food' ? (
-            <StandaloneFoodDiaryManageList
-              loggedAtOrAfter={foodDateBounds.loggedAtOrAfter}
-              loggedAtOrBefore={foodDateBounds.loggedAtOrBefore}
-            />
+            phiScopeError ? (
+              <Text
+                className={`text-sm ${nw.textError}`}
+                accessibilityRole="alert"
+                maxFontSizeMultiplier={2}
+              >
+                {phiScopeError}
+              </Text>
+            ) : phiScopeLoading || !phiSubjectUserId ? (
+              <ActivityIndicator size="large" color={colors.primary} />
+            ) : (
+              <StandaloneFoodDiaryManageList
+                scopeUserId={phiSubjectUserId}
+                loggedAtOrAfter={foodDateBounds.loggedAtOrAfter}
+                loggedAtOrBefore={foodDateBounds.loggedAtOrBefore}
+              />
+            )
           ) : null}
         </View>
       </View>
@@ -326,11 +361,14 @@ export function ManageScreen() {
 }
 
 type StandaloneHealthMarkersManageListProps = {
+  /** Patient id for PHI list queries (includes caretaker acting for a linked patient). */
+  scopeUserId: string;
   recordedAtOrAfter: string | null;
   recordedAtOrBefore: string | null;
 };
 
 function StandaloneHealthMarkersManageList({
+  scopeUserId,
   recordedAtOrAfter,
   recordedAtOrBefore,
 }: StandaloneHealthMarkersManageListProps) {
@@ -357,23 +395,19 @@ function StandaloneHealthMarkersManageList({
       setError(null);
       try {
         const client = getMobileSupabaseClient();
-        const {
-          data: { user },
-        } = await client.auth.getUser();
         if (stale()) {
           return 'stale';
         }
-        if (!user) {
-          setRows([]);
-          setHasMore(false);
-          return 'no-user';
-        }
-        const res = await listStandaloneHealthMarkersForUser(client, user.id, {
-          limit: PAGE_SIZE,
-          offset: 0,
-          recordedAtOrAfter: recordedAtOrAfter ?? undefined,
-          recordedAtOrBefore: recordedAtOrBefore ?? undefined,
-        });
+        const res = await listStandaloneHealthMarkersForUser(
+          client,
+          scopeUserId,
+          {
+            limit: PAGE_SIZE,
+            offset: 0,
+            recordedAtOrAfter: recordedAtOrAfter ?? undefined,
+            recordedAtOrBefore: recordedAtOrBefore ?? undefined,
+          },
+        );
         if (stale()) {
           return 'stale';
         }
@@ -400,7 +434,7 @@ function StandaloneHealthMarkersManageList({
         }
       }
     },
-    [recordedAtOrAfter, recordedAtOrBefore],
+    [recordedAtOrAfter, recordedAtOrBefore, scopeUserId],
   );
 
   const loadInitialRef = useRef(loadInitial);
@@ -455,22 +489,19 @@ function StandaloneHealthMarkersManageList({
     setLoadingMore(true);
     try {
       const client = getMobileSupabaseClient();
-      const {
-        data: { user },
-      } = await client.auth.getUser();
       if (stale()) {
         return;
       }
-      if (!user) {
-        setHasMore(false);
-        return;
-      }
-      const res = await listStandaloneHealthMarkersForUser(client, user.id, {
-        limit: PAGE_SIZE,
-        offset: rows.length,
-        recordedAtOrAfter: recordedAtOrAfter ?? undefined,
-        recordedAtOrBefore: recordedAtOrBefore ?? undefined,
-      });
+      const res = await listStandaloneHealthMarkersForUser(
+        client,
+        scopeUserId,
+        {
+          limit: PAGE_SIZE,
+          offset: rows.length,
+          recordedAtOrAfter: recordedAtOrAfter ?? undefined,
+          recordedAtOrBefore: recordedAtOrBefore ?? undefined,
+        },
+      );
       if (stale()) {
         return;
       }
@@ -495,6 +526,7 @@ function StandaloneHealthMarkersManageList({
     recordedAtOrAfter,
     recordedAtOrBefore,
     rows.length,
+    scopeUserId,
   ]);
 
   const onDelete = useCallback(
@@ -663,11 +695,13 @@ function StandaloneHealthMarkersManageList({
 }
 
 type StandaloneFoodDiaryManageListProps = {
+  scopeUserId: string;
   loggedAtOrAfter: string | null;
   loggedAtOrBefore: string | null;
 };
 
 function StandaloneFoodDiaryManageList({
+  scopeUserId,
   loggedAtOrAfter,
   loggedAtOrBefore,
 }: StandaloneFoodDiaryManageListProps) {
@@ -694,18 +728,10 @@ function StandaloneFoodDiaryManageList({
       setError(null);
       try {
         const client = getMobileSupabaseClient();
-        const {
-          data: { user },
-        } = await client.auth.getUser();
         if (stale()) {
           return 'stale';
         }
-        if (!user) {
-          setRows([]);
-          setHasMore(false);
-          return 'no-user';
-        }
-        const res = await listFoodDiaryEntriesForUser(client, user.id, {
+        const res = await listFoodDiaryEntriesForUser(client, scopeUserId, {
           limit: PAGE_SIZE,
           offset: 0,
           standaloneOnly: true,
@@ -738,7 +764,7 @@ function StandaloneFoodDiaryManageList({
         }
       }
     },
-    [loggedAtOrAfter, loggedAtOrBefore],
+    [loggedAtOrAfter, loggedAtOrBefore, scopeUserId],
   );
 
   const loadInitialRef = useRef(loadInitial);
@@ -791,17 +817,10 @@ function StandaloneFoodDiaryManageList({
     setLoadingMore(true);
     try {
       const client = getMobileSupabaseClient();
-      const {
-        data: { user },
-      } = await client.auth.getUser();
       if (stale()) {
         return;
       }
-      if (!user) {
-        setHasMore(false);
-        return;
-      }
-      const res = await listFoodDiaryEntriesForUser(client, user.id, {
+      const res = await listFoodDiaryEntriesForUser(client, scopeUserId, {
         limit: PAGE_SIZE,
         offset: rows.length,
         standaloneOnly: true,
@@ -826,7 +845,14 @@ function StandaloneFoodDiaryManageList({
     } finally {
       setLoadingMore(false);
     }
-  }, [hasMore, loadingMore, loggedAtOrAfter, loggedAtOrBefore, rows.length]);
+  }, [
+    hasMore,
+    loadingMore,
+    loggedAtOrAfter,
+    loggedAtOrBefore,
+    rows.length,
+    scopeUserId,
+  ]);
 
   const onDelete = useCallback(
     (row: FoodDiaryEntryRow) => {

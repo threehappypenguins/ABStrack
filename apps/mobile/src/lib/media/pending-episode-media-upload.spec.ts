@@ -21,6 +21,17 @@ jest.mock('@abstrack/supabase', () => ({
     '@abstrack/supabase',
   ),
   uploadConfirmedEpisodeMedia: jest.fn(),
+  /** Worker resolves PHI before selecting queue rows; the test Supabase stub cannot load profiles. */
+  resolvePhiSubjectUserContextFromSupabase: jest.fn(
+    async (_client: unknown, authUserId: string) => ({
+      ok: true as const,
+      data: {
+        authUserId,
+        phiSubjectUserId: authUserId,
+        profileAppRole: 'patient' as const,
+      },
+    }),
+  ),
 }));
 
 jest.mock('../supabase-wiring', () => ({

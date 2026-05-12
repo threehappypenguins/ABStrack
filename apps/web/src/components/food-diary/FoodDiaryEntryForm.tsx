@@ -3,7 +3,10 @@
 import { useMemo, useState } from 'react';
 import type { MealTag } from '@abstrack/types';
 import { MEAL_TAGS } from '@abstrack/types';
-import { createFoodDiaryEntry } from '@abstrack/supabase';
+import {
+  createFoodDiaryEntry,
+  resolvePhiSubjectUserContextFromSupabase,
+} from '@abstrack/supabase';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
 import {
@@ -88,6 +91,20 @@ export function FoodDiaryEntryForm({
       return;
     }
 
+    const phiRes = await resolvePhiSubjectUserContextFromSupabase(
+      supabase,
+      user.id,
+    );
+    if (!phiRes.ok || phiRes.data == null) {
+      const message = phiRes.ok
+        ? 'You must be signed in to save a food diary entry.'
+        : phiRes.error.message;
+      setErrorMessage(message);
+      announce(message, { politeness: 'assertive' });
+      setSaving(false);
+      return;
+    }
+
     const loggedAtIso = localInputValueToIso(loggedAtLocal);
     if (!mealTag) {
       const message = 'Choose a meal tag.';
@@ -105,7 +122,7 @@ export function FoodDiaryEntryForm({
     }
 
     const result = await createFoodDiaryEntry(supabase, {
-      user_id: user.id,
+      user_id: phiRes.data.phiSubjectUserId,
       episode_id: episodeId,
       meal_tag: mealTag,
       food_note: foodNote,

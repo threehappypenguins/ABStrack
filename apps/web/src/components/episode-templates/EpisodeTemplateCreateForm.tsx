@@ -10,6 +10,7 @@ import {
   createEpisodeTemplate,
   listHealthMarkerPresets,
   listSymptomPresets,
+  resolvePhiSubjectUserContextFromSupabase,
 } from '@abstrack/supabase';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
@@ -169,8 +170,21 @@ export function EpisodeTemplateCreateForm() {
     setSaving(true);
     setError(null);
     const supabase = createBrowserClient();
+    const phiRes = await resolvePhiSubjectUserContextFromSupabase(
+      supabase,
+      session.user.id,
+    );
+    if (!phiRes.ok || phiRes.data == null) {
+      setSaving(false);
+      const msg = phiRes.ok
+        ? 'You must be signed in to save an episode template.'
+        : phiRes.error.message;
+      setError(msg);
+      announce(msg, { politeness: 'assertive' });
+      return;
+    }
     const result = await createEpisodeTemplate(supabase, {
-      user_id: session.user.id,
+      user_id: phiRes.data.phiSubjectUserId,
       name: nameCheck.name,
       symptom_preset_id: symptomPresetId,
       health_marker_preset_id: healthMarkerPresetId,

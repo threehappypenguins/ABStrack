@@ -3,7 +3,10 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
+import { useMemo } from 'react';
 import { NavigationShell } from '@abstrack/ui';
+
+import { useWebPhiSubjectUserContext } from '@/lib/patient/use-web-phi-subject-user-context';
 
 const NAV_ITEMS: {
   href: string;
@@ -72,6 +75,13 @@ export function AuthenticatedShell({
   email,
 }: AuthenticatedShellProps) {
   const pathname = usePathname() ?? '/';
+  const { profileAppRole } = useWebPhiSubjectUserContext();
+  const navItems = useMemo(() => {
+    if (profileAppRole === 'caretaker') {
+      return NAV_ITEMS.filter((item) => item.href !== '/settings/caretaker');
+    }
+    return NAV_ITEMS;
+  }, [profileAppRole]);
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -110,7 +120,7 @@ export function AuthenticatedShell({
                 aria-label="Primary"
                 className="flex flex-1 flex-wrap items-center justify-center gap-1.5 sm:justify-start lg:justify-center"
               >
-                {NAV_ITEMS.map(({ href, label, match }) => {
+                {navItems.map(({ href, label, match }) => {
                   const active = isNavActive(pathname, match);
                   return (
                     <Link

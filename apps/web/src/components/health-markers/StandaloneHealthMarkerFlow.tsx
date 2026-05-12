@@ -7,6 +7,7 @@ import {
   createStandaloneHealthMarkerForLine,
   listHealthMarkerPresets,
   listPresetHealthMarkersForPreset,
+  resolvePhiSubjectUserContextFromSupabase,
 } from '@abstrack/supabase';
 import type {
   HealthMarkerPresetRow,
@@ -208,8 +209,21 @@ export function StandaloneHealthMarkerFlow() {
     }
     setSaving(true);
     setFeedback(null);
+    const phiRes = await resolvePhiSubjectUserContextFromSupabase(
+      supabase,
+      session.user.id,
+    );
+    if (!phiRes.ok || phiRes.data == null) {
+      setSaving(false);
+      const msg = phiRes.ok
+        ? 'You must be signed in to save health markers.'
+        : phiRes.error.message;
+      setFeedback(msg);
+      announce(msg, { politeness: 'assertive' });
+      return false;
+    }
     const result = await createStandaloneHealthMarkerForLine(supabase, {
-      userId: session.user.id,
+      userId: phiRes.data.phiSubjectUserId,
       line: currentLine,
       valueNumeric: parsed.valueNumeric,
       systolicNumeric: parsed.systolicNumeric,

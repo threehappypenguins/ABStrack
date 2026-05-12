@@ -10,20 +10,20 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { announce } from '@abstrack/ui/native';
 import { COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
+import type { HealthMarkerPresetRow, SymptomPresetRow } from '@abstrack/types';
 import {
   validateEpisodeTemplateName,
   validateEpisodeTemplatePresetPair,
 } from '@abstrack/types';
 import { useMobileAuthUserId } from '../../lib/auth/use-mobile-auth-user-id';
 import {
-  getCurrentUserId,
-  saveNewEpisodeTemplate,
-} from '../../lib/episode-templates/episode-template-service';
-import { fetchHealthMarkerPresets } from '../../lib/health-marker-presets/health-marker-preset-service';
-import {
   powerSyncOfflineReplicaReadsEnabled,
+  powerSyncReplicaSqliteReady,
   usePowerSyncBridgeState,
 } from '../../lib/powersync/PowerSyncSessionBridge';
+import { resolveMobilePhiSubjectUserContext } from '../../lib/phi-subject/resolve-mobile-phi-subject-user-context';
+import { saveNewEpisodeTemplate } from '../../lib/episode-templates/episode-template-service';
+import { fetchHealthMarkerPresets } from '../../lib/health-marker-presets/health-marker-preset-service';
 import { fetchSymptomPresets } from '../../lib/symptom-presets/symptom-preset-service';
 import { PresetOptionSheetField } from '../components/episode-templates/PresetOptionSheetField';
 import { useUnsavedChangesBeforeRemove } from '../hooks/useUnsavedChangesBeforeRemove';
@@ -111,8 +111,14 @@ export function EpisodeTemplateCreateScreen() {
       setListsLoading(false);
       return;
     }
-    const sList = sRes.data.map((r) => ({ id: r.id, name: r.name }));
-    const mList = mRes.data.map((r) => ({ id: r.id, name: r.name }));
+    const sList = sRes.data.map((r: SymptomPresetRow) => ({
+      id: r.id,
+      name: r.name,
+    }));
+    const mList = mRes.data.map((r: HealthMarkerPresetRow) => ({
+      id: r.id,
+      name: r.name,
+    }));
     const initSymptom = sList.length === 1 ? sList[0].id : null;
     const initMarker = mList.length === 1 ? mList[0].id : null;
     setSymptoms(sList);
@@ -267,17 +273,21 @@ export function EpisodeTemplateCreateScreen() {
     const hid = markerId as string;
     setBusy(true);
     try {
-      const authResult = await getCurrentUserId();
-      if (!authResult.ok) {
-        announce(authResult.error.message);
+      const phiRes = await resolveMobilePhiSubjectUserContext({
+        powerSyncDatabase: powerSyncReplicaSqliteReady(psBridge)
+          ? psBridge.database
+          : null,
+      });
+      if (!phiRes.ok) {
+        announce(phiRes.error.message);
         return;
       }
-      if (authResult.data === null) {
+      if (phiRes.data == null) {
         announce('You need to be signed in to create a template.');
         return;
       }
       const result = await saveNewEpisodeTemplate({
-        user_id: authResult.data,
+        user_id: phiRes.data.phiSubjectUserId,
         name: nameCheck.name,
         symptom_preset_id: sid,
         health_marker_preset_id: hid,

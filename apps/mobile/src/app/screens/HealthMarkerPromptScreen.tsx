@@ -68,6 +68,7 @@ import {
   getMobileAuthSessionSafe,
   getMobileSupabaseClient,
 } from '../../lib/supabase-wiring';
+import { resolveMobilePhiSubjectUserContext } from '../../lib/phi-subject/resolve-mobile-phi-subject-user-context';
 import { AsyncScreenContainer } from '../components/AsyncScreenContainer';
 import { ScreenShell } from '../components/ScreenShell';
 import { EpisodeFlowSecondaryActionsSection } from '../components/episode-flow/EpisodeFlowSecondaryActionsSection';
@@ -355,6 +356,10 @@ export function HealthMarkerPromptScreen() {
     setObservationTimeline([]);
 
     let sessionUserId: string | null = null;
+    const psDb =
+      powerSyncReplicaSqliteReady(psBridge) && psBridge.database != null
+        ? psBridge.database
+        : getPowerSyncDatabaseForOfflineReads();
     const {
       data: { session },
       error: sessionError,
@@ -378,12 +383,23 @@ export function HealthMarkerPromptScreen() {
       setStatus('error');
       return;
     }
-    setUserId(sessionUserId);
+    const phiRes = await resolveMobilePhiSubjectUserContext({
+      powerSyncDatabase: psDb,
+    });
+    if (stale()) {
+      return;
+    }
+    if (!phiRes.ok || phiRes.data == null) {
+      setErrorMessage(
+        phiRes.ok
+          ? 'You must be signed in to save health marker answers. Try signing in again.'
+          : phiRes.error.message,
+      );
+      setStatus('error');
+      return;
+    }
+    setUserId(phiRes.data.phiSubjectUserId);
 
-    const psDb =
-      powerSyncReplicaSqliteReady(psBridge) && psBridge.database != null
-        ? psBridge.database
-        : getPowerSyncDatabaseForOfflineReads();
     let usedPowerSyncReplicaReads = false;
 
     const episodeRemote = await getEpisodeById(supabase, episodeId);

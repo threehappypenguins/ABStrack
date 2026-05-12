@@ -78,6 +78,7 @@ import {
   getMobileAuthSessionSafe,
   getMobileSupabaseClient,
 } from '../../lib/supabase-wiring';
+import { resolveMobilePhiSubjectUserContext } from '../../lib/phi-subject/resolve-mobile-phi-subject-user-context';
 import {
   clearSymptomPromptSession,
   getSymptomPromptSession,
@@ -433,20 +434,18 @@ export function SymptomPromptScreen() {
   );
 
   /**
-   * Reads the signed-in user id from {@link getMobileAuthSessionSafe} on every call (no ref cache).
-   * Queued symptom writes can flush after sign-out / during replica teardown; a stale cached id
-   * could otherwise insert PHI into a DB being cleared.
+   * Resolves the PHI `user_id` for queued writes (patient id when acting as caretaker).
+   * Uses {@link resolveMobilePhiSubjectUserContext} so queued writes stay aligned with RLS.
    */
   const resolveSessionUserId = useCallback(async (): Promise<string | null> => {
-    try {
-      const {
-        data: { session },
-      } = await getMobileAuthSessionSafe();
-      return session?.user?.id ?? null;
-    } catch {
+    const res = await resolveMobilePhiSubjectUserContext({
+      powerSyncDatabase: powerSyncDbForWrites,
+    });
+    if (!res.ok || res.data == null) {
       return null;
     }
-  }, []);
+    return res.data.phiSubjectUserId;
+  }, [powerSyncDbForWrites]);
 
   useLayoutEffect(() => {
     answersRef.current = answers;

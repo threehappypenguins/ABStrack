@@ -26,10 +26,8 @@ import {
 } from './device-pending-media-crypto';
 import { getOrCreateDeviceSqlcipherKey } from '../powersync/powersync-sqlcipher-key';
 import { newRandomUuidV4 } from '../random-uuid';
-import {
-  getMobileAuthSessionSafe,
-  getMobileSupabaseClient,
-} from '../supabase-wiring';
+import { getMobileSupabaseClient } from '../supabase-wiring';
+import { resolveMobilePhiSubjectUserContext } from '../phi-subject/resolve-mobile-phi-subject-user-context';
 import { fetchMobileDeviceIsConnected } from '../network/mobile-device-netinfo';
 
 function newQueueId(): string {
@@ -417,13 +415,13 @@ async function runPendingEpisodeMediaUploadWorkerImpl(
     return { processed: 0, failures: 0 };
   }
 
-  const {
-    data: { session },
-  } = await getMobileAuthSessionSafe();
-  const uid = session?.user?.id;
-  if (!uid) {
+  const phiRes = await resolveMobilePhiSubjectUserContext({
+    powerSyncDatabase: db,
+  });
+  if (!phiRes.ok || phiRes.data == null) {
     return { processed: 0, failures: 0 };
   }
+  const uid = phiRes.data.phiSubjectUserId;
 
   if (pendingMediaUploadSignalRequestedStop(signal)) {
     return { processed: 0, failures: 0 };
