@@ -16,6 +16,7 @@ import {
   validateEpisodeTemplatePresetPair,
 } from '@abstrack/types';
 import { useMobileAuthUserId } from '../../lib/auth/use-mobile-auth-user-id';
+import { useMobilePhiSubjectUserContext } from '../../lib/auth/use-mobile-phi-subject-user-context';
 import {
   powerSyncOfflineReplicaReadsEnabled,
   powerSyncReplicaSqliteReady,
@@ -49,6 +50,24 @@ export function EpisodeTemplateCreateScreen() {
   const navigation = useNavigation<CreateNav>();
   const { colors } = useAppTheme();
   const viewerUserId = useMobileAuthUserId();
+  const viewerUserIdRef = useRef(viewerUserId);
+  viewerUserIdRef.current = viewerUserId;
+
+  const {
+    phiSubjectUserId,
+    loading: phiSubjectContextLoading,
+    errorMessage: phiSubjectContextError,
+  } = useMobilePhiSubjectUserContext();
+  const phiSubjectUserIdRef = useRef<string | null>(null);
+  const phiLoadingRef = useRef(false);
+  const phiErrorRef = useRef<string | null>(null);
+  phiSubjectUserIdRef.current = phiSubjectUserId;
+  phiLoadingRef.current = phiSubjectContextLoading;
+  phiErrorRef.current = phiSubjectContextError;
+
+  /** Dedupes preset-list loads when only `listsLoading` / `listsError` churn after a successful fetch. */
+  const lastPresetFetchKeyRef = useRef<string | null>(null);
+
   const psBridge = usePowerSyncBridgeState();
   const replicaMirrorReads = powerSyncOfflineReplicaReadsEnabled(psBridge);
 
@@ -95,8 +114,14 @@ export function EpisodeTemplateCreateScreen() {
     setListsError(null);
     const offlineRead = offlineReadRef.current;
     const [sRes, mRes] = await Promise.all([
-      fetchSymptomPresets({ powerSyncOfflineRead: offlineRead }),
-      fetchHealthMarkerPresets({ powerSyncOfflineRead: offlineRead }),
+      fetchSymptomPresets({
+        powerSyncOfflineRead: offlineRead,
+        scopeUserId: phiSubjectUserIdRef.current,
+      }),
+      fetchHealthMarkerPresets({
+        powerSyncOfflineRead: offlineRead,
+        scopeUserId: phiSubjectUserIdRef.current,
+      }),
     ]);
     if (signal?.aborted) {
       return;
@@ -130,6 +155,7 @@ export function EpisodeTemplateCreateScreen() {
       symptomId: initSymptom,
       markerId: initMarker,
     });
+    lastPresetFetchKeyRef.current = `${viewerUserIdRef.current ?? ''}|${phiSubjectUserIdRef.current ?? ''}|${phiLoadingRef.current ? 'L' : '-'}|${phiErrorRef.current ?? ''}`;
     setListsLoading(false);
   }, []);
 
@@ -137,9 +163,10 @@ export function EpisodeTemplateCreateScreen() {
   loadPresetListsRef.current = loadPresetLists;
 
   /**
-   * Loads preset picklists when the signed-in user id changes — not only on mount — so an account
-   * switch cannot leave the previous user's symptom/marker names visible. Still intentionally
-   * independent of `replicaMirrorReads` (see retry effect below).
+   * Loads preset picklists when the signed-in user id **or PHI scope** changes — not only on mount
+   * — so an account switch cannot leave the previous user's symptom/marker names visible, and a
+   * caretaker gets patient-scoped replica lists once {@link useMobilePhiSubjectUserContext} resolves.
+   * Still intentionally independent of `replicaMirrorReads` (see retry effect below).
    *
    * `useMobileAuthUserId` starts as `null` and resolves asynchronously; `null → userId` is
    * hydration, not a switch — do not clear the form or refetch when preset lists already loaded
@@ -149,7 +176,14 @@ export function EpisodeTemplateCreateScreen() {
     const next = viewerUserId;
     const prev = prevViewerUserIdRef.current;
 
-    if (prev !== undefined && prev === next) {
+    const presetFetchKey = `${next ?? ''}|${phiSubjectUserId ?? ''}|${phiSubjectContextLoading ? 'L' : '-'}|${phiSubjectContextError ?? ''}`;
+
+    if (
+      prev !== undefined &&
+      prev === next &&
+      lastPresetFetchKeyRef.current != null &&
+      lastPresetFetchKeyRef.current === presetFetchKey
+    ) {
       return;
     }
 
@@ -158,6 +192,7 @@ export function EpisodeTemplateCreateScreen() {
 
     if (isAuthHydration && !listsLoading && listsError == null) {
       prevViewerUserIdRef.current = next;
+      lastPresetFetchKeyRef.current = presetFetchKey;
       return;
     }
 
@@ -167,6 +202,7 @@ export function EpisodeTemplateCreateScreen() {
     prevViewerUserIdRef.current = next;
 
     if (switchedAccount) {
+      lastPresetFetchKeyRef.current = null;
       setName('');
       setSymptomId(null);
       setMarkerId(null);
@@ -188,7 +224,14 @@ export function EpisodeTemplateCreateScreen() {
     return () => {
       ac.abort();
     };
-  }, [viewerUserId, listsLoading, listsError]);
+  }, [
+    viewerUserId,
+    listsLoading,
+    listsError,
+    phiSubjectUserId,
+    phiSubjectContextLoading,
+    phiSubjectContextError,
+  ]);
 
   useEffect(() => {
     if (!listsError) {

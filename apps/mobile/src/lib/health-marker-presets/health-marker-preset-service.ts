@@ -71,6 +71,18 @@ export async function getCurrentUserId(): Promise<
   }
 }
 
+async function resolveOfflinePresetListScopeUserId(
+  explicitScopeUserId?: string | null,
+): Promise<PresetDataResult<string | null>> {
+  if (explicitScopeUserId != null) {
+    const trimmed = explicitScopeUserId.trim();
+    if (trimmed !== '') {
+      return { ok: true, data: trimmed };
+    }
+  }
+  return getCurrentUserId();
+}
+
 /**
  * Lists the signed-in user’s health marker presets, falling back to the PowerSync replica when
  * Supabase is unreachable and {@link resolvePowerSyncDatabaseForOfflineRead} returns a database
@@ -87,9 +99,12 @@ export async function getCurrentUserId(): Promise<
  * network result).
  *
  * @param options.powerSyncOfflineRead - From `usePowerSyncBridgeState()` when calling from UI.
+ * @param options.scopeUserId - Optional PHI row owner for replica SQL (caretaker’s linked patient).
+ *   When omitted, {@link getCurrentUserId} is used.
  */
 export async function fetchHealthMarkerPresets(options?: {
   powerSyncOfflineRead?: PowerSyncOfflineReadContext | null;
+  scopeUserId?: string | null;
 }): Promise<PresetDataResult<HealthMarkerPresetRow[]>> {
   const client = getMobileSupabaseClient();
   const db = resolvePowerSyncDatabaseForOfflineRead(
@@ -99,7 +114,9 @@ export async function fetchHealthMarkerPresets(options?: {
   if (db) {
     const connected = await fetchMobileDeviceIsConnected();
     if (connected === false) {
-      const auth = await getCurrentUserId();
+      const auth = await resolveOfflinePresetListScopeUserId(
+        options?.scopeUserId,
+      );
       if (!auth.ok) {
         return auth;
       }
@@ -130,7 +147,7 @@ export async function fetchHealthMarkerPresets(options?: {
     const alt = clarifyNetworkErrorWhenReplicaUnavailable(remote.error);
     return alt ? { ok: false, error: alt } : remote;
   }
-  const auth = await getCurrentUserId();
+  const auth = await resolveOfflinePresetListScopeUserId(options?.scopeUserId);
   if (!auth.ok || auth.data == null) {
     return remote;
   }

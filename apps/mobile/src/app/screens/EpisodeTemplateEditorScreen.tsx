@@ -25,6 +25,7 @@ import {
   validateEpisodeTemplatePresetPair,
 } from '@abstrack/types';
 import { useMobileAuthUserId } from '../../lib/auth/use-mobile-auth-user-id';
+import { useMobilePhiSubjectUserContext } from '../../lib/auth/use-mobile-phi-subject-user-context';
 import {
   fetchEpisodeTemplateById,
   removeEpisodeTemplate,
@@ -68,6 +69,23 @@ export function EpisodeTemplateEditorScreen() {
   const navigation = useNavigation<EditorNav>();
   const { colors } = useAppTheme();
   const viewerUserId = useMobileAuthUserId();
+  const viewerUserIdRef = useRef(viewerUserId);
+  viewerUserIdRef.current = viewerUserId;
+
+  const {
+    phiSubjectUserId,
+    loading: phiSubjectContextLoading,
+    errorMessage: phiSubjectContextError,
+  } = useMobilePhiSubjectUserContext();
+  const phiSubjectUserIdRef = useRef<string | null>(null);
+  const phiLoadingRef = useRef(false);
+  const phiErrorRef = useRef<string | null>(null);
+  phiSubjectUserIdRef.current = phiSubjectUserId;
+  phiLoadingRef.current = phiSubjectContextLoading;
+  phiErrorRef.current = phiSubjectContextError;
+
+  const lastTemplateLoadFetchKeyRef = useRef<string | null>(null);
+
   const psBridge = usePowerSyncBridgeState();
   const replicaMirrorReads = powerSyncOfflineReplicaReadsEnabled(psBridge);
 
@@ -112,8 +130,14 @@ export function EpisodeTemplateEditorScreen() {
         fetchEpisodeTemplateById(templateId, {
           powerSyncOfflineRead: offlineRead,
         }),
-        fetchSymptomPresets({ powerSyncOfflineRead: offlineRead }),
-        fetchHealthMarkerPresets({ powerSyncOfflineRead: offlineRead }),
+        fetchSymptomPresets({
+          powerSyncOfflineRead: offlineRead,
+          scopeUserId: phiSubjectUserIdRef.current,
+        }),
+        fetchHealthMarkerPresets({
+          powerSyncOfflineRead: offlineRead,
+          scopeUserId: phiSubjectUserIdRef.current,
+        }),
       ]);
       if (signal?.aborted) {
         return;
@@ -146,6 +170,7 @@ export function EpisodeTemplateEditorScreen() {
       setName(normalizeEpisodeTemplateName(t.name));
       setSymptomId(t.symptom_preset_id);
       setMarkerId(t.health_marker_preset_id);
+      lastTemplateLoadFetchKeyRef.current = `${viewerUserIdRef.current ?? ''}|${templateId}|${phiSubjectUserIdRef.current ?? ''}|${phiLoadingRef.current ? 'L' : '-'}|${phiErrorRef.current ?? ''}`;
       setStatus('ready');
     },
     [templateId],
@@ -176,7 +201,8 @@ export function EpisodeTemplateEditorScreen() {
   }, []);
 
   /**
-   * Reload when `templateId` **or** the signed-in user changes — an account switch must not keep
+   * Reload when `templateId`, the signed-in user, **or PHI scope** (`phiSubjectUserId` / loading /
+   * error from {@link useMobilePhiSubjectUserContext}) changes — an account switch must not keep
    * another user's template row / preset picklists visible while this route stays mounted.
    * Still intentionally independent of bridge readiness (see retry effect below).
    *
@@ -188,10 +214,14 @@ export function EpisodeTemplateEditorScreen() {
     const prevViewer = prevViewerUserIdRef.current;
     const prevTpl = prevTemplateIdForLoadEffectRef.current;
 
+    const loadFetchKey = `${nextViewer ?? ''}|${templateId}|${phiSubjectUserId ?? ''}|${phiSubjectContextLoading ? 'L' : '-'}|${phiSubjectContextError ?? ''}`;
+
     if (
       prevViewer !== undefined &&
       prevViewer === nextViewer &&
-      prevTpl === templateId
+      prevTpl === templateId &&
+      lastTemplateLoadFetchKeyRef.current != null &&
+      lastTemplateLoadFetchKeyRef.current === loadFetchKey
     ) {
       return;
     }
@@ -209,6 +239,7 @@ export function EpisodeTemplateEditorScreen() {
     ) {
       prevViewerUserIdRef.current = nextViewer;
       prevTemplateIdForLoadEffectRef.current = templateId;
+      lastTemplateLoadFetchKeyRef.current = loadFetchKey;
       return;
     }
 
@@ -219,6 +250,7 @@ export function EpisodeTemplateEditorScreen() {
     prevTemplateIdForLoadEffectRef.current = templateId;
 
     if (switchedAccount) {
+      lastTemplateLoadFetchKeyRef.current = null;
       setRow(null);
       setName('');
       setSymptomId(null);
@@ -233,7 +265,15 @@ export function EpisodeTemplateEditorScreen() {
     return () => {
       ac.abort();
     };
-  }, [templateId, viewerUserId, status, errorMessage]);
+  }, [
+    templateId,
+    viewerUserId,
+    status,
+    errorMessage,
+    phiSubjectUserId,
+    phiSubjectContextLoading,
+    phiSubjectContextError,
+  ]);
 
   useEffect(() => {
     if (status === 'ready') {

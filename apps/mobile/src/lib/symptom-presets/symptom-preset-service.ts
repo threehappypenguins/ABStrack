@@ -71,6 +71,18 @@ export async function getCurrentUserId(): Promise<
   }
 }
 
+async function resolveOfflinePresetListScopeUserId(
+  explicitScopeUserId?: string | null,
+): Promise<PresetDataResult<string | null>> {
+  if (explicitScopeUserId != null) {
+    const trimmed = explicitScopeUserId.trim();
+    if (trimmed !== '') {
+      return { ok: true, data: trimmed };
+    }
+  }
+  return getCurrentUserId();
+}
+
 /**
  * Lists the signed-in user’s symptom presets, falling back to the PowerSync replica when Supabase
  * is unreachable and the bridge reports the replica is ready for server-mirror reads (first sync
@@ -84,10 +96,14 @@ export async function getCurrentUserId(): Promise<
  *
  * @param options.powerSyncOfflineRead - Prefer passing `usePowerSyncBridgeState()` fields from the
  *   screen so reads use the same DB instance as `PowerSyncContext` (PowerSync SDK lifecycle).
+ * @param options.scopeUserId - Optional PHI row owner (`user_id`) for replica SQL. Pass the
+ *   resolved patient id for caretakers so offline SQLite lists match PostgREST; when omitted,
+ *   {@link getCurrentUserId} is used (patient / self).
  * @returns {@link PresetDataResult} of preset rows or an error.
  */
 export async function fetchSymptomPresets(options?: {
   powerSyncOfflineRead?: PowerSyncOfflineReadContext | null;
+  scopeUserId?: string | null;
 }): Promise<PresetDataResult<SymptomPresetRow[]>> {
   const client = getMobileSupabaseClient();
   const db = resolvePowerSyncDatabaseForOfflineRead(
@@ -97,7 +113,9 @@ export async function fetchSymptomPresets(options?: {
   if (db) {
     const connected = await fetchMobileDeviceIsConnected();
     if (connected === false) {
-      const auth = await getCurrentUserId();
+      const auth = await resolveOfflinePresetListScopeUserId(
+        options?.scopeUserId,
+      );
       if (!auth.ok) {
         return auth;
       }
@@ -127,7 +145,7 @@ export async function fetchSymptomPresets(options?: {
     const alt = clarifyNetworkErrorWhenReplicaUnavailable(remote.error);
     return alt ? { ok: false, error: alt } : remote;
   }
-  const auth = await getCurrentUserId();
+  const auth = await resolveOfflinePresetListScopeUserId(options?.scopeUserId);
   if (!auth.ok || auth.data == null) {
     return remote;
   }
