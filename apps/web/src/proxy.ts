@@ -8,6 +8,7 @@ const protectedRoutes = [
   '/episode',
   '/episodes',
   '/manage',
+  '/settings',
 ];
 
 /**
@@ -47,7 +48,20 @@ function withSupabaseCookies(
 }
 
 export default async function proxy(req: NextRequest) {
-  const { pathname } = req.nextUrl;
+  const { pathname, searchParams } = req.nextUrl;
+
+  /**
+   * Implicit Supabase auth puts tokens in `#…` only; the fragment never reaches the server.
+   * `NextResponse.rewrite` must run here (middleware), not in `app/auth/callback/route.ts`—Next does
+   * not apply `x-middleware-rewrite` from Route Handlers, which produced HTTP 500 for invite links.
+   */
+  if (pathname === '/auth/callback' && !searchParams.has('code')) {
+    const fragmentUrl = new URL('/auth/callback/fragment', req.url);
+    const qs = searchParams.toString();
+    fragmentUrl.search = req.nextUrl.search || (qs ? `?${qs}` : '');
+    return NextResponse.rewrite(fragmentUrl);
+  }
+
   let supabaseResponse = NextResponse.next({
     request: req,
   });

@@ -10,8 +10,6 @@ const urlKeys = [
 const keyKeys = [
   'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
   'EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
-  'NEXT_PUBLIC_SUPABASE_ANON_KEY',
-  'EXPO_PUBLIC_SUPABASE_ANON_KEY',
 ] as const;
 
 describe('env-public', () => {
@@ -47,16 +45,46 @@ describe('env-public', () => {
   it('getSupabasePublishableKey throws when unset', () => {
     process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://x.test';
     expect(() => getSupabasePublishableKey()).toThrow(
-      /Missing Supabase publishable/,
+      /Missing Supabase publishable key/,
     );
   });
 
-  it('getSupabasePublishableKey reads publishable or legacy anon', () => {
-    process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_x';
+  it('getSupabasePublishableKey prefers NEXT_PUBLIC_ over EXPO_PUBLIC_', () => {
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_next';
+    process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_expo';
+    expect(getSupabasePublishableKey()).toBe('sb_publishable_next');
+    delete process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+    expect(getSupabasePublishableKey()).toBe('sb_publishable_expo');
+  });
+
+  it('getSupabaseUrl trims surrounding whitespace', () => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = '  https://trimmed.test  \n';
+    expect(getSupabaseUrl()).toBe('https://trimmed.test');
+  });
+
+  it('getSupabasePublishableKey trims surrounding whitespace', () => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://x.test';
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = '  sb_publishable_x  ';
     expect(getSupabasePublishableKey()).toBe('sb_publishable_x');
-    delete process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'eyJlegacy';
-    expect(getSupabasePublishableKey()).toBe('eyJlegacy');
+  });
+
+  it('getSupabasePublishableKey rejects sb_secret_… (miswired client env)', () => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://x.test';
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = 'sb_secret_default';
+    expect(() => getSupabasePublishableKey()).toThrow(/secret key/);
+  });
+
+  it('getSupabasePublishableKey rejects non-publishable shapes', () => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://x.test';
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY =
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.fake';
+    expect(() => getSupabasePublishableKey()).toThrow(/sb_publishable_/);
+  });
+
+  it('getSupabaseUrl treats whitespace-only NEXT_PUBLIC as unset and falls back', () => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = '   \n';
+    process.env.EXPO_PUBLIC_SUPABASE_URL = 'https://fallback.test';
+    expect(getSupabaseUrl()).toBe('https://fallback.test');
   });
 });
 

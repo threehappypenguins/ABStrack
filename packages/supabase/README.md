@@ -4,7 +4,7 @@ Shared Supabase **client factories**, **auth helpers**, and a **`Database`** typ
 
 ## Environment variables
 
-Use [Supabase hosted API keys](https://supabase.com/docs/guides/api/api-keys) as follows. Prefer **publishable** (`sb_publishable_...`) and **secret** (`sb_secret_...`) over legacy JWT **anon** / **service_role** keys.
+Use [Supabase hosted API keys](https://supabase.com/docs/guides/api/api-keys) as follows: **publishable** (`sb_publishable_...`) for clients, **secret** (`sb_secret_...`) for trusted server code only.
 
 ### What to copy from the dashboard
 
@@ -14,7 +14,7 @@ Use [Supabase hosted API keys](https://supabase.com/docs/guides/api/api-keys) as
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` / `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | **Settings → API Keys** → publishable key                                                          | `sb_publishable_...`                                   |
 | `SUPABASE_SECRET_KEY`                                                           | **Settings → API Keys** → secret key (server-only)                                                 | `sb_secret_...`                                        |
 
-Pass **URL + publishable key** (or legacy anon) into browser, SSR, and mobile clients. Use **`SUPABASE_SECRET_KEY`** (`sb_secret_...`) only in trusted server code — import **`@abstrack/supabase/admin`**, never the main entry, from route handlers or scripts. **`@abstrack/supabase/admin` does not read legacy JWT `service_role` keys.**
+Pass **URL + publishable key** into browser, SSR, and mobile clients. Use **`SUPABASE_SECRET_KEY`** (`sb_secret_...`) only in trusted server code — import **`@abstrack/supabase/admin`**, never the main entry, from route handlers or scripts. **`@abstrack/supabase/admin`** reads **`SUPABASE_SECRET_KEY`** only (not legacy JWT `service_role` env names).
 
 ### Where to set them in this repo
 
@@ -23,10 +23,6 @@ Pass **URL + publishable key** (or legacy anon) into browser, SSR, and mobile cl
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | `apps/web/.env.local`, `apps/practitioner/.env.local`             |
 | `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | `apps/mobile/.env`                                                |
 | `SUPABASE_SECRET_KEY`                                              | Same app’s `.env.local` when Next server code runs, or CI secrets |
-
-### Legacy (optional, clients only)
-
-`NEXT_PUBLIC_SUPABASE_ANON_KEY` / `EXPO_PUBLIC_SUPABASE_ANON_KEY` — fallback for `createClient` when publishable keys are not enabled yet. Do not use JWT **service_role** in client bundles; server admin uses **`SUPABASE_SECRET_KEY`** only.
 
 Full template: [`.env.example`](../../.env.example).
 

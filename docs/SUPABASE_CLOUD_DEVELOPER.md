@@ -104,6 +104,131 @@ Then the migration hits cloud when **CI runs `db push` on `main`** after merge. 
 
 ---
 
+## Patient caretaker Edge Function (`patient-caretaker-access`)
+
+Product default: **patients and caretakers are mobile-primary** (Expo app in `apps/mobile/`). User web is optional.
+
+Caretaker **email invites** use `auth.admin.inviteUserByEmail`. **`redirectTo`** is trimmed **`ABSTRACK_CARETAKER_INVITE_REDIRECT_TO`** when set (this repo uses **`abstrack:///caretaker-invite`**, matching Expo **`scheme`: `abstrack`** in `apps/mobile/app.json`). If that secret is unset, the function falls back to **`{trimmed-validated-origin}/auth/callback?next=/caretaker/join`** from **`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN`** (must be absolute `http://` or `https://`; trailing slash and surrounding whitespace are normalized). See `supabase/functions/patient-caretaker-access/index.ts`.
+
+**Invitee completion:** Mobile `apps/mobile/src/app/App.tsx` handles **`abstrack:///caretaker-invite?code=…`** and, when **`EXPO_PUBLIC_USER_WEB_ORIGIN`** matches the invite **`redirectTo`** origin, **`http(s)://…/auth/callback?…&next=/caretaker/join`** (Universal Links / App Links target **`/auth/callback` only** — not **`/caretaker/join`**, which has no `code` after the web exchange). If **`/caretaker/join`** still opens the app without a `code`, the app shows a short “continue in browser” message. User web **`/caretaker/join`** still applies when the session completes in the browser.
+
+### HTTPS invite → same link opens browser (desktop) and native app (phone)
+
+When invite emails use **`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN`** (HTTPS **`…/auth/callback?next=/caretaker/join`**), you need **iOS Universal Links** + **Android App Links** so the **same** URL opens the **installed app** on a phone instead of only Safari/Chrome. This repo wires the native side and verification files as follows.
+
+1. **Mobile env** `EXPO_PUBLIC_USER_WEB_ORIGIN` — same origin as the Edge secret **`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN`** (e.g. `https://app.example.com`). Used at build time in `apps/mobile/app.config.ts` for `associatedDomains` / `intentFilters`. Rebuild native after changing it (`pnpm android` / `pnpm ios` from `apps/mobile/`, or your CI native build).
+2. **User web (Next.js)** — public routes (no secrets in the JSON body):
+   - **`/.well-known/apple-app-site-association`** — set server env **`APPLE_APP_SITE_ASSOCIATION_TEAM_ID`** (and optional **`APPLE_IOS_BUNDLE_ID`**, default `com.abstrack.mobile`). Returns **404** until set.
+   - **`/.well-known/assetlinks.json`** — set **`ANDROID_APP_LINKS_SHA256_CERT_FINGERPRINTS`** (one or more SHA-256 cert fingerprints; optional **`ANDROID_APPLICATION_ID`**, default `com.abstrack.mobile`). Returns **404** until set.
+3. **Verify** over **HTTPS** (no redirects): Apple and Google fetch these paths from your **production** user-web host. See [Expo iOS Universal Links](https://docs.expo.dev/linking/ios-universal-links/) and [Android App Links](https://docs.expo.dev/linking/android-app-links/).
+
+#### Local dev: physical Android + USB (no deploy)
+
+Use this when you test on a **real phone over `adb`**, user web runs on your laptop at **port 3000**, and you are **not** deploying user web yet.
+
+1. **Same origin in two places** (must match exactly, including scheme and port):
+   - **`apps/mobile/.env`:** `EXPO_PUBLIC_USER_WEB_ORIGIN=http://localhost:3000`
+   - **Supabase Edge secret** **`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN`:** `http://localhost:3000` (omit **`ABSTRACK_CARETAKER_INVITE_REDIRECT_TO`** if you want the HTTPS invite path for this test).
+2. **Supabase Auth → Redirect URLs:** add **`http://localhost:3000/auth/callback`** (invite emails use `…/auth/callback?next=/caretaker/join`).
+3. **Port reverse** (so `localhost` on the **phone** reaches Next on the **laptop**):
+
+   ```bash
+   adb reverse tcp:3000 tcp:3000
+   ```
+
+   Re-run that when you reconnect the device if the reverse mapping drops.
+
+4. Start user web on the host on **port 3000**, then **`pnpm android`** from **`apps/mobile/`** again whenever you change **`EXPO_PUBLIC_USER_WEB_ORIGIN`** (native `intentFilters` / `associatedDomains` are build-time).
+
+**Gmail / Outlook and other mail in-app browsers:** Taps usually open a **built-in browser** on the device, not Chrome. If the Auth **`redirectTo`** from your invite is **`http://localhost:3000/…`**, that is **the phone’s own localhost**, not your laptop—so you see an empty or broken page, not Next on your machine. **`adb reverse tcp:3000 tcp:3000`** only helps when traffic originates from **processes on the phone that honor the reverse**; many mail WebViews do **not** behave like that for invite testing. For **opening the Expo app from an invite on a physical Android device**, use the **mobile-primary** checklist below: Edge secret **`ABSTRACK_CARETAKER_INVITE_REDIRECT_TO`** = **`abstrack:///caretaker-invite`** (and the same value under **Auth → Redirect URLs**). Then, after Supabase verifies the magic link, the user is sent to the **`abstrack:`** URL and Android can route it to **ABStrack** instead of a browser. If you **must** exercise the **HTTPS `/auth/callback`** path from a phone, set **`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN`** to a **public HTTPS origin** your device can reach (deployed user web or a tunnel such as ngrok), **not** bare `localhost`. Transactional email often wraps the link in a **click-tracking host** (for example Brevo/SendGrid); that is normal—the destination after Supabase’s hop is still governed by **`redirectTo`**.
+
+**Notes:** **`/.well-known/apple-app-site-association`** and **`/.well-known/assetlinks.json`** often stay **404** locally until you set **`APPLE_APP_SITE_ASSOCIATION_TEAM_ID`** / **`ANDROID_APP_LINKS_SHA256_CERT_FINGERPRINTS`** on the Next server—full **verified** App Links against `localhost` is limited; the app still recognizes matching **`http://localhost:3000/auth/callback?…`** URLs in **`App.tsx`** when the OS hands them to the app. For **iOS device** dev without deploy, use a **tunnel or LAN IP** instead of `localhost` (no `adb reverse` on iOS).
+
+### Caretaker invite: Supabase checklist (mobile-primary)
+
+Do **not** put `ABSTRACK_CARETAKER_INVITE_*` in `apps/web/.env.local`; nothing in Next.js reads them. Set them as **Supabase Edge Function secrets** (Dashboard → **Edge Functions** → **Secrets**, project-wide for functions—or CLI `secrets set` for the linked project).
+
+1. **Edge secret** `ABSTRACK_CARETAKER_INVITE_REDIRECT_TO` = **`abstrack:///caretaker-invite`** (exact string; three slashes after `abstrack:`).
+2. **Supabase Dashboard → Authentication → URL Configuration → Redirect URLs:** add the **same** value `abstrack:///caretaker-invite` (Auth only allows redirects that are listed here). If the UI rejects it, add a documented wildcard such as `abstrack://**` (see [Redirect URLs](https://supabase.com/docs/guides/auth/redirect-urls)).
+3. **Deploy** `patient-caretaker-access` after changing secrets so the function picks them up: `pnpm dlx supabase functions deploy patient-caretaker-access` (from repo root, linked project).
+
+**`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN` (alternate setup, skip for mobile-primary):** Every invite email must include a Supabase Auth **`redirectTo`**. With **`ABSTRACK_CARETAKER_INVITE_REDIRECT_TO`** set (checklist above), **all** invites use that value—whether the patient sent the invite from **mobile Settings or user web Settings**—because only the Edge Function reads these secrets; Next.js does not override it. Set **`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN`** **only** when you **omit** **`REDIRECT_TO`** so magic links open **user web** at **`{origin}/auth/callback?next=/caretaker/join`** instead of `abstrack://…`. Use an absolute **`http://` or `https://`** origin (trailing slash trimmed). Allow-list **`https://<your-user-web-host>/auth/callback`** (and **`http://localhost:3000/auth/callback`** locally if needed).
+
+### Order of operations (cloud)
+
+1. Apply the migration that creates **`public.caretaker_invites`** (same as any other migration): **`pnpm dlx supabase db push`** when you are ready (see [Recommended workflow](#recommended-workflow-one-pr-manual-db-push--gen-types-ci-as-backstop) above), then regenerate types if you use them for that table.
+2. Configure caretaker invite secrets and Auth redirect URLs as in **[Caretaker invite: Supabase checklist (mobile-primary)](#caretaker-invite-supabase-checklist-mobile-primary)** above.
+3. **Deploy the function** from the repo root (after login + link if using CLI):
+
+   ```bash
+   pnpm dlx supabase functions deploy patient-caretaker-access
+   ```
+
+### Auth redirect URLs (Dashboard → Authentication → URL Configuration)
+
+- **Mobile (this repo’s default):** `abstrack:///caretaker-invite` (optional `abstrack://**` wildcard; see [Redirect URLs](https://supabase.com/docs/guides/auth/redirect-urls)).
+- **Web (only if you use `ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN` instead of `REDIRECT_TO`):** `http://localhost:3000/auth/callback`, production `https://…/auth/callback`; invites append `?next=/caretaker/join`. Wildcard `http://localhost:3000/**` if the dashboard rejects query-only differences.
+
+<a id="caretaker-invite-deploy-checklist"></a>
+
+### Caretaker invite: production / staging (what to change when you deploy)
+
+Use this when user web and/or mobile move off **localhost** to a **hosted** user-web origin (e.g. `https://app.example.com`). Secrets live in **Supabase Dashboard → Edge Functions → Secrets** (project-wide). **Do not** put `ABSTRACK_CARETAKER_INVITE_*` in `apps/web/.env.local`—Next.js does not read them; only the Edge function does.
+
+Pick **one** invite redirect strategy per Supabase project (or use the same values in staging and production on **separate** projects).
+
+#### A — Mobile-primary (default): magic link opens the native app
+
+1. **Edge secret** `ABSTRACK_CARETAKER_INVITE_REDIRECT_TO` = **`abstrack:///caretaker-invite`** (exact string; three slashes after `abstrack:`).
+2. **Edge secret** `ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN`: **omit** (delete/unset) so invites do not fall back to web `auth/callback` unless you intentionally support both.
+3. **Auth → Redirect URLs:** allow **`abstrack:///caretaker-invite`** (or **`abstrack://**`\*\* if the dashboard requires a wildcard).
+4. **`apps/mobile/.env` (or EAS secrets for release builds):** set **`EXPO_PUBLIC_USER_WEB_ORIGIN`** to the **same HTTPS origin** as production user web (e.g. `https://app.example.com`) so Universal Links / App Links in `app.config.ts` match invite completion URLs. **Rebuild** native (`pnpm ios` / `pnpm android` from `apps/mobile/`, or your CI/EAS build) after changing this—`associatedDomains` / `intentFilters` are build-time.
+5. **User web hosting (`apps/web`):** set **`APPLE_APP_SITE_ASSOCIATION_TEAM_ID`** (and optionally **`APPLE_IOS_BUNDLE_ID`**) plus **`ANDROID_APP_LINKS_SHA256_CERT_FINGERPRINTS`** (and optionally **`ANDROID_APPLICATION_ID`**) on the **deployed** Next server so **`/.well-known/*`** is served over **HTTPS** without redirects (Apple/Google requirements). See [HTTPS invite → same link opens browser (desktop) and native app (phone)](#https-invite--same-link-opens-browser-desktop-and-native-app-phone) above.
+6. **Deploy** `patient-caretaker-access` after any Edge secret change: `pnpm dlx supabase functions deploy patient-caretaker-access` (repo root, linked project).
+
+#### B — Web invite path: magic link opens user web (`/auth/callback` then `/caretaker/join`)
+
+1. **Edge secret** `ABSTRACK_CARETAKER_INVITE_REDIRECT_TO`: **omit** (delete/unset).
+2. **Edge secret** `ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN` = your **public user-web origin only** (no path), e.g. **`https://app.example.com`** (scheme + host; trailing slash optional, it is trimmed). For local laptop-only testing, **`http://localhost:3000`** is valid; hosted deploys should use **`https://…`**.
+3. **Auth → Redirect URLs:** add **`https://app.example.com/auth/callback`** (replace host with yours). If the UI rejects query strings, add **`https://app.example.com/**`\*\* as documented above.
+4. **`apps/mobile/.env`:** set **`EXPO_PUBLIC_USER_WEB_ORIGIN`** to the **same origin** as **`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN`** so phones opening the same `https://…/auth/callback?…` link can hand off to the app where configured. Rebuild native after changes.
+5. **Deploy** `patient-caretaker-access` after secret changes (same command as A).
+
+#### C — “Both” mobile scheme and web callback in one project
+
+`inviteUserByEmail` accepts **one** `redirectTo` per invite. This repo’s Edge function sets it from **`ABSTRACK_CARETAKER_INVITE_REDIRECT_TO`** when that secret is non-empty; **otherwise** it uses **`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN` + `/auth/callback?next=/caretaker/join`**. There is **no** branch that writes two URLs into one email.
+
+- If **`REDIRECT_TO`** = **`abstrack:///caretaker-invite`**: that invite finishes in the **native app** when the caretaker’s client understands the **`abstrack:`** URL. A **desktop browser** will not complete the same link as normal user web.
+- If **`REDIRECT_TO`** is **unset** and **`WEB_ORIGIN`** is a **normal `https://` user-web origin** (including a **dev tunnel** below): the same magic link can load **user web** in a browser. On a phone, the **installed app** may still open the same **`https://…/auth/callback?…`** URL when **App Links / Universal Links** (and your `EXPO_PUBLIC_USER_WEB_ORIGIN`) line up—otherwise the caretaker completes in the **browser** only.
+
+To exercise **web and phone** from **one** invite **without deploying** user web, use **D** (tunnel). To prioritize **Gmail → app** on a device with **no** tunnel, use **A** and accept that **that** invite is not the way you test desktop web completion.
+
+#### D — Local, not deployed: one invite for user web (browser) and phone
+
+Use this when user web runs on your machine (e.g. port **3000**) but Supabase Auth must see an **`https://`** (or at least **reachable**) **`redirectTo`**, and you want **laptop browsers** and **phones** to hit **the same** callback URL.
+
+1. **Run user web** locally on **3000** (see [DEV_SETUP.md](DEV_SETUP.md) for the usual `apps/web` dev command).
+2. **Expose 3000 with HTTPS**, e.g. [ngrok](https://ngrok.com/) `ngrok http 3000` or [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/) `cloudflared tunnel --url http://localhost:3000`. Copy the public **`https://…`** origin with **no** path (example: `https://abcd-1-2-3.ngrok-free.app`).
+3. **Supabase → Edge Functions → Secrets** (linked project):
+   - **Remove** **`ABSTRACK_CARETAKER_INVITE_REDIRECT_TO`** (or leave it empty) so invites use the web callback.
+   - Set **`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN`** to that origin only, e.g. `https://abcd-1-2-3.ngrok-free.app` (no trailing slash).
+4. **Supabase → Authentication → URL Configuration → Redirect URLs:** add **`https://<your-tunnel-host>/auth/callback`**. If the dashboard rejects query-only variants, add **`https://<your-tunnel-host>/**`\*\* as documented in [Auth redirect URLs](#auth-redirect-urls-dashboard--authentication--url-configuration) above.
+5. **Redeploy** the Edge function so it reads the new secrets: `pnpm dlx supabase functions deploy patient-caretaker-access` (repo root; you run this—agents do not push secrets for you).
+6. **`apps/mobile/.env`:** set **`EXPO_PUBLIC_USER_WEB_ORIGIN`** to the **same** `https://…` origin as step 2. **Rebuild** native (`pnpm android` / `pnpm ios` from `apps/mobile/`) so `app.config.ts` intent filters / associated domains match that host.
+7. **`apps/web/.env.local`:** keep **`NEXT_PUBLIC_SUPABASE_URL`** and **`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`** pointed at this **same** Supabase project (unchanged from normal local web dev).
+8. **Patient** sends a caretaker invite from **mobile Settings** or **user web Settings**.
+9. **Caretaker on a laptop:** open the email link in Chrome/Firefox → the browser should load **`https://…/auth/callback?…&next=/caretaker/join`** via the tunnel → your local Next handles PKCE → **`/caretaker/join`**.
+10. **Caretaker on a phone:** use the **same** email link. If the in-app mail browser misbehaves (cookies, interstitials), use **Open in Chrome** / **system browser** so the **`https://…`** URL reaches your tunnel reliably. **Verified** App Links to open the **Expo** app without deploy are limited; until **`/.well-known/assetlinks.json`** is live on that HTTPS host with your debug/release cert fingerprints, treat **browser completion** as the reliable path on device; the app still handles the same URL when the OS delivers it to ABStrack (see `apps/mobile/src/app/App.tsx`).
+
+**`adb reverse tcp:3000 tcp:3000`:** only helps when the phone loads **`http://localhost:3000`** and the **process** respects the reverse mapping (e.g. some system browsers). **Gmail’s embedded browser** often **does not** make invite testing reliable with **`ABSTRACK_CARETAKER_INVITE_WEB_ORIGIN=http://localhost:3000`**; prefer **D** for “email link on a real phone” plus **web** on a laptop.
+
+#### Staging vs production
+
+- Use **staging** URLs and secrets on a **staging** Supabase project (or the same project only if you accept shared Auth redirect noise).
+- **`NEXT_PUBLIC_SUPABASE_URL`** / **`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`** in `apps/web/.env.local` and **`EXPO_PUBLIC_*`** in `apps/mobile/.env` must point at the **same** project whose Edge secrets you configured.
+
+---
+
 ## Day-to-day: no database work
 
 - Ordinary app code: no Supabase CLI.
@@ -155,7 +280,7 @@ pnpm exec nx test @abstrack/supabase
 
 **Nx cache:** `nx test` results are cached. If you once ran without `SUPABASE_SECRET_KEY` (integration skipped), a later run **with** the secret could still replay that cached “skipped” result until the cache key changes. The workspace `nx.json` includes Supabase-related env vars in the **test** task hash so skip vs run is distinguished. If you still see a stale result, run **`pnpm exec nx reset`** or **`NX_SKIP_NX_CACHE=true pnpm exec nx test @abstrack/supabase`** once.
 
-**CI:** add repository secret **`SUPABASE_SECRET_KEY`** with the same secret key string shown in the Supabase UI under **Settings → API Keys** (**secret** / legacy **service_role** — server-only, never client bundles). [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) passes it **only** to the **Test @abstrack/supabase** step (`env: SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}`), not to the whole job, so other steps and actions do not see it. Integration tests run when the secret is present. Fork PRs do not receive secrets, so those jobs skip integration and still pass.
+**CI:** add repository secret **`SUPABASE_SECRET_KEY`** with the **secret** API key string (`sb_secret_…`) from the Supabase UI under **Settings → API Keys** (server-only; never client bundles). [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) passes it **only** to the **Test @abstrack/supabase** step (`env: SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}`), not to the whole job, so other steps and actions do not see it. Integration tests run when the secret is present. Fork PRs do not receive secrets, so those jobs skip integration and still pass.
 
 **Security note:** the suite confirms **plaintext PHI under RLS** (values readable with the secret client match what the patient wrote); it does **not** add encryption. It does **not** cover caretaker or practitioner grant paths (those need grant rows and role fixtures).
 

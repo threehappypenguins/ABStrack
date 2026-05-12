@@ -10,9 +10,12 @@ jest.mock('next/server', () => ({
     redirect: jest.fn((url: URL) => ({
       type: 'redirect',
       location: url.toString(),
-      cookies: {
-        set: jest.fn(),
-      },
+      cookies: { set: jest.fn() },
+    })),
+    json: jest.fn((body: unknown, init?: { status?: number }) => ({
+      type: 'json',
+      body,
+      status: init?.status ?? 200,
     })),
   },
 }));
@@ -22,7 +25,7 @@ describe('auth callback route', () => {
   type ServerClient = Awaited<ReturnType<typeof createServerClient>>;
   type CallbackRequest = Parameters<typeof GET>[0];
   const expiredMessage =
-    'This reset link is invalid or expired. Request a new one.';
+    'This sign-in link is invalid or expired. Request a new one.';
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -38,6 +41,7 @@ describe('auth callback route', () => {
     return {
       url,
       nextUrl: {
+        search: parsedUrl.search,
         searchParams: parsedUrl.searchParams,
       },
       cookies: {
@@ -47,7 +51,7 @@ describe('auth callback route', () => {
     } as unknown as CallbackRequest;
   };
 
-  it('redirects to the provided in-app path when next is safe', async () => {
+  it('redirects to the provided in-app path when next is safe and code is present', async () => {
     const response = await GET(
       makeRequest(
         'https://example.com/auth/callback?code=abc&next=/update-password?from=email',
@@ -62,16 +66,18 @@ describe('auth callback route', () => {
     );
   });
 
-  it('redirects with an error when the callback is missing a code', async () => {
+  it('returns 400 when code is missing (implicit flow is handled in middleware)', async () => {
     const response = await GET(
-      makeRequest('https://example.com/auth/callback?next=/update-password'),
+      makeRequest('https://example.com/auth/callback?next=%2Fcaretaker%2Fjoin'),
     );
-    const redirectUrl = new URL(response.location);
 
     expect(createServerClientMock).not.toHaveBeenCalled();
-    expect(response).toEqual(expect.objectContaining({ type: 'redirect' }));
-    expect(redirectUrl.pathname).toBe('/update-password');
-    expect(redirectUrl.searchParams.get('error')).toBe(expiredMessage);
+    expect(response).toEqual(
+      expect.objectContaining({
+        type: 'json',
+        status: 400,
+      }),
+    );
   });
 
   it('redirects with an error when session exchange fails', async () => {

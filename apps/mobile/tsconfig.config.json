@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist/tsconfig-config",
+    "rootDir": ".",
+    "types": ["node"],
+    "tsBuildInfoFile": "dist/tsconfig-config/tsconfig.config.tsbuildinfo"
+  },
+  "files": ["app.config.ts"]
+}

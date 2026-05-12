@@ -19,12 +19,19 @@
  * - **500** — e.g. `server_misconfigured`, `profile_lookup_failed`, `profile_missing` (no `profiles`
  *   row for the session user), or `audit_write_failed` on insert.
  *
- * Deploy: `pnpm dlx supabase functions deploy practitioner-mfa-auth-audit` (secrets from project).
+ * **Secrets (hosted):** `SUPABASE_URL` and `SUPABASE_SECRET_KEYS` (`default` secret key). Legacy
+ * `SUPABASE_SERVICE_ROLE_KEY` is not used.
+ *
+ * @see https://supabase.com/docs/guides/functions/secrets
+ *
+ * Deploy: `pnpm dlx supabase functions deploy practitioner-mfa-auth-audit`
  */
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { decodeJwt } from 'npm:jose@5';
+
+import { readDefaultSupabaseSecretKeyFromEnv } from '../_shared/read-default-supabase-secret-key.ts';
 
 /** Matches Supabase Edge CORS guidance (authorization + apikey for supabase-js). */
 const CORS_HEADERS: Record<string, string> = {
@@ -126,10 +133,10 @@ function parsePatientUserIdField(value: unknown): PatientUserIdField {
  * `practitioner_access` row for this practitioner and candidate patient. That row’s
  * `patient_user_id` FK to `auth.users` already implies the user exists, so no Auth Admin lookup is
  * needed. Returns null when absent or on lookup error (fail closed on attribution).
- * SELECT uses the service-role client; `practitioner_access_service_role_select` RLS policy allows
+ * SELECT uses the elevated (secret-key) client; `practitioner_access_service_role_select` RLS policy allows
  * this read when `service_role` is not BYPASSRLS (see migration).
  *
- * @param admin - Service-role Supabase client.
+ * @param admin - Supabase client authorized with the project’s default secret API key.
  * @param practitionerUserId - Authenticated practitioner (`sub`).
  * @param field - Parsed body field (only `valid` carries a UUID to resolve).
  * @returns `patient_user_id` for insert or null.
@@ -183,16 +190,16 @@ Deno.serve(async (req: Request) => {
     });
   }
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
-  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+  const secretApiKey = readDefaultSupabaseSecretKeyFromEnv();
 
-  if (!supabaseUrl || !serviceKey) {
+  if (!supabaseUrl || !secretApiKey) {
     return new Response(JSON.stringify({ error: 'server_misconfigured' }), {
       status: 500,
       headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
     });
   }
 
-  const admin = createClient(supabaseUrl, serviceKey, {
+  const admin = createClient(supabaseUrl, secretApiKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 

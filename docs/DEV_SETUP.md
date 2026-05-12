@@ -104,11 +104,11 @@ Secrets must **never** be committed. The repo root [`.env.example`](../.env.exam
 
 ### What each app reads
 
-| App                                    | File (create locally)          | Purpose                                          |
-| -------------------------------------- | ------------------------------ | ------------------------------------------------ |
-| User web (`apps/web`)                  | `apps/web/.env.local`          | Next.js: URL + publishable (or legacy anon) key. |
-| Practitioner web (`apps/practitioner`) | `apps/practitioner/.env.local` | Same pattern as `web`.                           |
-| Mobile (`apps/mobile`)                 | `apps/mobile/.env`             | Expo / Metro: `EXPO_PUBLIC_*` variables.         |
+| App                                    | File (create locally)          | Purpose                                              |
+| -------------------------------------- | ------------------------------ | ---------------------------------------------------- |
+| User web (`apps/web`)                  | `apps/web/.env.local`          | Next.js: URL + publishable key (`sb_publishable_…`). |
+| Practitioner web (`apps/practitioner`) | `apps/practitioner/.env.local` | Same pattern as `web`.                               |
+| Mobile (`apps/mobile`)                 | `apps/mobile/.env`             | Expo / Metro: `EXPO_PUBLIC_*` variables.             |
 
 Next.js documents `.env.local` in each app directory. Expo picks up `.env` under `apps/mobile/`. See also [`packages/supabase/README.md`](../packages/supabase/README.md) for dashboard ↔ variable mapping.
 
@@ -144,13 +144,13 @@ copy .env.example apps\mobile\.env
 
 If you copied the full `.env.example` into `apps/mobile/.env`, that file also contains `NEXT_PUBLIC_*` variables meant for Next.js. **Expo does not load those into your app** the way Next does — only names starting with `EXPO_PUBLIC_` are embedded in the Metro bundle ([Expo env docs](https://docs.expo.dev/guides/environment-variables/)).
 
-**What to do:** Open `apps/mobile/.env` and **delete the `NEXT_PUBLIC_*` lines** (and any Next-only comments you do not need). Keep **`EXPO_PUBLIC_SUPABASE_URL`** and **`EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`** (or legacy anon equivalents) with the **same values** you use on web — only the prefix changes. Leaving `NEXT_PUBLIC_*` in place does not break Metro, but it confuses the Expo CLI log (`env: export NEXT_PUBLIC_...`) and makes it look like the mobile app uses those variables.
+**What to do:** Open `apps/mobile/.env` and **delete the `NEXT_PUBLIC_*` lines** (and any Next-only comments you do not need). Keep **`EXPO_PUBLIC_SUPABASE_URL`** and **`EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`** with the **same values** you use on web — only the prefix changes. Leaving `NEXT_PUBLIC_*` in place does not break Metro, but it confuses the Expo CLI log (`env: export NEXT_PUBLIC_...`) and makes it look like the mobile app uses those variables.
 
 ### Fill in real values
 
 1. Open each of the three new files in an editor.
 2. Remove or comment out variables you do not use yet; **uncomment and set** at minimum:
-   - **Next apps:** `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (or legacy `NEXT_PUBLIC_SUPABASE_ANON_KEY` if you have not migrated).
+   - **Next apps:** `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
    - **Mobile:** only the **`EXPO_PUBLIC_*`** pair above (after trimming any copied `NEXT_PUBLIC_*` lines — see previous subsection).
 3. Optional server-only **`SUPABASE_SECRET_KEY`** (`sb_secret_...`) belongs only in **server** contexts (e.g. Next Route Handlers), never in `EXPO_PUBLIC_*` or client bundles. `@abstrack/supabase/admin` does not use legacy JWT `service_role` env vars. In the [Supabase dashboard](https://supabase.com/dashboard), the secret key is listed under **Settings → API Keys** (secret key, not publishable).
 
@@ -167,6 +167,8 @@ Get URLs and publishable keys from the [Supabase dashboard](https://supabase.com
 
 **Supabase workflow (cloud + CLI + GitHub Actions):** **[SUPABASE_CLOUD_DEVELOPER.md](SUPABASE_CLOUD_DEVELOPER.md)** — keep **Actions `db push` on `main`**; for a **single PR** with migrations + types, run **`db push`** and **`gen types --linked`** from your laptop **before merge**. **AI assistants:** **[AGENTS.md](../AGENTS.md)**.
 
+**Caretaker email invites** (Edge secrets `ABSTRACK_CARETAKER_INVITE_*`, Supabase Auth redirect URLs, `apps/mobile` **`EXPO_PUBLIC_USER_WEB_ORIGIN`**, production **`/.well-known`** env on user web): **[Caretaker deploy checklist](SUPABASE_CLOUD_DEVELOPER.md#caretaker-invite-deploy-checklist)** in the same doc (section **Patient caretaker Edge Function**).
+
 App environment variables (`NEXT_PUBLIC_SUPABASE_URL`, keys) let clients call the **Data API**; they do **not** apply SQL from the repo. Schema changes live in [`supabase/migrations/`](../supabase/migrations/) and must be applied to your hosted Postgres with the **Supabase CLI** (or an equivalent process).
 
 Official reference: [Managing Environments](https://supabase.com/docs/guides/cli/managing-environments) (CLI + GitHub Actions).
@@ -180,7 +182,7 @@ pnpm dlx supabase --version
 pnpm dlx supabase login
 ```
 
-`supabase login` opens a browser or accepts a **personal access token** from the dashboard: [Account → Access Tokens](https://supabase.com/dashboard/account/tokens). The CLI stores credentials for local use; it is not the same key as your app’s publishable/anon key.
+`supabase login` opens a browser or accepts a **personal access token** from the dashboard: [Account → Access Tokens](https://supabase.com/dashboard/account/tokens). The CLI stores credentials for local use; it is not the same key as your app’s publishable Data API key.
 
 ### Link this repo to your Supabase project
 
@@ -284,6 +286,8 @@ Easier:
 
 Default ports depend on Nx/Next/Expo; watch the terminal output. For **mobile**, the app includes **native-only** dependencies (`@op-engineering/op-sqlite` / PowerSync SQLCipher). They are **not** in the store **Expo Go** app — opening the dev-server QR code in Expo Go often fails at runtime with errors like **“Base module not found”** (pod/Gradle hints in the message are a red herring on a physical device). Use one of: **(1)** a **development build** installed on the device ([`apps/mobile/eas.json`](../apps/mobile/eas.json) profile `development` has `developmentClient: true` — build with EAS and install that APK/IPA, then open the same Metro URL/QR from **that** dev client), **(2)** from the repo root **`pnpm ios`** or **`pnpm android`** (runs `expo run:ios` / `expo run:android` in `apps/mobile` with a USB device or emulator), or **(3)** the same against a simulator. Do **not** rely on Expo Go for this repo’s mobile app.
 
+**Nx project graph (`Failed to process project graph` / `@nx/expo/plugin` / `Invalid string length`):** From the repo root run **`pnpm exec nx reset`** (clears the daemon and cache). The repo root **`.nxignore`** keeps **`apps/mobile/android/**`**, **`apps/mobile/ios/**`**, and common mobile caches out of Nx’s Expo plugin file hashing so local native build trees do not blow up graph processing.
+
 Useful references:
 
 - [Nx run-many](https://nx.dev/nx-api/nx/documents/run-many)
@@ -333,7 +337,7 @@ The workspace pins **React 19.1.x** to match **Expo SDK 54** and to stay aligned
 | Wrong Node version                      | Switch to Node 20 with your version manager; confirm with `node -v`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Next.js cannot see Supabase env         | Confirm variables are in **`apps/<app>/.env.local`**, not only the repo root. Restart the dev server after changes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | Expo cannot see variables               | Use `EXPO_PUBLIC_*` names in **`apps/mobile/.env`**; restart Metro / clear cache if needed (`pnpm exec nx start mobile` with Expo’s cache clear options if documented for your setup).                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `supabase link` / `db push` fails in CI | Confirm **Actions secrets** match [§4](#4-supabase-database-migrations-cloud-cli-and-ci) (`SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_ID`, `SUPABASE_DB_PASSWORD`). The database password is the **Postgres** password from **Connect** or **Database → Settings**, not the Data API / anon keys.                                                                                                                                                                                                                                                                                          |
+| `supabase link` / `db push` fails in CI | Confirm **Actions secrets** match [§4](#4-supabase-database-migrations-cloud-cli-and-ci) (`SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_ID`, `SUPABASE_DB_PASSWORD`). The database password is the **Postgres** password from **Connect** or **Database → Settings**, not the Data API publishable key.                                                                                                                                                                                                                                                                                      |
 | Fork PR: migration workflow skipped     | Expected: GitHub does not expose repository secrets to workflows from forks. Run checks on a branch in the main repo or apply migrations manually after merge.                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | PowerSync workflow fails / skipped      | Confirm **`POWERSYNC_*`** secrets in § [GitHub Actions — PowerSync sync config](#powersync-sync-config-github-actions). If **`POWERSYNC_ADMIN_TOKEN`**, **`POWERSYNC_INSTANCE_ID`**, and **`POWERSYNC_PROJECT_ID`** are unset, the workflow **succeeds with a notice** and skips CLI validate/deploy (no red failures). Same-repo PRs and branch pushes run validate when secrets exist; **`main`** push deploys **`sync-config`** only after a real validate. See **[SUPABASE_CLOUD_DEVELOPER.md](SUPABASE_CLOUD_DEVELOPER.md#powersync-sync-streams-packagespowersyncsync-rulesyaml)**. |
 | `pnpm install` fails on Windows         | Run shell as admin once if permission errors; check antivirus locking `node_modules`; try deleting `node_modules` and reinstalling.                                                                                                                                                                                                                                                                                                                                                                                                                                                       |

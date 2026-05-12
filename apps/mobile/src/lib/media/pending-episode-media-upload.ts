@@ -457,9 +457,9 @@ async function runPendingEpisodeMediaUploadWorkerImpl(
   let processed = 0;
   let failures = 0;
 
-  pendingDrain: for (const row of rows) {
+  for (const row of rows) {
     if (pendingMediaUploadSignalRequestedStop(signal)) {
-      break pendingDrain;
+      break;
     }
     const attempts = row.attempt_count ?? 0;
     if (attempts > 0 && row.last_attempt_at) {
@@ -477,7 +477,7 @@ async function runPendingEpisodeMediaUploadWorkerImpl(
 
     try {
       if (pendingMediaUploadSignalRequestedStop(signal)) {
-        break pendingDrain;
+        break;
       }
 
       const primaryBody = await readEncryptedMediaFileToArrayBuffer(
@@ -490,7 +490,7 @@ async function runPendingEpisodeMediaUploadWorkerImpl(
       );
 
       if (pendingMediaUploadSignalRequestedStop(signal)) {
-        break pendingDrain;
+        break;
       }
 
       const mediaType: 'photo' | 'video' =
@@ -529,18 +529,18 @@ async function runPendingEpisodeMediaUploadWorkerImpl(
         parentSymptomFkWaits < PENDING_MEDIA_PARENT_SYMPTOM_FK_MAX_WAITS
       ) {
         if (pendingMediaUploadSignalRequestedStop(signal)) {
-          break pendingDrain;
+          break;
         }
         await delayMs(PENDING_MEDIA_PARENT_SYMPTOM_FK_WAIT_MS);
         parentSymptomFkWaits++;
         if (pendingMediaUploadSignalRequestedStop(signal)) {
-          break pendingDrain;
+          break;
         }
         result = await uploadConfirmedEpisodeMedia(supabase, uploadPayload);
       }
 
       if (pendingMediaUploadSignalRequestedStop(signal)) {
-        break pendingDrain;
+        break;
       }
 
       if (!result.ok) {
@@ -553,7 +553,7 @@ async function runPendingEpisodeMediaUploadWorkerImpl(
       }
 
       if (pendingMediaUploadSignalRequestedStop(signal)) {
-        break pendingDrain;
+        break;
       }
 
       deleteEncryptedPendingMediaFileBestEffort(
@@ -569,7 +569,7 @@ async function runPendingEpisodeMediaUploadWorkerImpl(
       processed += 1;
     } catch (e) {
       if (pendingMediaUploadSignalRequestedStop(signal)) {
-        break pendingDrain;
+        break;
       }
       failures += 1;
       const message = e instanceof Error ? e.message : String(e);

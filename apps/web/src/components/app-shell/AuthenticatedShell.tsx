@@ -40,6 +40,14 @@ const NAV_ITEMS: {
       path === '/presets/episode-templates' ||
       path.startsWith('/presets/episode-templates/'),
   },
+  {
+    href: '/settings/caretaker',
+    label: 'Caretaker',
+    match: (path) =>
+      path === '/settings' ||
+      path === '/settings/caretaker' ||
+      path.startsWith('/settings/'),
+  },
 ];
 
 function isNavActive(pathname: string, match: (path: string) => boolean) {

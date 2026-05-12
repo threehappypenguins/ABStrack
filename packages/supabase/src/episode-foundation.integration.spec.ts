@@ -87,7 +87,7 @@ describe.skipIf(!episodeFoundationReady)(
 
     let admin: ReturnType<typeof getSupabaseAdminClient>;
     let url: string;
-    let anonKey: string;
+    let publishableKey: string;
     let userAId: string;
     let userBId: string;
     let clientA: AbstrackSupabaseClient;
@@ -95,7 +95,7 @@ describe.skipIf(!episodeFoundationReady)(
 
     beforeAll(async () => {
       url = getSupabaseUrl();
-      anonKey = getSupabasePublishableKey();
+      publishableKey = getSupabasePublishableKey();
       admin = getSupabaseAdminClient();
 
       const { data: createdA, error: errA } = await admin.auth.admin.createUser(
@@ -122,10 +122,10 @@ describe.skipIf(!episodeFoundationReady)(
       }
       userBId = createdB.user.id;
 
-      clientA = createClient<Database>(url, anonKey, {
+      clientA = createClient<Database>(url, publishableKey, {
         auth: { persistSession: false, autoRefreshToken: false },
       }) as unknown as AbstrackSupabaseClient;
-      clientB = createClient<Database>(url, anonKey, {
+      clientB = createClient<Database>(url, publishableKey, {
         auth: { persistSession: false, autoRefreshToken: false },
       }) as unknown as AbstrackSupabaseClient;
 

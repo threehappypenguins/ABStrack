@@ -1,0 +1,229 @@
+'use client';
+
+import { getSupabasePublishableKey, getSupabaseUrl } from '@abstrack/supabase';
+import { createBrowserClient } from '@/lib/supabase/browser-client';
+
+/**
+ * HTTPS URL for the `patient-caretaker-access` Edge Function (same contract as mobile).
+ *
+ * @throws Error when `NEXT_PUBLIC_SUPABASE_URL` is unset (build/runtime misconfiguration).
+ */
+export function patientCaretakerEdgeFunctionsUrl(): string {
+  const base = getSupabaseUrl().replace(/\/$/, '');
+  return `${base}/functions/v1/patient-caretaker-access`;
+}
+
+function bearerHeaders(
+  accessToken: string,
+  includeJsonContentType: boolean,
+): Record<string, string> {
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${accessToken}`,
+    apikey: getSupabasePublishableKey(),
+  };
+  if (includeJsonContentType) {
+    headers['Content-Type'] = 'application/json';
+  }
+  return headers;
+}
+
+/**
+ * `Error.message` from {@link requireAccessToken} when there is no usable session
+ * (Supabase `getSession` error or empty `access_token`). Callers can treat other
+ * thrown errors as connectivity / unexpected failures unless they match
+ * {@link PATIENT_CARETAKER_ACCESS_ERROR_SUPABASE_CLIENT_CONFIG}.
+ */
+export const PATIENT_CARETAKER_ACCESS_ERROR_MISSING_TOKEN =
+  'missing_access_token';
+
+/**
+ * `Error.message` when **`createBrowserClient()`**, **`getSupabaseUrl()`**, or
+ * **`getSupabasePublishableKey()`** fails due to missing/invalid public env (not a network error).
+ */
+export const PATIENT_CARETAKER_ACCESS_ERROR_SUPABASE_CLIENT_CONFIG =
+  'supabase_client_config';
+
+function isSupabaseClientMisconfigurationError(e: unknown): boolean {
+  if (!(e instanceof Error)) {
+    return false;
+  }
+  const m = e.message;
+  return (
+    m.includes('Missing NEXT_PUBLIC_SUPABASE_URL') ||
+    m.includes('Missing NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY') ||
+    m.includes('Missing Supabase URL') ||
+    m.includes('Missing Supabase publishable key') ||
+    m.includes('Invalid Supabase publishable key')
+  );
+}
+
+/**
+ * Maps preflight errors from caretaker Edge client helpers (`fetchPatientCaretakerAccess*` before
+ * `fetch` returns), **`createBrowserClient()`**, or **`supabase.auth.getSession()`** throws, to
+ * user-facing copy: missing session token, Supabase public env misconfiguration, or connectivity.
+ *
+ * @param err - Caught rejection from those helpers or browser Supabase wiring.
+ * @param missingTokenMessage - Copy when the Edge call could not read a usable `access_token`
+ * ({@link PATIENT_CARETAKER_ACCESS_ERROR_MISSING_TOKEN}), or a session-read fallback when not an env error.
+ * @returns Message suitable for UI or live regions.
+ */
+export function caretakerEdgeClientPreflightErrorMessage(
+  err: unknown,
+  missingTokenMessage: string,
+): string {
+  if (
+    err instanceof Error &&
+    err.message === PATIENT_CARETAKER_ACCESS_ERROR_MISSING_TOKEN
+  ) {
+    return missingTokenMessage;
+  }
+  if (
+    err instanceof Error &&
+    (err.message === PATIENT_CARETAKER_ACCESS_ERROR_SUPABASE_CLIENT_CONFIG ||
+      isSupabaseClientMisconfigurationError(err))
+  ) {
+    return 'Supabase is misconfigured for this app build. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY in apps/web/.env.local (see docs/DEV_SETUP.md).';
+  }
+  return 'Unable to reach the caretaker service. Check your connection and try again.';
+}
+
+async function requireAccessToken(): Promise<string> {
+  const supabase = createBrowserClient();
+  const {
+    data: { session },
+    error,
+  } = await supabase.auth.getSession();
+  if (error || !session?.access_token?.trim()) {
+    throw new Error(PATIENT_CARETAKER_ACCESS_ERROR_MISSING_TOKEN);
+  }
+  return session.access_token;
+}
+
+/**
+ * Maps known Supabase browser/env init failures to {@link PATIENT_CARETAKER_ACCESS_ERROR_SUPABASE_CLIENT_CONFIG};
+ * rethrows {@link PATIENT_CARETAKER_ACCESS_ERROR_MISSING_TOKEN} and other errors unchanged.
+ */
+async function invokeWithCaretakerClientEnvGuards<T>(
+  fn: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (
+      e instanceof Error &&
+      e.message === PATIENT_CARETAKER_ACCESS_ERROR_MISSING_TOKEN
+    ) {
+      throw e;
+    }
+    if (
+      e instanceof Error &&
+      e.message === PATIENT_CARETAKER_ACCESS_ERROR_SUPABASE_CLIENT_CONFIG
+    ) {
+      throw e;
+    }
+    if (isSupabaseClientMisconfigurationError(e)) {
+      throw new Error(PATIENT_CARETAKER_ACCESS_ERROR_SUPABASE_CLIENT_CONFIG, {
+        cause: e,
+      });
+    }
+    throw e;
+  }
+}
+
+export type CaretakerGrantDto = {
+  id: string;
+  caretakerUserId: string;
+  caretakerDisplayName: string | null;
+  createdAt: string;
+};
+
+export type CaretakerPendingInviteDto = {
+  inviteeEmail: string;
+  expiresAt: string;
+  lastInviteSentAt: string | null;
+  createdAt: string | null;
+};
+
+export type CaretakerAccessGetResponse = {
+  grant: CaretakerGrantDto | null;
+  pendingInvite: CaretakerPendingInviteDto | null;
+};
+
+/**
+ * GET current caretaker grant and any pending email invite from the Edge Function.
+ *
+ * @returns `fetch` Response (caller checks `ok` / `status`).
+ */
+export async function fetchPatientCaretakerAccessGet(): Promise<Response> {
+  return invokeWithCaretakerClientEnvGuards(async () => {
+    const token = await requireAccessToken();
+    return fetch(patientCaretakerEdgeFunctionsUrl(), {
+      headers: bearerHeaders(token, false),
+    });
+  });
+}
+
+/**
+ * POST JSON body to the caretaker Edge Function (patient or caretaker flows).
+ *
+ * @param body - Discriminated payload (`caretakerEmail`, cancel, finalize, etc.).
+ */
+export async function fetchPatientCaretakerAccessPostJson(
+  body: Record<string, unknown>,
+): Promise<Response> {
+  return invokeWithCaretakerClientEnvGuards(async () => {
+    const token = await requireAccessToken();
+    return fetch(patientCaretakerEdgeFunctionsUrl(), {
+      method: 'POST',
+      headers: bearerHeaders(token, true),
+      body: JSON.stringify(body),
+    });
+  });
+}
+
+/**
+ * POST invite or link by email (patient session).
+ *
+ * @param caretakerEmail - Email address to invite or link.
+ */
+export async function fetchPatientCaretakerAccessPost(
+  caretakerEmail: string,
+): Promise<Response> {
+  return fetchPatientCaretakerAccessPostJson({ caretakerEmail });
+}
+
+/**
+ * POST cancel a pending caretaker email invite (patient session).
+ */
+export async function fetchPatientCaretakerAccessCancelPendingInvite(): Promise<Response> {
+  return fetchPatientCaretakerAccessPostJson({
+    cancelPendingCaretakerInvite: true,
+  });
+}
+
+/**
+ * POST complete caretaker invite after email link (caretaker session).
+ *
+ * @param inviteId - `caretaker_invites.id` echoed in `user_metadata.abstrack_caretaker_invite_id`.
+ */
+export async function fetchPatientCaretakerAccessFinalize(
+  inviteId: string,
+): Promise<Response> {
+  return fetchPatientCaretakerAccessPostJson({
+    finalizeCaretakerInvite: true,
+    inviteId,
+  });
+}
+
+/**
+ * DELETE revoke active caretaker grant.
+ */
+export async function fetchPatientCaretakerAccessDelete(): Promise<Response> {
+  return invokeWithCaretakerClientEnvGuards(async () => {
+    const token = await requireAccessToken();
+    return fetch(patientCaretakerEdgeFunctionsUrl(), {
+      method: 'DELETE',
+      headers: bearerHeaders(token, false),
+    });
+  });
+}

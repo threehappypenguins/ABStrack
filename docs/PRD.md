@@ -39,10 +39,10 @@ ABStrack is an open-source, privacy-first health tracking application for indivi
 
 The application consists of three sub-applications:
 
-| App              | Platform                                   | Audience                               |
-| ---------------- | ------------------------------------------ | -------------------------------------- |
-| User App         | Mobile (React Native/Expo) + Web (Next.js) | Patients with ABS and their caretakers |
-| Practitioner App | Web (Next.js)                              | Healthcare practitioners               |
+| App              | Platform                                   | Audience                                                                                                                                  |
+| ---------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| User App         | Mobile (React Native/Expo) + Web (Next.js) | Patients with ABS and their caretakers — **mobile is primary** for both; user web is supplementary (e.g. larger screens, optional flows). |
+| Practitioner App | Web (Next.js)                              | Healthcare practitioners                                                                                                                  |
 
 ---
 
@@ -85,11 +85,11 @@ Documenting these episodes is critical for diagnosis, treatment, and ongoing car
 
 ### Patient (Primary User)
 
-An individual diagnosed with or suspected of having ABS. May be cognitively impaired during use. Accesses the app via mobile (primary) or web.
+An individual diagnosed with or suspected of having ABS. May be cognitively impaired during use. **Primary experience is the Expo mobile app**; user web is optional.
 
 ### Caretaker
 
-A trusted person (family member, partner, etc.) who assists the patient during episodes. Has a secondary account linked to the patient's account. Sees everything the patient sees and can complete episode logging on the patient's behalf from their own device. Receives push notifications when the patient logs an episode (post-MVP).
+A trusted person (family member, partner, etc.) who assists the patient during episodes. Has a secondary account linked to the patient's account. **Primary experience is the same Expo mobile app as the patient** (invite completion, daily use); user web is optional. Sees everything the patient sees and can complete episode logging on the patient's behalf from their own device. Receives push notifications when the patient logs an episode (post-MVP).
 
 ### Healthcare Practitioner
 
@@ -501,7 +501,7 @@ Accessibility is the primary design concern for the food diary. Users may be unw
 
 **MVP**
 
-- A patient can create a caretaker account from their settings.
+- A patient can **invite a caretaker by email** or **link an existing caretaker account** from settings (invite sends a Supabase Auth email when that address has no user yet; after the caretaker completes the link, an active `caretaker_access` grant applies).
 - The caretaker logs in with their own credentials on their own device. **Authorization** is an **active `caretaker_access` grant** from the patient; **RLS enforces** it on queries (see Security section)—there is no shared encryption key between patient and caretaker.
 - The caretaker has full read and write access to the patient's data — they can complete episode logging on the patient's behalf.
 - The caretaker sees the same home screen and prompt flows as the patient.

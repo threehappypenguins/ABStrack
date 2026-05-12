@@ -1,0 +1,9 @@
+# Keep Nx project graph / @nx/expo hashing away from huge native trees and caches.
+# Without this, `nx dev web` can fail with: Invalid string length (@nx/expo/plugin)
+# when apps/mobile/android/** exists (local `expo run:android` / prebuild output).
+
+apps/mobile/android/**
+apps/mobile/ios/**
+apps/mobile/.expo/**
+apps/mobile/dist/**
+apps/mobile/out-tsc/**
