@@ -5,6 +5,7 @@
 import { isAppRole, type AppRole } from '@abstrack/types';
 import type { PresetDataResult } from '@abstrack/supabase';
 import {
+  CARETAKER_MULTIPLE_ACTIVE_PATIENTS_MESSAGE,
   PresetDataError,
   resolvePhiSubjectUserContextFromSupabase,
   toPresetDataError,
@@ -25,29 +26,48 @@ function normalizeAppRole(raw: unknown): AppRole | null {
 }
 
 /**
- * Active `caretaker_access.patient_user_id` for this caretaker in the local replica, if any.
+ * Distinct active `caretaker_access.patient_user_id` values for this caretaker in the local replica.
+ *
+ * Matches {@link resolvePhiSubjectUserContextFromSupabase}: multiple active patients return a
+ * validation error instead of picking an arbitrary row.
  *
  * @param db - Open PowerSync database.
  * @param caretakerUserId - `caretaker_access.caretaker_user_id`.
- * @returns Non-empty patient id, or `null` when no active grant row exists locally.
+ * @returns Single patient id, `null` when no active grant exists, or a validation error when
+ *   multiple distinct active patients are linked.
  */
 async function readActiveCaretakerPatientIdFromReplicaDb(
   db: PowerSyncDatabase,
   caretakerUserId: string,
-): Promise<string | null> {
-  const grantRow = await db.getOptional<{ patient_user_id: unknown }>(
+): Promise<PresetDataResult<string | null>> {
+  const rows = await db.getAll<{ patient_user_id: unknown }>(
     `SELECT patient_user_id FROM caretaker_access
      WHERE caretaker_user_id = ?
-       AND (revoked_at IS NULL OR revoked_at = '')
-     ORDER BY created_at DESC
-     LIMIT 1`,
+       AND (revoked_at IS NULL OR revoked_at = '')`,
     [caretakerUserId],
   );
-  const patientId =
-    grantRow?.patient_user_id != null
-      ? String(grantRow.patient_user_id).trim()
-      : '';
-  return patientId === '' ? null : patientId;
+  const patientIds = new Set<string>();
+  for (const row of rows) {
+    const id =
+      row.patient_user_id != null ? String(row.patient_user_id).trim() : '';
+    if (id !== '') {
+      patientIds.add(id);
+    }
+  }
+  if (patientIds.size === 0) {
+    return { ok: true, data: null };
+  }
+  if (patientIds.size > 1) {
+    return {
+      ok: false,
+      error: new PresetDataError(
+        'validation_error',
+        CARETAKER_MULTIPLE_ACTIVE_PATIENTS_MESSAGE,
+      ),
+    };
+  }
+  const [onlyPatientId] = patientIds;
+  return { ok: true, data: onlyPatientId };
 }
 
 /**
@@ -79,14 +99,19 @@ async function resolvePhiSubjectUserContextFromPowerSyncDb(
     );
 
     if (profileRow == null) {
-      const patientIdIfCaretakerGrant =
-        await readActiveCaretakerPatientIdFromReplicaDb(db, trimmed);
-      if (patientIdIfCaretakerGrant != null) {
+      const grant = await readActiveCaretakerPatientIdFromReplicaDb(
+        db,
+        trimmed,
+      );
+      if (!grant.ok) {
+        return grant;
+      }
+      if (grant.data != null) {
         return {
           ok: true,
           data: {
             authUserId: trimmed,
-            phiSubjectUserId: patientIdIfCaretakerGrant,
+            phiSubjectUserId: grant.data,
             profileAppRole: 'caretaker',
           },
         };
@@ -107,11 +132,11 @@ async function resolvePhiSubjectUserContextFromPowerSyncDb(
       };
     }
 
-    const patientId = await readActiveCaretakerPatientIdFromReplicaDb(
-      db,
-      trimmed,
-    );
-    if (patientId == null) {
+    const grant = await readActiveCaretakerPatientIdFromReplicaDb(db, trimmed);
+    if (!grant.ok) {
+      return grant;
+    }
+    if (grant.data == null) {
       return {
         ok: false,
         error: new PresetDataError(
@@ -124,7 +149,7 @@ async function resolvePhiSubjectUserContextFromPowerSyncDb(
       ok: true,
       data: {
         authUserId: trimmed,
-        phiSubjectUserId: patientId,
+        phiSubjectUserId: grant.data,
         profileAppRole: 'caretaker',
       },
     };

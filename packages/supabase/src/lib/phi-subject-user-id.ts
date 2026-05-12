@@ -31,13 +31,79 @@ function normalizeAppRole(raw: unknown): AppRole | null {
   return isAppRole(raw) ? raw : null;
 }
 
+const PROFILE_NOT_READY_MESSAGE =
+  'Your profile could not be loaded yet. Try refreshing, finishing account setup, or signing out and back in.';
+
+/**
+ * Shown when the same caretaker has more than one active `caretaker_access` row (different
+ * patients). Resolvers cannot pick a PHI subject without an explicit patient selection (PRD §7).
+ */
+export const CARETAKER_MULTIPLE_ACTIVE_PATIENTS_MESSAGE =
+  'You have more than one active patient as caretaker. Ask patients to revoke access you no longer need so only one active link remains, then try again.';
+
+/**
+ * Active `caretaker_access` patient scope for this caretaker via PostgREST (RLS).
+ *
+ * The DB enforces at most one active grant **per patient**, not per caretaker, so multiple active
+ * rows for the same caretaker must not be collapsed by `ORDER BY created_at` — that would mis-scope
+ * PHI. When more than one distinct `patient_user_id` is active, returns a validation error.
+ *
+ * @param client - Supabase client with the user’s session.
+ * @param caretakerUserId - `caretaker_access.caretaker_user_id`.
+ * @returns Non-empty patient id, `null` when no active grant exists, PostgREST errors, or
+ *   ambiguous multiple-patient validation failure.
+ */
+async function fetchActiveCaretakerPatientUserId(
+  client: AbstrackSupabaseClient,
+  caretakerUserId: string,
+): Promise<PresetDataResult<string | null>> {
+  const grantRes = await client
+    .from('caretaker_access')
+    .select('patient_user_id')
+    .eq('caretaker_user_id', caretakerUserId)
+    .is('revoked_at', null);
+
+  if (grantRes.error) {
+    return { ok: false, error: toPresetDataError(grantRes.error) };
+  }
+
+  const patientIds = new Set<string>();
+  for (const row of grantRes.data ?? []) {
+    const id =
+      row.patient_user_id != null ? String(row.patient_user_id).trim() : '';
+    if (id !== '') {
+      patientIds.add(id);
+    }
+  }
+
+  if (patientIds.size === 0) {
+    return { ok: true, data: null };
+  }
+  if (patientIds.size > 1) {
+    return {
+      ok: false,
+      error: new PresetDataError(
+        'validation_error',
+        CARETAKER_MULTIPLE_ACTIVE_PATIENTS_MESSAGE,
+      ),
+    };
+  }
+  const [onlyPatientId] = patientIds;
+  return { ok: true, data: onlyPatientId };
+}
+
 /**
  * Loads profile role and, for caretakers, the active grant’s `patient_user_id` via PostgREST (RLS).
  *
  * @param client - Browser or native Supabase client with the user’s session.
  * @param authUserId - Non-empty `auth.users` id (`session.user.id`).
  * @returns PHI scope context, or `{ ok: true, data: null }` when `authUserId` is blank (caller
- *   should treat as signed-out). Caretakers without an active link return a validation error.
+ *   should treat as signed-out). When the **`profiles` row is missing**, we do not assume patient
+ *   semantics: if an active **`caretaker_access`** row exists, the subject resolves as the linked
+ *   patient; otherwise `{ ok: false, validation_error }` so callers fail fast (not-yet-provisioned
+ *   accounts must not write PHI as `authUserId`). Caretakers with a profile but no active link
+ *   return a validation error. Caretakers with **more than one distinct active** `caretaker_access`
+ *   patient also return a validation error (no silent pick among patients).
  */
 export async function resolvePhiSubjectUserContextFromSupabase(
   client: AbstrackSupabaseClient,
@@ -59,7 +125,31 @@ export async function resolvePhiSubjectUserContextFromSupabase(
       return { ok: false, error: toPresetDataError(profileRes.error) };
     }
 
-    const profileAppRole = normalizeAppRole(profileRes.data?.app_role);
+    if (profileRes.data == null) {
+      const grant = await fetchActiveCaretakerPatientUserId(client, trimmed);
+      if (!grant.ok) {
+        return grant;
+      }
+      if (grant.data != null) {
+        return {
+          ok: true,
+          data: {
+            authUserId: trimmed,
+            phiSubjectUserId: grant.data,
+            profileAppRole: 'caretaker',
+          },
+        };
+      }
+      return {
+        ok: false,
+        error: new PresetDataError(
+          'validation_error',
+          PROFILE_NOT_READY_MESSAGE,
+        ),
+      };
+    }
+
+    const profileAppRole = normalizeAppRole(profileRes.data.app_role);
 
     if (profileAppRole !== 'caretaker') {
       return {
@@ -72,25 +162,11 @@ export async function resolvePhiSubjectUserContextFromSupabase(
       };
     }
 
-    const grantRes = await client
-      .from('caretaker_access')
-      .select('patient_user_id')
-      .eq('caretaker_user_id', trimmed)
-      .is('revoked_at', null)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (grantRes.error) {
-      return { ok: false, error: toPresetDataError(grantRes.error) };
+    const grant = await fetchActiveCaretakerPatientUserId(client, trimmed);
+    if (!grant.ok) {
+      return grant;
     }
-
-    const patientId =
-      grantRes.data?.patient_user_id != null
-        ? String(grantRes.data.patient_user_id).trim()
-        : '';
-
-    if (patientId === '') {
+    if (grant.data == null) {
       return {
         ok: false,
         error: new PresetDataError(
@@ -104,7 +180,7 @@ export async function resolvePhiSubjectUserContextFromSupabase(
       ok: true,
       data: {
         authUserId: trimmed,
-        phiSubjectUserId: patientId,
+        phiSubjectUserId: grant.data,
         profileAppRole: 'caretaker',
       },
     };

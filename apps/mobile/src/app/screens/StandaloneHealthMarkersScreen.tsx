@@ -406,7 +406,7 @@ export function StandaloneHealthMarkersScreen() {
     );
   }
 
-  if (!phiSubjectUserId) {
+  if (authUserId && !phiSubjectUserId) {
     return (
       <ScreenShell>
         <View className="min-h-[120px] items-center justify-center py-8">

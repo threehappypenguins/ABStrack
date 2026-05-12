@@ -1,12 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { AppRole } from '@abstrack/types';
 
 import { useMobileAuthUserId } from './use-mobile-auth-user-id';
-import {
-  powerSyncReplicaSqliteReady,
-  usePowerSyncBridgeState,
-} from '../powersync/PowerSyncSessionBridge';
+import { usePowerSyncBridgeState } from '../powersync/PowerSyncSessionBridge';
 import { resolveMobilePhiSubjectUserContext } from '../phi-subject/resolve-mobile-phi-subject-user-context';
 
 export type MobilePhiSubjectUserContextState = {
@@ -28,14 +25,22 @@ export type MobilePhiSubjectUserContextState = {
  * signed-in auth id (`authUserId`). Caretakers use the linked patient from active `caretaker_access`.
  *
  * In-flight {@link resolveMobilePhiSubjectUserContext} results are ignored after unmount or when
- * `authUserId` / PowerSync bridge inputs change, by bumping a generation counter so async completion
- * does not call `setState` on an unmounted consumer.
+ * `authUserId` / replica readiness (`database` + `localSqliteInitialized`) / first-sync completion
+ * change, by bumping a generation counter so async completion does not call `setState` on an
+ * unmounted consumer. Bridge fields such as `syncConnecting` are intentionally excluded from the
+ * resolve callback deps so unrelated PowerSync UI state does not re-trigger network resolution.
  *
  * @returns Loading and error state plus ids for Home, Manage, and episode flows.
  */
 export function useMobilePhiSubjectUserContext(): MobilePhiSubjectUserContextState {
   const authUserId = useMobileAuthUserId();
   const psBridge = usePowerSyncBridgeState();
+  const firstSyncCompleted = psBridge.firstSyncCompleted;
+  const dbForPhi = useMemo(() => {
+    return psBridge.database != null && psBridge.localSqliteInitialized
+      ? psBridge.database
+      : null;
+  }, [psBridge.database, psBridge.localSqliteInitialized]);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [phiSubjectUserId, setPhiSubjectUserId] = useState<string | null>(null);
@@ -53,9 +58,8 @@ export function useMobilePhiSubjectUserContext(): MobilePhiSubjectUserContextSta
     }
     setLoading(true);
     setErrorMessage(null);
-    const db = powerSyncReplicaSqliteReady(psBridge) ? psBridge.database : null;
     const result = await resolveMobilePhiSubjectUserContext({
-      powerSyncDatabase: db,
+      powerSyncDatabase: dbForPhi,
     });
     if (gen !== genRef.current) {
       return;
@@ -76,7 +80,7 @@ export function useMobilePhiSubjectUserContext(): MobilePhiSubjectUserContextSta
     setPhiSubjectUserId(result.data.phiSubjectUserId);
     setProfileAppRole(result.data.profileAppRole);
     setErrorMessage(null);
-  }, [authUserId, psBridge]);
+  }, [authUserId, dbForPhi]);
 
   useEffect(() => {
     void runResolve();
@@ -87,7 +91,7 @@ export function useMobilePhiSubjectUserContext(): MobilePhiSubjectUserContextSta
 
   const firstSyncHandledRef = useRef(false);
   useEffect(() => {
-    if (!psBridge.firstSyncCompleted) {
+    if (!firstSyncCompleted) {
       firstSyncHandledRef.current = false;
     } else if (!firstSyncHandledRef.current) {
       firstSyncHandledRef.current = true;
@@ -96,7 +100,7 @@ export function useMobilePhiSubjectUserContext(): MobilePhiSubjectUserContextSta
     return () => {
       genRef.current += 1;
     };
-  }, [psBridge.firstSyncCompleted, runResolve]);
+  }, [firstSyncCompleted, runResolve]);
 
   const refresh = useCallback(() => {
     void runResolve();
