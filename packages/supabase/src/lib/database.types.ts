@@ -694,6 +694,14 @@ export type Database = {
         Args: { p_normalized: string }
         Returns: string
       }
+      stamp_caretaker_invite_pre_send: {
+        Args: {
+          p_invite_id: string
+          p_stamp: string
+          p_throttle_cutoff: string
+        }
+        Returns: string[]
+      }
       user_has_practitioner_access: {
         Args: { p_patient_user_id: string }
         Returns: boolean

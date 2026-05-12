@@ -370,14 +370,19 @@ async function caretakerAccessInsert23505PairRefetch(
 /**
  * Stamps **`last_invite_sent_at`** before **`inviteUserByEmail`** so resend throttle applies even if
  * Auth succeeds and a later failure would return **500** (stamp-after-send allowed unthrottled retries).
- * The stamp **`UPDATE`** filters **`consumed_at IS NULL`** and an **atomic resend window** on
+ *
+ * The stamp runs via **`rpc('stamp_caretaker_invite_pre_send', …)`** (`public.stamp_caretaker_invite_pre_send`
+ * in migrations): a single **`UPDATE`** with **`consumed_at IS NULL`** and an **atomic resend window** on
  * **`last_invite_sent_at`** (`NULL` or older than **`CARETAKER_INVITE_MIN_RESEND_INTERVAL_MS`**) so two
- * concurrent callers cannot both pass a non-atomic throttle read and send duplicate Auth emails.
- * **`.select('id')`** requires exactly one updated row; zero rows → **429** if still throttled, else
- * **404** / **409** (see handler). When **`deletePendingInviteOnMailFailure`** is true, failed sends
- * roll back by deleting the pending invite row (new-invite path), dropping the stamp with the row.
- * When false, the row is kept (resend while invitee has Auth user but no profile yet); a stamp without
- * a delivered mail still enforces throttle until the interval passes.
+ * concurrent callers cannot both pass a non-atomic throttle read and send duplicate Auth emails. This
+ * avoids PostgREST-only quirks on the same row update; **`service_role`** must **`EXECUTE`** the RPC.
+ *
+ * **`data`** from **`rpc`** is treated like a list of updated row ids: **exactly one** id means this
+ * request won the stamp; **zero** ids → follow-up read for **429** (throttled), **404**, or **409** (see
+ * handler). When **`deletePendingInviteOnMailFailure`** is true, failed sends roll back by deleting the
+ * pending invite row (new-invite path), dropping the stamp with the row. When false, the row is kept
+ * (resend while invitee has Auth user but no profile yet); a stamp without a delivered mail still
+ * enforces throttle until the interval passes.
  */
 async function sendCaretakerInviteEmailAndStamp(
   admin: SupabaseClient,
@@ -405,15 +410,14 @@ async function sendCaretakerInviteEmailAndStamp(
     nowMs - CARETAKER_INVITE_MIN_RESEND_INTERVAL_MS,
   ).toISOString();
 
-  const { data: stampedRows, error: stampErr } = await admin
-    .from('caretaker_invites')
-    .update({ last_invite_sent_at: stampNowIso })
-    .eq('id', inviteId)
-    .is('consumed_at', null)
-    .or(
-      `last_invite_sent_at.is.null,last_invite_sent_at.lt."${throttleCutoffIso}"`,
-    )
-    .select('id');
+  const { data: stampedRows, error: stampErr } = await admin.rpc(
+    'stamp_caretaker_invite_pre_send',
+    {
+      p_invite_id: inviteId,
+      p_stamp: stampNowIso,
+      p_throttle_cutoff: throttleCutoffIso,
+    },
+  );
 
   if (stampErr) {
     console.error('caretaker_invites last_invite_sent_at (pre-send)', stampErr);
