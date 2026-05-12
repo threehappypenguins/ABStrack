@@ -25,11 +25,44 @@ function normalizeAppRole(raw: unknown): AppRole | null {
 }
 
 /**
+ * Active `caretaker_access.patient_user_id` for this caretaker in the local replica, if any.
+ *
+ * @param db - Open PowerSync database.
+ * @param caretakerUserId - `caretaker_access.caretaker_user_id`.
+ * @returns Non-empty patient id, or `null` when no active grant row exists locally.
+ */
+async function readActiveCaretakerPatientIdFromReplicaDb(
+  db: PowerSyncDatabase,
+  caretakerUserId: string,
+): Promise<string | null> {
+  const grantRow = await db.getOptional<{ patient_user_id: unknown }>(
+    `SELECT patient_user_id FROM caretaker_access
+     WHERE caretaker_user_id = ?
+       AND (revoked_at IS NULL OR revoked_at = '')
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [caretakerUserId],
+  );
+  const patientId =
+    grantRow?.patient_user_id != null
+      ? String(grantRow.patient_user_id).trim()
+      : '';
+  return patientId === '' ? null : patientId;
+}
+
+/**
  * Reads {@link PhiSubjectUserContext} from replicated SQLite when the network path is unavailable.
+ *
+ * When the **`profiles` row is missing** (e.g. before that table has replicated), we must not assume
+ * the subject is a patient: an offline caretaker would otherwise get `phiSubjectUserId === authUserId`
+ * and write PHI under the wrong user. If an active **`caretaker_access`** row is already present,
+ * we still resolve the linked patient; otherwise we return `{ ok: true, data: null }` until replica
+ * data is ready (callers should treat like “scope not yet available”, not signed-out).
  *
  * @param db - Open PowerSync database.
  * @param authUserId - Signed-in auth user id.
- * @returns Context or an error; `null` only when role data is missing (treat as unknown offline).
+ * @returns Context or an error; `null` when replica cannot determine scope yet (missing profile and
+ *   no local caretaker grant), or blank `authUserId`.
  */
 async function resolvePhiSubjectUserContextFromPowerSyncDb(
   db: PowerSyncDatabase,
@@ -44,7 +77,24 @@ async function resolvePhiSubjectUserContextFromPowerSyncDb(
       `SELECT app_role FROM profiles WHERE id = ?`,
       [trimmed],
     );
-    const profileAppRole = normalizeAppRole(profileRow?.app_role);
+
+    if (profileRow == null) {
+      const patientIdIfCaretakerGrant =
+        await readActiveCaretakerPatientIdFromReplicaDb(db, trimmed);
+      if (patientIdIfCaretakerGrant != null) {
+        return {
+          ok: true,
+          data: {
+            authUserId: trimmed,
+            phiSubjectUserId: patientIdIfCaretakerGrant,
+            profileAppRole: 'caretaker',
+          },
+        };
+      }
+      return { ok: true, data: null };
+    }
+
+    const profileAppRole = normalizeAppRole(profileRow.app_role);
 
     if (profileAppRole !== 'caretaker') {
       return {
@@ -57,19 +107,11 @@ async function resolvePhiSubjectUserContextFromPowerSyncDb(
       };
     }
 
-    const grantRow = await db.getOptional<{ patient_user_id: unknown }>(
-      `SELECT patient_user_id FROM caretaker_access
-       WHERE caretaker_user_id = ?
-         AND (revoked_at IS NULL OR revoked_at = '')
-       ORDER BY created_at DESC
-       LIMIT 1`,
-      [trimmed],
+    const patientId = await readActiveCaretakerPatientIdFromReplicaDb(
+      db,
+      trimmed,
     );
-    const patientId =
-      grantRow?.patient_user_id != null
-        ? String(grantRow.patient_user_id).trim()
-        : '';
-    if (patientId === '') {
+    if (patientId == null) {
       return {
         ok: false,
         error: new PresetDataError(

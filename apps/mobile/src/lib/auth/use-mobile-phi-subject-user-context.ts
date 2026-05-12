@@ -27,6 +27,10 @@ export type MobilePhiSubjectUserContextState = {
  * Resolves the patient user id used for episode / marker / food PHI (`phiSubjectUserId`) vs the
  * signed-in auth id (`authUserId`). Caretakers use the linked patient from active `caretaker_access`.
  *
+ * In-flight {@link resolveMobilePhiSubjectUserContext} results are ignored after unmount or when
+ * `authUserId` / PowerSync bridge inputs change, by bumping a generation counter so async completion
+ * does not call `setState` on an unmounted consumer.
+ *
  * @returns Loading and error state plus ids for Home, Manage, and episode flows.
  */
 export function useMobilePhiSubjectUserContext(): MobilePhiSubjectUserContextState {
@@ -76,18 +80,22 @@ export function useMobilePhiSubjectUserContext(): MobilePhiSubjectUserContextSta
 
   useEffect(() => {
     void runResolve();
+    return () => {
+      genRef.current += 1;
+    };
   }, [runResolve]);
 
   const firstSyncHandledRef = useRef(false);
   useEffect(() => {
     if (!psBridge.firstSyncCompleted) {
       firstSyncHandledRef.current = false;
-      return;
-    }
-    if (!firstSyncHandledRef.current) {
+    } else if (!firstSyncHandledRef.current) {
       firstSyncHandledRef.current = true;
       void runResolve();
     }
+    return () => {
+      genRef.current += 1;
+    };
   }, [psBridge.firstSyncCompleted, runResolve]);
 
   const refresh = useCallback(() => {

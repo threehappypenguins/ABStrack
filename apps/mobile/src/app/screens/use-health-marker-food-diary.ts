@@ -12,7 +12,6 @@ import {
   listFoodDiaryEntriesForEpisodeOfflineFirst,
   updateFoodDiaryEntryOfflineFirst,
 } from '../../lib/episodes/mobile-offline-first-gateway';
-import { getMobileAuthSessionSafe } from '../../lib/get-mobile-auth-session-safe';
 import {
   currentLocalDate,
   currentLocalTime,
@@ -347,19 +346,6 @@ export function useHealthMarkerFoodDiary({
         },
       );
     } else {
-      const {
-        data: { session },
-        error: sessionError,
-      } = await getMobileAuthSessionSafe();
-      if (session?.user?.id == null || session.user.id === '') {
-        const message =
-          sessionError?.message ??
-          'Your session could not be verified. Try signing in again.';
-        setSavingFoodDiary(false);
-        setFoodDiaryFeedback(message);
-        await announce(message, { politeness: 'assertive' });
-        return;
-      }
       const phiRes = await resolveMobilePhiSubjectUserContext({
         powerSyncDatabase,
       });

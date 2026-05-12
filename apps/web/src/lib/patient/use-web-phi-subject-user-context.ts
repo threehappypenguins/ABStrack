@@ -20,6 +20,10 @@ export type WebPhiSubjectUserContextState = {
  * Resolves the patient id used for PHI reads/writes on user web (`phiSubjectUserId`) vs the
  * signed-in auth id. Caretakers use the linked patient from active `caretaker_access`.
  *
+ * In-flight resolves are dropped after unmount or when `authUserId` / auth loading changes by
+ * bumping an internal generation counter so async completion does not call `setState` on an
+ * unmounted consumer.
+ *
  * @returns Async-resolved ids plus loading and error state for episode, manage, and preset flows.
  */
 export function useWebPhiSubjectUserContext(): WebPhiSubjectUserContextState {
@@ -72,10 +76,12 @@ export function useWebPhiSubjectUserContext(): WebPhiSubjectUserContextState {
   }, [authUserId]);
 
   useEffect(() => {
-    if (authLoading) {
-      return;
+    if (!authLoading) {
+      void run();
     }
-    void run();
+    return () => {
+      genRef.current += 1;
+    };
   }, [authLoading, run]);
 
   const refresh = useCallback(() => {
