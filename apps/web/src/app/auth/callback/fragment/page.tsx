@@ -6,24 +6,11 @@ import {
   AUTH_CALLBACK_INVALID_LINK_MESSAGE,
   getSafeAuthCallbackRedirectPath,
 } from '@/lib/auth/auth-callback-redirect';
+import {
+  isSupabaseBrowserConfigError,
+  parseImplicitHashParams,
+} from '@/lib/auth/auth-callback-fragment-helpers';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
-
-/**
- * Parses Supabase Auth implicit-flow parameters from the URL hash
- * (`#access_token=…&refresh_token=…`). The fragment is never sent to the server.
- *
- * @param hash - `window.location.hash` or equivalent (may include leading `#`).
- * @returns Key/value map of hash query parameters.
- */
-function parseImplicitHashParams(hash: string): Record<string, string> {
-  const trimmed = hash.startsWith('#') ? hash.slice(1) : hash;
-  const params = new URLSearchParams(trimmed);
-  const out: Record<string, string> = {};
-  params.forEach((value, key) => {
-    out[key] = value;
-  });
-  return out;
-}
 
 function redirectWithError(
   router: ReturnType<typeof useRouter>,
@@ -36,33 +23,13 @@ function redirectWithError(
 }
 
 /**
- * True when `createBrowserClient()` failed because URL / publishable key env is missing or invalid
- * (throws from `apps/web` Supabase env helpers or `@abstrack/supabase` publishable key guards).
+ * Completes Supabase **implicit** auth (tokens in `#access_token=…`) after `/auth/callback` is
+ * rewritten here from `src/proxy.ts` (middleware). PKCE (`?code=`) is handled in the parent
+ * `route.ts` on the server so session cookies are set without exchanging the code in client JS.
  *
- * @param err - Value from `catch`.
+ * @returns Fragment callback UI (brief loading state).
  */
-function isSupabaseBrowserConfigError(err: unknown): err is Error {
-  if (!(err instanceof Error)) {
-    return false;
-  }
-  const { message } = err;
-  return (
-    message.includes('NEXT_PUBLIC_SUPABASE_URL') ||
-    message.includes('Missing Supabase URL') ||
-    message.includes('Missing Supabase publishable key') ||
-    message.includes('Invalid Supabase publishable key') ||
-    message.includes('sb_publishable_') ||
-    message.includes('sb_secret_')
-  );
-}
-
-/**
- * Finishes browser auth after the user opens an email link: PKCE (`?code=`) or
- * implicit tokens in the URL hash. Must be a client page so the hash is visible.
- *
- * @returns Auth callback UI (brief loading state).
- */
-export default function AuthCallbackPage() {
+export default function AuthCallbackFragmentPage() {
   return (
     <Suspense
       fallback={
@@ -71,12 +38,12 @@ export default function AuthCallbackPage() {
         </main>
       }
     >
-      <AuthCallbackContent />
+      <AuthCallbackFragmentContent />
     </Suspense>
   );
 }
 
-function AuthCallbackContent() {
+function AuthCallbackFragmentContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [surfaceError, setSurfaceError] = useState<string | null>(null);
@@ -88,9 +55,7 @@ function AuthCallbackContent() {
       setSurfaceError(null);
 
       const next = searchParams.get('next');
-      const code = searchParams.get('code');
       const redirectPath = getSafeAuthCallbackRedirectPath(next);
-      /** Capture before any `await`; `detectSessionInUrl` may clear the hash. */
       const implicitHashSnapshot =
         typeof window !== 'undefined' ? window.location.hash : '';
 
@@ -118,17 +83,6 @@ function AuthCallbackContent() {
         } = await supabase.auth.getSession();
 
         if (existing?.user) {
-          finishOk();
-          return;
-        }
-
-        if (code) {
-          const { error } = await supabase.auth.exchangeCodeForSession(code);
-          if (cancelled) return;
-          if (error) {
-            finishErr(AUTH_CALLBACK_INVALID_LINK_MESSAGE);
-            return;
-          }
           finishOk();
           return;
         }

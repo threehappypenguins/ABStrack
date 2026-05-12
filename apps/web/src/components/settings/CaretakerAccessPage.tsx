@@ -49,7 +49,9 @@ export function CaretakerAccessPage() {
     useState<CaretakerPendingInviteDto | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [email, setEmail] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [inviteSubmitting, setInviteSubmitting] = useState(false);
+  const [cancelInviteSubmitting, setCancelInviteSubmitting] = useState(false);
+  const [revokeSubmitting, setRevokeSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [revokeOpen, setRevokeOpen] = useState(false);
   const [revokeError, setRevokeError] = useState<string | null>(null);
@@ -110,7 +112,7 @@ export function CaretakerAccessPage() {
   }, [authLoading, session, loadGrant]);
 
   const onCancelPendingInvite = async () => {
-    setBusy(true);
+    setCancelInviteSubmitting(true);
     setFormError(null);
     try {
       const res = await fetchPatientCaretakerAccessCancelPendingInvite();
@@ -138,7 +140,7 @@ export function CaretakerAccessPage() {
       setFormError(msg);
       announce(msg, { politeness: 'assertive' });
     } finally {
-      setBusy(false);
+      setCancelInviteSubmitting(false);
     }
   };
 
@@ -152,13 +154,13 @@ export function CaretakerAccessPage() {
       setFormError('Enter the caretaker email address.');
       return;
     }
-    setBusy(true);
+    setInviteSubmitting(true);
     setFormError(null);
     let res: Response;
     try {
       res = await fetchPatientCaretakerAccessPost(normalized);
     } catch (err) {
-      setBusy(false);
+      setInviteSubmitting(false);
       setFormError(
         caretakerEdgeClientPreflightErrorMessage(
           err,
@@ -172,7 +174,7 @@ export function CaretakerAccessPage() {
       outcome?: string;
       retryAfterSeconds?: number;
     };
-    setBusy(false);
+    setInviteSubmitting(false);
     if (!res.ok) {
       const raw =
         typeof maybeJson.error === 'string' ? maybeJson.error : undefined;
@@ -210,12 +212,12 @@ export function CaretakerAccessPage() {
 
   const onRevoke = async () => {
     setRevokeError(null);
-    setBusy(true);
+    setRevokeSubmitting(true);
     let res: Response;
     try {
       res = await fetchPatientCaretakerAccessDelete();
     } catch (err) {
-      setBusy(false);
+      setRevokeSubmitting(false);
       const msg = caretakerEdgeClientPreflightErrorMessage(
         err,
         'You must be signed in to revoke caretaker access.',
@@ -227,7 +229,7 @@ export function CaretakerAccessPage() {
     const maybeJson = (await res.json().catch(() => ({}))) as {
       error?: string;
     };
-    setBusy(false);
+    setRevokeSubmitting(false);
     if (!res.ok) {
       const raw =
         typeof maybeJson.error === 'string' ? maybeJson.error : undefined;
@@ -321,10 +323,10 @@ export function CaretakerAccessPage() {
           <button
             type="button"
             className="mt-4 min-h-[44px] rounded-full border border-app-border px-4 text-sm font-semibold text-app-ink shadow-sm transition hover:bg-app-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={busy}
+            disabled={cancelInviteSubmitting}
             onClick={() => void onCancelPendingInvite()}
           >
-            {busy ? 'Working…' : 'Cancel pending invite'}
+            {cancelInviteSubmitting ? 'Working…' : 'Cancel pending invite'}
           </button>
         </section>
       ) : null}
@@ -356,7 +358,7 @@ export function CaretakerAccessPage() {
           <button
             type="button"
             className="mt-6 min-h-[44px] rounded-full bg-red-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-70 dark:bg-red-700 dark:hover:bg-red-600"
-            disabled={busy}
+            disabled={revokeSubmitting}
             onClick={() => {
               setRevokeError(null);
               setRevokeOpen(true);
@@ -367,7 +369,7 @@ export function CaretakerAccessPage() {
         </section>
       ) : null}
 
-      {!grant && grant !== undefined && !loadError ? (
+      {!pendingInvite && !grant && grant !== undefined && !loadError ? (
         <section
           aria-labelledby={`${formId}-invite-heading`}
           className="rounded-2xl border border-app-border/90 bg-app-surface p-6 shadow-soft ring-1 ring-[color:var(--app-ring-slate)] sm:p-8"
@@ -415,10 +417,10 @@ export function CaretakerAccessPage() {
             ) : null}
             <button
               type="submit"
-              disabled={busy}
+              disabled={inviteSubmitting}
               className="min-h-[44px] rounded-full bg-app-primary px-5 text-sm font-semibold text-white shadow-sm transition hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {busy ? 'Sending…' : 'Send invite or link'}
+              {inviteSubmitting ? 'Sending…' : 'Send invite or link'}
             </button>
           </form>
         </section>

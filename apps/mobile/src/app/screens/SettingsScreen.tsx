@@ -1,7 +1,16 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Pressable, Switch, Text, TextInput, View } from 'react-native';
+import {
+  Alert,
+  Pressable,
+  ScrollView,
+  Switch,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { announce } from '@abstrack/ui/native';
 import {
   getRequireReauthOnOpenPreference,
@@ -70,6 +79,7 @@ const caretakerInputClassName = `min-h-[52px] rounded-lg px-3 py-2.5 text-base $
 export function SettingsScreen() {
   const navigation =
     useNavigation<NativeStackNavigationProp<MainStackParamList>>();
+  const insets = useSafeAreaInsets();
   const { colors, themePreference, setThemePreference } = useAppTheme();
   const patientCaretakerApiUrl = resolvePatientCaretakerAccessUrl();
   const isMountedRef = useRef(true);
@@ -89,7 +99,12 @@ export function SettingsScreen() {
   const [caretakerLoadError, setCaretakerLoadError] = useState<string | null>(
     null,
   );
-  const [caretakerBusy, setCaretakerBusy] = useState(false);
+  const [caretakerInviteSubmitting, setCaretakerInviteSubmitting] =
+    useState(false);
+  const [caretakerCancelInviteSubmitting, setCaretakerCancelInviteSubmitting] =
+    useState(false);
+  const [caretakerRevokeSubmitting, setCaretakerRevokeSubmitting] =
+    useState(false);
   const [caretakerEmail, setCaretakerEmail] = useState('');
   const [caretakerFormError, setCaretakerFormError] = useState<string | null>(
     null,
@@ -189,7 +204,7 @@ export function SettingsScreen() {
 
   const onCancelPendingCaretakerInvite = async () => {
     if (isMountedRef.current) {
-      setCaretakerBusy(true);
+      setCaretakerCancelInviteSubmitting(true);
       setCaretakerFormError(null);
     }
     try {
@@ -238,7 +253,7 @@ export function SettingsScreen() {
       }
     } finally {
       if (isMountedRef.current) {
-        setCaretakerBusy(false);
+        setCaretakerCancelInviteSubmitting(false);
       }
     }
   };
@@ -252,7 +267,7 @@ export function SettingsScreen() {
       return;
     }
     if (isMountedRef.current) {
-      setCaretakerBusy(true);
+      setCaretakerInviteSubmitting(true);
       setCaretakerFormError(null);
     }
     try {
@@ -318,14 +333,14 @@ export function SettingsScreen() {
       }
     } finally {
       if (isMountedRef.current) {
-        setCaretakerBusy(false);
+        setCaretakerInviteSubmitting(false);
       }
     }
   };
 
   const runRevokeCaretaker = async () => {
     if (isMountedRef.current) {
-      setCaretakerBusy(true);
+      setCaretakerRevokeSubmitting(true);
       setCaretakerFormError(null);
     }
     try {
@@ -370,7 +385,7 @@ export function SettingsScreen() {
       }
     } finally {
       if (isMountedRef.current) {
-        setCaretakerBusy(false);
+        setCaretakerRevokeSubmitting(false);
       }
     }
   };
@@ -481,292 +496,329 @@ export function SettingsScreen() {
   };
 
   return (
-    <ScreenShell>
-      <Text className={`text-[22px] font-semibold ${nw.textInk}`}>
-        Settings
-      </Text>
-
-      <View
-        accessibilityRole="radiogroup"
-        accessibilityLabel="Color theme"
-        className="gap-2"
+    <ScreenShell contentAlign="stretch">
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
+        className="flex-1"
+        showsVerticalScrollIndicator
+        contentContainerStyle={{
+          flexGrow: 1,
+          paddingBottom: Math.max(insets.bottom, 12) + 28,
+        }}
       >
-        <Text className={`text-base font-semibold ${nw.textInk}`}>
-          Color theme
-        </Text>
-        <Text className={`text-base ${nw.textMuted}`}>
-          Choose how ABStrack looks. System follows your device settings.
-        </Text>
-        {THEME_OPTIONS.map(({ value, label, hint }) => {
-          const selected = themePreference === value;
-          return (
-            <Pressable
-              key={value}
-              accessibilityRole="radio"
-              accessibilityState={{ selected, disabled: themeSaving }}
-              accessibilityLabel={label}
-              accessibilityHint={hint}
-              disabled={themeSaving}
-              onPress={() => void onSelectTheme(value)}
-              className={`min-h-[52px] justify-center rounded-xl border px-4 py-3 ${
-                selected
-                  ? `border-2 border-app-primary bg-app-primary-soft dark:border-app-primary-dark dark:bg-app-primary-soft-dark ${nw.textInk}`
-                  : `border border-app-border bg-app-surface dark:border-app-border-dark dark:bg-app-surface-dark ${nw.textInk}`
-              } ${themeSaving ? 'opacity-60' : ''}`}
-            >
-              <Text className={`text-base font-semibold ${nw.textInk}`}>
-                {label}
-              </Text>
-              <Text className={`mt-0.5 text-sm ${nw.textMuted}`}>{hint}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
-      {themeError ? (
-        <Text className={`text-sm ${nw.textError}`} accessibilityRole="alert">
-          {themeError}
-        </Text>
-      ) : null}
-
-      <View className="my-2 h-px bg-app-border dark:bg-app-border-dark" />
-
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Open manage tab on episodes"
-        onPress={() =>
-          navigation.navigate('MainTabs', {
-            screen: 'Manage',
-            params: { initialSegment: 'episodes' },
-          })
-        }
-        className={`min-h-[52px] justify-center rounded-xl border border-app-border bg-app-surface px-4 py-3 dark:border-app-border-dark dark:bg-app-surface-dark`}
-      >
-        <Text className={`text-base font-semibold ${nw.textInk}`}>
-          Manage episodes
-        </Text>
-        <Text className={`mt-0.5 text-sm ${nw.textMuted}`}>
-          Open the Manage tab to review episode history and resume an
-          in-progress episode.
-        </Text>
-      </Pressable>
-
-      <View className="my-2 h-px bg-app-border dark:bg-app-border-dark" />
-
-      <View className="gap-2" accessibilityLabel="Caretaker access">
-        <Text className={`text-base font-semibold ${nw.textInk}`}>
-          Caretaker access
-        </Text>
-        <>
-          <Text className={`text-base ${nw.textMuted}`}>
-            A caretaker signs in with his or her own ABStrack account and uses
-            the same logging flows as you, with matching data access, once the
-            invite completes. Invite links open the ABStrack mobile app when
-            tapped on a phone (mobile-first), and the same link completes
-            caretaker sign-up on user web when opened in a browser. This is
-            separate from a healthcare practitioner: the practitioner web app is
-            read-only and does not replace you in patient flows.
+        <View className="gap-3">
+          <Text className={`text-[22px] font-semibold ${nw.textInk}`}>
+            Settings
           </Text>
-          {!patientCaretakerApiUrl ? (
+
+          <View
+            accessibilityRole="radiogroup"
+            accessibilityLabel="Color theme"
+            className="gap-2"
+          >
+            <Text className={`text-base font-semibold ${nw.textInk}`}>
+              Color theme
+            </Text>
+            <Text className={`text-base ${nw.textMuted}`}>
+              Choose how ABStrack looks. System follows your device settings.
+            </Text>
+            {THEME_OPTIONS.map(({ value, label, hint }) => {
+              const selected = themePreference === value;
+              return (
+                <Pressable
+                  key={value}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected, disabled: themeSaving }}
+                  accessibilityLabel={label}
+                  accessibilityHint={hint}
+                  disabled={themeSaving}
+                  onPress={() => void onSelectTheme(value)}
+                  className={`min-h-[52px] justify-center rounded-xl border px-4 py-3 ${
+                    selected
+                      ? `border-2 border-app-primary bg-app-primary-soft dark:border-app-primary-dark dark:bg-app-primary-soft-dark ${nw.textInk}`
+                      : `border border-app-border bg-app-surface dark:border-app-border-dark dark:bg-app-surface-dark ${nw.textInk}`
+                  } ${themeSaving ? 'opacity-60' : ''}`}
+                >
+                  <Text className={`text-base font-semibold ${nw.textInk}`}>
+                    {label}
+                  </Text>
+                  <Text className={`mt-0.5 text-sm ${nw.textMuted}`}>
+                    {hint}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          {themeError ? (
             <Text
               className={`text-sm ${nw.textError}`}
               accessibilityRole="alert"
             >
-              Missing EXPO_PUBLIC_SUPABASE_URL. Add it to apps/mobile/.env so
-              invite and revoke can call your Supabase project Edge Function
-              patient-caretaker-access (see repo supabase/functions).
+              {themeError}
             </Text>
           ) : null}
-          {patientCaretakerApiUrl && caretakerLoadError ? (
-            <Text
-              className={`text-sm ${nw.textError}`}
-              accessibilityRole="alert"
-            >
-              {caretakerLoadError}
+
+          <View className="my-2 h-px bg-app-border dark:bg-app-border-dark" />
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Open manage tab on episodes"
+            onPress={() =>
+              navigation.navigate('MainTabs', {
+                screen: 'Manage',
+                params: { initialSegment: 'episodes' },
+              })
+            }
+            className={`min-h-[52px] justify-center rounded-xl border border-app-border bg-app-surface px-4 py-3 dark:border-app-border-dark dark:bg-app-surface-dark`}
+          >
+            <Text className={`text-base font-semibold ${nw.textInk}`}>
+              Manage episodes
             </Text>
-          ) : null}
-          {patientCaretakerApiUrl &&
-          caretakerGrant === undefined &&
-          !caretakerLoadError ? (
-            <Text
-              className={`text-base ${nw.textMuted}`}
-              accessibilityLiveRegion="polite"
-            >
-              Loading caretaker access…
+            <Text className={`mt-0.5 text-sm ${nw.textMuted}`}>
+              Open the Manage tab to review episode history and resume an
+              in-progress episode.
             </Text>
-          ) : null}
-          {patientCaretakerApiUrl &&
-          caretakerPendingInvite &&
-          !caretakerGrant &&
-          caretakerGrant !== undefined &&
-          !caretakerLoadError ? (
-            <View className={`gap-3 rounded-xl border p-4 ${nw.card}`}>
-              <Text className={`text-base font-semibold ${nw.textInk}`}>
-                Invite pending
+          </Pressable>
+
+          <View className="my-2 h-px bg-app-border dark:bg-app-border-dark" />
+
+          <View className="gap-2" accessibilityLabel="Caretaker access">
+            <Text className={`text-base font-semibold ${nw.textInk}`}>
+              Caretaker access
+            </Text>
+            <>
+              <Text className={`text-base ${nw.textMuted}`}>
+                A caretaker signs in with his or her own ABStrack account and
+                uses the same logging flows as you, with matching data access,
+                once the invite completes. Invite links open the ABStrack mobile
+                app when tapped on a phone (mobile-first), and the same link
+                completes caretaker sign-up on user web when opened in a
+                browser. This is separate from a healthcare practitioner: the
+                practitioner web app is read-only and does not replace you in
+                patient flows.
               </Text>
-              <Text className={`text-sm ${nw.textMuted}`}>
-                We sent an email to {caretakerPendingInvite.inviteeEmail}. The
-                link in that message finishes setup in the mobile app or on user
-                web.
-              </Text>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Cancel pending caretaker invite"
-                accessibilityState={{ disabled: caretakerBusy }}
-                disabled={caretakerBusy}
-                onPress={() => void onCancelPendingCaretakerInvite()}
-                className={`min-h-[52px] justify-center rounded-xl border border-app-border bg-app-surface px-4 py-3 dark:border-app-border-dark ${caretakerBusy ? 'opacity-60' : ''}`}
-              >
-                <Text className={`text-base font-semibold ${nw.textInk}`}>
-                  {caretakerBusy ? 'Working…' : 'Cancel pending invite'}
-                </Text>
-              </Pressable>
-            </View>
-          ) : null}
-          {patientCaretakerApiUrl && caretakerGrant ? (
-            <View className={`gap-3 rounded-xl border p-4 ${nw.card}`}>
-              <Text className={`text-base font-semibold ${nw.textInk}`}>
-                Active caretaker
-              </Text>
-              <Text className={`text-sm ${nw.textMuted}`}>
-                You can have one active caretaker. Access stays in place until
-                you revoke below.
-              </Text>
-              <Text
-                className={`text-base ${nw.textInk}`}
-                accessibilityLabel={`Caretaker display name: ${
-                  caretakerGrant.caretakerDisplayName?.trim() ||
-                  'Not set on the caretaker profile'
-                }`}
-              >
-                {caretakerGrant.caretakerDisplayName?.trim()
-                  ? caretakerGrant.caretakerDisplayName
-                  : 'No display name on the caretaker profile'}
-              </Text>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Revoke caretaker access"
-                accessibilityHint="Opens a confirmation before removing access"
-                accessibilityState={{ disabled: caretakerBusy }}
-                disabled={caretakerBusy}
-                onPress={onConfirmRevokeCaretaker}
-                className={`min-h-[52px] justify-center rounded-xl border border-app-border bg-app-surface px-4 py-3 dark:border-app-border-dark ${caretakerBusy ? 'opacity-60' : ''}`}
-              >
-                <Text className={`text-base font-semibold ${nw.textError}`}>
-                  {caretakerBusy ? 'Working…' : 'Revoke caretaker access'}
-                </Text>
-              </Pressable>
-            </View>
-          ) : null}
-          {patientCaretakerApiUrl &&
-          !caretakerGrant &&
-          caretakerGrant !== undefined &&
-          !caretakerLoadError ? (
-            <View className={`gap-3 rounded-xl border p-4 ${nw.card}`}>
-              <Text className={`text-base font-semibold ${nw.textInk}`}>
-                Invite or link a caretaker
-              </Text>
-              <Text className={`text-sm ${nw.textMuted}`}>
-                Enter your support person's email, and we will send an invite.
-              </Text>
-              <TextInput
-                accessibilityLabel="Caretaker email"
-                accessibilityHint="Caretaker sign-up email address"
-                value={caretakerEmail}
-                onChangeText={setCaretakerEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-                editable={!caretakerBusy}
-                placeholder="caretaker@example.com"
-                className={caretakerInputClassName}
-              />
-              {caretakerFormError ? (
+              {!patientCaretakerApiUrl ? (
                 <Text
                   className={`text-sm ${nw.textError}`}
                   accessibilityRole="alert"
                 >
-                  {caretakerFormError}
+                  Missing EXPO_PUBLIC_SUPABASE_URL. Add it to apps/mobile/.env
+                  so invite and revoke can call your Supabase project Edge
+                  Function patient-caretaker-access (see repo
+                  supabase/functions).
                 </Text>
               ) : null}
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Send caretaker invite or link"
-                accessibilityState={{ disabled: caretakerBusy }}
-                disabled={caretakerBusy}
-                onPress={() => void onInviteCaretaker()}
-                className={`min-h-[52px] justify-center rounded-xl ${nw.btnPrimary} px-4 py-3 ${caretakerBusy ? 'opacity-60' : ''}`}
-              >
+              {patientCaretakerApiUrl && caretakerLoadError ? (
                 <Text
-                  className={`text-center text-base font-semibold ${nw.textOnPrimary}`}
+                  className={`text-sm ${nw.textError}`}
+                  accessibilityRole="alert"
                 >
-                  {caretakerBusy ? 'Sending…' : 'Send invite or link'}
+                  {caretakerLoadError}
                 </Text>
-              </Pressable>
-            </View>
-          ) : null}
-        </>
-      </View>
-
-      {isPowerSyncReplicaDiagnosticsEnabled() ? (
-        <>
-          <View className="my-2 h-px bg-app-border dark:bg-app-border-dark" />
-          <View className="gap-2">
-            <Text className={`text-base font-semibold ${nw.textInk}`}>
-              PowerSync replica (debug)
-            </Text>
-            <Text className={`text-base ${nw.textMuted}`}>
-              Counts rows in the encrypted local replica. If decryption fails,
-              you will see a query error instead of numbers. Does not log the
-              encryption key. Filter logcat with PowerSyncReplicaDiag.
-            </Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Run PowerSync replica diagnostics"
-              accessibilityState={{ disabled: powerSyncDiagBusy }}
-              disabled={powerSyncDiagBusy}
-              onPress={() => void onRunPowerSyncReplicaDiagnostics()}
-              className={`min-h-[52px] justify-center rounded-xl border border-app-border bg-app-surface px-4 py-3 dark:border-app-border-dark dark:bg-app-surface-dark ${powerSyncDiagBusy ? 'opacity-60' : ''}`}
-            >
-              <Text className={`text-base font-semibold ${nw.textInk}`}>
-                {powerSyncDiagBusy ? 'Running…' : 'Run replica diagnostics'}
-              </Text>
-            </Pressable>
+              ) : null}
+              {patientCaretakerApiUrl &&
+              caretakerGrant === undefined &&
+              !caretakerLoadError ? (
+                <Text
+                  className={`text-base ${nw.textMuted}`}
+                  accessibilityLiveRegion="polite"
+                >
+                  Loading caretaker access…
+                </Text>
+              ) : null}
+              {patientCaretakerApiUrl &&
+              caretakerPendingInvite &&
+              !caretakerGrant &&
+              caretakerGrant !== undefined &&
+              !caretakerLoadError ? (
+                <View className={`gap-3 rounded-xl border p-4 ${nw.card}`}>
+                  <Text className={`text-base font-semibold ${nw.textInk}`}>
+                    Invite pending
+                  </Text>
+                  <Text className={`text-sm ${nw.textMuted}`}>
+                    We sent an email to {caretakerPendingInvite.inviteeEmail}.
+                    The link in that message finishes setup in the mobile app or
+                    on user web.
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Cancel pending caretaker invite"
+                    accessibilityState={{
+                      disabled: caretakerCancelInviteSubmitting,
+                    }}
+                    disabled={caretakerCancelInviteSubmitting}
+                    onPress={() => void onCancelPendingCaretakerInvite()}
+                    className={`min-h-[52px] justify-center rounded-xl border border-app-border bg-app-bg px-4 py-3 shadow-soft dark:border-app-border-dark dark:bg-app-bg-dark dark:shadow-soft-dark ${caretakerCancelInviteSubmitting ? 'opacity-60' : ''}`}
+                  >
+                    <Text className={`text-base font-semibold ${nw.textInk}`}>
+                      {caretakerCancelInviteSubmitting
+                        ? 'Working…'
+                        : 'Cancel pending invite'}
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : null}
+              {patientCaretakerApiUrl && caretakerGrant ? (
+                <View className={`gap-3 rounded-xl border p-4 ${nw.card}`}>
+                  <Text className={`text-base font-semibold ${nw.textInk}`}>
+                    Active caretaker
+                  </Text>
+                  <Text className={`text-sm ${nw.textMuted}`}>
+                    You can have one active caretaker. Access stays in place
+                    until you revoke below.
+                  </Text>
+                  <Text
+                    className={`text-base ${nw.textInk}`}
+                    accessibilityLabel={`Caretaker display name: ${
+                      caretakerGrant.caretakerDisplayName?.trim() ||
+                      'Not set on the caretaker profile'
+                    }`}
+                  >
+                    {caretakerGrant.caretakerDisplayName?.trim()
+                      ? caretakerGrant.caretakerDisplayName
+                      : 'No display name on the caretaker profile'}
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Revoke caretaker access"
+                    accessibilityHint="Opens a confirmation before removing access"
+                    accessibilityState={{ disabled: caretakerRevokeSubmitting }}
+                    disabled={caretakerRevokeSubmitting}
+                    onPress={onConfirmRevokeCaretaker}
+                    className={`min-h-[52px] justify-center rounded-xl border border-app-border bg-app-bg px-4 py-3 shadow-soft dark:border-app-border-dark dark:bg-app-bg-dark dark:shadow-soft-dark ${caretakerRevokeSubmitting ? 'opacity-60' : ''}`}
+                  >
+                    <Text className={`text-base font-semibold ${nw.textError}`}>
+                      {caretakerRevokeSubmitting
+                        ? 'Working…'
+                        : 'Revoke caretaker access'}
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : null}
+              {patientCaretakerApiUrl &&
+              !caretakerPendingInvite &&
+              !caretakerGrant &&
+              caretakerGrant !== undefined &&
+              !caretakerLoadError ? (
+                <View className={`gap-3 rounded-xl border p-4 ${nw.card}`}>
+                  <Text className={`text-base font-semibold ${nw.textInk}`}>
+                    Invite or link a caretaker
+                  </Text>
+                  <Text className={`text-sm ${nw.textMuted}`}>
+                    Enter your support person's email, and we will send an
+                    invite.
+                  </Text>
+                  <TextInput
+                    accessibilityLabel="Caretaker email"
+                    accessibilityHint="Caretaker sign-up email address"
+                    value={caretakerEmail}
+                    onChangeText={setCaretakerEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    editable={!caretakerInviteSubmitting}
+                    placeholder="caretaker@example.com"
+                    className={caretakerInputClassName}
+                  />
+                  {caretakerFormError ? (
+                    <Text
+                      className={`text-sm ${nw.textError}`}
+                      accessibilityRole="alert"
+                    >
+                      {caretakerFormError}
+                    </Text>
+                  ) : null}
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Send caretaker invite or link"
+                    accessibilityState={{ disabled: caretakerInviteSubmitting }}
+                    disabled={caretakerInviteSubmitting}
+                    onPress={() => void onInviteCaretaker()}
+                    className={`min-h-[52px] justify-center rounded-xl ${nw.btnPrimary} px-4 py-3 ${caretakerInviteSubmitting ? 'opacity-60' : ''}`}
+                  >
+                    <Text
+                      className={`text-center text-base font-semibold ${nw.textOnPrimary}`}
+                    >
+                      {caretakerInviteSubmitting
+                        ? 'Sending…'
+                        : 'Send invite or link'}
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : null}
+            </>
           </View>
-        </>
-      ) : null}
 
-      <View className="my-2 h-px bg-app-border dark:bg-app-border-dark" />
+          {isPowerSyncReplicaDiagnosticsEnabled() ? (
+            <>
+              <View className="my-2 h-px bg-app-border dark:bg-app-border-dark" />
+              <View className="gap-2">
+                <Text className={`text-base font-semibold ${nw.textInk}`}>
+                  PowerSync replica (debug)
+                </Text>
+                <Text className={`text-base ${nw.textMuted}`}>
+                  Counts rows in the encrypted local replica. If decryption
+                  fails, you will see a query error instead of numbers. Does not
+                  log the encryption key. Filter logcat with
+                  PowerSyncReplicaDiag.
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Run PowerSync replica diagnostics"
+                  accessibilityState={{ disabled: powerSyncDiagBusy }}
+                  disabled={powerSyncDiagBusy}
+                  onPress={() => void onRunPowerSyncReplicaDiagnostics()}
+                  className={`min-h-[52px] justify-center rounded-xl border border-app-border bg-app-surface px-4 py-3 dark:border-app-border-dark dark:bg-app-surface-dark ${powerSyncDiagBusy ? 'opacity-60' : ''}`}
+                >
+                  <Text className={`text-base font-semibold ${nw.textInk}`}>
+                    {powerSyncDiagBusy ? 'Running…' : 'Run replica diagnostics'}
+                  </Text>
+                </Pressable>
+              </View>
+            </>
+          ) : null}
 
-      <View className="flex-row items-center gap-3">
-        <View className="min-w-0 flex-1 gap-1.5">
-          <Text className={`text-base font-semibold ${nw.textInk}`}>
-            Require re-authentication on app open
-          </Text>
-          <Text className={`text-base ${nw.textMuted}`}>
-            When enabled, you will be asked to log in every time you reopen the
-            app.
-          </Text>
+          <View className="my-2 h-px bg-app-border dark:bg-app-border-dark" />
+
+          <View className="flex-row items-center gap-3">
+            <View className="min-w-0 flex-1 gap-1.5">
+              <Text className={`text-base font-semibold ${nw.textInk}`}>
+                Require re-authentication on app open
+              </Text>
+              <Text className={`text-base ${nw.textMuted}`}>
+                When enabled, you will be asked to log in every time you reopen
+                the app.
+              </Text>
+            </View>
+            <Switch
+              accessibilityLabel="Require re-authentication on app open"
+              testID="require-reauth-switch"
+              value={requireReauth}
+              onValueChange={onTogglePreference}
+              disabled={loading || saving}
+              trackColor={{ false: colors.border, true: colors.primary }}
+            />
+          </View>
+          {errorMessage ? (
+            <Text
+              className={`text-sm ${nw.textError}`}
+              accessibilityRole="alert"
+            >
+              {errorMessage}
+            </Text>
+          ) : null}
+          {loading ? (
+            <Text className={`text-base ${nw.textMuted}`}>
+              Loading setting...
+            </Text>
+          ) : null}
+          {saving ? (
+            <Text className={`text-base ${nw.textMuted}`}>
+              Saving setting...
+            </Text>
+          ) : null}
         </View>
-        <Switch
-          accessibilityLabel="Require re-authentication on app open"
-          testID="require-reauth-switch"
-          value={requireReauth}
-          onValueChange={onTogglePreference}
-          disabled={loading || saving}
-          trackColor={{ false: colors.border, true: colors.primary }}
-        />
-      </View>
-      {errorMessage ? (
-        <Text className={`text-sm ${nw.textError}`} accessibilityRole="alert">
-          {errorMessage}
-        </Text>
-      ) : null}
-      {loading ? (
-        <Text className={`text-base ${nw.textMuted}`}>Loading setting...</Text>
-      ) : null}
-      {saving ? (
-        <Text className={`text-base ${nw.textMuted}`}>Saving setting...</Text>
-      ) : null}
+      </ScrollView>
     </ScreenShell>
   );
 }

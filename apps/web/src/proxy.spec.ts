@@ -53,6 +53,11 @@ jest.mock('next/server', () => ({
         },
       };
     }),
+    rewrite: jest.fn((destination: string | URL) => ({
+      type: 'rewrite',
+      location:
+        typeof destination === 'string' ? destination : destination.toString(),
+    })),
   },
 }));
 
@@ -62,21 +67,42 @@ describe('web auth proxy', () => {
   type CookieMethodsArg = Parameters<typeof createServerClient>[0];
   type ServerClient = Awaited<ReturnType<typeof createServerClient>>;
 
-  const makeRequest = (pathname: string) => {
-    const cookies = {
-      getAll: jest.fn(() => []),
-      set: jest.fn(),
-    };
-
+  const makeRequest = (pathWithQuery: string) => {
+    const path = pathWithQuery.startsWith('/')
+      ? pathWithQuery
+      : `/${pathWithQuery}`;
+    const u = new URL(`https://example.com${path}`);
     return {
-      nextUrl: { pathname },
-      url: `https://example.com${pathname}`,
-      cookies,
+      nextUrl: {
+        pathname: u.pathname,
+        search: u.search,
+        searchParams: u.searchParams,
+      },
+      url: u.toString(),
+      cookies: {
+        getAll: jest.fn(() => []),
+        set: jest.fn(),
+      },
     } as unknown as ProxyRequest;
   };
 
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  it('rewrites /auth/callback without code to the fragment page for implicit auth', async () => {
+    const result = await proxy(
+      makeRequest('/auth/callback?next=%2Fcaretaker%2Fjoin'),
+    );
+
+    expect(createServerClientMock).not.toHaveBeenCalled();
+    expect(result).toEqual(
+      expect.objectContaining({
+        type: 'rewrite',
+        location:
+          'https://example.com/auth/callback/fragment?next=%2Fcaretaker%2Fjoin',
+      }),
+    );
   });
 
   it('redirects unauthenticated user from protected route to /login', async () => {

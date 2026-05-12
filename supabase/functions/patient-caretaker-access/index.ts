@@ -8,7 +8,7 @@
  *
  * HTTP:
  * - **GET** — patient: active grant + pending invite (if any).
- * - **POST** — patient: `{ caretakerEmail }` send invite or link existing caretaker; `{ cancelPendingCaretakerInvite: true }` cancel pending invite; caretaker: `{ finalizeCaretakerInvite: true, inviteId }` after accepting email invite (**200** retry-safe when that invite is already consumed by this caretaker).
+ * - **POST** — patient: `{ caretakerEmail }` send invite or link existing caretaker; `{ cancelPendingCaretakerInvite: true }` cancel pending invite (and best-effort delete the invitee Auth user when they never linked—see `clearPendingInvitesForPatient`); caretaker: `{ finalizeCaretakerInvite: true, inviteId }` after accepting email invite (**200** retry-safe when that invite is already consumed by this caretaker).
  * - **DELETE** — patient: revoke active caretaker grant (clears pending invites too). Returns
  *   **200** with optional **`pendingInviteCleanupFailed: true`** when the grant revoke committed
  *   but best-effort pending-invite cleanup failed.
@@ -589,7 +589,92 @@ async function sendCaretakerInviteEmailAndStamp(
 }
 
 /**
- * Deletes unconsumed caretaker invite rows for a patient (best-effort cleanup).
+ * Best-effort: removes the Supabase Auth user created for a withdrawn caretaker email invite when
+ * that user was only tied to this invite (metadata `abstrack_caretaker_invite_id` matches) and has
+ * no active caretaker grant yet.
+ *
+ * Skips when the email maps to no user, metadata does not match (different invite / manual
+ * accounts), or any active `caretaker_access` row exists for this user as caretaker.
+ *
+ * @param admin Elevated Supabase client.
+ * @param inviteId Primary key of the `caretaker_invites` row that was just removed.
+ * @param inviteeEmailNormalized `caretaker_invites.invitee_email_normalized` for the removed row.
+ */
+async function deleteOrphanInvitedCaretakerAuthUserAfterInviteRemoved(
+  admin: SupabaseClient,
+  inviteId: string,
+  inviteeEmailNormalized: string,
+): Promise<void> {
+  let caretakerUserId: string | null = null;
+  try {
+    caretakerUserId = await resolveAuthUserIdByEmail(
+      admin,
+      inviteeEmailNormalized,
+    );
+  } catch (e) {
+    console.warn(
+      'caretaker_invite_cancel auth lookup failed (invite row already deleted)',
+      inviteId,
+      e,
+    );
+    return;
+  }
+  if (!caretakerUserId) {
+    return;
+  }
+
+  const { data: authUserRes, error: getErr } =
+    await admin.auth.admin.getUserById(caretakerUserId);
+  if (getErr || !authUserRes?.user) {
+    console.warn(
+      'caretaker_invite_cancel getUser',
+      inviteId,
+      caretakerUserId,
+      getErr,
+    );
+    return;
+  }
+
+  const metaInvite =
+    authUserRes.user.user_metadata?.abstrack_caretaker_invite_id;
+  if (typeof metaInvite !== 'string' || metaInvite !== inviteId) {
+    return;
+  }
+
+  const { data: activeGrant, error: grantErr } = await admin
+    .from('caretaker_access')
+    .select('id')
+    .eq('caretaker_user_id', caretakerUserId)
+    .is('revoked_at', null)
+    .maybeSingle();
+
+  if (grantErr) {
+    console.warn(
+      'caretaker_invite_cancel caretaker_access lookup',
+      inviteId,
+      grantErr,
+    );
+    return;
+  }
+  if (activeGrant) {
+    return;
+  }
+
+  const { error: delErr } = await admin.auth.admin.deleteUser(caretakerUserId);
+  if (delErr) {
+    console.warn(
+      'caretaker_invite_cancel deleteUser',
+      inviteId,
+      caretakerUserId,
+      delErr,
+    );
+  }
+}
+
+/**
+ * Deletes unconsumed caretaker invite rows for a patient (best-effort cleanup). For each removed
+ * row, attempts to delete the invitee Auth user when they were created only for that invite and
+ * have not been linked as a caretaker yet.
  *
  * @returns Supabase error when the delete fails; callers must not treat success as committed otherwise.
  */
@@ -597,12 +682,28 @@ async function clearPendingInvitesForPatient(
   admin: SupabaseClient,
   patientUserId: string,
 ): Promise<{ error: unknown | null }> {
-  const { error } = await admin
+  const { data: removed, error } = await admin
     .from('caretaker_invites')
     .delete()
     .eq('patient_user_id', patientUserId)
-    .is('consumed_at', null);
-  return { error };
+    .is('consumed_at', null)
+    .select('id, invitee_email_normalized');
+
+  if (error) {
+    return { error };
+  }
+
+  for (const row of removed ?? []) {
+    const inviteId = row.id as string;
+    const emailNorm = row.invitee_email_normalized as string;
+    await deleteOrphanInvitedCaretakerAuthUserAfterInviteRemoved(
+      admin,
+      inviteId,
+      emailNorm,
+    );
+  }
+
+  return { error: null };
 }
 
 /**
