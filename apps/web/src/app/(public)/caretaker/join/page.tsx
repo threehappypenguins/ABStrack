@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useId, useState } from 'react';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
+import { CARETAKER_INVITE_SET_PASSWORD_FROM } from '@/lib/auth/caretaker-invite-password';
 import {
   caretakerEdgeClientPreflightErrorMessage,
   fetchPatientCaretakerAccessFinalize,
@@ -204,7 +205,7 @@ export default function CaretakerJoinPage() {
                 ? state.message
                 : state.kind === 'error'
                   ? state.message
-                  : 'You are connected. You can open the app and sign in as a caretaker to help log for this patient.'}
+                  : 'You are connected as this patient’s caretaker. Create a password so you can sign in with your email next time—or go home and do it later from the login page using Forgot password.'}
       </p>
       {state.kind === 'need_sign_in' ? (
         <Link
@@ -215,12 +216,20 @@ export default function CaretakerJoinPage() {
         </Link>
       ) : null}
       {state.kind === 'done' ? (
-        <Link
-          href="/"
-          className="min-h-[44px] rounded-full bg-app-primary px-5 py-3 text-center text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring"
-        >
-          Go to home
-        </Link>
+        <div className="flex flex-col gap-3">
+          <Link
+            href={`/update-password?from=${CARETAKER_INVITE_SET_PASSWORD_FROM}`}
+            className="min-h-[44px] rounded-full bg-app-primary px-5 py-3 text-center text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring"
+          >
+            Create password (recommended)
+          </Link>
+          <Link
+            href="/"
+            className="min-h-[44px] rounded-full border border-app-border px-5 py-3 text-center text-sm font-semibold text-app-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring"
+          >
+            Go to home
+          </Link>
+        </div>
       ) : null}
       {state.kind === 'error' || state.kind === 'wrong_role' ? (
         <button
