@@ -36,6 +36,27 @@ function redirectWithError(
 }
 
 /**
+ * True when `createBrowserClient()` failed because URL / publishable key env is missing or invalid
+ * (throws from `apps/web` Supabase env helpers or `@abstrack/supabase` publishable key guards).
+ *
+ * @param err - Value from `catch`.
+ */
+function isSupabaseBrowserConfigError(err: unknown): err is Error {
+  if (!(err instanceof Error)) {
+    return false;
+  }
+  const { message } = err;
+  return (
+    message.includes('NEXT_PUBLIC_SUPABASE_URL') ||
+    message.includes('Missing Supabase URL') ||
+    message.includes('Missing Supabase publishable key') ||
+    message.includes('Invalid Supabase publishable key') ||
+    message.includes('sb_publishable_') ||
+    message.includes('sb_secret_')
+  );
+}
+
+/**
  * Finishes browser auth after the user opens an email link: PKCE (`?code=`) or
  * implicit tokens in the URL hash. Must be a client page so the hash is visible.
  *
@@ -73,8 +94,6 @@ function AuthCallbackContent() {
       const implicitHashSnapshot =
         typeof window !== 'undefined' ? window.location.hash : '';
 
-      const supabase = createBrowserClient();
-
       const finishOk = () => {
         if (cancelled) return;
         if (typeof window !== 'undefined') {
@@ -92,6 +111,8 @@ function AuthCallbackContent() {
       };
 
       try {
+        const supabase = createBrowserClient();
+
         const {
           data: { session: existing },
         } = await supabase.auth.getSession();
@@ -155,10 +176,13 @@ function AuthCallbackContent() {
         }
 
         finishErr(AUTH_CALLBACK_INVALID_LINK_MESSAGE);
-      } catch {
-        if (!cancelled) {
-          setSurfaceError(AUTH_CALLBACK_INVALID_LINK_MESSAGE);
+      } catch (err) {
+        if (cancelled) return;
+        if (isSupabaseBrowserConfigError(err)) {
+          setSurfaceError(err.message);
+          return;
         }
+        setSurfaceError(AUTH_CALLBACK_INVALID_LINK_MESSAGE);
       }
     };
 
