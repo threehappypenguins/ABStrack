@@ -195,7 +195,8 @@ export type ResolveMobilePhiSubjectUserContextOptions = {
  *
  * @param options - Optional PowerSync DB for caretaker/patient offline fallback.
  * @returns Same contract as {@link resolvePhiSubjectUserContextFromSupabase}; `data: null` when
- *   there is no auth user id.
+ *   there is no auth user id. When NetInfo reports **definitively offline** and no replica `db` is
+ *   passed, returns `{ ok: false, network_error }` immediately (no Supabase round-trip timeout).
  */
 export async function resolveMobilePhiSubjectUserContext(
   options?: ResolveMobilePhiSubjectUserContextOptions,
@@ -208,32 +209,33 @@ export async function resolveMobilePhiSubjectUserContext(
     return { ok: true, data: null };
   }
 
-  const client = getMobileSupabaseClient();
   const connected = await fetchMobileDeviceIsConnected();
+  const db = options?.powerSyncDatabase ?? null;
 
-  if (connected !== false) {
-    const remote = await resolvePhiSubjectUserContextFromSupabase(
-      client,
-      auth.data,
-    );
-    if (remote.ok || remote.error.code !== 'network_error') {
-      return remote;
-    }
-    const db = options?.powerSyncDatabase ?? null;
+  if (connected === false) {
     if (db) {
       return resolvePhiSubjectUserContextFromPowerSyncDb(db, auth.data);
     }
-    return remote;
+    return {
+      ok: false,
+      error: new PresetDataError(
+        'network_error',
+        'Could not verify your account scope while offline. Connect once while online so this device can sync, then try again.',
+        new TypeError('Network request failed'),
+      ),
+    };
   }
 
-  const db = options?.powerSyncDatabase ?? null;
-  if (db) {
-    return resolvePhiSubjectUserContextFromPowerSyncDb(db, auth.data);
-  }
-
+  const client = getMobileSupabaseClient();
   const remote = await resolvePhiSubjectUserContextFromSupabase(
     client,
     auth.data,
   );
+  if (remote.ok || remote.error.code !== 'network_error') {
+    return remote;
+  }
+  if (db) {
+    return resolvePhiSubjectUserContextFromPowerSyncDb(db, auth.data);
+  }
   return remote;
 }

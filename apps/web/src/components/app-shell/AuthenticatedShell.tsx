@@ -66,6 +66,9 @@ export type AuthenticatedShellProps = {
 /**
  * Authenticated app chrome: skip link, {@link NavigationShell} with primary nav, sign-out, and a
  * centered main column. Surfaces use CSS variables so light/dark tracks the theme toggle.
+ * Primary nav omits the patient-only Caretaker settings link until the web PHI subject context
+ * hook finishes resolving (or reports an error): `profileAppRole` is null while resolving, so we
+ * default to the stricter caretaker-visible set to avoid a brief incorrect link for caretakers.
  *
  * @param props - Props.
  * @returns Shell layout wrapping page content.
@@ -75,13 +78,21 @@ export function AuthenticatedShell({
   email,
 }: AuthenticatedShellProps) {
   const pathname = usePathname() ?? '/';
-  const { profileAppRole } = useWebPhiSubjectUserContext();
+  const {
+    profileAppRole,
+    loading: phiSubjectContextLoading,
+    errorMessage: phiSubjectContextError,
+  } = useWebPhiSubjectUserContext();
   const navItems = useMemo(() => {
-    if (profileAppRole === 'caretaker') {
+    const roleUnknownOrCaretaker =
+      phiSubjectContextLoading ||
+      phiSubjectContextError != null ||
+      profileAppRole === 'caretaker';
+    if (roleUnknownOrCaretaker) {
       return NAV_ITEMS.filter((item) => item.href !== '/settings/caretaker');
     }
     return NAV_ITEMS;
-  }, [profileAppRole]);
+  }, [profileAppRole, phiSubjectContextLoading, phiSubjectContextError]);
 
   return (
     <div className="flex min-h-screen flex-col">

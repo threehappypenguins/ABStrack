@@ -135,7 +135,7 @@ export function StandaloneHealthMarkersScreen() {
     }
 
     const userId = authUserId;
-    if (!userId) {
+    if (phiScopeError || !userId) {
       lastPresetUserIdRef.current = null;
       setPresets([]);
       setLoadError(null);
@@ -186,7 +186,14 @@ export function StandaloneHealthMarkersScreen() {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, phiScopeLoading, authUserId, supabase, presetRefetchTick]);
+  }, [
+    authLoading,
+    phiScopeLoading,
+    phiScopeError,
+    authUserId,
+    supabase,
+    presetRefetchTick,
+  ]);
 
   useEffect(() => {
     setFeedback(null);
