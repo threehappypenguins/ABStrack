@@ -242,6 +242,7 @@ export function EpisodeStartScreen() {
             replicationReady:
               powerSyncOfflineReplicaReadsEnabled(bridgeForTemplates),
           },
+          scopeUserId: phiSubjectUserId,
         });
         if (stale()) {
           return;

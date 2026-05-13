@@ -2,7 +2,9 @@
  * Mobile episode template operations: persistence only through `@abstrack/supabase` helpers.
  *
  * {@link getCurrentUserId} is re-exported from the shared preset offline auth helper (same
- * implementation as symptom / health-marker preset services).
+ * implementation as symptom / health-marker preset services). PowerSync SQLite reads use
+ * {@link resolveOfflinePresetListScopeUserId} so `episode_templates.user_id` (PHI subject) matches
+ * caretaker sessions; pass {@link EpisodeTemplateFetchOptions.scopeUserId} from UI when known.
  */
 import type {
   EpisodeTemplateInsert,
@@ -30,11 +32,24 @@ import {
   resolvePowerSyncDatabaseForOfflineRead,
   type PowerSyncOfflineReadContext,
 } from '../powersync/powersync-offline-read-bridge-snapshot';
-import { getMobileAuthUserIdForPresetListOffline } from '../phi-subject/resolve-offline-preset-list-scope-user-id';
+import {
+  getMobileAuthUserIdForPresetListOffline,
+  resolveOfflinePresetListScopeUserId,
+} from '../phi-subject/resolve-offline-preset-list-scope-user-id';
 import { getMobileSupabaseClient } from '../supabase-wiring';
 
 /** @see {@link getMobileAuthUserIdForPresetListOffline} */
 export const getCurrentUserId = getMobileAuthUserIdForPresetListOffline;
+
+type EpisodeTemplateFetchOptions = {
+  powerSyncOfflineRead?: PowerSyncOfflineReadContext | null;
+  /**
+   * Optional PHI row owner (`episode_templates.user_id`) for replica SQL. When omitted but a
+   * replica handle is used, {@link resolveOfflinePresetListScopeUserId} supplies the subject
+   * (caretaker → linked patient).
+   */
+  scopeUserId?: string | null;
+};
 
 /**
  * Lists episode templates with nested preset names, falling back to the PowerSync replica when
@@ -54,11 +69,12 @@ export const getCurrentUserId = getMobileAuthUserIdForPresetListOffline;
  * already known offline, the mapped local error is returned (not a masked Supabase network result).
  *
  * @param options.powerSyncOfflineRead - From `usePowerSyncBridgeState()` when calling from UI.
+ * @param options.scopeUserId - See {@link EpisodeTemplateFetchOptions.scopeUserId}.
  * @returns {@link PresetDataResult} of template rows or an error.
  */
-export async function fetchEpisodeTemplates(options?: {
-  powerSyncOfflineRead?: PowerSyncOfflineReadContext | null;
-}): Promise<PresetDataResult<EpisodeTemplateWithPresetsRow[]>> {
+export async function fetchEpisodeTemplates(
+  options?: EpisodeTemplateFetchOptions,
+): Promise<PresetDataResult<EpisodeTemplateWithPresetsRow[]>> {
   const client = getMobileSupabaseClient();
   const db = resolvePowerSyncDatabaseForOfflineRead(
     options?.powerSyncOfflineRead ?? null,
@@ -67,17 +83,20 @@ export async function fetchEpisodeTemplates(options?: {
   if (db) {
     const connected = await fetchMobileDeviceIsConnected();
     if (connected === false) {
-      const auth = await getCurrentUserId();
-      if (!auth.ok) {
-        return auth;
+      const scope = await resolveOfflinePresetListScopeUserId(
+        options?.scopeUserId ?? null,
+        db,
+      );
+      if (!scope.ok) {
+        return scope;
       }
-      if (auth.data == null) {
+      if (scope.data == null) {
         return listEpisodeTemplates(client);
       }
       try {
         const data = await listEpisodeTemplatesWithPresetsFromPowerSyncDb(
           db,
-          auth.data,
+          scope.data,
         );
         return { ok: true, data };
       } catch (caught) {
@@ -92,11 +111,14 @@ export async function fetchEpisodeTemplates(options?: {
     return remote;
   }
 
-  const auth = await getCurrentUserId();
-  if (!auth.ok || auth.data == null) {
+  const scope = await resolveOfflinePresetListScopeUserId(
+    options?.scopeUserId ?? null,
+    db,
+  );
+  if (!scope.ok || scope.data == null) {
     return remote;
   }
-  const userId = auth.data;
+  const userId = scope.data;
 
   if (!remote.ok && isPresetDataNetworkError(remote.error)) {
     if (!db) {
@@ -162,10 +184,11 @@ export async function fetchEpisodeTemplates(options?: {
  *
  * @param id - Template row id.
  * @param options.powerSyncOfflineRead - From `usePowerSyncBridgeState()` when calling from UI.
+ * @param options.scopeUserId - See {@link EpisodeTemplateFetchOptions.scopeUserId}.
  */
 export async function fetchEpisodeTemplateById(
   id: string,
-  options?: { powerSyncOfflineRead?: PowerSyncOfflineReadContext | null },
+  options?: EpisodeTemplateFetchOptions,
 ): Promise<PresetDataResult<EpisodeTemplateWithPresetsRow | null>> {
   const client = getMobileSupabaseClient();
   const db = resolvePowerSyncDatabaseForOfflineRead(
@@ -173,9 +196,12 @@ export async function fetchEpisodeTemplateById(
   );
   let userId: string | null = null;
   if (db) {
-    const auth = await getCurrentUserId();
-    if (auth.ok && auth.data != null) {
-      userId = auth.data;
+    const scope = await resolveOfflinePresetListScopeUserId(
+      options?.scopeUserId ?? null,
+      db,
+    );
+    if (scope.ok && scope.data != null) {
+      userId = scope.data;
       const connected = await fetchMobileDeviceIsConnected();
       if (connected === false) {
         try {
@@ -202,11 +228,14 @@ export async function fetchEpisodeTemplateById(
   }
 
   if (userId == null) {
-    const auth = await getCurrentUserId();
-    if (!auth.ok || auth.data == null) {
+    const scope = await resolveOfflinePresetListScopeUserId(
+      options?.scopeUserId ?? null,
+      db,
+    );
+    if (!scope.ok || scope.data == null) {
       return remote;
     }
-    userId = auth.data;
+    userId = scope.data;
   }
 
   if (!remote.ok && isPresetDataNetworkError(remote.error)) {

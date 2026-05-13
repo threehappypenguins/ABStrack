@@ -626,6 +626,20 @@ describe('mobile auth state sync', () => {
             })),
           };
         }
+        if (table === 'profiles') {
+          return {
+            select: jest.fn(() => ({
+              eq: jest.fn(() => ({
+                maybeSingle: jest.fn(() =>
+                  Promise.resolve({
+                    data: { app_role: 'patient' },
+                    error: null,
+                  }),
+                ),
+              })),
+            })),
+          };
+        }
         return {
           select: jest.fn(() => ({
             order: jest.fn(() => ({

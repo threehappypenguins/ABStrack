@@ -137,6 +137,7 @@ export function EpisodeTemplateEditorScreen() {
       const [tRes, sRes, mRes] = await Promise.all([
         fetchEpisodeTemplateById(templateId, {
           powerSyncOfflineRead: offlineRead,
+          scopeUserId: scopeUserIdAtStart,
         }),
         fetchSymptomPresets({
           powerSyncOfflineRead: offlineRead,
