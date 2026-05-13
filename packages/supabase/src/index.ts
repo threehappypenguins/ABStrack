@@ -49,6 +49,11 @@ export {
   toPresetDataError,
 } from './lib/preset-data-error.js';
 export type { PresetDataResult } from './lib/preset-data.js';
+export type { PhiSubjectUserContext } from './lib/phi-subject-user-id.js';
+export {
+  CARETAKER_MULTIPLE_ACTIVE_PATIENTS_MESSAGE,
+  resolvePhiSubjectUserContextFromSupabase,
+} from './lib/phi-subject-user-id.js';
 export {
   createHealthMarkerPreset,
   createPresetHealthMarker,

@@ -24,6 +24,7 @@ import {
   updatePresetHealthMarker,
 } from '@abstrack/supabase';
 import { fetchMobileDeviceIsConnected } from '../network/mobile-device-netinfo';
+import { resolveOfflinePresetListScopeUserId } from '../phi-subject/resolve-offline-preset-list-scope-user-id';
 import { listHealthMarkerPresetsForUserFromPowerSyncDb } from '../powersync/powersync-episode-flow-reads';
 import {
   clarifyNetworkErrorWhenReplicaUnavailable,
@@ -31,45 +32,9 @@ import {
   resolvePowerSyncDatabaseForOfflineRead,
   type PowerSyncOfflineReadContext,
 } from '../powersync/powersync-offline-read-bridge-snapshot';
-import {
-  getMobileAuthSessionSafe,
-  getMobileSupabaseClient,
-  isAuthSessionRecoveryFailure,
-  readPersistedMobileAuthUserId,
-} from '../supabase-wiring';
+import { getMobileSupabaseClient } from '../supabase-wiring';
 
-/**
- * Resolves the signed-in user id from the persisted session (offline-safe).
- * When {@link getMobileAuthSessionSafe} returns `auth_session_recovery_failed`, falls back to
- * {@link readPersistedMobileAuthUserId} (same as symptom presets) so offline replica reads survive
- * transient secure-store / recovery failures.
- *
- * @returns `{ ok: true, data: id }` when signed in; `{ ok: true, data: null }` when signed out with
- * no auth error; `{ ok: false, error }` when the session read failed.
- */
-export async function getCurrentUserId(): Promise<
-  PresetDataResult<string | null>
-> {
-  try {
-    const {
-      data: { session },
-      error,
-    } = await getMobileAuthSessionSafe();
-    if (!error) {
-      return { ok: true, data: session?.user?.id ?? null };
-    }
-    if (!isAuthSessionRecoveryFailure(error)) {
-      return { ok: false, error: toPresetDataError(error) };
-    }
-    const persistedId = await readPersistedMobileAuthUserId();
-    if (persistedId != null) {
-      return { ok: true, data: persistedId };
-    }
-    return { ok: false, error: toPresetDataError(error) };
-  } catch (caught) {
-    return { ok: false, error: toPresetDataError(caught) };
-  }
-}
+export { getMobileAuthUserIdForPresetListOffline as getCurrentUserId } from '../phi-subject/resolve-offline-preset-list-scope-user-id';
 
 /**
  * Lists the signed-in user’s health marker presets, falling back to the PowerSync replica when
@@ -87,9 +52,13 @@ export async function getCurrentUserId(): Promise<
  * network result).
  *
  * @param options.powerSyncOfflineRead - From `usePowerSyncBridgeState()` when calling from UI.
+ * @param options.scopeUserId - Optional PHI row owner for replica SQL. When omitted but a replica
+ *   handle is used, {@link resolveOfflinePresetListScopeUserId} supplies the subject. Otherwise
+ *   {@link getCurrentUserId} is used.
  */
 export async function fetchHealthMarkerPresets(options?: {
   powerSyncOfflineRead?: PowerSyncOfflineReadContext | null;
+  scopeUserId?: string | null;
 }): Promise<PresetDataResult<HealthMarkerPresetRow[]>> {
   const client = getMobileSupabaseClient();
   const db = resolvePowerSyncDatabaseForOfflineRead(
@@ -99,7 +68,10 @@ export async function fetchHealthMarkerPresets(options?: {
   if (db) {
     const connected = await fetchMobileDeviceIsConnected();
     if (connected === false) {
-      const auth = await getCurrentUserId();
+      const auth = await resolveOfflinePresetListScopeUserId(
+        options?.scopeUserId,
+        db,
+      );
       if (!auth.ok) {
         return auth;
       }
@@ -130,7 +102,10 @@ export async function fetchHealthMarkerPresets(options?: {
     const alt = clarifyNetworkErrorWhenReplicaUnavailable(remote.error);
     return alt ? { ok: false, error: alt } : remote;
   }
-  const auth = await getCurrentUserId();
+  const auth = await resolveOfflinePresetListScopeUserId(
+    options?.scopeUserId,
+    db,
+  );
   if (!auth.ok || auth.data == null) {
     return remote;
   }

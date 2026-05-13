@@ -109,6 +109,16 @@ describe('mobile auth state sync', () => {
   const invalidOrExpiredMessage =
     'This reset link is invalid or expired. Request a new one.';
 
+  beforeEach(() => {
+    // Cases that need a custom graph override `fetch` in the same test. Default stays a fast,
+    // resolved online snapshot so `App` bootstrap / `fetchMobileDeviceIsConnected` never stall CI.
+    jest.mocked(NetInfo.fetch).mockResolvedValue({
+      type: 'wifi',
+      isConnected: true,
+      isInternetReachable: true,
+    } as unknown as NetInfoState);
+  });
+
   /**
    * Supabase registers multiple `onAuthStateChange` listeners (e.g. App). Tests must
    * broadcast to every subscriber; a single stored callback misses App when Home overwrites it.
@@ -616,6 +626,20 @@ describe('mobile auth state sync', () => {
             })),
           };
         }
+        if (table === 'profiles') {
+          return {
+            select: jest.fn(() => ({
+              eq: jest.fn(() => ({
+                maybeSingle: jest.fn(() =>
+                  Promise.resolve({
+                    data: { app_role: 'patient' },
+                    error: null,
+                  }),
+                ),
+              })),
+            })),
+          };
+        }
         return {
           select: jest.fn(() => ({
             order: jest.fn(() => ({
@@ -629,18 +653,28 @@ describe('mobile auth state sync', () => {
     jest.mocked(SecureStore.getItemAsync).mockResolvedValue('false');
     jest.mocked(getMobileSupabaseClient).mockReturnValue(mockClient);
 
-    const { findByText, findByLabelText, findByTestId } = render(<App />);
+    /** `App` bootstrap awaits `Linking.getInitialURL()`; an unmocked native impl can hang past CI’s async test budget. */
+    const getInitialUrlSpy = jest
+      .spyOn(Linking, 'getInitialURL')
+      .mockResolvedValue(null);
+    try {
+      const { findByText, findByLabelText, findByTestId } = render(<App />);
 
-    expect(await findByText('Welcome to ABStrack')).toBeTruthy();
+      expect(await findByText('Welcome to ABStrack')).toBeTruthy();
 
-    fireEvent.press(await findByLabelText('Symptom presets'));
-    expect(await findByTestId('symptom-preset-list-screen')).toBeTruthy();
+      fireEvent.press(await findByLabelText('Symptom presets'));
+      expect(await findByTestId('symptom-preset-list-screen')).toBeTruthy();
 
-    fireEvent.press(await findByLabelText('Health marker presets'));
-    expect(await findByTestId('health-marker-preset-list-screen')).toBeTruthy();
+      fireEvent.press(await findByLabelText('Health marker presets'));
+      expect(
+        await findByTestId('health-marker-preset-list-screen'),
+      ).toBeTruthy();
 
-    fireEvent.press(await findByLabelText('Episode templates'));
-    expect(await findByTestId('episode-template-list-screen')).toBeTruthy();
+      fireEvent.press(await findByLabelText('Episode templates'));
+      expect(await findByTestId('episode-template-list-screen')).toBeTruthy();
+    } finally {
+      getInitialUrlSpy.mockRestore();
+    }
   });
 
   test('opens episode start shell from home episode CTA', async () => {
@@ -671,23 +705,48 @@ describe('mobile auth state sync', () => {
           },
         })),
       },
-      from: jest.fn(() => ({
-        select: jest.fn(() => ({
-          order: jest.fn(() => ({
-            order: jest.fn(() => Promise.resolve({ data: [], error: null })),
+      from: jest.fn((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: jest.fn(() => ({
+              eq: jest.fn(() => ({
+                maybeSingle: jest.fn(() =>
+                  Promise.resolve({
+                    data: { app_role: 'patient' },
+                    error: null,
+                  }),
+                ),
+              })),
+            })),
+          };
+        }
+        return {
+          select: jest.fn(() => ({
+            order: jest.fn(() => ({
+              order: jest.fn(() => Promise.resolve({ data: [], error: null })),
+            })),
           })),
-        })),
-      })),
+        };
+      }),
     } as unknown as AbstrackSupabaseClient;
 
     jest.mocked(SecureStore.getItemAsync).mockResolvedValue('false');
     jest.mocked(getMobileSupabaseClient).mockReturnValue(mockClient);
 
-    const { findByLabelText, findByTestId } = render(<App />);
+    /** Same as tab navigation test: cold `App` bootstrap must not await an unresolved `getInitialURL()`. */
+    const getInitialUrlSpy = jest
+      .spyOn(Linking, 'getInitialURL')
+      .mockResolvedValue(null);
+    try {
+      const { findByLabelText, findByTestId } = render(<App />);
 
-    expect(await findByTestId('episode-start-home-cta')).toBeTruthy();
-    fireEvent.press(await findByLabelText("I'm having an episode"));
-    expect(await findByTestId('episode-start-screen-title')).toBeTruthy();
+      // `episode-start-home-cta` is mounted while the active-episode probe runs; wait for the
+      // primary action that only appears after PHI + resume checks finish (see HomeScreen CTA).
+      fireEvent.press(await findByLabelText("I'm having an episode"));
+      expect(await findByTestId('episode-start-screen-title')).toBeTruthy();
+    } finally {
+      getInitialUrlSpy.mockRestore();
+    }
   });
 
   test('exposes the re-authentication toggle in settings', async () => {

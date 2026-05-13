@@ -10,20 +10,21 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { announce } from '@abstrack/ui/native';
 import { COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
+import type { HealthMarkerPresetRow, SymptomPresetRow } from '@abstrack/types';
 import {
   validateEpisodeTemplateName,
   validateEpisodeTemplatePresetPair,
 } from '@abstrack/types';
 import { useMobileAuthUserId } from '../../lib/auth/use-mobile-auth-user-id';
-import {
-  getCurrentUserId,
-  saveNewEpisodeTemplate,
-} from '../../lib/episode-templates/episode-template-service';
-import { fetchHealthMarkerPresets } from '../../lib/health-marker-presets/health-marker-preset-service';
+import { useMobilePhiSubjectUserContext } from '../../lib/auth/use-mobile-phi-subject-user-context';
 import {
   powerSyncOfflineReplicaReadsEnabled,
+  powerSyncReplicaSqliteReady,
   usePowerSyncBridgeState,
 } from '../../lib/powersync/PowerSyncSessionBridge';
+import { resolveMobilePhiSubjectUserContext } from '../../lib/phi-subject/resolve-mobile-phi-subject-user-context';
+import { saveNewEpisodeTemplate } from '../../lib/episode-templates/episode-template-service';
+import { fetchHealthMarkerPresets } from '../../lib/health-marker-presets/health-marker-preset-service';
 import { fetchSymptomPresets } from '../../lib/symptom-presets/symptom-preset-service';
 import { PresetOptionSheetField } from '../components/episode-templates/PresetOptionSheetField';
 import { useUnsavedChangesBeforeRemove } from '../hooks/useUnsavedChangesBeforeRemove';
@@ -49,6 +50,24 @@ export function EpisodeTemplateCreateScreen() {
   const navigation = useNavigation<CreateNav>();
   const { colors } = useAppTheme();
   const viewerUserId = useMobileAuthUserId();
+  const viewerUserIdRef = useRef(viewerUserId);
+  viewerUserIdRef.current = viewerUserId;
+
+  const {
+    phiSubjectUserId,
+    loading: phiSubjectContextLoading,
+    errorMessage: phiSubjectContextError,
+  } = useMobilePhiSubjectUserContext();
+  const phiSubjectUserIdRef = useRef<string | null>(null);
+  const phiLoadingRef = useRef(false);
+  const phiErrorRef = useRef<string | null>(null);
+  phiSubjectUserIdRef.current = phiSubjectUserId;
+  phiLoadingRef.current = phiSubjectContextLoading;
+  phiErrorRef.current = phiSubjectContextError;
+
+  /** Dedupes preset-list loads: updated on each completed attempt (success or failure) for the scoped fetch key. */
+  const lastPresetFetchKeyRef = useRef<string | null>(null);
+
   const psBridge = usePowerSyncBridgeState();
   const replicaMirrorReads = powerSyncOfflineReplicaReadsEnabled(psBridge);
 
@@ -93,26 +112,47 @@ export function EpisodeTemplateCreateScreen() {
   const loadPresetLists = useCallback(async (signal?: AbortSignal) => {
     setListsLoading(true);
     setListsError(null);
+    // Snapshot so async completion cannot write a newer PHI key than the scope this request used.
+    const viewerAtStart = viewerUserIdRef.current;
+    const scopeUserIdAtStart = phiSubjectUserIdRef.current;
+    const phiLoadingAtStart = phiLoadingRef.current;
+    const phiErrorAtStart = phiErrorRef.current;
+    const fetchKeyForThisRun = `${viewerAtStart ?? ''}|${scopeUserIdAtStart ?? ''}|${phiLoadingAtStart ? 'L' : '-'}|${phiErrorAtStart ?? ''}`;
+
     const offlineRead = offlineReadRef.current;
     const [sRes, mRes] = await Promise.all([
-      fetchSymptomPresets({ powerSyncOfflineRead: offlineRead }),
-      fetchHealthMarkerPresets({ powerSyncOfflineRead: offlineRead }),
+      fetchSymptomPresets({
+        powerSyncOfflineRead: offlineRead,
+        scopeUserId: scopeUserIdAtStart,
+      }),
+      fetchHealthMarkerPresets({
+        powerSyncOfflineRead: offlineRead,
+        scopeUserId: scopeUserIdAtStart,
+      }),
     ]);
     if (signal?.aborted) {
       return;
     }
     if (!sRes.ok) {
+      lastPresetFetchKeyRef.current = fetchKeyForThisRun;
       setListsError(sRes.error.message);
       setListsLoading(false);
       return;
     }
     if (!mRes.ok) {
+      lastPresetFetchKeyRef.current = fetchKeyForThisRun;
       setListsError(mRes.error.message);
       setListsLoading(false);
       return;
     }
-    const sList = sRes.data.map((r) => ({ id: r.id, name: r.name }));
-    const mList = mRes.data.map((r) => ({ id: r.id, name: r.name }));
+    const sList = sRes.data.map((r: SymptomPresetRow) => ({
+      id: r.id,
+      name: r.name,
+    }));
+    const mList = mRes.data.map((r: HealthMarkerPresetRow) => ({
+      id: r.id,
+      name: r.name,
+    }));
     const initSymptom = sList.length === 1 ? sList[0].id : null;
     const initMarker = mList.length === 1 ? mList[0].id : null;
     setSymptoms(sList);
@@ -124,6 +164,7 @@ export function EpisodeTemplateCreateScreen() {
       symptomId: initSymptom,
       markerId: initMarker,
     });
+    lastPresetFetchKeyRef.current = fetchKeyForThisRun;
     setListsLoading(false);
   }, []);
 
@@ -131,9 +172,14 @@ export function EpisodeTemplateCreateScreen() {
   loadPresetListsRef.current = loadPresetLists;
 
   /**
-   * Loads preset picklists when the signed-in user id changes — not only on mount — so an account
-   * switch cannot leave the previous user's symptom/marker names visible. Still intentionally
-   * independent of `replicaMirrorReads` (see retry effect below).
+   * Loads preset picklists when the signed-in user id **or PHI scope** changes — not only on mount
+   * — so an account switch cannot leave the previous user's symptom/marker names visible, and a
+   * caretaker gets patient-scoped replica lists once {@link useMobilePhiSubjectUserContext} resolves.
+   * Intentionally omits `listsLoading` / `listsError`: those would re-run this effect after every
+   * failed fetch while `lastPresetFetchKeyRef` stayed null, causing an infinite retry loop; failures
+   * now record the same fetch key as successes. Still intentionally independent of
+   * `replicaMirrorReads` (see retry effect below). Use the replica-ready effect or an account/PHI
+   * change for recovery.
    *
    * `useMobileAuthUserId` starts as `null` and resolves asynchronously; `null → userId` is
    * hydration, not a switch — do not clear the form or refetch when preset lists already loaded
@@ -143,7 +189,14 @@ export function EpisodeTemplateCreateScreen() {
     const next = viewerUserId;
     const prev = prevViewerUserIdRef.current;
 
-    if (prev !== undefined && prev === next) {
+    const presetFetchKey = `${next ?? ''}|${phiSubjectUserId ?? ''}|${phiSubjectContextLoading ? 'L' : '-'}|${phiSubjectContextError ?? ''}`;
+
+    if (
+      prev !== undefined &&
+      prev === next &&
+      lastPresetFetchKeyRef.current != null &&
+      lastPresetFetchKeyRef.current === presetFetchKey
+    ) {
       return;
     }
 
@@ -152,6 +205,7 @@ export function EpisodeTemplateCreateScreen() {
 
     if (isAuthHydration && !listsLoading && listsError == null) {
       prevViewerUserIdRef.current = next;
+      lastPresetFetchKeyRef.current = presetFetchKey;
       return;
     }
 
@@ -161,6 +215,7 @@ export function EpisodeTemplateCreateScreen() {
     prevViewerUserIdRef.current = next;
 
     if (switchedAccount) {
+      lastPresetFetchKeyRef.current = null;
       setName('');
       setSymptomId(null);
       setMarkerId(null);
@@ -182,7 +237,12 @@ export function EpisodeTemplateCreateScreen() {
     return () => {
       ac.abort();
     };
-  }, [viewerUserId, listsLoading, listsError]);
+  }, [
+    viewerUserId,
+    phiSubjectUserId,
+    phiSubjectContextLoading,
+    phiSubjectContextError,
+  ]);
 
   useEffect(() => {
     if (!listsError) {
@@ -267,17 +327,21 @@ export function EpisodeTemplateCreateScreen() {
     const hid = markerId as string;
     setBusy(true);
     try {
-      const authResult = await getCurrentUserId();
-      if (!authResult.ok) {
-        announce(authResult.error.message);
+      const phiRes = await resolveMobilePhiSubjectUserContext({
+        powerSyncDatabase: powerSyncReplicaSqliteReady(psBridge)
+          ? psBridge.database
+          : null,
+      });
+      if (!phiRes.ok) {
+        announce(phiRes.error.message);
         return;
       }
-      if (authResult.data === null) {
+      if (phiRes.data == null) {
         announce('You need to be signed in to create a template.');
         return;
       }
       const result = await saveNewEpisodeTemplate({
-        user_id: authResult.data,
+        user_id: phiRes.data.phiSubjectUserId,
         name: nameCheck.name,
         symptom_preset_id: sid,
         health_marker_preset_id: hid,

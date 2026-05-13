@@ -17,7 +17,10 @@ import type { EpisodeRow } from '@abstrack/types';
 import { announce } from '@abstrack/ui/native';
 
 import { clearSymptomPromptSession } from '../../lib/episodes/symptom-prompt-session-store';
-import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
+import {
+  getMobileAuthSessionSafe,
+  readPersistedMobileAuthUserId,
+} from '../../lib/supabase-wiring';
 import { AppThemeProvider } from '../theme/AppThemeContext';
 import { EpisodesScreen } from './EpisodesScreen';
 
@@ -27,21 +30,61 @@ jest.mock('@react-navigation/native', () => {
   return {
     ...actual,
     useNavigation: jest.fn(),
+    /**
+     * Approximates `useFocusEffect` for mounted screens: re-invoke when the memoized callback
+     * identity changes (`[fn]`, same as `@react-navigation/core` depending on `effect`).
+     * Unlike production, we do **not** run the prior callback’s returned cleanup on each `fn`
+     * change — that simulates blur and (for `EpisodesManagementPanel`) bumps `loadGenRef`, which
+     * strands `loading` when PHI churn recreates `loadInitial` every render. A second effect
+     * runs the latest inner cleanup only on unmount (blur / listener teardown).
+     */
     useFocusEffect: (fn: () => void | (() => void)) => {
+      const fnRef = ReactNav.useRef(fn);
+      /** @type {{ current: (() => void) | void | undefined }} */
+      const cleanupRef = ReactNav.useRef(undefined);
+      fnRef.current = fn;
+
       ReactNav.useEffect(() => {
-        const cleanup = fn();
-        return typeof cleanup === 'function' ? cleanup : undefined;
+        const destroy = fnRef.current();
+        cleanupRef.current =
+          typeof destroy === 'function' ? destroy : undefined;
       }, [fn]);
+
+      ReactNav.useEffect(() => {
+        return () => {
+          if (typeof cleanupRef.current === 'function') {
+            cleanupRef.current();
+          }
+          cleanupRef.current = undefined;
+        };
+      }, []);
     },
   };
 });
 
-jest.mock('@abstrack/supabase', () => ({
-  cancelActiveEpisodeById: jest.fn(),
-  deleteEpisodeById: jest.fn(),
-  getActiveEpisodeForUser: jest.fn(),
-  listCompletedEpisodesForUser: jest.fn(),
-}));
+jest.mock('@abstrack/supabase', () => {
+  const actual =
+    jest.requireActual<typeof import('@abstrack/supabase')>(
+      '@abstrack/supabase',
+    );
+  return {
+    ...actual,
+    cancelActiveEpisodeById: jest.fn(),
+    deleteEpisodeById: jest.fn(),
+    getActiveEpisodeForUser: jest.fn(),
+    listCompletedEpisodesForUser: jest.fn(),
+    resolvePhiSubjectUserContextFromSupabase: jest.fn(
+      async (_client: unknown, authUserId: string) => ({
+        ok: true as const,
+        data: {
+          authUserId,
+          phiSubjectUserId: authUserId,
+          profileAppRole: 'patient' as const,
+        },
+      }),
+    ),
+  };
+});
 
 jest.mock('@abstrack/ui/native', () => ({
   announce: jest.fn().mockResolvedValue(undefined),
@@ -51,15 +94,45 @@ jest.mock('../../lib/episodes/symptom-prompt-session-store', () => ({
   clearSymptomPromptSession: jest.fn(),
 }));
 
-jest.mock('../../lib/supabase-wiring-core', () => {
-  const actual = jest.requireActual(
-    '../../lib/supabase-wiring-core',
-  ) as typeof import('../../lib/supabase-wiring-core');
-  return {
-    ...actual,
-    getMobileSupabaseClient: jest.fn(),
-  };
-});
+/**
+ * Mock the wiring barrel so {@link useMobileAuthUserId} and {@link EpisodesManagementPanel}’s
+ * `getMobileAuthSessionSafe` use the same controllable session (not the real ChunkingSecureStore path).
+ */
+jest.mock('../../lib/supabase-wiring', () => ({
+  __esModule: true,
+  getMobileSupabaseClient: jest.fn(() => ({
+    mockClient: true,
+    auth: {
+      storageKey: 'sb-test-auth-token',
+      getUser: jest.fn(async () => ({
+        data: { user: { id: 'user-1' } },
+      })),
+      getSession: jest.fn(async () => ({
+        data: { session: { user: { id: 'user-1' } } },
+      })),
+    },
+  })),
+  getMobileAuthSessionSafe: jest.fn(async () => ({
+    data: { session: { user: { id: 'user-1' } } },
+    error: null,
+  })),
+  readPersistedMobileAuthUserId: jest.fn(async () => 'user-1'),
+  mobileAuthStorage: {
+    getItem: jest.fn(async () => null),
+    setItem: jest.fn(async () => undefined),
+    removeItem: jest.fn(async () => undefined),
+  },
+  createMobileSupabaseClient: jest.fn(() => {
+    throw new Error(
+      'createMobileSupabaseClient not used in EpisodesScreen tests',
+    );
+  }),
+}));
+
+jest.mock('../../lib/network/mobile-device-netinfo', () => ({
+  __esModule: true,
+  fetchMobileDeviceIsConnected: jest.fn(async () => true),
+}));
 
 function makeEpisodeRow(overrides: Partial<EpisodeRow> = {}): EpisodeRow {
   return {
@@ -90,24 +163,17 @@ function renderEpisodesScreen() {
 
 describe('EpisodesScreen', () => {
   const mockNavigate = jest.fn();
-  const mockGetSession = jest.fn();
 
   beforeEach(() => {
     jest.clearAllMocks();
 
-    jest.mocked(useNavigation).mockReturnValue({
-      navigate: mockNavigate,
+    jest.mocked(getMobileAuthSessionSafe).mockResolvedValue({
+      data: { session: { user: { id: 'user-1' } } },
+      error: null,
     } as never);
 
-    // `mockReturnValue` in individual tests must not outrank the default signed-in session.
-    mockGetSession.mockReset();
-    mockGetSession.mockResolvedValue({
-      data: { session: { user: { id: 'user-1' } } },
-    });
-    jest.mocked(getMobileSupabaseClient).mockReturnValue({
-      auth: {
-        getSession: mockGetSession,
-      },
+    jest.mocked(useNavigation).mockReturnValue({
+      navigate: mockNavigate,
     } as never);
 
     jest.mocked(getActiveEpisodeForUser).mockResolvedValue({
@@ -129,22 +195,26 @@ describe('EpisodesScreen', () => {
   });
 
   it('shows loading text until load finishes', async () => {
-    let resolveGetSession!: (v: {
+    let resolveSession!: (v: {
       data: { session: { user: { id: string } } | null };
+      error: null;
     }) => void;
-    const getSessionPromise = new Promise<{
+    const sessionPromise = new Promise<{
       data: { session: { user: { id: string } } | null };
+      error: null;
     }>((resolve) => {
-      resolveGetSession = resolve;
+      resolveSession = resolve;
     });
-    mockGetSession.mockReturnValue(getSessionPromise);
+    jest
+      .mocked(getMobileAuthSessionSafe)
+      .mockReturnValue(sessionPromise as never);
 
     renderEpisodesScreen();
 
     expect(screen.getByText('Loading…')).toBeTruthy();
 
     await act(async () => {
-      resolveGetSession({ data: { session: null } });
+      resolveSession({ data: { session: null }, error: null });
     });
 
     await waitFor(() => {
@@ -155,7 +225,38 @@ describe('EpisodesScreen', () => {
   });
 
   it('shows empty signed-out-style copy when user is null', async () => {
-    mockGetSession.mockResolvedValue({ data: { session: null } });
+    jest.mocked(getMobileAuthSessionSafe).mockResolvedValue({
+      data: { session: null },
+      error: null,
+    } as never);
+
+    renderEpisodesScreen();
+
+    expect(await screen.findByText('No episode in progress.')).toBeTruthy();
+    expect(
+      await screen.findByText('No ended episodes in your history yet.'),
+    ).toBeTruthy();
+  });
+
+  /**
+   * Regression: {@link EpisodesManagementPanel} treats a null session from {@link getMobileAuthSessionSafe}
+   * like “no user” for list loads. When GoTrue/`getSession` fails with `auth_session_recovery_failed`
+   * and {@link readPersistedMobileAuthUserId} has no fallback id, PHI resolution also fails — the
+   * panel must still land on the same empty signed-out-style copy (not a stuck spinner).
+   */
+  it('shows empty signed-out-style copy when session recovery fails and persisted auth id is empty', async () => {
+    const recoveryError = Object.assign(
+      new Error(
+        "We couldn't verify your sign-in. Try again in a moment, or sign out and sign back in.",
+      ),
+      { code: 'auth_session_recovery_failed' as const },
+    );
+
+    jest.mocked(getMobileAuthSessionSafe).mockResolvedValue({
+      data: { session: null },
+      error: recoveryError,
+    } as never);
+    jest.mocked(readPersistedMobileAuthUserId).mockResolvedValue(null);
 
     renderEpisodesScreen();
 
@@ -179,17 +280,6 @@ describe('EpisodesScreen', () => {
 
     expect(await screen.findByText('Active query failed')).toBeTruthy();
     expect(await screen.findByText('Recent query failed')).toBeTruthy();
-  });
-
-  it('treats rejected getSession like no session when storage fallback is empty', async () => {
-    mockGetSession.mockRejectedValue(new Error('network'));
-
-    renderEpisodesScreen();
-
-    expect(await screen.findByText('No episode in progress.')).toBeTruthy();
-    expect(
-      await screen.findByText('No ended episodes in your history yet.'),
-    ).toBeTruthy();
   });
 
   it('navigates to SymptomPrompt with resume when Resume is pressed', async () => {

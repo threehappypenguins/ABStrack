@@ -10,6 +10,7 @@ import {
   createEpisodeTemplate,
   listHealthMarkerPresets,
   listSymptomPresets,
+  resolvePhiSubjectUserContextFromSupabase,
 } from '@abstrack/supabase';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
@@ -22,6 +23,10 @@ import { ConfirmDialog } from '../symptom-presets/ConfirmDialog';
 
 /**
  * Form to create an episode template: display name plus paired symptom and health marker presets.
+ *
+ * Preset picklists load after {@link resolvePhiSubjectUserContextFromSupabase}; health marker options
+ * call {@link listHealthMarkerPresets} with `scopeUserId` so the dropdown matches the PHI subject
+ * used when saving the template.
  *
  * @returns Create episode template page content.
  */
@@ -119,9 +124,26 @@ export function EpisodeTemplateCreateForm() {
       setListsLoading(true);
       setListsError(null);
       const supabase = createBrowserClient();
+      const phiRes = await resolvePhiSubjectUserContextFromSupabase(
+        supabase,
+        session.user.id,
+      );
+      if (cancelled) {
+        return;
+      }
+      if (!phiRes.ok || phiRes.data == null) {
+        setListsError(
+          phiRes.ok
+            ? 'You must be signed in to load presets for this account.'
+            : phiRes.error.message,
+        );
+        setListsLoading(false);
+        return;
+      }
+      const scopeUserId = phiRes.data.phiSubjectUserId;
       const [symRes, hmRes] = await Promise.all([
         listSymptomPresets(supabase),
-        listHealthMarkerPresets(supabase),
+        listHealthMarkerPresets(supabase, { scopeUserId }),
       ]);
       if (cancelled) {
         return;
@@ -169,8 +191,21 @@ export function EpisodeTemplateCreateForm() {
     setSaving(true);
     setError(null);
     const supabase = createBrowserClient();
+    const phiRes = await resolvePhiSubjectUserContextFromSupabase(
+      supabase,
+      session.user.id,
+    );
+    if (!phiRes.ok || phiRes.data == null) {
+      setSaving(false);
+      const msg = phiRes.ok
+        ? 'You must be signed in to save an episode template.'
+        : phiRes.error.message;
+      setError(msg);
+      announce(msg, { politeness: 'assertive' });
+      return;
+    }
     const result = await createEpisodeTemplate(supabase, {
-      user_id: session.user.id,
+      user_id: phiRes.data.phiSubjectUserId,
       name: nameCheck.name,
       symptom_preset_id: symptomPresetId,
       health_marker_preset_id: healthMarkerPresetId,

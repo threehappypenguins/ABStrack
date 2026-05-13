@@ -6,6 +6,7 @@ import {
 import type { PowerSyncDatabase } from '@powersync/react-native';
 
 import { fetchMobileDeviceIsConnected } from '../network/mobile-device-netinfo';
+import * as mobilePhiSubjectUserContext from '../phi-subject/resolve-mobile-phi-subject-user-context';
 import { getMobileAuthSessionSafe } from '../supabase-wiring';
 import * as pendingCrypto from './device-pending-media-crypto';
 import {
@@ -21,6 +22,17 @@ jest.mock('@abstrack/supabase', () => ({
     '@abstrack/supabase',
   ),
   uploadConfirmedEpisodeMedia: jest.fn(),
+  /** Worker resolves PHI before selecting queue rows; the test Supabase stub cannot load profiles. */
+  resolvePhiSubjectUserContextFromSupabase: jest.fn(
+    async (_client: unknown, authUserId: string) => ({
+      ok: true as const,
+      data: {
+        authUserId,
+        phiSubjectUserId: authUserId,
+        profileAppRole: 'patient' as const,
+      },
+    }),
+  ),
 }));
 
 jest.mock('../supabase-wiring', () => ({
@@ -290,6 +302,58 @@ describe('runPendingEpisodeMediaUploadWorker', () => {
     const out = await runPendingEpisodeMediaUploadWorker(db, {});
     expect(out).toEqual({ processed: 0, failures: 0 });
     expect(mockUploadConfirmedEpisodeMedia).not.toHaveBeenCalled();
+  });
+
+  it('treats PHI scope resolution error as a failed worker run (warn + failures count)', async () => {
+    const phiSpy = jest
+      .spyOn(mobilePhiSubjectUserContext, 'resolveMobilePhiSubjectUserContext')
+      .mockResolvedValue({
+        ok: false,
+        error: new PresetDataError(
+          'validation_error',
+          'Your caretaker account is not linked to a patient yet.',
+        ),
+      });
+    const warnSpy = jest
+      .spyOn(console, 'warn')
+      .mockImplementation(() => undefined);
+    try {
+      const row = createQueueRow();
+      const db = createWorkerDbMock([row]) as unknown as PowerSyncDatabase;
+      const out = await runPendingEpisodeMediaUploadWorker(db, {});
+      expect(out).toEqual({ processed: 0, failures: 1 });
+      expect(mockUploadConfirmedEpisodeMedia).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledWith(
+        '[PendingEpisodeMediaUploadWorker] PHI scope resolution failed; pending episode media drain skipped.',
+        expect.objectContaining({
+          code: 'validation_error',
+          message: 'Your caretaker account is not linked to a patient yet.',
+        }),
+      );
+    } finally {
+      phiSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('returns idle counts when PHI scope is ok but unauthenticated (data null)', async () => {
+    const phiSpy = jest
+      .spyOn(mobilePhiSubjectUserContext, 'resolveMobilePhiSubjectUserContext')
+      .mockResolvedValue({ ok: true, data: null });
+    const warnSpy = jest
+      .spyOn(console, 'warn')
+      .mockImplementation(() => undefined);
+    try {
+      const row = createQueueRow();
+      const db = createWorkerDbMock([row]) as unknown as PowerSyncDatabase;
+      const out = await runPendingEpisodeMediaUploadWorker(db, {});
+      expect(out).toEqual({ processed: 0, failures: 0 });
+      expect(mockUploadConfirmedEpisodeMedia).not.toHaveBeenCalled();
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      phiSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
   });
 
   it('skips rows still inside exponential backoff window', async () => {

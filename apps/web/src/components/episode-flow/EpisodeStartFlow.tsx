@@ -18,6 +18,7 @@ import { buildResumeEpisodeHref } from '@/lib/episode-flow/resume-episode-href';
 import { clearSymptomPromptSession } from '@/lib/episode-flow/symptom-prompt-session-store';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
 import { useAuth } from '@/lib/auth-provider';
+import { useWebPhiSubjectUserContext } from '@/lib/patient/use-web-phi-subject-user-context';
 import { PageLoading } from '@/components/page-states/PageLoading';
 
 /**
@@ -30,6 +31,11 @@ import { PageLoading } from '@/components/page-states/PageLoading';
 export function EpisodeStartFlow() {
   const router = useRouter();
   const { session, loading: authLoading } = useAuth();
+  const {
+    phiSubjectUserId,
+    loading: phiLoading,
+    errorMessage: phiScopeError,
+  } = useWebPhiSubjectUserContext();
   const { announce } = useAnnounce();
   const groupLegendId = useId();
   /** Prevents concurrent or repeated `createEpisode` on the single-template auto-start path when `refresh` runs more than once before navigation. */
@@ -50,7 +56,7 @@ export function EpisodeStartFlow() {
   const [resolvingActiveBlock, setResolvingActiveBlock] = useState(false);
 
   const refresh = useCallback(async (): Promise<void> => {
-    const userId = session?.user?.id;
+    const userId = phiSubjectUserId;
     if (!userId) {
       return;
     }
@@ -131,17 +137,37 @@ export function EpisodeStartFlow() {
       }
       return null;
     });
-  }, [announce, router, session?.user?.id]);
+  }, [announce, phiSubjectUserId, router, session?.user?.id]);
 
   useEffect(() => {
-    if (authLoading || !session?.user?.id) {
+    if (authLoading || phiLoading || !session?.user?.id) {
+      return;
+    }
+    if (phiScopeError) {
+      setLoadState('error');
+      setLoadError(phiScopeError);
+      return;
+    }
+    if (!phiSubjectUserId) {
       return;
     }
     void refresh();
-  }, [authLoading, session?.user?.id, refresh]);
+  }, [
+    authLoading,
+    phiLoading,
+    phiScopeError,
+    phiSubjectUserId,
+    refresh,
+    session?.user?.id,
+  ]);
 
   const onEndActiveEpisodeAndStartNew = useCallback(async (): Promise<void> => {
-    if (!session?.user?.id || !blockingActiveEpisode || resolvingActiveBlock) {
+    if (
+      !session?.user?.id ||
+      !phiSubjectUserId ||
+      !blockingActiveEpisode ||
+      resolvingActiveBlock
+    ) {
       return;
     }
     setResolvingActiveBlock(true);
@@ -164,7 +190,10 @@ export function EpisodeStartFlow() {
       if (!end.data.didEnd) {
         return;
       }
-      const verify = await getActiveEpisodeForUser(supabase, session.user.id);
+      const verify = await getActiveEpisodeForUser(
+        supabase,
+        blockingActiveEpisode.user_id,
+      );
       if (!verify.ok) {
         setSubmitError(verify.error.message);
         return;
@@ -184,13 +213,19 @@ export function EpisodeStartFlow() {
   }, [
     announce,
     blockingActiveEpisode,
+    phiSubjectUserId,
     refresh,
     resolvingActiveBlock,
     session?.user?.id,
   ]);
 
   const onSubmit = async (): Promise<void> => {
-    if (!session?.user?.id || selectedId === null || submitting) {
+    if (
+      !session?.user?.id ||
+      !phiSubjectUserId ||
+      selectedId === null ||
+      submitting
+    ) {
       return;
     }
     const template = rows.find((r) => r.id === selectedId);
@@ -203,7 +238,7 @@ export function EpisodeStartFlow() {
     try {
       const supabase = createBrowserClient();
       const result = await createEpisode(supabase, {
-        user_id: session.user.id,
+        user_id: phiSubjectUserId,
         started_at: new Date().toISOString(),
         symptom_preset_id: template.symptom_preset_id,
         health_marker_preset_id: template.health_marker_preset_id,
@@ -225,7 +260,7 @@ export function EpisodeStartFlow() {
     }
   };
 
-  if (authLoading) {
+  if (authLoading || phiLoading) {
     return <PageLoading title="Start an episode" />;
   }
 

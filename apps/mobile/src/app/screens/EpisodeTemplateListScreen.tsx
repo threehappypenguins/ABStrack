@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { EpisodeTemplateWithPresetsRow } from '@abstrack/types';
 import { announce } from '@abstrack/ui/native';
 import { COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
+import { useMobilePhiSubjectUserContext } from '../../lib/auth/use-mobile-phi-subject-user-context';
 import {
   fetchEpisodeTemplates,
   getCurrentUserId,
@@ -36,6 +37,11 @@ type ListNav = NativeStackNavigationProp<
 export function EpisodeTemplateListScreen() {
   const navigation = useNavigation<ListNav>();
   const { colors } = useAppTheme();
+  const {
+    phiSubjectUserId,
+    loading: phiSubjectContextLoading,
+    errorMessage: phiSubjectContextError,
+  } = useMobilePhiSubjectUserContext();
   const psBridge = usePowerSyncBridgeState();
   const replicaMirrorReads = powerSyncOfflineReplicaReadsEnabled(psBridge);
   const [status, setStatus] = useState<'loading' | 'error' | 'ready'>(
@@ -66,11 +72,20 @@ export function EpisodeTemplateListScreen() {
         setStatus('error');
         return;
       }
+      if (phiSubjectContextLoading) {
+        return;
+      }
+      if (phiSubjectContextError) {
+        setErrorMessage(phiSubjectContextError);
+        setStatus('error');
+        return;
+      }
       const result = await fetchEpisodeTemplates({
         powerSyncOfflineRead: {
           database: psBridge.database,
           replicationReady: replicaMirrorReads,
         },
+        scopeUserId: phiSubjectUserId,
       });
       if (stale()) {
         return;
@@ -85,7 +100,13 @@ export function EpisodeTemplateListScreen() {
     },
     // Only re-run when offline template reads could change shape — not the whole bridge
     // (`syncConnecting` / `syncError` / first-sync flags would reset list state on every transition).
-    [psBridge.database, replicaMirrorReads],
+    [
+      psBridge.database,
+      replicaMirrorReads,
+      phiSubjectUserId,
+      phiSubjectContextLoading,
+      phiSubjectContextError,
+    ],
   );
 
   useFocusEffect(

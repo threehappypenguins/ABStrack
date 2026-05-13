@@ -247,6 +247,16 @@ jest.mock('@abstrack/supabase', () => {
     listFoodDiaryEntriesForEpisode: jest.fn(),
     listPresetHealthMarkersForPreset: jest.fn(),
     updateFoodDiaryEntry: jest.fn(),
+    resolvePhiSubjectUserContextFromSupabase: jest.fn(
+      async (_client: unknown, authUserId: string) => ({
+        ok: true as const,
+        data: {
+          authUserId,
+          phiSubjectUserId: authUserId,
+          profileAppRole: 'patient' as const,
+        },
+      }),
+    ),
   };
 });
 

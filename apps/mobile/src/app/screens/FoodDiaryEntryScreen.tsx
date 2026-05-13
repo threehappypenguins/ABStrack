@@ -22,6 +22,11 @@ import {
   localDateTimeToIso,
   localTimeFromDate,
 } from '../../lib/food-diary/date-time';
+import { resolveMobilePhiSubjectUserContext } from '../../lib/phi-subject/resolve-mobile-phi-subject-user-context';
+import {
+  powerSyncReplicaSqliteReady,
+  usePowerSyncBridgeState,
+} from '../../lib/powersync/PowerSyncSessionBridge';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { ScreenShell } from '../components/ScreenShell';
 import type { MainStackParamList } from '../navigation/types';
@@ -42,11 +47,24 @@ type LastSavedSummary = {
  * confirmation and an action to start a fresh entry. Episode-linked saves
  * keep the form visible with inline success text.
  *
+ * When {@link resolveMobilePhiSubjectUserContext} returns `{ ok: true, data: null }` after
+ * the save handler has already confirmed a Supabase `User` via `getUser()`, the user-facing copy
+ * describes **scope / sync**, not sign-in. That combination is uncommon: `getUser()` usually performs
+ * a server round-trip first, so a fully offline “tap save before anything synced” path typically stops
+ * earlier. Reachable cases include the PHI resolver’s local session read yielding no user id while
+ * `getUser()` still returns a user (transient mismatch), or PostgREST failing with a network error
+ * and the PowerSync replica lacking `profiles` / `caretaker_access` rows needed to infer scope yet.
+ *
  * @returns Form for meal tag, log timestamp, and free-text food note.
  */
 export function FoodDiaryEntryScreen() {
   const route = useRoute<FoodDiaryEntryRoute>();
   const { colors } = useAppTheme();
+  const psBridge = usePowerSyncBridgeState();
+  const powerSyncDb = useMemo(
+    () => (powerSyncReplicaSqliteReady(psBridge) ? psBridge.database : null),
+    [psBridge],
+  );
   const episodeId = route.params?.episodeId ?? null;
   const isStandalone = episodeId == null;
   const supabase = useMemo(() => getMobileSupabaseClient(), []);
@@ -133,11 +151,34 @@ export function FoodDiaryEntryScreen() {
     setErrorMessage(null);
     setSuccessMessage(null);
 
+    // Validates the session with the server when possible (not a local-only read); offline taps
+    // usually fail here before PHI resolution runs.
     const {
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) {
       const message = 'You must be signed in to save a food diary entry.';
+      setErrorMessage(message);
+      await announce(message, { politeness: 'assertive' });
+      setSaving(false);
+      return;
+    }
+
+    const phiRes = await resolveMobilePhiSubjectUserContext({
+      powerSyncDatabase: powerSyncDb,
+    });
+    if (!phiRes.ok) {
+      const message = phiRes.error.message;
+      setErrorMessage(message);
+      await announce(message, { politeness: 'assertive' });
+      setSaving(false);
+      return;
+    }
+    // Null with a user from getUser() means the PHI resolver could not derive scope yet (see
+    // screen JSDoc); it is not the usual strictly-offline-first path because getUser() ran first.
+    if (phiRes.data == null) {
+      const message =
+        'Patient scope is not ready on this device yet. Connect once while online or wait for sync, then try again.';
       setErrorMessage(message);
       await announce(message, { politeness: 'assertive' });
       setSaving(false);
@@ -161,7 +202,7 @@ export function FoodDiaryEntryScreen() {
     }
 
     const result = await createFoodDiaryEntry(supabase, {
-      user_id: user.id,
+      user_id: phiRes.data.phiSubjectUserId,
       episode_id: episodeId,
       meal_tag: mealTag,
       food_note: foodNote,

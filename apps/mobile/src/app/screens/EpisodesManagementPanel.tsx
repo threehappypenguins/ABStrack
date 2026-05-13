@@ -30,7 +30,8 @@ import {
   listCompletedEpisodesForUser,
 } from '@abstrack/supabase';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import { useMobileAuthUserId } from '../../lib/auth/use-mobile-auth-user-id';
+import { resolveMobilePhiSubjectUserContext } from '../../lib/phi-subject/resolve-mobile-phi-subject-user-context';
+import { useMobilePhiSubjectUserContext } from '../../lib/auth/use-mobile-phi-subject-user-context';
 import {
   cancelActiveEpisodeByIdOfflineFirst,
   deleteEpisodeByIdOfflineFirst,
@@ -110,11 +111,21 @@ export function EpisodesManagementPanel({
 }: EpisodesManagementPanelProps) {
   const { colors } = useAppTheme();
   const loadGenRef = useRef(0);
-  /** Session user id from the last completed {@link loadInitial} (used to skip redundant reloads). */
+  /** Session user id from the last completed {@link loadInitial} (auth-only hydration skip vs null→user). */
   const lastLoadedAuthUserIdRef = useRef<string | null>(null);
-  const viewerUserId = useMobileAuthUserId();
+  const {
+    authUserId: viewerUserId,
+    phiSubjectUserId: phiSubjectFromHook,
+    loading: phiSubjectContextLoading,
+    errorMessage: phiSubjectContextError,
+  } = useMobilePhiSubjectUserContext();
   /** `undefined`: effect has not committed a baseline yet (skip reset so `useFocusEffect` owns first load). */
   const prevViewerUserIdRef = useRef<string | null | undefined>(undefined);
+  /**
+   * Last committed list-scope key (auth + PHI subject + resolve state); dedupes the reset effect
+   * when only unrelated render state changes.
+   */
+  const prevScopeKeyRef = useRef<string | undefined>(undefined);
   const psBridge = usePowerSyncBridgeState();
   const powerSyncDbForWrites = useMemo(
     () => (powerSyncReplicaSqliteReady(psBridge) ? psBridge.database : null),
@@ -310,8 +321,7 @@ export function EpisodesManagementPanel({
         if (stale()) {
           return;
         }
-        const userId = session?.user?.id ?? null;
-        if (!userId) {
+        if (!session?.user?.id) {
           lastLoadedAuthUserIdRef.current = null;
           setActive(null);
           setRecent([]);
@@ -319,9 +329,33 @@ export function EpisodesManagementPanel({
           return;
         }
 
+        const phiRes = await resolveMobilePhiSubjectUserContext({
+          powerSyncDatabase: powerSyncDbForWrites,
+        });
+        if (stale()) {
+          return;
+        }
+        if (!phiRes.ok) {
+          lastLoadedAuthUserIdRef.current = null;
+          setActiveError(phiRes.error.message);
+          setRecentError(phiRes.error.message);
+          setActive(null);
+          setRecent([]);
+          setHasMoreRecent(false);
+          return;
+        }
+        if (phiRes.data == null) {
+          lastLoadedAuthUserIdRef.current = null;
+          setActive(null);
+          setRecent([]);
+          setHasMoreRecent(false);
+          return;
+        }
+        const listUserId = phiRes.data.phiSubjectUserId;
+
         const [activeRes, recentRes] = await Promise.all([
-          getActiveEpisodeForUser(client, userId),
-          listCompletedEpisodesForUser(client, userId, {
+          getActiveEpisodeForUser(client, listUserId),
+          listCompletedEpisodesForUser(client, listUserId, {
             limit: RECENT_PAGE_SIZE,
             offset: 0,
             endedAtOrAfter: endedAtOrAfter ?? undefined,
@@ -350,7 +384,7 @@ export function EpisodesManagementPanel({
         }
 
         if (!stale()) {
-          lastLoadedAuthUserIdRef.current = userId;
+          lastLoadedAuthUserIdRef.current = session.user.id;
         }
       } catch {
         if (!stale()) {
@@ -370,32 +404,38 @@ export function EpisodesManagementPanel({
         }
       }
     },
-    [endedAtOrAfter, endedAtOrBefore],
+    [endedAtOrAfter, endedAtOrBefore, powerSyncDbForWrites],
   );
 
   /**
    * PowerSync subscriptions already receive the signed-in user id, but Supabase-filled snapshots
-   * (`active`, `recent`, `psMirror`) would otherwise stay on the prior account until the next focus
-   * refresh if this panel stays mounted across an account switch.
+   * (`active`, `recent`, `psMirror`) would otherwise stay on the prior **list scope** (auth user +
+   * PHI subject) until the next focus refresh if this panel stays mounted across an account switch,
+   * caretaker link change, or PHI-context resolve transitions.
    */
   useEffect(() => {
-    const next = viewerUserId;
-    const prev = prevViewerUserIdRef.current;
+    const nextAuth = viewerUserId;
+    const scopeKey = `${nextAuth ?? ''}|${phiSubjectFromHook ?? ''}|${
+      phiSubjectContextError ?? ''
+    }|${phiSubjectContextLoading ? 'L' : '-'}`;
+    const prevScopeKey = prevScopeKeyRef.current;
+    const prevAuth = prevViewerUserIdRef.current;
 
-    if (prev !== undefined && prev === next) {
+    if (prevScopeKey !== undefined && prevScopeKey === scopeKey) {
       return;
     }
 
-    prevViewerUserIdRef.current = next;
+    prevScopeKeyRef.current = scopeKey;
+    prevViewerUserIdRef.current = nextAuth;
 
-    if (prev === undefined) {
+    if (prevAuth === undefined) {
       return;
     }
 
     if (
-      prev === null &&
-      next !== null &&
-      lastLoadedAuthUserIdRef.current === next
+      prevAuth === null &&
+      nextAuth !== null &&
+      lastLoadedAuthUserIdRef.current === nextAuth
     ) {
       return;
     }
@@ -427,7 +467,13 @@ export function EpisodesManagementPanel({
     return () => {
       cancel.cancelled = true;
     };
-  }, [viewerUserId, loadInitial]);
+  }, [
+    viewerUserId,
+    phiSubjectFromHook,
+    phiSubjectContextError,
+    phiSubjectContextLoading,
+    loadInitial,
+  ]);
 
   const loadInitialRef = useRef(loadInitial);
   loadInitialRef.current = loadInitial;
@@ -460,12 +506,18 @@ export function EpisodesManagementPanel({
       if (stale()) {
         return;
       }
-      const userId = session?.user?.id ?? null;
-      if (!userId) {
+      const phiRes = await resolveMobilePhiSubjectUserContext({
+        powerSyncDatabase: powerSyncDbForWrites,
+      });
+      if (stale()) {
+        return;
+      }
+      if (!phiRes.ok || phiRes.data == null) {
         setHasMoreRecent(false);
         return;
       }
-      const recentRes = await listCompletedEpisodesForUser(client, userId, {
+      const listUserId = phiRes.data.phiSubjectUserId;
+      const recentRes = await listCompletedEpisodesForUser(client, listUserId, {
         limit: RECENT_PAGE_SIZE,
         offset: recent.length,
         endedAtOrAfter: endedAtOrAfter ?? undefined,
@@ -494,6 +546,7 @@ export function EpisodesManagementPanel({
     endedAtOrBefore,
     hasMoreRecentEffective,
     loadingMoreRecent,
+    powerSyncDbForWrites,
     psMirror.completedLoading,
     psMirror.completedQueryError,
     psReplicaReadsEnabled,
@@ -738,7 +791,7 @@ export function EpisodesManagementPanel({
     <>
       {powerSyncReplicaSqliteReady(psBridge) ? (
         <PowerSyncEpisodeReadSubscriptions
-          userId={viewerUserId}
+          userId={phiSubjectFromHook}
           endedAtOrAfter={endedAtOrAfter}
           endedAtOrBefore={endedAtOrBefore}
           completedEpisodesFetchLimit={psCompletedFetchLimit}

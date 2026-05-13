@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useId, useState } from 'react';
 import { getActiveEpisodeForUser } from '@abstrack/supabase';
 import { buildResumeEpisodeHref } from '@/lib/episode-flow/resume-episode-href';
+import { useWebPhiSubjectUserContext } from '@/lib/patient/use-web-phi-subject-user-context';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
 import { useAuth } from '@/lib/auth-provider';
 
@@ -32,6 +33,11 @@ export function EpisodeStartHomeCta({
   const statusId = `episode-start-home-cta-status${instanceId}`;
 
   const { session, loading: authLoading } = useAuth();
+  const {
+    phiSubjectUserId,
+    loading: phiLoading,
+    errorMessage: phiError,
+  } = useWebPhiSubjectUserContext();
 
   const [ctaMode, setCtaMode] = useState<CtaMode>('loading');
   const [resumeHref, setResumeHref] = useState<string | null>(null);
@@ -43,7 +49,24 @@ export function EpisodeStartHomeCta({
     if (authLoading) {
       return;
     }
-    const userId = session?.user?.id;
+    if (!session?.user?.id) {
+      setCtaMode('start');
+      setResumeHref(null);
+      setResumeToHub(false);
+      setResumeSupportsAnotherCheckIn(false);
+      return;
+    }
+    if (phiLoading) {
+      return;
+    }
+    if (phiError) {
+      setCtaMode('start');
+      setResumeHref(null);
+      setResumeToHub(false);
+      setResumeSupportsAnotherCheckIn(false);
+      return;
+    }
+    const userId = phiSubjectUserId;
     if (!userId) {
       setCtaMode('start');
       setResumeHref(null);
@@ -98,7 +121,7 @@ export function EpisodeStartHomeCta({
     return () => {
       cancelled = true;
     };
-  }, [authLoading, session?.user?.id]);
+  }, [authLoading, phiLoading, phiSubjectUserId, phiError, session?.user?.id]);
 
   const primaryLinkClass =
     'inline-flex min-h-[56px] w-full items-center justify-center rounded-xl bg-red-700 px-5 py-4 text-center text-base font-semibold leading-snug text-white shadow-md outline-none ring-2 ring-transparent transition hover:bg-red-800 focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-red-50 dark:bg-red-600 dark:hover:bg-red-500 dark:focus-visible:ring-offset-red-950';

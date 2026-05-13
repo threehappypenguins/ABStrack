@@ -374,17 +374,24 @@ export async function reorderPresetSymptoms(
 // --- Health marker presets (header rows) ---
 
 /**
- * Lists the signed-in user’s health marker presets with stable ordering.
+ * Lists health marker presets with stable ordering.
  *
  * @param client - Supabase client.
+ * @param options - When {@link options.scopeUserId} is set, restricts rows to that
+ *   `health_marker_presets.user_id` (PHI subject) so caretaker UIs do not rely on RLS alone for
+ *   preset ownership when listing.
  */
 export async function listHealthMarkerPresets(
   client: AbstrackSupabaseClient,
+  options?: { scopeUserId?: string },
 ): Promise<PresetDataResult<HealthMarkerPresetRow[]>> {
   return wrap(async () => {
-    const result = await client
-      .from('health_marker_presets')
-      .select('*')
+    const scope = options?.scopeUserId?.trim();
+    let query = client.from('health_marker_presets').select('*');
+    if (scope) {
+      query = query.eq('user_id', scope);
+    }
+    const result = await query
       .order('created_at', { ascending: true })
       .order('id', { ascending: true });
     return {
@@ -399,17 +406,21 @@ export async function listHealthMarkerPresets(
  *
  * @param client - Supabase client.
  * @param id - `health_marker_presets.id`.
+ * @param options - When {@link options.scopeUserId} is set, requires that owner id so a preset
+ *   from another user id cannot be read through this helper alone.
  */
 export async function getHealthMarkerPresetById(
   client: AbstrackSupabaseClient,
   id: string,
+  options?: { scopeUserId?: string },
 ): Promise<PresetDataResult<HealthMarkerPresetRow | null>> {
   try {
-    const { data, error } = await client
-      .from('health_marker_presets')
-      .select('*')
-      .eq('id', id)
-      .maybeSingle();
+    const scope = options?.scopeUserId?.trim();
+    let query = client.from('health_marker_presets').select('*').eq('id', id);
+    if (scope) {
+      query = query.eq('user_id', scope);
+    }
+    const { data, error } = await query.maybeSingle();
     if (error) {
       return { ok: false, error: toPresetDataError(error) };
     }
@@ -497,11 +508,33 @@ export async function deleteHealthMarkerPreset(
  *
  * @param client - Supabase client.
  * @param presetId - Parent `health_marker_presets.id`.
+ * @param options - When {@link options.scopeUserId} is set, ensures the preset header belongs to
+ *   that user before listing lines so callers cannot combine another user’s lines with a mismatched
+ *   `user_id` on insert.
  */
 export async function listPresetHealthMarkersForPreset(
   client: AbstrackSupabaseClient,
   presetId: string,
+  options?: { scopeUserId?: string },
 ): Promise<PresetDataResult<PresetHealthMarkerRow[]>> {
+  const scope = options?.scopeUserId?.trim();
+  if (scope) {
+    const preset = await getHealthMarkerPresetById(client, presetId, {
+      scopeUserId: scope,
+    });
+    if (!preset.ok) {
+      return { ok: false, error: preset.error };
+    }
+    if (preset.data == null) {
+      return {
+        ok: false,
+        error: new PresetDataError(
+          'validation_error',
+          'That health marker preset is not available for the current patient scope.',
+        ),
+      };
+    }
+  }
   return wrap(async () => {
     const result = await client
       .from('preset_health_markers')

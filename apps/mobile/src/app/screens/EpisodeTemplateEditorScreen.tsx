@@ -25,6 +25,7 @@ import {
   validateEpisodeTemplatePresetPair,
 } from '@abstrack/types';
 import { useMobileAuthUserId } from '../../lib/auth/use-mobile-auth-user-id';
+import { useMobilePhiSubjectUserContext } from '../../lib/auth/use-mobile-phi-subject-user-context';
 import {
   fetchEpisodeTemplateById,
   removeEpisodeTemplate,
@@ -68,6 +69,24 @@ export function EpisodeTemplateEditorScreen() {
   const navigation = useNavigation<EditorNav>();
   const { colors } = useAppTheme();
   const viewerUserId = useMobileAuthUserId();
+  const viewerUserIdRef = useRef(viewerUserId);
+  viewerUserIdRef.current = viewerUserId;
+
+  const {
+    phiSubjectUserId,
+    loading: phiSubjectContextLoading,
+    errorMessage: phiSubjectContextError,
+  } = useMobilePhiSubjectUserContext();
+  const phiSubjectUserIdRef = useRef<string | null>(null);
+  const phiLoadingRef = useRef(false);
+  const phiErrorRef = useRef<string | null>(null);
+  phiSubjectUserIdRef.current = phiSubjectUserId;
+  phiLoadingRef.current = phiSubjectContextLoading;
+  phiErrorRef.current = phiSubjectContextError;
+
+  /** Updated on each completed template load attempt (success or failure) for the scoped fetch key. */
+  const lastTemplateLoadFetchKeyRef = useRef<string | null>(null);
+
   const psBridge = usePowerSyncBridgeState();
   const replicaMirrorReads = powerSyncOfflineReplicaReadsEnabled(psBridge);
 
@@ -107,23 +126,39 @@ export function EpisodeTemplateEditorScreen() {
     async (signal?: AbortSignal) => {
       setStatus('loading');
       setErrorMessage(null);
+      // Snapshot so async completion cannot write a newer PHI key than the scope this request used.
+      const viewerAtStart = viewerUserIdRef.current;
+      const scopeUserIdAtStart = phiSubjectUserIdRef.current;
+      const phiLoadingAtStart = phiLoadingRef.current;
+      const phiErrorAtStart = phiErrorRef.current;
+      const fetchKeyForThisRun = `${viewerAtStart ?? ''}|${templateId}|${scopeUserIdAtStart ?? ''}|${phiLoadingAtStart ? 'L' : '-'}|${phiErrorAtStart ?? ''}`;
+
       const offlineRead = offlineReadRef.current;
       const [tRes, sRes, mRes] = await Promise.all([
         fetchEpisodeTemplateById(templateId, {
           powerSyncOfflineRead: offlineRead,
+          scopeUserId: scopeUserIdAtStart,
         }),
-        fetchSymptomPresets({ powerSyncOfflineRead: offlineRead }),
-        fetchHealthMarkerPresets({ powerSyncOfflineRead: offlineRead }),
+        fetchSymptomPresets({
+          powerSyncOfflineRead: offlineRead,
+          scopeUserId: scopeUserIdAtStart,
+        }),
+        fetchHealthMarkerPresets({
+          powerSyncOfflineRead: offlineRead,
+          scopeUserId: scopeUserIdAtStart,
+        }),
       ]);
       if (signal?.aborted) {
         return;
       }
       if (!sRes.ok) {
+        lastTemplateLoadFetchKeyRef.current = fetchKeyForThisRun;
         setErrorMessage(sRes.error.message);
         setStatus('error');
         return;
       }
       if (!mRes.ok) {
+        lastTemplateLoadFetchKeyRef.current = fetchKeyForThisRun;
         setErrorMessage(mRes.error.message);
         setStatus('error');
         return;
@@ -132,11 +167,13 @@ export function EpisodeTemplateEditorScreen() {
       setMarkers(mRes.data.map((r) => ({ id: r.id, name: r.name })));
 
       if (!tRes.ok) {
+        lastTemplateLoadFetchKeyRef.current = fetchKeyForThisRun;
         setErrorMessage(tRes.error.message);
         setStatus('error');
         return;
       }
       if (!tRes.data) {
+        lastTemplateLoadFetchKeyRef.current = fetchKeyForThisRun;
         setErrorMessage('We could not find that episode template.');
         setStatus('error');
         return;
@@ -146,6 +183,7 @@ export function EpisodeTemplateEditorScreen() {
       setName(normalizeEpisodeTemplateName(t.name));
       setSymptomId(t.symptom_preset_id);
       setMarkerId(t.health_marker_preset_id);
+      lastTemplateLoadFetchKeyRef.current = fetchKeyForThisRun;
       setStatus('ready');
     },
     [templateId],
@@ -176,8 +214,13 @@ export function EpisodeTemplateEditorScreen() {
   }, []);
 
   /**
-   * Reload when `templateId` **or** the signed-in user changes — an account switch must not keep
+   * Reload when `templateId`, the signed-in user, **or PHI scope** (`phiSubjectUserId` / loading /
+   * error from {@link useMobilePhiSubjectUserContext}) changes — an account switch must not keep
    * another user's template row / preset picklists visible while this route stays mounted.
+   * Omits `status` / `errorMessage` from dependencies: those would re-run this effect after every
+   * failed `load()` while `lastTemplateLoadFetchKeyRef` stayed unset, causing an infinite retry loop;
+   * failures now record the same fetch key as successes. The auth-hydration branch still reads the
+   * latest `status` / `errorMessage` from the render that committed a `viewerUserId` change.
    * Still intentionally independent of bridge readiness (see retry effect below).
    *
    * `useMobileAuthUserId` hydrates `null → userId` after mount; that is not an account switch. When
@@ -188,10 +231,14 @@ export function EpisodeTemplateEditorScreen() {
     const prevViewer = prevViewerUserIdRef.current;
     const prevTpl = prevTemplateIdForLoadEffectRef.current;
 
+    const loadFetchKey = `${nextViewer ?? ''}|${templateId}|${phiSubjectUserId ?? ''}|${phiSubjectContextLoading ? 'L' : '-'}|${phiSubjectContextError ?? ''}`;
+
     if (
       prevViewer !== undefined &&
       prevViewer === nextViewer &&
-      prevTpl === templateId
+      prevTpl === templateId &&
+      lastTemplateLoadFetchKeyRef.current != null &&
+      lastTemplateLoadFetchKeyRef.current === loadFetchKey
     ) {
       return;
     }
@@ -209,6 +256,7 @@ export function EpisodeTemplateEditorScreen() {
     ) {
       prevViewerUserIdRef.current = nextViewer;
       prevTemplateIdForLoadEffectRef.current = templateId;
+      lastTemplateLoadFetchKeyRef.current = loadFetchKey;
       return;
     }
 
@@ -219,6 +267,7 @@ export function EpisodeTemplateEditorScreen() {
     prevTemplateIdForLoadEffectRef.current = templateId;
 
     if (switchedAccount) {
+      lastTemplateLoadFetchKeyRef.current = null;
       setRow(null);
       setName('');
       setSymptomId(null);
@@ -233,7 +282,13 @@ export function EpisodeTemplateEditorScreen() {
     return () => {
       ac.abort();
     };
-  }, [templateId, viewerUserId, status, errorMessage]);
+  }, [
+    templateId,
+    viewerUserId,
+    phiSubjectUserId,
+    phiSubjectContextLoading,
+    phiSubjectContextError,
+  ]);
 
   useEffect(() => {
     if (status === 'ready') {

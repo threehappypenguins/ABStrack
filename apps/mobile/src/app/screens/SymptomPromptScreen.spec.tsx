@@ -52,6 +52,16 @@ jest.mock('@abstrack/supabase', () => ({
   listEpisodeSymptomsForEpisode: jest.fn(),
   insertEpisodeSymptomAnswer: jest.fn(),
   uploadConfirmedEpisodeMedia: jest.fn(),
+  resolvePhiSubjectUserContextFromSupabase: jest.fn(
+    async (_client: unknown, authUserId: string) => ({
+      ok: true as const,
+      data: {
+        authUserId,
+        phiSubjectUserId: authUserId,
+        profileAppRole: 'patient' as const,
+      },
+    }),
+  ),
 }));
 
 /**
@@ -89,6 +99,11 @@ jest.mock('../../lib/supabase-wiring', () => ({
       'createMobileSupabaseClient not used in SymptomPromptScreen tests',
     );
   }),
+}));
+
+jest.mock('../../lib/network/mobile-device-netinfo', () => ({
+  __esModule: true,
+  fetchMobileDeviceIsConnected: jest.fn(async () => true),
 }));
 
 jest.mock('../../lib/episodes/symptom-prompt-session-store', () => ({

@@ -6,6 +6,7 @@ import { useNavigation } from '@react-navigation/native';
 import { PresetDataError } from '@abstrack/supabase';
 import type { EpisodeTemplateWithPresetsRow } from '@abstrack/types';
 
+import { useMobilePhiSubjectUserContext } from '../../lib/auth/use-mobile-phi-subject-user-context';
 import {
   fetchEpisodeTemplates,
   getCurrentUserId,
@@ -40,6 +41,10 @@ jest.mock('@abstrack/ui/native', () => {
     announce: jest.fn(),
   };
 });
+
+jest.mock('../../lib/auth/use-mobile-phi-subject-user-context', () => ({
+  useMobilePhiSubjectUserContext: jest.fn(),
+}));
 
 jest.mock('../../lib/episode-templates/episode-template-service', () => ({
   getCurrentUserId: jest.fn(),
@@ -88,6 +93,15 @@ describe('EpisodeTemplateListScreen', () => {
       .mocked(removeEpisodeTemplate)
       .mockResolvedValue({ ok: true, data: undefined });
 
+    jest.mocked(useMobilePhiSubjectUserContext).mockReturnValue({
+      phiSubjectUserId: 'user-1',
+      loading: false,
+      errorMessage: null,
+      authUserId: 'user-1',
+      profileAppRole: 'patient',
+      refresh: jest.fn(),
+    });
+
     mockNavigate.mockReset();
   });
 
@@ -107,7 +121,30 @@ describe('EpisodeTemplateListScreen', () => {
     });
 
     expect(getCurrentUserId).toHaveBeenCalled();
-    expect(fetchEpisodeTemplates).toHaveBeenCalled();
+    expect(fetchEpisodeTemplates).toHaveBeenCalledWith(
+      expect.objectContaining({ scopeUserId: 'user-1' }),
+    );
+  });
+
+  test('shows PHI scope error and does not fetch templates when context reports an error', async () => {
+    jest.mocked(useMobilePhiSubjectUserContext).mockReturnValue({
+      phiSubjectUserId: null,
+      loading: false,
+      errorMessage: 'Caretaker access is not available for this account.',
+      authUserId: 'ct-1',
+      profileAppRole: 'caretaker',
+      refresh: jest.fn(),
+    });
+
+    const screen = render(<EpisodeTemplateListScreen />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Caretaker access is not available for this account.'),
+      ).toBeTruthy();
+    });
+
+    expect(fetchEpisodeTemplates).not.toHaveBeenCalled();
   });
 
   test('shows signed-out message when getCurrentUserId returns no user', async () => {

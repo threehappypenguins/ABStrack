@@ -19,7 +19,7 @@ import {
   healthCheckProfilesLimit1,
   signOut,
 } from '@abstrack/supabase';
-import { useMobileAuthUserId } from '../../lib/auth/use-mobile-auth-user-id';
+import { useMobilePhiSubjectUserContext } from '../../lib/auth/use-mobile-phi-subject-user-context';
 import { PowerSyncActiveEpisodeSubscription } from '../../lib/powersync/PowerSyncActiveEpisodeSubscription';
 import {
   powerSyncOfflineReplicaReadsEnabled,
@@ -87,7 +87,13 @@ export function HomeScreen({
   const [networkResumeSkippedOffline, setNetworkResumeSkippedOffline] =
     useState(false);
 
-  const userId = useMobileAuthUserId();
+  const {
+    authUserId,
+    phiSubjectUserId,
+    loading: phiSubjectLoading,
+    errorMessage: phiSubjectError,
+    refresh: refreshPhiSubject,
+  } = useMobilePhiSubjectUserContext();
   const { isConnected: deviceNetConnected } = useMobileDeviceNetworkConnected();
   const psBridge = usePowerSyncBridgeState();
   const replicaMirrorHomeReads = useMemo(
@@ -114,7 +120,7 @@ export function HomeScreen({
     setNetworkResumeEpisode(null);
     setNetworkResumeLoading(false);
     setNetworkResumeSkippedOffline(false);
-  }, [userId]);
+  }, [phiSubjectUserId]);
 
   useEffect(() => {
     if (replicaMirrorHomeReads) {
@@ -130,7 +136,7 @@ export function HomeScreen({
       options?: { bypassReplicaMirrorGate?: boolean },
     ) => {
       const stale = () => cancel?.cancelled === true;
-      if (!userId) {
+      if (!phiSubjectUserId) {
         if (!stale()) {
           setNetworkResumeLoading(false);
           setNetworkResumeSkippedOffline(false);
@@ -171,7 +177,7 @@ export function HomeScreen({
         }
         const result = await getActiveEpisodeForUser(
           mobileSupabase,
-          session.user.id,
+          phiSubjectUserId,
         );
         if (stale()) {
           return;
@@ -193,12 +199,12 @@ export function HomeScreen({
         }
       }
     },
-    [userId, replicaMirrorHomeReads],
+    [phiSubjectUserId, replicaMirrorHomeReads],
   );
 
   /** When the watched SQLite query fails, fetch Supabase resume as a fallback (same user, online). */
   useEffect(() => {
-    if (!userId || !replicaMirrorHomeReads || !psEpisodeSnap.error) {
+    if (!phiSubjectUserId || !replicaMirrorHomeReads || !psEpisodeSnap.error) {
       return;
     }
     const cancel = { cancelled: false };
@@ -207,7 +213,7 @@ export function HomeScreen({
       cancel.cancelled = true;
     };
   }, [
-    userId,
+    phiSubjectUserId,
     replicaMirrorHomeReads,
     psEpisodeSnap.error,
     loadNetworkResumeEpisode,
@@ -237,6 +243,7 @@ export function HomeScreen({
         bypassReplicaMirrorGate: Boolean(psEpisodeQueryErrorRef.current),
       });
       void runDevHealthCheckRef.current();
+      refreshPhiSubject();
     });
 
   useFocusEffect(
@@ -244,7 +251,7 @@ export function HomeScreen({
       if (showHealthCheck) {
         void runDevHealthCheckRef.current();
       }
-      if (!userId) {
+      if (!authUserId) {
         return;
       }
       const bypass = replicaMirrorHomeReads && Boolean(psEpisodeSnap.error);
@@ -263,7 +270,7 @@ export function HomeScreen({
       showHealthCheck,
       loadNetworkResumeEpisode,
       replicaMirrorHomeReads,
-      userId,
+      authUserId,
       psEpisodeSnap.error,
     ]),
   );
@@ -305,8 +312,14 @@ export function HomeScreen({
    * init without helping resume accuracy.
    */
   const activeEpisodeLoading = useMemo(() => {
-    if (!userId) {
+    if (!authUserId) {
       return false;
+    }
+    if (phiSubjectError) {
+      return false;
+    }
+    if (phiSubjectLoading || !phiSubjectUserId) {
+      return true;
     }
     if (psBridge.powerSyncUrlConfigured) {
       const maybeStillOpeningSqlite =
@@ -333,7 +346,10 @@ export function HomeScreen({
     }
     return networkResumeLoading;
   }, [
-    userId,
+    authUserId,
+    phiSubjectUserId,
+    phiSubjectLoading,
+    phiSubjectError,
     psBridge.database,
     psBridge.powerSyncUrlConfigured,
     psBridge.firstSyncCompleted,
@@ -347,7 +363,7 @@ export function HomeScreen({
   ]);
 
   const homeActiveEpisode = useMemo((): ActiveEpisodeHomeSummary | null => {
-    if (!userId) {
+    if (!phiSubjectUserId || phiSubjectError) {
       return null;
     }
     if (replicaMirrorHomeReads) {
@@ -370,7 +386,8 @@ export function HomeScreen({
     }
     return networkResumeEpisode;
   }, [
-    userId,
+    phiSubjectUserId,
+    phiSubjectError,
     replicaMirrorHomeReads,
     psEpisodeSnap.episode,
     psEpisodeSnap.error,
@@ -494,7 +511,7 @@ export function HomeScreen({
     <AppNavigationShell title="Home">
       {powerSyncReplicaSqliteReady(psBridge) ? (
         <PowerSyncActiveEpisodeSubscription
-          userId={userId}
+          userId={phiSubjectError ? null : phiSubjectUserId}
           onChange={setPsEpisodeSnap}
         />
       ) : null}
@@ -516,6 +533,19 @@ export function HomeScreen({
           />
         }
       >
+        {phiSubjectError ? (
+          <View
+            className={`mb-3 rounded-xl border border-app-border bg-app-surface p-4 dark:border-app-border-dark dark:bg-app-surface-dark`}
+            accessibilityRole="alert"
+          >
+            <Text className={`text-base font-semibold ${nw.textInk}`}>
+              Caretaker access
+            </Text>
+            <Text className={`mt-2 text-sm ${nw.textMuted}`}>
+              {phiSubjectError}
+            </Text>
+          </View>
+        ) : null}
         <EpisodeStartHomeCta
           onStartEpisode={onStartEpisode}
           onResumeEpisode={onResumeEpisode}

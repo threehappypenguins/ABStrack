@@ -40,6 +40,7 @@ import {
   listEpisodeMediaForEpisode,
   listEpisodeSymptomsForEpisode,
   listPresetSymptomsForPreset,
+  resolvePhiSubjectUserContextFromSupabase,
   uploadConfirmedEpisodeMedia,
 } from '@abstrack/supabase';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
@@ -77,6 +78,10 @@ const VIDEO_MAX_DURATION_SECONDS = Math.floor(
 
 /** Long edge for JPEG symptom-media thumbnails (episode-media bucket; matches mobile scaling). */
 const SYMPTOM_MEDIA_THUMB_MAX_EDGE_PX = 480;
+
+type PhiSubjectWriteResolution =
+  | { ok: true; userId: string }
+  | { ok: false; message: string };
 
 async function blobToJpegThumbnailBlob(
   blob: Blob,
@@ -388,7 +393,7 @@ export function SymptomPromptFlow({
    * order within an episode only — not across `episodeId` changes while mounted.
    */
   const lineWriteQueueRef = useRef<Map<string, Promise<void>>>(new Map());
-  const userIdRef = useRef<string | null>(null);
+  const phiSubjectUserIdRef = useRef<string | null>(null);
   /** Bumps on each `load()` start and on effect cleanup so in-flight loads ignore stale results after unmount, retry, or param change. */
   const loadGenRef = useRef(0);
   /**
@@ -437,22 +442,41 @@ export function SymptomPromptFlow({
   const supabase = useMemo(() => createBrowserClient(), []);
 
   /**
-   * Resolves the signed-in user id for RLS writes, caching on {@link userIdRef}.
-   * Used by `load()` (before inputs enable) and as a fallback in {@link executeServerPersist}.
+   * Resolves the PHI subject user id for RLS writes (patient or linked caretaker subject), caching on
+   * {@link phiSubjectUserIdRef}.
+   * Used by `load()` (before inputs enable) and by {@link executeServerPersist}.
    */
-  const resolveSessionUserId = useCallback(
+  const resolvePhiSubjectUserIdForWrites = useCallback(
     async (
       supabase: ReturnType<typeof createBrowserClient>,
-    ): Promise<string | null> => {
-      if (userIdRef.current) {
-        return userIdRef.current;
+    ): Promise<PhiSubjectWriteResolution> => {
+      if (phiSubjectUserIdRef.current) {
+        return { ok: true, userId: phiSubjectUserIdRef.current };
       }
       const {
         data: { user },
       } = await supabase.auth.getUser();
-      const id = user?.id ?? null;
-      userIdRef.current = id;
-      return id;
+      if (!user?.id) {
+        return {
+          ok: false,
+          message:
+            'You must be signed in to save symptom answers. Try signing in again.',
+        };
+      }
+      const phiRes = await resolvePhiSubjectUserContextFromSupabase(
+        supabase,
+        user.id,
+      );
+      if (!phiRes.ok || phiRes.data == null) {
+        return {
+          ok: false,
+          message: phiRes.ok
+            ? 'You must be signed in to save symptom answers. Try signing in again.'
+            : phiRes.error.message,
+        };
+      }
+      phiSubjectUserIdRef.current = phiRes.data.phiSubjectUserId;
+      return { ok: true, userId: phiRes.data.phiSubjectUserId };
     },
     [],
   );
@@ -490,20 +514,19 @@ export function SymptomPromptFlow({
         })
         .then(async () => {
           const targetEpisodeId = enqueueEpisodeId;
-          const uid = await resolveSessionUserId(supabase);
-          if (!uid) {
+          const resolved = await resolvePhiSubjectUserIdForWrites(supabase);
+          if (!resolved.ok) {
             if (
               isMountedRef.current &&
               episodeIdRef.current === enqueueEpisodeId &&
               enqueueEpoch === serverPersistEpochRef.current &&
               attemptId === persistUiAttemptRef.current
             ) {
-              setPersistError(
-                'Your session could not be verified. Try signing in again.',
-              );
+              setPersistError(resolved.message);
             }
             return;
           }
+          const uid = resolved.userId;
           const r = await insertEpisodeSymptomAnswer(supabase, {
             userId: uid,
             episodeId: targetEpisodeId,
@@ -631,7 +654,7 @@ export function SymptomPromptFlow({
         }
       });
     },
-    [resolveSessionUserId, supabase],
+    [resolvePhiSubjectUserIdForWrites, supabase],
   );
 
   const executeServerDelete = useCallback(
@@ -653,17 +676,15 @@ export function SymptomPromptFlow({
         })
         .then(async () => {
           const targetEpisodeId = enqueueEpisodeId;
-          const uid = await resolveSessionUserId(supabase);
-          if (!uid) {
+          const resolved = await resolvePhiSubjectUserIdForWrites(supabase);
+          if (!resolved.ok) {
             if (
               isMountedRef.current &&
               episodeIdRef.current === enqueueEpisodeId &&
               enqueueEpoch === serverPersistEpochRef.current &&
               attemptId === persistUiAttemptRef.current
             ) {
-              setPersistError(
-                'Your session could not be verified. Try signing in again.',
-              );
+              setPersistError(resolved.message);
             }
             return;
           }
@@ -695,7 +716,7 @@ export function SymptomPromptFlow({
         }
       });
     },
-    [resolveSessionUserId, supabase],
+    [resolvePhiSubjectUserIdForWrites, supabase],
   );
 
   /**
@@ -857,14 +878,13 @@ export function SymptomPromptFlow({
     setStatus('loading');
     setErrorMessage(null);
     setPersistError(null);
-    const uid = await resolveSessionUserId(supabase);
+    phiSubjectUserIdRef.current = null;
+    const resolved = await resolvePhiSubjectUserIdForWrites(supabase);
     if (stale()) {
       return;
     }
-    if (!uid) {
-      setErrorMessage(
-        'You must be signed in to save symptom answers. Try signing in again.',
-      );
+    if (!resolved.ok) {
+      setErrorMessage(resolved.message);
       setStatus('error');
       return;
     }
@@ -1019,7 +1039,7 @@ export function SymptomPromptFlow({
       setPersistError(mediaRows.error.message);
     }
     setStatus('ready');
-  }, [episodeId, symptomPresetId, resolveSessionUserId, supabase]);
+  }, [episodeId, symptomPresetId, resolvePhiSubjectUserIdForWrites, supabase]);
 
   useEffect(() => {
     void load();

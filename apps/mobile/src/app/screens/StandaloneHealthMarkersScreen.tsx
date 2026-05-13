@@ -36,6 +36,7 @@ import {
   getMobileAuthSessionSafe,
   getMobileSupabaseClient,
 } from '../../lib/supabase-wiring';
+import { useMobilePhiSubjectUserContext } from '../../lib/auth/use-mobile-phi-subject-user-context';
 import { ScreenShell } from '../components/ScreenShell';
 import type { MainStackParamList } from '../navigation/types';
 import { nw } from '../theme/app-nativewind-classes';
@@ -47,12 +48,19 @@ type StandaloneHealthMarkersNav = NativeStackNavigationProp<
 
 /**
  * Standalone health-marker logging (no episode), matching web `/health-markers/new`.
+ * Preset and line loads wait for {@link useMobilePhiSubjectUserContext} `phiSubjectUserId` and pass
+ * it into scoped list helpers so caretakers never pick presets for the wrong patient.
  *
  * @returns Preset picker, line-by-line prompts, and completion UI.
  */
 export function StandaloneHealthMarkersScreen() {
   const navigation = useNavigation<StandaloneHealthMarkersNav>();
   const supabase = useMemo(() => getMobileSupabaseClient(), []);
+  const {
+    phiSubjectUserId,
+    loading: phiScopeLoading,
+    errorMessage: phiScopeError,
+  } = useMobilePhiSubjectUserContext();
 
   const [authLoading, setAuthLoading] = useState(true);
   const [authUserId, setAuthUserId] = useState<string | null>(null);
@@ -78,7 +86,11 @@ export function StandaloneHealthMarkersScreen() {
   /** Lines successfully persisted via Next/Finish in the current preset session. */
   const [linesSavedCount, setLinesSavedCount] = useState(0);
   const [presetRefetchTick, setPresetRefetchTick] = useState(0);
-  const lastPresetUserIdRef = useRef<string | null>(null);
+  /**
+   * Last scope key `authUserId|phiSubjectUserId` for preset loads. When either changes (caretaker
+   * patient link, first sync, etc.), we reset pick-preset / line UI so lists match the active PHI subject.
+   */
+  const lastPresetScopeKeyRef = useRef<string | null>(null);
   const authSnapshotGenerationRef = useRef(0);
 
   useEffect(() => {
@@ -124,13 +136,13 @@ export function StandaloneHealthMarkersScreen() {
   }, [supabase, authRetryTick]);
 
   useEffect(() => {
-    if (authLoading) {
+    if (authLoading || phiScopeLoading) {
       return;
     }
 
     const userId = authUserId;
-    if (!userId) {
-      lastPresetUserIdRef.current = null;
+    if (phiScopeError || !userId) {
+      lastPresetScopeKeyRef.current = null;
       setPresets([]);
       setLoadError(null);
       setLoadingPresets(false);
@@ -144,12 +156,29 @@ export function StandaloneHealthMarkersScreen() {
       return;
     }
 
-    const switchedAccount =
-      lastPresetUserIdRef.current !== null &&
-      lastPresetUserIdRef.current !== userId;
-    lastPresetUserIdRef.current = userId;
+    /** Do not list presets until PHI subject is known — RLS alone can expose the wrong rows for caretakers. */
+    if (!phiSubjectUserId?.trim()) {
+      lastPresetScopeKeyRef.current = null;
+      setPresets([]);
+      setLoadError(null);
+      setLoadingPresets(false);
+      setPhase('pickPreset');
+      setLines([]);
+      setDrafts({});
+      setActiveIndex(0);
+      setSelectedPresetId(null);
+      setFeedback(null);
+      setLinesSavedCount(0);
+      return;
+    }
 
-    if (switchedAccount) {
+    const scopeKey = `${userId}|${phiSubjectUserId}`;
+    const switchedScope =
+      lastPresetScopeKeyRef.current !== null &&
+      lastPresetScopeKeyRef.current !== scopeKey;
+    lastPresetScopeKeyRef.current = scopeKey;
+
+    if (switchedScope) {
       setPhase('pickPreset');
       setLines([]);
       setDrafts({});
@@ -164,7 +193,9 @@ export function StandaloneHealthMarkersScreen() {
     setLoadError(null);
 
     void (async () => {
-      const result = await listHealthMarkerPresets(supabase);
+      const result = await listHealthMarkerPresets(supabase, {
+        scopeUserId: phiSubjectUserId,
+      });
       if (cancelled) {
         return;
       }
@@ -180,7 +211,15 @@ export function StandaloneHealthMarkersScreen() {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, authUserId, supabase, presetRefetchTick]);
+  }, [
+    authLoading,
+    phiScopeLoading,
+    phiScopeError,
+    authUserId,
+    phiSubjectUserId,
+    supabase,
+    presetRefetchTick,
+  ]);
 
   useEffect(() => {
     setFeedback(null);
@@ -228,7 +267,7 @@ export function StandaloneHealthMarkersScreen() {
   );
 
   const startPresetFlow = async () => {
-    if (!selectedPresetId || saving) {
+    if (!selectedPresetId || saving || !phiSubjectUserId?.trim()) {
       return;
     }
     setSaving(true);
@@ -236,6 +275,7 @@ export function StandaloneHealthMarkersScreen() {
     const result = await listPresetHealthMarkersForPreset(
       supabase,
       selectedPresetId,
+      { scopeUserId: phiSubjectUserId },
     );
     setSaving(false);
     if (!result.ok) {
@@ -263,7 +303,7 @@ export function StandaloneHealthMarkersScreen() {
   };
 
   const saveCurrentLine = async (): Promise<boolean> => {
-    if (!currentLine || !authUserId) {
+    if (!currentLine || !phiSubjectUserId) {
       return false;
     }
     const customValidation = validatePresetHealthMarkerCustomFields(
@@ -285,7 +325,7 @@ export function StandaloneHealthMarkersScreen() {
     setSaving(true);
     setFeedback(null);
     const result = await createStandaloneHealthMarkerForLine(supabase, {
-      userId: authUserId,
+      userId: phiSubjectUserId,
       line: currentLine,
       valueNumeric: parsed.valueNumeric,
       systolicNumeric: parsed.systolicNumeric,
@@ -333,7 +373,7 @@ export function StandaloneHealthMarkersScreen() {
   const secondaryBtn =
     'min-h-[56px] items-center justify-center rounded-xl border border-app-border bg-app-surface px-4 dark:border-app-border-dark dark:bg-app-surface-dark';
 
-  if (authLoading) {
+  if (authLoading || phiScopeLoading) {
     return (
       <ScreenShell>
         <View className="min-h-[120px] items-center justify-center py-8">
@@ -377,6 +417,38 @@ export function StandaloneHealthMarkersScreen() {
             Try again
           </Text>
         </Pressable>
+      </ScreenShell>
+    );
+  }
+
+  if (phiScopeError) {
+    return (
+      <ScreenShell>
+        <Text
+          className={`text-xl font-semibold ${nw.textInk}`}
+          maxFontSizeMultiplier={2}
+        >
+          Log health markers
+        </Text>
+        <Text
+          className={`mt-2 text-sm ${nw.textMuted}`}
+          accessibilityRole="alert"
+        >
+          {phiScopeError}
+        </Text>
+      </ScreenShell>
+    );
+  }
+
+  if (authUserId && !phiSubjectUserId) {
+    return (
+      <ScreenShell>
+        <View className="min-h-[120px] items-center justify-center py-8">
+          <ActivityIndicator size="large" />
+          <Text className={`mt-3 text-center text-sm ${nw.textMuted}`}>
+            Preparing your account…
+          </Text>
+        </View>
       </ScreenShell>
     );
   }

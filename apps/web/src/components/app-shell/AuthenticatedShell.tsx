@@ -3,7 +3,10 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
+import { useMemo } from 'react';
 import { NavigationShell } from '@abstrack/ui';
+
+import { useWebPhiSubjectUserContext } from '@/lib/patient/use-web-phi-subject-user-context';
 
 const NAV_ITEMS: {
   href: string;
@@ -63,6 +66,9 @@ export type AuthenticatedShellProps = {
 /**
  * Authenticated app chrome: skip link, {@link NavigationShell} with primary nav, sign-out, and a
  * centered main column. Surfaces use CSS variables so light/dark tracks the theme toggle.
+ * Primary nav omits the patient-only Caretaker settings link until the web PHI subject context
+ * hook finishes resolving (or reports an error): `profileAppRole` is null while resolving, so we
+ * default to the stricter caretaker-visible set to avoid a brief incorrect link for caretakers.
  *
  * @param props - Props.
  * @returns Shell layout wrapping page content.
@@ -72,6 +78,21 @@ export function AuthenticatedShell({
   email,
 }: AuthenticatedShellProps) {
   const pathname = usePathname() ?? '/';
+  const {
+    profileAppRole,
+    loading: phiSubjectContextLoading,
+    errorMessage: phiSubjectContextError,
+  } = useWebPhiSubjectUserContext();
+  const navItems = useMemo(() => {
+    const roleUnknownOrCaretaker =
+      phiSubjectContextLoading ||
+      phiSubjectContextError != null ||
+      profileAppRole === 'caretaker';
+    if (roleUnknownOrCaretaker) {
+      return NAV_ITEMS.filter((item) => item.href !== '/settings/caretaker');
+    }
+    return NAV_ITEMS;
+  }, [profileAppRole, phiSubjectContextLoading, phiSubjectContextError]);
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -110,7 +131,7 @@ export function AuthenticatedShell({
                 aria-label="Primary"
                 className="flex flex-1 flex-wrap items-center justify-center gap-1.5 sm:justify-start lg:justify-center"
               >
-                {NAV_ITEMS.map(({ href, label, match }) => {
+                {navItems.map(({ href, label, match }) => {
                   const active = isNavActive(pathname, match);
                   return (
                     <Link

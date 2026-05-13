@@ -14,11 +14,9 @@ import type {
 } from '@abstrack/types';
 import { getActiveEpisodeForUser, PresetDataError } from '@abstrack/supabase';
 import { announce } from '@abstrack/ui/native';
-import { useMobileAuthUserId } from '../../lib/auth/use-mobile-auth-user-id';
-import {
-  fetchEpisodeTemplates,
-  getCurrentUserId,
-} from '../../lib/episode-templates/episode-template-service';
+import { useMobilePhiSubjectUserContext } from '../../lib/auth/use-mobile-phi-subject-user-context';
+import { resolveMobilePhiSubjectUserContext } from '../../lib/phi-subject/resolve-mobile-phi-subject-user-context';
+import { fetchEpisodeTemplates } from '../../lib/episode-templates/episode-template-service';
 import { clearSymptomPromptSession } from '../../lib/episodes/symptom-prompt-session-store';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { endEpisodeIfStillActiveOfflineFirst } from '../../lib/episodes/mobile-offline-first-gateway';
@@ -60,7 +58,7 @@ type EpisodeStartNav = NativeStackNavigationProp<
  */
 export function EpisodeStartScreen() {
   const navigation = useNavigation<EpisodeStartNav>();
-  const viewerUserId = useMobileAuthUserId();
+  const { authUserId: viewerUserId } = useMobilePhiSubjectUserContext();
   /** Invalidates in-flight {@link load} when the screen blurs, retry runs, or a load watchdog fires. */
   const loadGenerationRef = useRef(0);
   /** Cleared on blur / completion so {@link EPISODE_START_LOAD_TIMEOUT_MS} cannot fire late. */
@@ -121,23 +119,6 @@ export function EpisodeStartScreen() {
         setErrorMessage(null);
         setEpisodeStartError(null);
         setBlockingActiveEpisode(null);
-        const authResult = await getCurrentUserId();
-        if (stale()) {
-          return;
-        }
-        if (!authResult.ok) {
-          setErrorMessage(authResult.error.message);
-          setStatus('error');
-          return;
-        }
-        if (authResult.data === null) {
-          setErrorMessage('You need to be signed in to start an episode.');
-          setStatus('error');
-          return;
-        }
-        const userId = authResult.data;
-
-        let activeEpisodeRow: EpisodeRow | null = null;
         const bridgeForActiveRead = psBridgeRef.current;
         const trustedReplicaDb = powerSyncOfflineReplicaReadsEnabled(
           bridgeForActiveRead,
@@ -152,6 +133,26 @@ export function EpisodeStartScreen() {
         /** Prefer trusted mirror for reads; fall back to init-only SQLite after Supabase network errors. */
         const replicaDbForNetworkFallback =
           trustedReplicaDb ?? sqliteReadyReplicaDb;
+
+        const phiRes = await resolveMobilePhiSubjectUserContext({
+          powerSyncDatabase: replicaDbForNetworkFallback,
+        });
+        if (stale()) {
+          return;
+        }
+        if (!phiRes.ok) {
+          setErrorMessage(phiRes.error.message);
+          setStatus('error');
+          return;
+        }
+        if (phiRes.data == null) {
+          setErrorMessage('You need to be signed in to start an episode.');
+          setStatus('error');
+          return;
+        }
+        const phiSubjectUserId = phiRes.data.phiSubjectUserId;
+
+        let activeEpisodeRow: EpisodeRow | null = null;
         let shouldQuerySupabaseForActive = true;
         if (trustedReplicaDb) {
           const connected = await fetchMobileDeviceIsConnected();
@@ -163,7 +164,7 @@ export function EpisodeStartScreen() {
             try {
               activeEpisodeRow = await getActiveEpisodeRowFromPowerSyncDb(
                 trustedReplicaDb,
-                userId,
+                phiSubjectUserId,
               );
             } catch (caught) {
               if (!stale()) {
@@ -182,7 +183,10 @@ export function EpisodeStartScreen() {
 
         if (!activeEpisodeRow && shouldQuerySupabaseForActive) {
           const supabase = getMobileSupabaseClient();
-          const activeResult = await getActiveEpisodeForUser(supabase, userId);
+          const activeResult = await getActiveEpisodeForUser(
+            supabase,
+            phiSubjectUserId,
+          );
           if (stale()) {
             return;
           }
@@ -197,7 +201,7 @@ export function EpisodeStartScreen() {
               try {
                 activeEpisodeRow = await getActiveEpisodeRowFromPowerSyncDb(
                   replicaDbForNetworkFallback,
-                  userId,
+                  phiSubjectUserId,
                 );
               } catch (caught) {
                 if (!stale()) {
@@ -238,6 +242,7 @@ export function EpisodeStartScreen() {
             replicationReady:
               powerSyncOfflineReplicaReadsEnabled(bridgeForTemplates),
           },
+          scopeUserId: phiSubjectUserId,
         });
         if (stale()) {
           return;
@@ -263,7 +268,7 @@ export function EpisodeStartScreen() {
           let didNavigateToSymptomPrompt = false;
           try {
             const saveResult = await saveEpisodeWithTemplatePresets({
-              userId,
+              userId: phiSubjectUserId,
               symptomPresetId: template.symptom_preset_id,
               healthMarkerPresetId: template.health_marker_preset_id,
               powerSyncDatabase: powerSyncReplicaSqliteReady(
@@ -446,20 +451,24 @@ export function EpisodeStartScreen() {
     setSubmitting(true);
     let didNavigateToSymptomPrompt = false;
     try {
-      const authResult = await getCurrentUserId();
-      if (!authResult.ok) {
-        setEpisodeStartError(authResult.error.message);
-        announce(authResult.error.message);
+      const phiRes = await resolveMobilePhiSubjectUserContext({
+        powerSyncDatabase: powerSyncReplicaSqliteReady(psBridgeRef.current)
+          ? psBridgeRef.current.database
+          : null,
+      });
+      if (!phiRes.ok) {
+        setEpisodeStartError(phiRes.error.message);
+        announce(phiRes.error.message);
         return;
       }
-      if (authResult.data === null) {
+      if (phiRes.data == null) {
         const message = 'You need to be signed in to start an episode.';
         setEpisodeStartError(message);
         announce(message);
         return;
       }
       const result = await saveEpisodeWithTemplatePresets({
-        userId: authResult.data,
+        userId: phiRes.data.phiSubjectUserId,
         symptomPresetId: template.symptom_preset_id,
         healthMarkerPresetId: template.health_marker_preset_id,
         powerSyncDatabase: powerSyncReplicaSqliteReady(psBridgeRef.current)

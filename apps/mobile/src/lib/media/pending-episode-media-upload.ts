@@ -26,10 +26,8 @@ import {
 } from './device-pending-media-crypto';
 import { getOrCreateDeviceSqlcipherKey } from '../powersync/powersync-sqlcipher-key';
 import { newRandomUuidV4 } from '../random-uuid';
-import {
-  getMobileAuthSessionSafe,
-  getMobileSupabaseClient,
-} from '../supabase-wiring';
+import { getMobileSupabaseClient } from '../supabase-wiring';
+import { resolveMobilePhiSubjectUserContext } from '../phi-subject/resolve-mobile-phi-subject-user-context';
 import { fetchMobileDeviceIsConnected } from '../network/mobile-device-netinfo';
 
 function newQueueId(): string {
@@ -391,6 +389,10 @@ export type RunPendingEpisodeMediaUploadWorkerOptions = {
 
 /**
  * Implementation for {@link runPendingEpisodeMediaUploadWorker} (runs after mutex acquisition).
+ *
+ * @returns `processed` / `failures` for row-level upload attempts; `failures` is incremented by one
+ *   when {@link resolveMobilePhiSubjectUserContext} returns an error (misconfigured caretaker, offline
+ *   scope, etc.) so telemetry differs from the no-session / idle path (`processed: 0`, `failures: 0`).
  */
 async function runPendingEpisodeMediaUploadWorkerImpl(
   db: PowerSyncDatabase,
@@ -417,13 +419,23 @@ async function runPendingEpisodeMediaUploadWorkerImpl(
     return { processed: 0, failures: 0 };
   }
 
-  const {
-    data: { session },
-  } = await getMobileAuthSessionSafe();
-  const uid = session?.user?.id;
-  if (!uid) {
+  const phiRes = await resolveMobilePhiSubjectUserContext({
+    powerSyncDatabase: db,
+  });
+  if (!phiRes.ok) {
+    console.warn(
+      '[PendingEpisodeMediaUploadWorker] PHI scope resolution failed; pending episode media drain skipped.',
+      {
+        code: phiRes.error.code,
+        message: phiRes.error.message,
+      },
+    );
+    return { processed: 0, failures: 1 };
+  }
+  if (phiRes.data == null) {
     return { processed: 0, failures: 0 };
   }
+  const uid = phiRes.data.phiSubjectUserId;
 
   if (pendingMediaUploadSignalRequestedStop(signal)) {
     return { processed: 0, failures: 0 };
@@ -606,6 +618,8 @@ async function runPendingEpisodeMediaUploadWorkerImpl(
  *
  * @param db - Open PowerSync DB, or `null` to no-op.
  * @param options - {@link RunPendingEpisodeMediaUploadWorkerOptions}
+ * @returns Row-level `processed` / `failures`, plus one aggregate `failures` increment when PHI scope
+ *   resolution errors before any row is attempted (see {@link runPendingEpisodeMediaUploadWorkerImpl}).
  */
 export function runPendingEpisodeMediaUploadWorker(
   db: PowerSyncDatabase | null | undefined,

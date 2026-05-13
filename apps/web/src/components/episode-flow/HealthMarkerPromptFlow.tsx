@@ -29,6 +29,7 @@ import {
   listEpisodeHealthMarkersForEpisode,
   listEpisodeObservationTimeline,
   listPresetHealthMarkersForPreset,
+  resolvePhiSubjectUserContextFromSupabase,
   type EpisodeTimelineItem,
   upsertEpisodeTimelineItem,
 } from '@abstrack/supabase';
@@ -198,7 +199,23 @@ export function HealthMarkerPromptFlow({
       setStatus('error');
       return;
     }
-    setUserId(user.id);
+    const phiRes = await resolvePhiSubjectUserContextFromSupabase(
+      supabase,
+      user.id,
+    );
+    if (isStale()) {
+      return;
+    }
+    if (!phiRes.ok || phiRes.data == null) {
+      setErrorMessage(
+        phiRes.ok
+          ? 'You must be signed in to save health marker answers. Try signing in again.'
+          : phiRes.error.message,
+      );
+      setStatus('error');
+      return;
+    }
+    setUserId(phiRes.data.phiSubjectUserId);
 
     const episode = await getEpisodeById(supabase, episodeId);
     if (isStale()) {

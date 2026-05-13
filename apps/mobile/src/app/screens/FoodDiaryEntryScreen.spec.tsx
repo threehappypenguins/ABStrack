@@ -39,6 +39,19 @@ jest.mock('../../lib/supabase-wiring-core', () => {
   };
 });
 
+jest.mock(
+  '../../lib/phi-subject/resolve-mobile-phi-subject-user-context',
+  () => ({
+    resolveMobilePhiSubjectUserContext: jest.fn(),
+  }),
+);
+
+const mockResolveMobilePhiSubjectUserContext = (
+  jest.requireMock(
+    '../../lib/phi-subject/resolve-mobile-phi-subject-user-context',
+  ) as { resolveMobilePhiSubjectUserContext: jest.Mock }
+).resolveMobilePhiSubjectUserContext;
+
 jest.mock('../theme/AppThemeContext', () => ({
   useAppTheme: jest.fn(),
 }));
@@ -70,6 +83,15 @@ jest.mock('@react-native-community/datetimepicker', () => {
 describe('FoodDiaryEntryScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+
+    mockResolveMobilePhiSubjectUserContext.mockResolvedValue({
+      ok: true,
+      data: {
+        authUserId: 'test-user-1',
+        phiSubjectUserId: 'test-user-1',
+        profileAppRole: 'patient',
+      },
+    });
 
     jest.mocked(useRoute).mockReturnValue({
       key: 'FoodDiaryEntry',

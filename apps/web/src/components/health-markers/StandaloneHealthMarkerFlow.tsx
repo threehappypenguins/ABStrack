@@ -22,10 +22,14 @@ import {
 } from '@abstrack/types';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
 import { useAuth } from '@/lib/auth-provider';
+import { useWebPhiSubjectUserContext } from '@/lib/patient/use-web-phi-subject-user-context';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
 import { PageLoading } from '@/components/page-states/PageLoading';
 /**
  * Standalone, non-episode health-marker prompt flow.
+ *
+ * Preset and line reads use {@link useWebPhiSubjectUserContext} `phiSubjectUserId` so caretakers
+ * only see and log markers for the linked patient, matching {@link createStandaloneHealthMarkerForLine}.
  *
  * Presets with no marker lines stay on preset selection with guidance, or show
  * recovery actions if prompting ever has an empty line list.
@@ -36,6 +40,12 @@ export function StandaloneHealthMarkerFlow() {
   const router = useRouter();
   const { announce } = useAnnounce();
   const { session, loading: authLoading } = useAuth();
+  const {
+    phiSubjectUserId,
+    loading: phiScopeLoading,
+    errorMessage: phiScopeError,
+    refresh: refreshPhiScope,
+  } = useWebPhiSubjectUserContext();
   const supabase = useMemo(() => createBrowserClient(), []);
 
   const [phase, setPhase] = useState<'pickPreset' | 'prompting' | 'complete'>(
@@ -53,16 +63,18 @@ export function StandaloneHealthMarkerFlow() {
   /** Successful `createStandaloneHealthMarkerForLine` calls in the current preset session. */
   const [linesSavedCount, setLinesSavedCount] = useState(0);
   const [presetRefetchTick, setPresetRefetchTick] = useState(0);
-  const lastPresetUserIdRef = useRef<string | null>(null);
+  const lastPresetScopeKeyRef = useRef<string | null>(null);
+
+  const scopeLoading = authLoading || phiScopeLoading;
 
   useEffect(() => {
-    if (authLoading) {
+    if (scopeLoading) {
       return;
     }
 
     const userId = session?.user?.id ?? null;
     if (!userId) {
-      lastPresetUserIdRef.current = null;
+      lastPresetScopeKeyRef.current = null;
       setPresets([]);
       setLoadError(null);
       setLoadingPresets(false);
@@ -76,12 +88,43 @@ export function StandaloneHealthMarkerFlow() {
       return;
     }
 
-    const switchedAccount =
-      lastPresetUserIdRef.current !== null &&
-      lastPresetUserIdRef.current !== userId;
-    lastPresetUserIdRef.current = userId;
+    if (phiScopeError) {
+      lastPresetScopeKeyRef.current = null;
+      setPresets([]);
+      setLoadError(phiScopeError);
+      setLoadingPresets(false);
+      setPhase('pickPreset');
+      setLines([]);
+      setDrafts({});
+      setActiveIndex(0);
+      setSelectedPresetId(null);
+      setFeedback(null);
+      setLinesSavedCount(0);
+      return;
+    }
 
-    if (switchedAccount) {
+    if (!phiSubjectUserId) {
+      lastPresetScopeKeyRef.current = null;
+      setPresets([]);
+      setLoadError(null);
+      setLoadingPresets(false);
+      setPhase('pickPreset');
+      setLines([]);
+      setDrafts({});
+      setActiveIndex(0);
+      setSelectedPresetId(null);
+      setFeedback(null);
+      setLinesSavedCount(0);
+      return;
+    }
+
+    const scopeKey = `${userId}|${phiSubjectUserId}`;
+    const switchedScope =
+      lastPresetScopeKeyRef.current !== null &&
+      lastPresetScopeKeyRef.current !== scopeKey;
+    lastPresetScopeKeyRef.current = scopeKey;
+
+    if (switchedScope) {
       setPhase('pickPreset');
       setLines([]);
       setDrafts({});
@@ -96,7 +139,9 @@ export function StandaloneHealthMarkerFlow() {
     setLoadError(null);
 
     void (async () => {
-      const result = await listHealthMarkerPresets(supabase);
+      const result = await listHealthMarkerPresets(supabase, {
+        scopeUserId: phiSubjectUserId,
+      });
       if (cancelled) {
         return;
       }
@@ -112,7 +157,14 @@ export function StandaloneHealthMarkerFlow() {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, session?.user?.id, supabase, presetRefetchTick]);
+  }, [
+    phiScopeError,
+    phiSubjectUserId,
+    presetRefetchTick,
+    scopeLoading,
+    session?.user?.id,
+    supabase,
+  ]);
 
   useEffect(() => {
     setFeedback(null);
@@ -152,7 +204,7 @@ export function StandaloneHealthMarkerFlow() {
   );
 
   const startPresetFlow = async () => {
-    if (!selectedPresetId || saving) {
+    if (!selectedPresetId || saving || !phiSubjectUserId) {
       return;
     }
     setSaving(true);
@@ -160,6 +212,7 @@ export function StandaloneHealthMarkerFlow() {
     const result = await listPresetHealthMarkersForPreset(
       supabase,
       selectedPresetId,
+      { scopeUserId: phiSubjectUserId },
     );
     setSaving(false);
     if (!result.ok) {
@@ -187,7 +240,7 @@ export function StandaloneHealthMarkerFlow() {
   };
 
   const saveCurrentLine = async (): Promise<boolean> => {
-    if (!currentLine || !session?.user?.id) {
+    if (!currentLine || !session?.user?.id || !phiSubjectUserId) {
       return false;
     }
     const customValidation = validatePresetHealthMarkerCustomFields(
@@ -209,7 +262,7 @@ export function StandaloneHealthMarkerFlow() {
     setSaving(true);
     setFeedback(null);
     const result = await createStandaloneHealthMarkerForLine(supabase, {
-      userId: session.user.id,
+      userId: phiSubjectUserId,
       line: currentLine,
       valueNumeric: parsed.valueNumeric,
       systolicNumeric: parsed.systolicNumeric,
@@ -251,7 +304,7 @@ export function StandaloneHealthMarkerFlow() {
     setActiveIndex((prev) => prev + 1);
   };
 
-  if (authLoading) {
+  if (scopeLoading) {
     return <PageLoading title="Log health markers" />;
   }
 
@@ -268,6 +321,51 @@ export function StandaloneHealthMarkerFlow() {
         >
           Sign in
         </Link>
+      </div>
+    );
+  }
+
+  if (phiScopeError) {
+    return (
+      <div className="space-y-4">
+        <h1 className="text-2xl font-bold tracking-tight text-app-ink">
+          Log health markers
+        </h1>
+        <p className="text-sm text-red-700 dark:text-red-300" role="alert">
+          {phiScopeError}
+        </p>
+        <button
+          type="button"
+          className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-app-border bg-app-surface px-4 text-sm font-semibold text-app-ink shadow-sm transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+          onClick={() => {
+            void refreshPhiScope();
+          }}
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
+
+  if (!phiSubjectUserId) {
+    return (
+      <div className="space-y-4">
+        <h1 className="text-2xl font-bold tracking-tight text-app-ink">
+          Log health markers
+        </h1>
+        <p className="text-sm text-app-muted" role="status">
+          Your account could not be scoped for health markers yet. Try
+          refreshing the page, or sign out and sign back in.
+        </p>
+        <button
+          type="button"
+          className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-app-border bg-app-surface px-4 text-sm font-semibold text-app-ink shadow-sm transition hover:bg-app-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+          onClick={() => {
+            void refreshPhiScope();
+          }}
+        >
+          Retry
+        </button>
       </div>
     );
   }

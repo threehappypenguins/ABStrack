@@ -29,6 +29,7 @@ import { ActiveEpisodeCard } from '@/components/episodes/ActiveEpisodeCard';
 import { EpisodeLocaleInstant } from '@/components/episodes/EpisodeLocaleInstant';
 import { RecentEpisodesList } from '@/components/episodes/RecentEpisodesList';
 import { ConfirmDialog } from '@/components/symptom-presets/ConfirmDialog';
+import { useWebPhiSubjectUserContext } from '@/lib/patient/use-web-phi-subject-user-context';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
 
 const PAGE = 25;
@@ -81,6 +82,11 @@ export function ManageRecordsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { announce } = useAnnounce();
+  const {
+    phiSubjectUserId,
+    loading: phiScopeLoading,
+    errorMessage: phiScopeError,
+  } = useWebPhiSubjectUserContext();
   const segmentParam = searchParams.get('segment');
   const segment: ManageSegment =
     segmentParam === 'health' || segmentParam === 'food'
@@ -181,21 +187,23 @@ export function ManageRecordsPage() {
     setRecentError(null);
     try {
       const supabase = createBrowserClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (stale()) {
+      if (phiScopeError) {
+        setActiveEpisodeError(phiScopeError);
+        setRecentError(phiScopeError);
+        setActiveEpisode(null);
+        setRecentEpisodes([]);
+        setHasMoreEpisodes(false);
         return;
       }
-      if (!user) {
+      if (!phiSubjectUserId) {
         setActiveEpisode(null);
         setRecentEpisodes([]);
         setHasMoreEpisodes(false);
         return;
       }
       const [activeRes, recentRes] = await Promise.all([
-        getActiveEpisodeForUser(supabase, user.id),
-        listCompletedEpisodesForUser(supabase, user.id, {
+        getActiveEpisodeForUser(supabase, phiSubjectUserId),
+        listCompletedEpisodesForUser(supabase, phiSubjectUserId, {
           limit: PAGE,
           offset: 0,
           endedAtOrAfter: episodeBounds.endedAtOrAfter,
@@ -230,13 +238,18 @@ export function ManageRecordsPage() {
         setEpisodesLoading(false);
       }
     }
-  }, [episodeBounds.endedAtOrAfter, episodeBounds.endedAtOrBefore]);
+  }, [
+    episodeBounds.endedAtOrAfter,
+    episodeBounds.endedAtOrBefore,
+    phiScopeError,
+    phiSubjectUserId,
+  ]);
 
   useEffect(() => {
-    if (segment === 'episodes') {
+    if (segment === 'episodes' && !phiScopeLoading) {
       void loadEpisodesInitial();
     }
-  }, [segment, loadEpisodesInitial]);
+  }, [segment, loadEpisodesInitial, phiScopeLoading]);
 
   const loadMoreEpisodes = useCallback(async () => {
     if (loadingMoreEpisodes || !hasMoreEpisodes) {
@@ -247,22 +260,20 @@ export function ManageRecordsPage() {
     setLoadingMoreEpisodes(true);
     try {
       const supabase = createBrowserClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (stale()) {
-        return;
-      }
-      if (!user) {
+      if (!phiSubjectUserId) {
         setHasMoreEpisodes(false);
         return;
       }
-      const recentRes = await listCompletedEpisodesForUser(supabase, user.id, {
-        limit: PAGE,
-        offset: recentEpisodes.length,
-        endedAtOrAfter: episodeBounds.endedAtOrAfter,
-        endedAtOrBefore: episodeBounds.endedAtOrBefore,
-      });
+      const recentRes = await listCompletedEpisodesForUser(
+        supabase,
+        phiSubjectUserId,
+        {
+          limit: PAGE,
+          offset: recentEpisodes.length,
+          endedAtOrAfter: episodeBounds.endedAtOrAfter,
+          endedAtOrBefore: episodeBounds.endedAtOrBefore,
+        },
+      );
       if (stale()) {
         return;
       }
@@ -285,6 +296,7 @@ export function ManageRecordsPage() {
     episodeBounds.endedAtOrBefore,
     hasMoreEpisodes,
     loadingMoreEpisodes,
+    phiSubjectUserId,
     recentEpisodes.length,
   ]);
 
@@ -311,23 +323,27 @@ export function ManageRecordsPage() {
     setMarkersError(null);
     try {
       const supabase = createBrowserClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (stale()) {
-        return;
-      }
-      if (!user) {
+      if (phiScopeError) {
+        setMarkersError(phiScopeError);
         setMarkers([]);
         setHasMoreMarkers(false);
         return;
       }
-      const res = await listStandaloneHealthMarkersForUser(supabase, user.id, {
-        limit: PAGE,
-        offset: 0,
-        recordedAtOrAfter: markerBounds.recordedAtOrAfter,
-        recordedAtOrBefore: markerBounds.recordedAtOrBefore,
-      });
+      if (!phiSubjectUserId) {
+        setMarkers([]);
+        setHasMoreMarkers(false);
+        return;
+      }
+      const res = await listStandaloneHealthMarkersForUser(
+        supabase,
+        phiSubjectUserId,
+        {
+          limit: PAGE,
+          offset: 0,
+          recordedAtOrAfter: markerBounds.recordedAtOrAfter,
+          recordedAtOrBefore: markerBounds.recordedAtOrBefore,
+        },
+      );
       if (stale()) {
         return;
       }
@@ -348,13 +364,18 @@ export function ManageRecordsPage() {
         setMarkersLoading(false);
       }
     }
-  }, [markerBounds.recordedAtOrAfter, markerBounds.recordedAtOrBefore]);
+  }, [
+    markerBounds.recordedAtOrAfter,
+    markerBounds.recordedAtOrBefore,
+    phiScopeError,
+    phiSubjectUserId,
+  ]);
 
   useEffect(() => {
-    if (segment === 'health') {
+    if (segment === 'health' && !phiScopeLoading) {
       void loadMarkersInitial();
     }
-  }, [segment, loadMarkersInitial]);
+  }, [segment, loadMarkersInitial, phiScopeLoading]);
 
   const loadMoreMarkers = useCallback(async () => {
     if (loadingMoreMarkers || !hasMoreMarkers) {
@@ -365,22 +386,20 @@ export function ManageRecordsPage() {
     setLoadingMoreMarkers(true);
     try {
       const supabase = createBrowserClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (stale()) {
-        return;
-      }
-      if (!user) {
+      if (!phiSubjectUserId) {
         setHasMoreMarkers(false);
         return;
       }
-      const res = await listStandaloneHealthMarkersForUser(supabase, user.id, {
-        limit: PAGE,
-        offset: markers.length,
-        recordedAtOrAfter: markerBounds.recordedAtOrAfter,
-        recordedAtOrBefore: markerBounds.recordedAtOrBefore,
-      });
+      const res = await listStandaloneHealthMarkersForUser(
+        supabase,
+        phiSubjectUserId,
+        {
+          limit: PAGE,
+          offset: markers.length,
+          recordedAtOrAfter: markerBounds.recordedAtOrAfter,
+          recordedAtOrBefore: markerBounds.recordedAtOrBefore,
+        },
+      );
       if (stale()) {
         return;
       }
@@ -406,6 +425,7 @@ export function ManageRecordsPage() {
     markerBounds.recordedAtOrAfter,
     markerBounds.recordedAtOrBefore,
     markers.length,
+    phiSubjectUserId,
   ]);
 
   const confirmDeleteMarker = useCallback(async (): Promise<void | false> => {
@@ -471,24 +491,28 @@ export function ManageRecordsPage() {
     setFoodError(null);
     try {
       const supabase = createBrowserClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (stale()) {
-        return;
-      }
-      if (!user) {
+      if (phiScopeError) {
+        setFoodError(phiScopeError);
         setFoodRows([]);
         setHasMoreFood(false);
         return;
       }
-      const res = await listFoodDiaryEntriesForUser(supabase, user.id, {
-        limit: PAGE,
-        offset: 0,
-        standaloneOnly: true,
-        loggedAtOrAfter: foodBounds.loggedAtOrAfter,
-        loggedAtOrBefore: foodBounds.loggedAtOrBefore,
-      });
+      if (!phiSubjectUserId) {
+        setFoodRows([]);
+        setHasMoreFood(false);
+        return;
+      }
+      const res = await listFoodDiaryEntriesForUser(
+        supabase,
+        phiSubjectUserId,
+        {
+          limit: PAGE,
+          offset: 0,
+          standaloneOnly: true,
+          loggedAtOrAfter: foodBounds.loggedAtOrAfter,
+          loggedAtOrBefore: foodBounds.loggedAtOrBefore,
+        },
+      );
       if (stale()) {
         return;
       }
@@ -509,13 +533,18 @@ export function ManageRecordsPage() {
         setFoodLoading(false);
       }
     }
-  }, [foodBounds.loggedAtOrAfter, foodBounds.loggedAtOrBefore]);
+  }, [
+    foodBounds.loggedAtOrAfter,
+    foodBounds.loggedAtOrBefore,
+    phiScopeError,
+    phiSubjectUserId,
+  ]);
 
   useEffect(() => {
-    if (segment === 'food') {
+    if (segment === 'food' && !phiScopeLoading) {
       void loadFoodInitial();
     }
-  }, [segment, loadFoodInitial]);
+  }, [segment, loadFoodInitial, phiScopeLoading]);
 
   const loadMoreFood = useCallback(async () => {
     if (loadingMoreFood || !hasMoreFood) {
@@ -526,23 +555,21 @@ export function ManageRecordsPage() {
     setLoadingMoreFood(true);
     try {
       const supabase = createBrowserClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (stale()) {
-        return;
-      }
-      if (!user) {
+      if (!phiSubjectUserId) {
         setHasMoreFood(false);
         return;
       }
-      const res = await listFoodDiaryEntriesForUser(supabase, user.id, {
-        limit: PAGE,
-        offset: foodRows.length,
-        standaloneOnly: true,
-        loggedAtOrAfter: foodBounds.loggedAtOrAfter,
-        loggedAtOrBefore: foodBounds.loggedAtOrBefore,
-      });
+      const res = await listFoodDiaryEntriesForUser(
+        supabase,
+        phiSubjectUserId,
+        {
+          limit: PAGE,
+          offset: foodRows.length,
+          standaloneOnly: true,
+          loggedAtOrAfter: foodBounds.loggedAtOrAfter,
+          loggedAtOrBefore: foodBounds.loggedAtOrBefore,
+        },
+      );
       if (stale()) {
         return;
       }
@@ -568,6 +595,7 @@ export function ManageRecordsPage() {
     foodRows.length,
     hasMoreFood,
     loadingMoreFood,
+    phiSubjectUserId,
   ]);
 
   const confirmDeleteFood = useCallback(async (): Promise<void | false> => {
