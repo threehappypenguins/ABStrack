@@ -22,7 +22,9 @@ export type WebPhiSubjectUserContextState = {
  *
  * In-flight resolves are dropped after unmount or when `authUserId` / auth loading changes by
  * bumping an internal generation counter so async completion does not call `setState` on an
- * unmounted consumer.
+ * unmounted consumer. When starting a resolve for a non-null `authUserId`, `phiSubjectUserId` and
+ * `profileAppRole` state are cleared first so consumers that do not gate every read on `loading`
+ * cannot briefly use a prior account’s PHI scope.
  *
  * @returns Async-resolved ids plus loading and error state for episode, manage, and preset flows.
  */
@@ -47,8 +49,10 @@ export function useWebPhiSubjectUserContext(): WebPhiSubjectUserContextState {
       setResolving(false);
       return;
     }
-    setResolving(true);
+    setPhiSubjectUserId(null);
+    setProfileAppRole(null);
     setErrorMessage(null);
+    setResolving(true);
     const supabase = createBrowserClient();
     const result = await resolvePhiSubjectUserContextFromSupabase(
       supabase,

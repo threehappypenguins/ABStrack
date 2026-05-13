@@ -30,7 +30,9 @@ export type MobilePhiSubjectUserContextState = {
  * In-flight {@link resolveMobilePhiSubjectUserContext} results are ignored after unmount or when
  * `authUserId` / replica readiness (`database` + `localSqliteInitialized`) / first-sync completion
  * change, by bumping a generation counter so async completion does not call `setState` on an
- * unmounted consumer. Resolution still runs when `authUserId` is null: on cold starts where
+ * unmounted consumer. Each new resolve clears `phiSubjectUserId` and `profileAppRole` before
+ * awaiting the resolver so consumers that do not gate every read on `loading` cannot briefly use a
+ * stale PHI subject after an account switch or replica re-scope. Resolution still runs when `authUserId` is null: on cold starts where
  * {@link useMobileAuthUserId} has not recovered yet, {@link resolveMobilePhiSubjectUserContext}
  * may still read a persisted auth id (the same path as inside that resolver), so those sessions are
  * not treated as signed-out for PHI scope. Bridge fields such as `syncConnecting` are intentionally
@@ -58,6 +60,8 @@ export function useMobilePhiSubjectUserContext(): MobilePhiSubjectUserContextSta
     const gen = ++genRef.current;
     setLoading(true);
     setErrorMessage(null);
+    setPhiSubjectUserId(null);
+    setProfileAppRole(null);
     const result = await resolveMobilePhiSubjectUserContext({
       powerSyncDatabase: dbForPhi,
     });

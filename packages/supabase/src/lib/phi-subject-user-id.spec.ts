@@ -54,6 +54,9 @@ function makePhiTestClient(opts: {
   } as unknown as AbstrackSupabaseClient;
 }
 
+const CARETAKER_NO_ACTIVE_GRANT_MESSAGE =
+  'Your caretaker account is not linked to a patient yet. Ask the patient to send an invite from Settings, then open the link from your email.';
+
 describe('resolvePhiSubjectUserContextFromSupabase', () => {
   it('treats missing profile with no caretaker grant as patient self', async () => {
     const uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
@@ -72,6 +75,37 @@ describe('resolvePhiSubjectUserContextFromSupabase', () => {
       },
     });
   });
+
+  it.each([
+    {
+      label: 'empty grant rows',
+      grantsData: [] as Array<{ patient_user_id: string }>,
+    },
+    { label: 'null grant rows', grantsData: null },
+  ])(
+    'returns validation_error when profile is caretaker but grants.data is $label',
+    async ({ grantsData }) => {
+      const uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+      const client = makePhiTestClient({
+        profile: Promise.resolve({
+          data: { app_role: 'caretaker' },
+          error: null,
+        }),
+        grants: Promise.resolve({
+          data: grantsData,
+          error: null,
+        }),
+      });
+
+      const res = await resolvePhiSubjectUserContextFromSupabase(client, uid);
+      expect(res.ok).toBe(false);
+      if (res.ok) {
+        return;
+      }
+      expect(res.error.code).toBe('validation_error');
+      expect(res.error.message).toBe(CARETAKER_NO_ACTIVE_GRANT_MESSAGE);
+    },
+  );
 
   it('returns validation error when multiple distinct active caretaker grants exist', async () => {
     const client = makePhiTestClient({
