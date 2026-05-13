@@ -47,9 +47,13 @@ type LastSavedSummary = {
  * confirmation and an action to start a fresh entry. Episode-linked saves
  * keep the form visible with inline success text.
  *
- * When {@link resolveMobilePhiSubjectUserContext} returns `{ ok: true, data: null }` after a
- * successful `getUser()` (replica cannot determine PHI scope yet, e.g. offline before `profiles`
- * sync), errors describe **scope / sync**, not sign-in.
+ * When {@link resolveMobilePhiSubjectUserContext} returns `{ ok: true, data: null }` after
+ * the save handler has already confirmed a Supabase `User` via `getUser()`, the user-facing copy
+ * describes **scope / sync**, not sign-in. That combination is uncommon: `getUser()` usually performs
+ * a server round-trip first, so a fully offline “tap save before anything synced” path typically stops
+ * earlier. Reachable cases include the PHI resolver’s local session read yielding no user id while
+ * `getUser()` still returns a user (transient mismatch), or PostgREST failing with a network error
+ * and the PowerSync replica lacking `profiles` / `caretaker_access` rows needed to infer scope yet.
  *
  * @returns Form for meal tag, log timestamp, and free-text food note.
  */
@@ -147,6 +151,8 @@ export function FoodDiaryEntryScreen() {
     setErrorMessage(null);
     setSuccessMessage(null);
 
+    // Validates the session with the server when possible (not a local-only read); offline taps
+    // usually fail here before PHI resolution runs.
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -168,6 +174,8 @@ export function FoodDiaryEntryScreen() {
       setSaving(false);
       return;
     }
+    // Null with a user from getUser() means the PHI resolver could not derive scope yet (see
+    // screen JSDoc); it is not the usual strictly-offline-first path because getUser() ran first.
     if (phiRes.data == null) {
       const message =
         'Patient scope is not ready on this device yet. Connect once while online or wait for sync, then try again.';

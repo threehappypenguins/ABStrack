@@ -109,6 +109,16 @@ describe('mobile auth state sync', () => {
   const invalidOrExpiredMessage =
     'This reset link is invalid or expired. Request a new one.';
 
+  beforeEach(() => {
+    // Cases that need a custom graph override `fetch` in the same test. Default stays a fast,
+    // resolved online snapshot so `App` bootstrap / `fetchMobileDeviceIsConnected` never stall CI.
+    jest.mocked(NetInfo.fetch).mockResolvedValue({
+      type: 'wifi',
+      isConnected: true,
+      isInternetReachable: true,
+    } as unknown as NetInfoState);
+  });
+
   /**
    * Supabase registers multiple `onAuthStateChange` listeners (e.g. App). Tests must
    * broadcast to every subscriber; a single stored callback misses App when Home overwrites it.
@@ -681,13 +691,29 @@ describe('mobile auth state sync', () => {
           },
         })),
       },
-      from: jest.fn(() => ({
-        select: jest.fn(() => ({
-          order: jest.fn(() => ({
-            order: jest.fn(() => Promise.resolve({ data: [], error: null })),
+      from: jest.fn((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: jest.fn(() => ({
+              eq: jest.fn(() => ({
+                maybeSingle: jest.fn(() =>
+                  Promise.resolve({
+                    data: { app_role: 'patient' },
+                    error: null,
+                  }),
+                ),
+              })),
+            })),
+          };
+        }
+        return {
+          select: jest.fn(() => ({
+            order: jest.fn(() => ({
+              order: jest.fn(() => Promise.resolve({ data: [], error: null })),
+            })),
           })),
-        })),
-      })),
+        };
+      }),
     } as unknown as AbstrackSupabaseClient;
 
     jest.mocked(SecureStore.getItemAsync).mockResolvedValue('false');
@@ -698,15 +724,25 @@ describe('mobile auth state sync', () => {
       .spyOn(Linking, 'getInitialURL')
       .mockResolvedValue(null);
     try {
-      const { findByLabelText, findByTestId } = render(<App />);
+      const { getByLabelText, getByTestId } = render(<App />);
 
-      expect(await findByTestId('episode-start-home-cta')).toBeTruthy();
-      fireEvent.press(await findByLabelText("I'm having an episode"));
-      expect(await findByTestId('episode-start-screen-title')).toBeTruthy();
+      await waitFor(
+        () => {
+          expect(getByTestId('episode-start-home-cta')).toBeTruthy();
+        },
+        { timeout: 15_000, interval: 50 },
+      );
+      fireEvent.press(getByLabelText("I'm having an episode"));
+      await waitFor(
+        () => {
+          expect(getByTestId('episode-start-screen-title')).toBeTruthy();
+        },
+        { timeout: 15_000, interval: 50 },
+      );
     } finally {
       getInitialUrlSpy.mockRestore();
     }
-  });
+  }, 20_000);
 
   test('exposes the re-authentication toggle in settings', async () => {
     const signedInSession = {
