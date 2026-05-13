@@ -111,12 +111,21 @@ export function EpisodesManagementPanel({
 }: EpisodesManagementPanelProps) {
   const { colors } = useAppTheme();
   const loadGenRef = useRef(0);
-  /** Session user id from the last completed {@link loadInitial} (used to skip redundant reloads). */
+  /** Session user id from the last completed {@link loadInitial} (auth-only hydration skip vs null→user). */
   const lastLoadedAuthUserIdRef = useRef<string | null>(null);
-  const { authUserId: viewerUserId, phiSubjectUserId: phiSubjectFromHook } =
-    useMobilePhiSubjectUserContext();
+  const {
+    authUserId: viewerUserId,
+    phiSubjectUserId: phiSubjectFromHook,
+    loading: phiSubjectContextLoading,
+    errorMessage: phiSubjectContextError,
+  } = useMobilePhiSubjectUserContext();
   /** `undefined`: effect has not committed a baseline yet (skip reset so `useFocusEffect` owns first load). */
   const prevViewerUserIdRef = useRef<string | null | undefined>(undefined);
+  /**
+   * Last committed list-scope key (auth + PHI subject + resolve state); dedupes the reset effect
+   * when only unrelated render state changes.
+   */
+  const prevScopeKeyRef = useRef<string | undefined>(undefined);
   const psBridge = usePowerSyncBridgeState();
   const powerSyncDbForWrites = useMemo(
     () => (powerSyncReplicaSqliteReady(psBridge) ? psBridge.database : null),
@@ -400,27 +409,33 @@ export function EpisodesManagementPanel({
 
   /**
    * PowerSync subscriptions already receive the signed-in user id, but Supabase-filled snapshots
-   * (`active`, `recent`, `psMirror`) would otherwise stay on the prior account until the next focus
-   * refresh if this panel stays mounted across an account switch.
+   * (`active`, `recent`, `psMirror`) would otherwise stay on the prior **list scope** (auth user +
+   * PHI subject) until the next focus refresh if this panel stays mounted across an account switch,
+   * caretaker link change, or PHI-context resolve transitions.
    */
   useEffect(() => {
-    const next = viewerUserId;
-    const prev = prevViewerUserIdRef.current;
+    const nextAuth = viewerUserId;
+    const scopeKey = `${nextAuth ?? ''}|${phiSubjectFromHook ?? ''}|${
+      phiSubjectContextError ?? ''
+    }|${phiSubjectContextLoading ? 'L' : '-'}`;
+    const prevScopeKey = prevScopeKeyRef.current;
+    const prevAuth = prevViewerUserIdRef.current;
 
-    if (prev !== undefined && prev === next) {
+    if (prevScopeKey !== undefined && prevScopeKey === scopeKey) {
       return;
     }
 
-    prevViewerUserIdRef.current = next;
+    prevScopeKeyRef.current = scopeKey;
+    prevViewerUserIdRef.current = nextAuth;
 
-    if (prev === undefined) {
+    if (prevAuth === undefined) {
       return;
     }
 
     if (
-      prev === null &&
-      next !== null &&
-      lastLoadedAuthUserIdRef.current === next
+      prevAuth === null &&
+      nextAuth !== null &&
+      lastLoadedAuthUserIdRef.current === nextAuth
     ) {
       return;
     }
@@ -452,7 +467,13 @@ export function EpisodesManagementPanel({
     return () => {
       cancel.cancelled = true;
     };
-  }, [viewerUserId, loadInitial]);
+  }, [
+    viewerUserId,
+    phiSubjectFromHook,
+    phiSubjectContextError,
+    phiSubjectContextLoading,
+    loadInitial,
+  ]);
 
   const loadInitialRef = useRef(loadInitial);
   loadInitialRef.current = loadInitial;

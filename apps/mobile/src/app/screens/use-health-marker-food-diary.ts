@@ -22,6 +22,7 @@ import {
   localTimeFromDate,
 } from '../../lib/food-diary/date-time';
 import { resolveMobilePhiSubjectUserContext } from '../../lib/phi-subject/resolve-mobile-phi-subject-user-context';
+import { getMobileAuthSessionSafe } from '../../lib/supabase-wiring';
 
 /** Same ordering as `listFoodDiaryEntriesForEpisode` (newest first). */
 function compareFoodDiaryEntriesDesc(
@@ -126,7 +127,9 @@ export type HealthMarkerFoodDiaryHookResult = {
  * **Creates:** {@link onSaveFoodDiary} resolves {@link resolveMobilePhiSubjectUserContext} for **new**
  * entries and passes that patient-scope `user_id` into offline-first creates — queued SQLite writes have no RLS, so a
  * caller-supplied id from mount would be unsafe across sign-out / account switches (same pattern as
- * symptom persists on {@link SymptomPromptScreen}).
+ * symptom persists on {@link SymptomPromptScreen}). When resolve returns `{ ok: true, data: null }`
+ * (replica cannot determine PHI scope yet, e.g. offline before `profiles` / `caretaker_access` sync),
+ * signed-in users see a **scope / sync** message, not a sign-in error.
  * **Edits** skip that session check and call
  * {@link updateFoodDiaryEntryOfflineFirst} by row id only so local updates still apply when persisted-session
  * recovery fails after sync.
@@ -349,10 +352,21 @@ export function useHealthMarkerFoodDiary({
       const phiRes = await resolveMobilePhiSubjectUserContext({
         powerSyncDatabase,
       });
-      if (!phiRes.ok || phiRes.data == null) {
-        const message = phiRes.ok
-          ? 'Your session could not be verified. Try signing in again.'
-          : phiRes.error.message;
+      if (!phiRes.ok) {
+        const message = phiRes.error.message;
+        setSavingFoodDiary(false);
+        setFoodDiaryFeedback(message);
+        await announce(message, { politeness: 'assertive' });
+        return;
+      }
+      if (phiRes.data == null) {
+        const {
+          data: { session },
+        } = await getMobileAuthSessionSafe();
+        const message =
+          session?.user?.id != null
+            ? 'Patient scope is not ready on this device yet. Connect once while online or wait for sync, then try again.'
+            : 'Your session could not be verified. Try signing in again.';
         setSavingFoodDiary(false);
         setFoodDiaryFeedback(message);
         await announce(message, { politeness: 'assertive' });

@@ -47,6 +47,10 @@ type LastSavedSummary = {
  * confirmation and an action to start a fresh entry. Episode-linked saves
  * keep the form visible with inline success text.
  *
+ * When {@link resolveMobilePhiSubjectUserContext} returns `{ ok: true, data: null }` after a
+ * successful `getUser()` (replica cannot determine PHI scope yet, e.g. offline before `profiles`
+ * sync), errors describe **scope / sync**, not sign-in.
+ *
  * @returns Form for meal tag, log timestamp, and free-text food note.
  */
 export function FoodDiaryEntryScreen() {
@@ -157,10 +161,16 @@ export function FoodDiaryEntryScreen() {
     const phiRes = await resolveMobilePhiSubjectUserContext({
       powerSyncDatabase: powerSyncDb,
     });
-    if (!phiRes.ok || phiRes.data == null) {
-      const message = phiRes.ok
-        ? 'You must be signed in to save a food diary entry.'
-        : phiRes.error.message;
+    if (!phiRes.ok) {
+      const message = phiRes.error.message;
+      setErrorMessage(message);
+      await announce(message, { politeness: 'assertive' });
+      setSaving(false);
+      return;
+    }
+    if (phiRes.data == null) {
+      const message =
+        'Patient scope is not ready on this device yet. Connect once while online or wait for sync, then try again.';
       setErrorMessage(message);
       await announce(message, { politeness: 'assertive' });
       setSaving(false);
