@@ -724,25 +724,16 @@ describe('mobile auth state sync', () => {
       .spyOn(Linking, 'getInitialURL')
       .mockResolvedValue(null);
     try {
-      const { getByLabelText, getByTestId } = render(<App />);
+      const { findByLabelText, findByTestId } = render(<App />);
 
-      await waitFor(
-        () => {
-          expect(getByTestId('episode-start-home-cta')).toBeTruthy();
-        },
-        { timeout: 15_000, interval: 50 },
-      );
-      fireEvent.press(getByLabelText("I'm having an episode"));
-      await waitFor(
-        () => {
-          expect(getByTestId('episode-start-screen-title')).toBeTruthy();
-        },
-        { timeout: 15_000, interval: 50 },
-      );
+      // `episode-start-home-cta` is mounted while the active-episode probe runs; wait for the
+      // primary action that only appears after PHI + resume checks finish (see HomeScreen CTA).
+      fireEvent.press(await findByLabelText("I'm having an episode"));
+      expect(await findByTestId('episode-start-screen-title')).toBeTruthy();
     } finally {
       getInitialUrlSpy.mockRestore();
     }
-  }, 20_000);
+  });
 
   test('exposes the re-authentication toggle in settings', async () => {
     const signedInSession = {
