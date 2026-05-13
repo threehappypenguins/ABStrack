@@ -112,15 +112,22 @@ export function EpisodeTemplateCreateScreen() {
   const loadPresetLists = useCallback(async (signal?: AbortSignal) => {
     setListsLoading(true);
     setListsError(null);
+    // Snapshot so async completion cannot write a newer PHI key than the scope this request used.
+    const viewerAtStart = viewerUserIdRef.current;
+    const scopeUserIdAtStart = phiSubjectUserIdRef.current;
+    const phiLoadingAtStart = phiLoadingRef.current;
+    const phiErrorAtStart = phiErrorRef.current;
+    const fetchKeyForThisRun = `${viewerAtStart ?? ''}|${scopeUserIdAtStart ?? ''}|${phiLoadingAtStart ? 'L' : '-'}|${phiErrorAtStart ?? ''}`;
+
     const offlineRead = offlineReadRef.current;
     const [sRes, mRes] = await Promise.all([
       fetchSymptomPresets({
         powerSyncOfflineRead: offlineRead,
-        scopeUserId: phiSubjectUserIdRef.current,
+        scopeUserId: scopeUserIdAtStart,
       }),
       fetchHealthMarkerPresets({
         powerSyncOfflineRead: offlineRead,
-        scopeUserId: phiSubjectUserIdRef.current,
+        scopeUserId: scopeUserIdAtStart,
       }),
     ]);
     if (signal?.aborted) {
@@ -155,7 +162,7 @@ export function EpisodeTemplateCreateScreen() {
       symptomId: initSymptom,
       markerId: initMarker,
     });
-    lastPresetFetchKeyRef.current = `${viewerUserIdRef.current ?? ''}|${phiSubjectUserIdRef.current ?? ''}|${phiLoadingRef.current ? 'L' : '-'}|${phiErrorRef.current ?? ''}`;
+    lastPresetFetchKeyRef.current = fetchKeyForThisRun;
     setListsLoading(false);
   }, []);
 

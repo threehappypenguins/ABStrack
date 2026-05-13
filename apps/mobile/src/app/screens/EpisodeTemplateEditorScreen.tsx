@@ -125,6 +125,13 @@ export function EpisodeTemplateEditorScreen() {
     async (signal?: AbortSignal) => {
       setStatus('loading');
       setErrorMessage(null);
+      // Snapshot so async completion cannot write a newer PHI key than the scope this request used.
+      const viewerAtStart = viewerUserIdRef.current;
+      const scopeUserIdAtStart = phiSubjectUserIdRef.current;
+      const phiLoadingAtStart = phiLoadingRef.current;
+      const phiErrorAtStart = phiErrorRef.current;
+      const fetchKeyForThisRun = `${viewerAtStart ?? ''}|${templateId}|${scopeUserIdAtStart ?? ''}|${phiLoadingAtStart ? 'L' : '-'}|${phiErrorAtStart ?? ''}`;
+
       const offlineRead = offlineReadRef.current;
       const [tRes, sRes, mRes] = await Promise.all([
         fetchEpisodeTemplateById(templateId, {
@@ -132,11 +139,11 @@ export function EpisodeTemplateEditorScreen() {
         }),
         fetchSymptomPresets({
           powerSyncOfflineRead: offlineRead,
-          scopeUserId: phiSubjectUserIdRef.current,
+          scopeUserId: scopeUserIdAtStart,
         }),
         fetchHealthMarkerPresets({
           powerSyncOfflineRead: offlineRead,
-          scopeUserId: phiSubjectUserIdRef.current,
+          scopeUserId: scopeUserIdAtStart,
         }),
       ]);
       if (signal?.aborted) {
@@ -170,7 +177,7 @@ export function EpisodeTemplateEditorScreen() {
       setName(normalizeEpisodeTemplateName(t.name));
       setSymptomId(t.symptom_preset_id);
       setMarkerId(t.health_marker_preset_id);
-      lastTemplateLoadFetchKeyRef.current = `${viewerUserIdRef.current ?? ''}|${templateId}|${phiSubjectUserIdRef.current ?? ''}|${phiLoadingRef.current ? 'L' : '-'}|${phiErrorRef.current ?? ''}`;
+      lastTemplateLoadFetchKeyRef.current = fetchKeyForThisRun;
       setStatus('ready');
     },
     [templateId],
