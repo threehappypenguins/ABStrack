@@ -629,18 +629,28 @@ describe('mobile auth state sync', () => {
     jest.mocked(SecureStore.getItemAsync).mockResolvedValue('false');
     jest.mocked(getMobileSupabaseClient).mockReturnValue(mockClient);
 
-    const { findByText, findByLabelText, findByTestId } = render(<App />);
+    /** `App` bootstrap awaits `Linking.getInitialURL()`; an unmocked native impl can hang past CI’s async test budget. */
+    const getInitialUrlSpy = jest
+      .spyOn(Linking, 'getInitialURL')
+      .mockResolvedValue(null);
+    try {
+      const { findByText, findByLabelText, findByTestId } = render(<App />);
 
-    expect(await findByText('Welcome to ABStrack')).toBeTruthy();
+      expect(await findByText('Welcome to ABStrack')).toBeTruthy();
 
-    fireEvent.press(await findByLabelText('Symptom presets'));
-    expect(await findByTestId('symptom-preset-list-screen')).toBeTruthy();
+      fireEvent.press(await findByLabelText('Symptom presets'));
+      expect(await findByTestId('symptom-preset-list-screen')).toBeTruthy();
 
-    fireEvent.press(await findByLabelText('Health marker presets'));
-    expect(await findByTestId('health-marker-preset-list-screen')).toBeTruthy();
+      fireEvent.press(await findByLabelText('Health marker presets'));
+      expect(
+        await findByTestId('health-marker-preset-list-screen'),
+      ).toBeTruthy();
 
-    fireEvent.press(await findByLabelText('Episode templates'));
-    expect(await findByTestId('episode-template-list-screen')).toBeTruthy();
+      fireEvent.press(await findByLabelText('Episode templates'));
+      expect(await findByTestId('episode-template-list-screen')).toBeTruthy();
+    } finally {
+      getInitialUrlSpy.mockRestore();
+    }
   });
 
   test('opens episode start shell from home episode CTA', async () => {
@@ -683,11 +693,19 @@ describe('mobile auth state sync', () => {
     jest.mocked(SecureStore.getItemAsync).mockResolvedValue('false');
     jest.mocked(getMobileSupabaseClient).mockReturnValue(mockClient);
 
-    const { findByLabelText, findByTestId } = render(<App />);
+    /** Same as tab navigation test: cold `App` bootstrap must not await an unresolved `getInitialURL()`. */
+    const getInitialUrlSpy = jest
+      .spyOn(Linking, 'getInitialURL')
+      .mockResolvedValue(null);
+    try {
+      const { findByLabelText, findByTestId } = render(<App />);
 
-    expect(await findByTestId('episode-start-home-cta')).toBeTruthy();
-    fireEvent.press(await findByLabelText("I'm having an episode"));
-    expect(await findByTestId('episode-start-screen-title')).toBeTruthy();
+      expect(await findByTestId('episode-start-home-cta')).toBeTruthy();
+      fireEvent.press(await findByLabelText("I'm having an episode"));
+      expect(await findByTestId('episode-start-screen-title')).toBeTruthy();
+    } finally {
+      getInitialUrlSpy.mockRestore();
+    }
   });
 
   test('exposes the re-authentication toggle in settings', async () => {
