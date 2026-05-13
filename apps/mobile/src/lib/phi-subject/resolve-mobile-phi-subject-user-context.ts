@@ -188,12 +188,20 @@ export type ResolveMobilePhiSubjectUserContextOptions = {
    * to read `profiles` / `caretaker_access` from the replica.
    */
   powerSyncDatabase?: PowerSyncDatabase | null;
+  /**
+   * When `true` together with a non-null {@link powerSyncDatabase}, resolves PHI from SQLite only
+   * (no NetInfo read, no PostgREST). Use when the caller is already offline-first (e.g. preset list
+   * scope after a remote failure) so a misleading “online” NetInfo snapshot does not trigger a
+   * redundant network timeout before replica fallback.
+   */
+  replicaOnly?: boolean;
 };
 
 /**
  * Resolves {@link PhiSubjectUserContext} for the current mobile session (patient or caretaker).
  *
  * @param options - Optional PowerSync DB for caretaker/patient offline fallback.
+ * @param options.replicaOnly - With {@link options.powerSyncDatabase}, SQLite-only PHI resolution.
  * @returns Same contract as {@link resolvePhiSubjectUserContextFromSupabase}; `data: null` when
  *   there is no auth user id. When NetInfo reports **definitively offline** and no replica `db` is
  *   passed, returns `{ ok: false, network_error }` immediately (no Supabase round-trip timeout).
@@ -209,8 +217,12 @@ export async function resolveMobilePhiSubjectUserContext(
     return { ok: true, data: null };
   }
 
-  const connected = await fetchMobileDeviceIsConnected();
   const db = options?.powerSyncDatabase ?? null;
+  if (options?.replicaOnly === true && db != null) {
+    return resolvePhiSubjectUserContextFromPowerSyncDb(db, auth.data);
+  }
+
+  const connected = await fetchMobileDeviceIsConnected();
 
   if (connected === false) {
     if (db) {

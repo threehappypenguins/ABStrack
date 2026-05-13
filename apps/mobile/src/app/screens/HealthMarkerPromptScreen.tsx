@@ -64,10 +64,7 @@ import {
   powerSyncReplicaSqliteReady,
   usePowerSyncBridgeState,
 } from '../../lib/powersync/PowerSyncSessionBridge';
-import {
-  getMobileAuthSessionSafe,
-  getMobileSupabaseClient,
-} from '../../lib/supabase-wiring';
+import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { resolveMobilePhiSubjectUserContext } from '../../lib/phi-subject/resolve-mobile-phi-subject-user-context';
 import { AsyncScreenContainer } from '../components/AsyncScreenContainer';
 import { ScreenShell } from '../components/ScreenShell';
@@ -355,34 +352,13 @@ export function HealthMarkerPromptScreen() {
     setEndedSummary(null);
     setObservationTimeline([]);
 
-    let sessionUserId: string | null = null;
     const psDb =
       powerSyncReplicaSqliteReady(psBridge) && psBridge.database != null
         ? psBridge.database
         : getPowerSyncDatabaseForOfflineReads();
-    const {
-      data: { session },
-      error: sessionError,
-    } = await getMobileAuthSessionSafe();
-    if (sessionError) {
-      if (stale()) {
-        return;
-      }
-      setErrorMessage(sessionError.message);
-      setStatus('error');
-      return;
-    }
-    sessionUserId = session?.user?.id ?? null;
-    if (stale()) {
-      return;
-    }
-    if (!sessionUserId) {
-      setErrorMessage(
-        'You must be signed in to save health marker answers. Try signing in again.',
-      );
-      setStatus('error');
-      return;
-    }
+    // Signed-in + PHI scope: use resolveMobilePhiSubjectUserContext only; it calls
+    // getMobileAuthSessionSafe (with persisted-id fallback). A prior session pre-check aborted on any
+    // session error and blocked that recovery path while duplicating session reads.
     const phiRes = await resolveMobilePhiSubjectUserContext({
       powerSyncDatabase: psDb,
     });

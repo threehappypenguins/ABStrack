@@ -1,6 +1,6 @@
 /**
  * Shared offline / replica preset list scope: explicit PHI owner id vs
- * {@link resolveMobilePhiSubjectUserContext} vs persisted auth fallback.
+ * {@link resolveMobilePhiSubjectUserContext} (`replicaOnly` + replica DB) vs persisted auth fallback.
  *
  * Symptom and health-marker preset services must stay aligned here — do not fork this logic per
  * feature.
@@ -55,10 +55,10 @@ export async function getMobileAuthUserIdForPresetListOffline(): Promise<
  * marker presets).
  *
  * When `explicitScopeUserId` is a non-empty string, returns it. Otherwise, when `replicaDb` is
- * set, uses {@link resolveMobilePhiSubjectUserContext} so caretaker sessions query the linked
- * patient’s rows instead of the caretaker auth uid. Falls back to
- * {@link getMobileAuthUserIdForPresetListOffline} when no replica is available or PHI scope is
- * unavailable.
+ * set, uses {@link resolveMobilePhiSubjectUserContext} with `replicaOnly: true` so PHI scope is
+ * read from SQLite only (no redundant PostgREST round-trip when NetInfo still reports connected
+ * after a remote failure). Falls back to {@link getMobileAuthUserIdForPresetListOffline} when no
+ * replica is available or PHI scope is unavailable from the replica.
  *
  * @param explicitScopeUserId - Optional PHI row owner from the caller (skips resolver when set).
  * @param replicaDb - Open PowerSync database when reading SQLite; enables PHI resolution when scope is omitted.
@@ -77,6 +77,7 @@ export async function resolveOfflinePresetListScopeUserId(
   if (replicaDb) {
     const phi = await resolveMobilePhiSubjectUserContext({
       powerSyncDatabase: replicaDb,
+      replicaOnly: true,
     });
     if (!phi.ok) {
       return phi;
