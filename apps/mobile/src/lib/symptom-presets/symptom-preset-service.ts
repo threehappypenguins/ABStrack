@@ -23,7 +23,9 @@ import {
   updatePresetSymptom,
   updateSymptomPreset,
 } from '@abstrack/supabase';
+import type { PowerSyncDatabase } from '@powersync/react-native';
 import { fetchMobileDeviceIsConnected } from '../network/mobile-device-netinfo';
+import { resolveMobilePhiSubjectUserContext } from '../phi-subject/resolve-mobile-phi-subject-user-context';
 import { listSymptomPresetsForUserFromPowerSyncDb } from '../powersync/powersync-episode-flow-reads';
 import {
   clarifyNetworkErrorWhenReplicaUnavailable,
@@ -71,13 +73,40 @@ export async function getCurrentUserId(): Promise<
   }
 }
 
+/**
+ * Resolves which `user_id` to filter on for offline replica preset lists.
+ *
+ * When `explicitScopeUserId` is a non-empty string, returns it. Otherwise, when `replicaDb` is
+ * set, uses {@link resolveMobilePhiSubjectUserContext} so caretaker sessions query the linked
+ * patient’s rows instead of the caretaker auth uid. Falls back to {@link getCurrentUserId} when no
+ * replica is available or PHI scope is unavailable.
+ *
+ * @param explicitScopeUserId - Optional PHI row owner from the caller (skips resolver when set).
+ * @param replicaDb - Open PowerSync database when reading SQLite; enables PHI resolution when scope is omitted.
+ */
 async function resolveOfflinePresetListScopeUserId(
-  explicitScopeUserId?: string | null,
+  explicitScopeUserId: string | null | undefined,
+  replicaDb: PowerSyncDatabase | null,
 ): Promise<PresetDataResult<string | null>> {
   if (explicitScopeUserId != null) {
     const trimmed = explicitScopeUserId.trim();
     if (trimmed !== '') {
       return { ok: true, data: trimmed };
+    }
+  }
+  if (replicaDb) {
+    const phi = await resolveMobilePhiSubjectUserContext({
+      powerSyncDatabase: replicaDb,
+    });
+    if (!phi.ok) {
+      return phi;
+    }
+    const subject =
+      phi.data?.phiSubjectUserId != null
+        ? phi.data.phiSubjectUserId.trim()
+        : '';
+    if (subject !== '') {
+      return { ok: true, data: subject };
     }
   }
   return getCurrentUserId();
@@ -96,9 +125,9 @@ async function resolveOfflinePresetListScopeUserId(
  *
  * @param options.powerSyncOfflineRead - Prefer passing `usePowerSyncBridgeState()` fields from the
  *   screen so reads use the same DB instance as `PowerSyncContext` (PowerSync SDK lifecycle).
- * @param options.scopeUserId - Optional PHI row owner (`user_id`) for replica SQL. Pass the
- *   resolved patient id for caretakers so offline SQLite lists match PostgREST; when omitted,
- *   {@link getCurrentUserId} is used (patient / self).
+ * @param options.scopeUserId - Optional PHI row owner (`user_id`) for replica SQL. When omitted but
+ *   a replica handle is used, {@link resolveMobilePhiSubjectUserContext} supplies the subject
+ *   (caretaker → linked patient). Otherwise {@link getCurrentUserId} is used.
  * @returns {@link PresetDataResult} of preset rows or an error.
  */
 export async function fetchSymptomPresets(options?: {
@@ -115,6 +144,7 @@ export async function fetchSymptomPresets(options?: {
     if (connected === false) {
       const auth = await resolveOfflinePresetListScopeUserId(
         options?.scopeUserId,
+        db,
       );
       if (!auth.ok) {
         return auth;
@@ -145,7 +175,10 @@ export async function fetchSymptomPresets(options?: {
     const alt = clarifyNetworkErrorWhenReplicaUnavailable(remote.error);
     return alt ? { ok: false, error: alt } : remote;
   }
-  const auth = await resolveOfflinePresetListScopeUserId(options?.scopeUserId);
+  const auth = await resolveOfflinePresetListScopeUserId(
+    options?.scopeUserId,
+    db,
+  );
   if (!auth.ok || auth.data == null) {
     return remote;
   }
