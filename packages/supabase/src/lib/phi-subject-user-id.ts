@@ -3,10 +3,11 @@
  * Patients act as themselves; caretakers act as their linked patient when an active
  * `caretaker_access` row exists (PRD §7).
  */
-import { isAppRole, type AppRole } from '@abstrack/types';
+import type { AppRole } from '@abstrack/types';
 
 import { PresetDataError, toPresetDataError } from './preset-data-error.js';
 import type { PresetDataResult } from './preset-data.js';
+import { parseProfileAppRole } from './session-claims.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
 
 /**
@@ -23,13 +24,6 @@ export type PhiSubjectUserContext = {
   /** `profiles.app_role` for {@link authUserId}, when the row exists. */
   profileAppRole: AppRole | null;
 };
-
-function normalizeAppRole(raw: unknown): AppRole | null {
-  if (typeof raw !== 'string') {
-    return null;
-  }
-  return isAppRole(raw) ? raw : null;
-}
 
 /**
  * Shown when the same caretaker has more than one active `caretaker_access` row (different
@@ -147,7 +141,14 @@ export async function resolvePhiSubjectUserContextFromSupabase(
       };
     }
 
-    const profileAppRole = normalizeAppRole(profileRes.data.app_role);
+    const rawAppRole = profileRes.data.app_role as unknown;
+    const profileAppRole = parseProfileAppRole(
+      typeof rawAppRole === 'string' ||
+        rawAppRole === null ||
+        rawAppRole === undefined
+        ? (rawAppRole as string | null | undefined)
+        : undefined,
+    );
 
     if (profileAppRole !== 'caretaker') {
       return {

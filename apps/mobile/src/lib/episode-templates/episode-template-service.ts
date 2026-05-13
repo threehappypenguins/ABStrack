@@ -1,5 +1,8 @@
 /**
  * Mobile episode template operations: persistence only through `@abstrack/supabase` helpers.
+ *
+ * {@link getCurrentUserId} is re-exported from the shared preset offline auth helper (same
+ * implementation as symptom / health-marker preset services).
  */
 import type {
   EpisodeTemplateInsert,
@@ -27,44 +30,11 @@ import {
   resolvePowerSyncDatabaseForOfflineRead,
   type PowerSyncOfflineReadContext,
 } from '../powersync/powersync-offline-read-bridge-snapshot';
-import {
-  getMobileAuthSessionSafe,
-  getMobileSupabaseClient,
-  isAuthSessionRecoveryFailure,
-  readPersistedMobileAuthUserId,
-} from '../supabase-wiring';
+import { getMobileAuthUserIdForPresetListOffline } from '../phi-subject/resolve-offline-preset-list-scope-user-id';
+import { getMobileSupabaseClient } from '../supabase-wiring';
 
-/**
- * Resolves the signed-in user id for template saves (same pattern as symptom preset service).
- * Uses {@link getMobileAuthSessionSafe} (local persisted session) rather than `getUser()` so airplane mode
- * does not fail: `auth.getUser()` validates with the server and throws `Network request failed`.
- * On `auth_session_recovery_failed`, falls back to {@link readPersistedMobileAuthUserId} (see symptom presets).
- *
- * @returns User id, null when signed out, or an error when the session read fails.
- */
-export async function getCurrentUserId(): Promise<
-  PresetDataResult<string | null>
-> {
-  try {
-    const {
-      data: { session },
-      error,
-    } = await getMobileAuthSessionSafe();
-    if (!error) {
-      return { ok: true, data: session?.user?.id ?? null };
-    }
-    if (!isAuthSessionRecoveryFailure(error)) {
-      return { ok: false, error: toPresetDataError(error) };
-    }
-    const persistedId = await readPersistedMobileAuthUserId();
-    if (persistedId != null) {
-      return { ok: true, data: persistedId };
-    }
-    return { ok: false, error: toPresetDataError(error) };
-  } catch (caught) {
-    return { ok: false, error: toPresetDataError(caught) };
-  }
-}
+/** @see {@link getMobileAuthUserIdForPresetListOffline} */
+export const getCurrentUserId = getMobileAuthUserIdForPresetListOffline;
 
 /**
  * Lists episode templates with nested preset names, falling back to the PowerSync replica when

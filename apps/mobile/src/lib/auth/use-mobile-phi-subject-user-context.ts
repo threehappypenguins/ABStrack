@@ -7,11 +7,14 @@ import { usePowerSyncBridgeState } from '../powersync/PowerSyncSessionBridge';
 import { resolveMobilePhiSubjectUserContext } from '../phi-subject/resolve-mobile-phi-subject-user-context';
 
 export type MobilePhiSubjectUserContextState = {
-  /** Same as {@link useMobileAuthUserId} while resolving. */
+  /** True while resolving PHI scope (includes awaiting {@link resolveMobilePhiSubjectUserContext}). */
   loading: boolean;
   /** User-facing resolve failure (e.g. caretaker not linked). */
   errorMessage: string | null;
-  /** Supabase auth user id. */
+  /**
+   * Same as {@link useMobileAuthUserId}; may remain null briefly on cold start while PHI scope
+   * still resolves via persisted session recovery inside {@link resolveMobilePhiSubjectUserContext}.
+   */
   authUserId: string | null;
   /** Patient id for PHI rows (same as `authUserId` for patients). */
   phiSubjectUserId: string | null;
@@ -27,8 +30,12 @@ export type MobilePhiSubjectUserContextState = {
  * In-flight {@link resolveMobilePhiSubjectUserContext} results are ignored after unmount or when
  * `authUserId` / replica readiness (`database` + `localSqliteInitialized`) / first-sync completion
  * change, by bumping a generation counter so async completion does not call `setState` on an
- * unmounted consumer. Bridge fields such as `syncConnecting` are intentionally excluded from the
- * resolve callback deps so unrelated PowerSync UI state does not re-trigger network resolution.
+ * unmounted consumer. Resolution still runs when `authUserId` is null: on cold starts where
+ * {@link useMobileAuthUserId} has not recovered yet, {@link resolveMobilePhiSubjectUserContext}
+ * may still read a persisted auth id (the same path as inside that resolver), so those sessions are
+ * not treated as signed-out for PHI scope. Bridge fields such as `syncConnecting` are intentionally
+ * excluded from the resolve callback deps so unrelated PowerSync UI state does not re-trigger
+ * network resolution.
  *
  * @returns Loading and error state plus ids for Home, Manage, and episode flows.
  */
@@ -49,13 +56,6 @@ export function useMobilePhiSubjectUserContext(): MobilePhiSubjectUserContextSta
 
   const runResolve = useCallback(async () => {
     const gen = ++genRef.current;
-    if (authUserId == null || authUserId.trim() === '') {
-      setLoading(false);
-      setErrorMessage(null);
-      setPhiSubjectUserId(null);
-      setProfileAppRole(null);
-      return;
-    }
     setLoading(true);
     setErrorMessage(null);
     const result = await resolveMobilePhiSubjectUserContext({
