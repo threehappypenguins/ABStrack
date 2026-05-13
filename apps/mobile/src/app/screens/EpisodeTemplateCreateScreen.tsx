@@ -65,7 +65,7 @@ export function EpisodeTemplateCreateScreen() {
   phiLoadingRef.current = phiSubjectContextLoading;
   phiErrorRef.current = phiSubjectContextError;
 
-  /** Dedupes preset-list loads when only `listsLoading` / `listsError` churn after a successful fetch. */
+  /** Dedupes preset-list loads: updated on each completed attempt (success or failure) for the scoped fetch key. */
   const lastPresetFetchKeyRef = useRef<string | null>(null);
 
   const psBridge = usePowerSyncBridgeState();
@@ -134,11 +134,13 @@ export function EpisodeTemplateCreateScreen() {
       return;
     }
     if (!sRes.ok) {
+      lastPresetFetchKeyRef.current = fetchKeyForThisRun;
       setListsError(sRes.error.message);
       setListsLoading(false);
       return;
     }
     if (!mRes.ok) {
+      lastPresetFetchKeyRef.current = fetchKeyForThisRun;
       setListsError(mRes.error.message);
       setListsLoading(false);
       return;
@@ -173,7 +175,11 @@ export function EpisodeTemplateCreateScreen() {
    * Loads preset picklists when the signed-in user id **or PHI scope** changes — not only on mount
    * — so an account switch cannot leave the previous user's symptom/marker names visible, and a
    * caretaker gets patient-scoped replica lists once {@link useMobilePhiSubjectUserContext} resolves.
-   * Still intentionally independent of `replicaMirrorReads` (see retry effect below).
+   * Intentionally omits `listsLoading` / `listsError`: those would re-run this effect after every
+   * failed fetch while `lastPresetFetchKeyRef` stayed null, causing an infinite retry loop; failures
+   * now record the same fetch key as successes. Still intentionally independent of
+   * `replicaMirrorReads` (see retry effect below). Use the replica-ready effect or an account/PHI
+   * change for recovery.
    *
    * `useMobileAuthUserId` starts as `null` and resolves asynchronously; `null → userId` is
    * hydration, not a switch — do not clear the form or refetch when preset lists already loaded
@@ -233,8 +239,6 @@ export function EpisodeTemplateCreateScreen() {
     };
   }, [
     viewerUserId,
-    listsLoading,
-    listsError,
     phiSubjectUserId,
     phiSubjectContextLoading,
     phiSubjectContextError,

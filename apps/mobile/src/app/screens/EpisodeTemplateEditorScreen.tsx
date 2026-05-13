@@ -84,6 +84,7 @@ export function EpisodeTemplateEditorScreen() {
   phiLoadingRef.current = phiSubjectContextLoading;
   phiErrorRef.current = phiSubjectContextError;
 
+  /** Updated on each completed template load attempt (success or failure) for the scoped fetch key. */
   const lastTemplateLoadFetchKeyRef = useRef<string | null>(null);
 
   const psBridge = usePowerSyncBridgeState();
@@ -150,11 +151,13 @@ export function EpisodeTemplateEditorScreen() {
         return;
       }
       if (!sRes.ok) {
+        lastTemplateLoadFetchKeyRef.current = fetchKeyForThisRun;
         setErrorMessage(sRes.error.message);
         setStatus('error');
         return;
       }
       if (!mRes.ok) {
+        lastTemplateLoadFetchKeyRef.current = fetchKeyForThisRun;
         setErrorMessage(mRes.error.message);
         setStatus('error');
         return;
@@ -163,11 +166,13 @@ export function EpisodeTemplateEditorScreen() {
       setMarkers(mRes.data.map((r) => ({ id: r.id, name: r.name })));
 
       if (!tRes.ok) {
+        lastTemplateLoadFetchKeyRef.current = fetchKeyForThisRun;
         setErrorMessage(tRes.error.message);
         setStatus('error');
         return;
       }
       if (!tRes.data) {
+        lastTemplateLoadFetchKeyRef.current = fetchKeyForThisRun;
         setErrorMessage('We could not find that episode template.');
         setStatus('error');
         return;
@@ -211,6 +216,10 @@ export function EpisodeTemplateEditorScreen() {
    * Reload when `templateId`, the signed-in user, **or PHI scope** (`phiSubjectUserId` / loading /
    * error from {@link useMobilePhiSubjectUserContext}) changes — an account switch must not keep
    * another user's template row / preset picklists visible while this route stays mounted.
+   * Omits `status` / `errorMessage` from dependencies: those would re-run this effect after every
+   * failed `load()` while `lastTemplateLoadFetchKeyRef` stayed unset, causing an infinite retry loop;
+   * failures now record the same fetch key as successes. The auth-hydration branch still reads the
+   * latest `status` / `errorMessage` from the render that committed a `viewerUserId` change.
    * Still intentionally independent of bridge readiness (see retry effect below).
    *
    * `useMobileAuthUserId` hydrates `null → userId` after mount; that is not an account switch. When
@@ -275,8 +284,6 @@ export function EpisodeTemplateEditorScreen() {
   }, [
     templateId,
     viewerUserId,
-    status,
-    errorMessage,
     phiSubjectUserId,
     phiSubjectContextLoading,
     phiSubjectContextError,
