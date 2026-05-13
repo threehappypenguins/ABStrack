@@ -27,10 +27,12 @@ export type MobilePhiSubjectUserContextState = {
  * Resolves the patient user id used for episode / marker / food PHI (`phiSubjectUserId`) vs the
  * signed-in auth id (`authUserId`). Caretakers use the linked patient from active `caretaker_access`.
  *
- * In-flight {@link resolveMobilePhiSubjectUserContext} results are ignored after unmount or when
- * `authUserId` / replica readiness (`database` + `localSqliteInitialized`) / first-sync completion
- * change, by bumping a generation counter so async completion does not call `setState` on an
- * unmounted consumer. Each new resolve clears `phiSubjectUserId` and `profileAppRole` before
+ * In-flight {@link resolveMobilePhiSubjectUserContext} results are ignored when a **new** resolve
+ * starts (each `runResolve` call increments a generation counter first) or when the hook
+ * **unmounts** (a final increment drops any still-pending completion). Replica readiness
+ * (`database` + `localSqliteInitialized`) and `authUserId` changes recreate `runResolve` and
+ * re-run the primary effect, which invokes it again; the first-sync effect may invoke it once when
+ * `firstSyncCompleted` becomes true. Each new resolve clears `phiSubjectUserId` and `profileAppRole` before
  * awaiting the resolver so consumers that do not gate every read on `loading` cannot briefly use a
  * stale PHI subject after an account switch or replica re-scope. Resolution still runs when `authUserId` is null: on cold starts where
  * {@link useMobileAuthUserId} has not recovered yet, {@link resolveMobilePhiSubjectUserContext}
@@ -86,11 +88,20 @@ export function useMobilePhiSubjectUserContext(): MobilePhiSubjectUserContextSta
     setErrorMessage(null);
   }, [authUserId, dbForPhi]);
 
+  /**
+   * Invalidate in-flight resolves only on real unmount. Do not bump `genRef` from other effect
+   * cleanups when `runResolve` identity changes: `runResolve` already increments the generation at
+   * the start of each call, so the previous async completion is dropped without an extra cleanup
+   * bump (which would also have raced the first-sync effect's overlapping resolve).
+   */
   useEffect(() => {
-    void runResolve();
     return () => {
       genRef.current += 1;
     };
+  }, []);
+
+  useEffect(() => {
+    void runResolve();
   }, [runResolve]);
 
   const firstSyncHandledRef = useRef(false);
@@ -101,9 +112,6 @@ export function useMobilePhiSubjectUserContext(): MobilePhiSubjectUserContextSta
       firstSyncHandledRef.current = true;
       void runResolve();
     }
-    return () => {
-      genRef.current += 1;
-    };
   }, [firstSyncCompleted, runResolve]);
 
   const refresh = useCallback(() => {

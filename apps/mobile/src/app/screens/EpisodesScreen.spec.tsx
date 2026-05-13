@@ -17,7 +17,10 @@ import type { EpisodeRow } from '@abstrack/types';
 import { announce } from '@abstrack/ui/native';
 
 import { clearSymptomPromptSession } from '../../lib/episodes/symptom-prompt-session-store';
-import { getMobileAuthSessionSafe } from '../../lib/supabase-wiring';
+import {
+  getMobileAuthSessionSafe,
+  readPersistedMobileAuthUserId,
+} from '../../lib/supabase-wiring';
 import { AppThemeProvider } from '../theme/AppThemeContext';
 import { EpisodesScreen } from './EpisodesScreen';
 
@@ -27,33 +30,61 @@ jest.mock('@react-navigation/native', () => {
   return {
     ...actual,
     useNavigation: jest.fn(),
+    /**
+     * Approximates `useFocusEffect` for mounted screens: re-invoke when the memoized callback
+     * identity changes (`[fn]`, same as `@react-navigation/core` depending on `effect`).
+     * Unlike production, we do **not** run the prior callback’s returned cleanup on each `fn`
+     * change — that simulates blur and (for `EpisodesManagementPanel`) bumps `loadGenRef`, which
+     * strands `loading` when PHI churn recreates `loadInitial` every render. A second effect
+     * runs the latest inner cleanup only on unmount (blur / listener teardown).
+     */
     useFocusEffect: (fn: () => void | (() => void)) => {
+      const fnRef = ReactNav.useRef(fn);
+      /** @type {{ current: (() => void) | void | undefined }} */
+      const cleanupRef = ReactNav.useRef(undefined);
+      fnRef.current = fn;
+
       ReactNav.useEffect(() => {
-        const cleanup = fn();
-        return typeof cleanup === 'function' ? cleanup : undefined;
-        // Intentionally omit `fn` from deps: real focus runs on blur/unmount; re-running when
-        // `loadInitial`’s identity changes simulates cancel and leaves `loading` stuck true.
+        const destroy = fnRef.current();
+        cleanupRef.current =
+          typeof destroy === 'function' ? destroy : undefined;
+      }, [fn]);
+
+      ReactNav.useEffect(() => {
+        return () => {
+          if (typeof cleanupRef.current === 'function') {
+            cleanupRef.current();
+          }
+          cleanupRef.current = undefined;
+        };
       }, []);
     },
   };
 });
 
-jest.mock('@abstrack/supabase', () => ({
-  cancelActiveEpisodeById: jest.fn(),
-  deleteEpisodeById: jest.fn(),
-  getActiveEpisodeForUser: jest.fn(),
-  listCompletedEpisodesForUser: jest.fn(),
-  resolvePhiSubjectUserContextFromSupabase: jest.fn(
-    async (_client: unknown, authUserId: string) => ({
-      ok: true as const,
-      data: {
-        authUserId,
-        phiSubjectUserId: authUserId,
-        profileAppRole: 'patient' as const,
-      },
-    }),
-  ),
-}));
+jest.mock('@abstrack/supabase', () => {
+  const actual =
+    jest.requireActual<typeof import('@abstrack/supabase')>(
+      '@abstrack/supabase',
+    );
+  return {
+    ...actual,
+    cancelActiveEpisodeById: jest.fn(),
+    deleteEpisodeById: jest.fn(),
+    getActiveEpisodeForUser: jest.fn(),
+    listCompletedEpisodesForUser: jest.fn(),
+    resolvePhiSubjectUserContextFromSupabase: jest.fn(
+      async (_client: unknown, authUserId: string) => ({
+        ok: true as const,
+        data: {
+          authUserId,
+          phiSubjectUserId: authUserId,
+          profileAppRole: 'patient' as const,
+        },
+      }),
+    ),
+  };
+});
 
 jest.mock('@abstrack/ui/native', () => ({
   announce: jest.fn().mockResolvedValue(undefined),
@@ -198,6 +229,34 @@ describe('EpisodesScreen', () => {
       data: { session: null },
       error: null,
     } as never);
+
+    renderEpisodesScreen();
+
+    expect(await screen.findByText('No episode in progress.')).toBeTruthy();
+    expect(
+      await screen.findByText('No ended episodes in your history yet.'),
+    ).toBeTruthy();
+  });
+
+  /**
+   * Regression: {@link EpisodesManagementPanel} treats a null session from {@link getMobileAuthSessionSafe}
+   * like “no user” for list loads. When GoTrue/`getSession` fails with `auth_session_recovery_failed`
+   * and {@link readPersistedMobileAuthUserId} has no fallback id, PHI resolution also fails — the
+   * panel must still land on the same empty signed-out-style copy (not a stuck spinner).
+   */
+  it('shows empty signed-out-style copy when session recovery fails and persisted auth id is empty', async () => {
+    const recoveryError = Object.assign(
+      new Error(
+        "We couldn't verify your sign-in. Try again in a moment, or sign out and sign back in.",
+      ),
+      { code: 'auth_session_recovery_failed' as const },
+    );
+
+    jest.mocked(getMobileAuthSessionSafe).mockResolvedValue({
+      data: { session: null },
+      error: recoveryError,
+    } as never);
+    jest.mocked(readPersistedMobileAuthUserId).mockResolvedValue(null);
 
     renderEpisodesScreen();
 
