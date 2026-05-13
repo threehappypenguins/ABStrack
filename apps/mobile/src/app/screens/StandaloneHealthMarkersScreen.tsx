@@ -48,6 +48,8 @@ type StandaloneHealthMarkersNav = NativeStackNavigationProp<
 
 /**
  * Standalone health-marker logging (no episode), matching web `/health-markers/new`.
+ * Preset and line loads wait for {@link useMobilePhiSubjectUserContext} `phiSubjectUserId` and pass
+ * it into scoped list helpers so caretakers never pick presets for the wrong patient.
  *
  * @returns Preset picker, line-by-line prompts, and completion UI.
  */
@@ -154,7 +156,23 @@ export function StandaloneHealthMarkersScreen() {
       return;
     }
 
-    const scopeKey = `${userId}|${phiSubjectUserId ?? ''}`;
+    /** Do not list presets until PHI subject is known — RLS alone can expose the wrong rows for caretakers. */
+    if (!phiSubjectUserId?.trim()) {
+      lastPresetScopeKeyRef.current = null;
+      setPresets([]);
+      setLoadError(null);
+      setLoadingPresets(false);
+      setPhase('pickPreset');
+      setLines([]);
+      setDrafts({});
+      setActiveIndex(0);
+      setSelectedPresetId(null);
+      setFeedback(null);
+      setLinesSavedCount(0);
+      return;
+    }
+
+    const scopeKey = `${userId}|${phiSubjectUserId}`;
     const switchedScope =
       lastPresetScopeKeyRef.current !== null &&
       lastPresetScopeKeyRef.current !== scopeKey;
@@ -175,7 +193,9 @@ export function StandaloneHealthMarkersScreen() {
     setLoadError(null);
 
     void (async () => {
-      const result = await listHealthMarkerPresets(supabase);
+      const result = await listHealthMarkerPresets(supabase, {
+        scopeUserId: phiSubjectUserId,
+      });
       if (cancelled) {
         return;
       }
@@ -247,7 +267,7 @@ export function StandaloneHealthMarkersScreen() {
   );
 
   const startPresetFlow = async () => {
-    if (!selectedPresetId || saving) {
+    if (!selectedPresetId || saving || !phiSubjectUserId?.trim()) {
       return;
     }
     setSaving(true);
@@ -255,6 +275,7 @@ export function StandaloneHealthMarkersScreen() {
     const result = await listPresetHealthMarkersForPreset(
       supabase,
       selectedPresetId,
+      { scopeUserId: phiSubjectUserId },
     );
     setSaving(false);
     if (!result.ok) {

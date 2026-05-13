@@ -247,6 +247,32 @@ describe('preset CRUD helpers (mocked client)', () => {
     expect(from).toHaveBeenCalledWith('health_marker_presets');
   });
 
+  it('listHealthMarkerPresets applies user_id when scopeUserId is set', async () => {
+    const order2 = vi.fn(async () => ({
+      data: [healthMarkerPresetRow],
+      error: null,
+    }));
+    const order1 = vi.fn(() => ({ order: order2 }));
+    const eq = vi.fn(() => ({ order: order1 }));
+    const from = vi.fn(() => ({
+      select: vi.fn(() => ({
+        eq,
+        order: order1,
+      })),
+    }));
+    const client = { from } as unknown as AbstrackSupabaseClient;
+
+    const result = await listHealthMarkerPresets(client, {
+      scopeUserId: 'patient-scope-1',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(eq).toHaveBeenCalledWith('user_id', 'patient-scope-1');
+    if (result.ok) {
+      expect(result.data).toEqual([healthMarkerPresetRow]);
+    }
+  });
+
   it('createHealthMarkerPreset returns inserted row', async () => {
     const from = vi.fn(() => ({
       insert: vi.fn(() => ({
