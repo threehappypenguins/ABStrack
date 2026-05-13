@@ -55,6 +55,24 @@ function makePhiTestClient(opts: {
 }
 
 describe('resolvePhiSubjectUserContextFromSupabase', () => {
+  it('treats missing profile with no caretaker grant as patient self', async () => {
+    const uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+    const client = makePhiTestClient({
+      profile: Promise.resolve({ data: null, error: null }),
+      grants: Promise.resolve({ data: [], error: null }),
+    });
+
+    const res = await resolvePhiSubjectUserContextFromSupabase(client, uid);
+    expect(res).toEqual({
+      ok: true,
+      data: {
+        authUserId: uid,
+        phiSubjectUserId: uid,
+        profileAppRole: null,
+      },
+    });
+  });
+
   it('returns validation error when multiple distinct active caretaker grants exist', async () => {
     const client = makePhiTestClient({
       profile: Promise.resolve({

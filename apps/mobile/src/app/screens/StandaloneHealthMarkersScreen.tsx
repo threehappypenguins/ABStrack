@@ -84,7 +84,11 @@ export function StandaloneHealthMarkersScreen() {
   /** Lines successfully persisted via Next/Finish in the current preset session. */
   const [linesSavedCount, setLinesSavedCount] = useState(0);
   const [presetRefetchTick, setPresetRefetchTick] = useState(0);
-  const lastPresetUserIdRef = useRef<string | null>(null);
+  /**
+   * Last scope key `authUserId|phiSubjectUserId` for preset loads. When either changes (caretaker
+   * patient link, first sync, etc.), we reset pick-preset / line UI so lists match the active PHI subject.
+   */
+  const lastPresetScopeKeyRef = useRef<string | null>(null);
   const authSnapshotGenerationRef = useRef(0);
 
   useEffect(() => {
@@ -136,7 +140,7 @@ export function StandaloneHealthMarkersScreen() {
 
     const userId = authUserId;
     if (phiScopeError || !userId) {
-      lastPresetUserIdRef.current = null;
+      lastPresetScopeKeyRef.current = null;
       setPresets([]);
       setLoadError(null);
       setLoadingPresets(false);
@@ -150,12 +154,13 @@ export function StandaloneHealthMarkersScreen() {
       return;
     }
 
-    const switchedAccount =
-      lastPresetUserIdRef.current !== null &&
-      lastPresetUserIdRef.current !== userId;
-    lastPresetUserIdRef.current = userId;
+    const scopeKey = `${userId}|${phiSubjectUserId ?? ''}`;
+    const switchedScope =
+      lastPresetScopeKeyRef.current !== null &&
+      lastPresetScopeKeyRef.current !== scopeKey;
+    lastPresetScopeKeyRef.current = scopeKey;
 
-    if (switchedAccount) {
+    if (switchedScope) {
       setPhase('pickPreset');
       setLines([]);
       setDrafts({});
@@ -191,6 +196,7 @@ export function StandaloneHealthMarkersScreen() {
     phiScopeLoading,
     phiScopeError,
     authUserId,
+    phiSubjectUserId,
     supabase,
     presetRefetchTick,
   ]);

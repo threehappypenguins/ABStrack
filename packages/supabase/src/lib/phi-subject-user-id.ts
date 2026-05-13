@@ -31,9 +31,6 @@ function normalizeAppRole(raw: unknown): AppRole | null {
   return isAppRole(raw) ? raw : null;
 }
 
-const PROFILE_NOT_READY_MESSAGE =
-  'Your profile could not be loaded yet. Try refreshing, finishing account setup, or signing out and back in.';
-
 /**
  * Shown when the same caretaker has more than one active `caretaker_access` row (different
  * patients). Resolvers cannot pick a PHI subject without an explicit patient selection (PRD §7).
@@ -98,12 +95,12 @@ async function fetchActiveCaretakerPatientUserId(
  * @param client - Browser or native Supabase client with the user’s session.
  * @param authUserId - Non-empty `auth.users` id (`session.user.id`).
  * @returns PHI scope context, or `{ ok: true, data: null }` when `authUserId` is blank (caller
- *   should treat as signed-out). When the **`profiles` row is missing**, we do not assume patient
- *   semantics: if an active **`caretaker_access`** row exists, the subject resolves as the linked
- *   patient; otherwise `{ ok: false, validation_error }` so callers fail fast (not-yet-provisioned
- *   accounts must not write PHI as `authUserId`). Caretakers with a profile but no active link
- *   return a validation error. Caretakers with **more than one distinct active** `caretaker_access`
- *   patient also return a validation error (no silent pick among patients).
+ *   should treat as signed-out). When the **`profiles` row is missing**, if an active
+ *   **`caretaker_access`** row exists the subject resolves as the linked patient; if not, we treat
+ *   the user as **patient/self** (`phiSubjectUserId === authUserId`, `profileAppRole: null`) so
+ *   sessions without a provisioned profile row (common patient signup paths) are not blocked.
+ *   When **`profiles.app_role` is `caretaker`** but there is no active grant, callers still get a
+ *   validation error. Multiple distinct active grants for one caretaker also return a validation error.
  */
 export async function resolvePhiSubjectUserContextFromSupabase(
   client: AbstrackSupabaseClient,
@@ -141,11 +138,12 @@ export async function resolvePhiSubjectUserContextFromSupabase(
         };
       }
       return {
-        ok: false,
-        error: new PresetDataError(
-          'validation_error',
-          PROFILE_NOT_READY_MESSAGE,
-        ),
+        ok: true,
+        data: {
+          authUserId: trimmed,
+          phiSubjectUserId: trimmed,
+          profileAppRole: null,
+        },
       };
     }
 
