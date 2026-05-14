@@ -267,14 +267,36 @@ export function LandingDashboardCharts() {
         c.resize();
       });
     };
-    const resizeObserver = new ResizeObserver(() => {
-      resizeCharts();
-    });
-    resizeObserver.observe(wrap);
+
+    let resizeRaf = 0;
+    const scheduleResizeCharts = () => {
+      if (resizeRaf !== 0) {
+        cancelAnimationFrame(resizeRaf);
+      }
+      resizeRaf = requestAnimationFrame(() => {
+        resizeRaf = 0;
+        resizeCharts();
+      });
+    };
+
     resizeCharts();
 
+    let detachResizeListener: (() => void) | undefined;
+    if (typeof ResizeObserver !== 'undefined') {
+      const resizeObserver = new ResizeObserver(scheduleResizeCharts);
+      resizeObserver.observe(wrap);
+      detachResizeListener = () => resizeObserver.disconnect();
+    } else if (typeof window !== 'undefined') {
+      window.addEventListener('resize', scheduleResizeCharts);
+      detachResizeListener = () =>
+        window.removeEventListener('resize', scheduleResizeCharts);
+    }
+
     return () => {
-      resizeObserver.disconnect();
+      detachResizeListener?.();
+      if (resizeRaf !== 0) {
+        cancelAnimationFrame(resizeRaf);
+      }
       chartsRef.current.forEach((c) => c.destroy());
       chartsRef.current = [];
     };
