@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import {
-  createSupabaseServerClient,
-  type CookieMethodsServer,
-} from '@abstrack/supabase/server';
+import { createSupabaseServerClient } from '@abstrack/supabase/server';
 import {
   AUTH_CALLBACK_INVALID_LINK_MESSAGE,
   getSafePractitionerAuthCallbackRedirectPath,
@@ -20,7 +17,9 @@ function redirectWithError(
 
 /**
  * PKCE email return for practitioner invites: exchange `?code=` on the server so `@supabase/ssr`
- * can attach session cookies. Redirects to `next` (validated) or `/` for TOTP enrollment home.
+ * can attach session cookies. Implicit auth (`#access_token=…` only) is rewritten to
+ * `/auth/callback/fragment` in `src/proxy.ts` (Next.js 16 proxy); this handler returns **400** if
+ * it receives a request without `code` (e.g. direct hits without the proxy).
  */
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get('code');
@@ -41,7 +40,7 @@ export async function GET(request: NextRequest) {
   try {
     let response = NextResponse.redirect(new URL(redirectPath, request.url));
 
-    const cookieMethods: CookieMethodsServer = {
+    const supabase = createSupabaseServerClient({
       getAll() {
         return request.cookies.getAll();
       },
@@ -56,9 +55,7 @@ export async function GET(request: NextRequest) {
           response.cookies.set(name, value, options);
         });
       },
-    };
-
-    const supabase = createSupabaseServerClient(cookieMethods);
+    });
 
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (error) {

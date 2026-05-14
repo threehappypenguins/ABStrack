@@ -7,6 +7,8 @@ import { ConfirmDialog } from '@/components/symptom-presets/ConfirmDialog';
 import {
   type PractitionerAccessGetResponse,
   type PractitionerGrantDto,
+  type PractitionerPendingInviteDto,
+  fetchPatientPractitionerAccessCancelPendingInvite,
   fetchPatientPractitionerAccessGet,
   fetchPatientPractitionerAccessPostInvite,
   fetchPatientPractitionerAccessResendInvite,
@@ -15,6 +17,17 @@ import {
 } from '@/lib/patient/practitioner-edge-client';
 import { normalizeEmailForLookup } from '@/lib/patient/normalize-email-for-lookup';
 import { useAuth } from '@/lib/auth-provider';
+
+function formatInviteExpiry(iso: string): string {
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) {
+    return iso;
+  }
+  return new Date(t).toLocaleString(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+}
 
 /**
  * Patient settings: invite or link healthcare practitioners who use the separate practitioner web app
@@ -42,6 +55,10 @@ export function PractitionerAccessPage() {
   );
   const [revokeSubmitting, setRevokeSubmitting] = useState(false);
   const [revokeError, setRevokeError] = useState<string | null>(null);
+  const [pendingInvite, setPendingInvite] = useState<
+    PractitionerPendingInviteDto | null | undefined
+  >(undefined);
+  const [cancelInviteSubmitting, setCancelInviteSubmitting] = useState(false);
 
   const loadGrants = useCallback(async () => {
     setLoadError(null);
@@ -50,6 +67,7 @@ export function PractitionerAccessPage() {
       res = await fetchPatientPractitionerAccessGet();
     } catch (err) {
       setGrants([]);
+      setPendingInvite(null);
       setLoadError(
         practitionerEdgeClientPreflightErrorMessage(
           err,
@@ -60,11 +78,13 @@ export function PractitionerAccessPage() {
     }
     if (res.status === 401) {
       setGrants([]);
+      setPendingInvite(null);
       setLoadError('You must be signed in to manage practitioner access.');
       return;
     }
     if (res.status === 403) {
       setGrants([]);
+      setPendingInvite(null);
       setLoadError(
         'Practitioner sharing is only available to patient accounts—not practitioner or caretaker sign-ins.',
       );
@@ -72,6 +92,7 @@ export function PractitionerAccessPage() {
     }
     if (!res.ok) {
       setGrants([]);
+      setPendingInvite(null);
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       if (body.error === 'server_misconfigured') {
         setLoadError(
@@ -86,6 +107,7 @@ export function PractitionerAccessPage() {
     }
     const body = (await res.json()) as PractitionerAccessGetResponse;
     setGrants(body.grants ?? []);
+    setPendingInvite(body.pendingInvite ?? null);
   }, []);
 
   useEffect(() => {
@@ -145,7 +167,7 @@ export function PractitionerAccessPage() {
     const outcome = maybeJson.outcome;
     if (outcome === 'invite_sent') {
       announce(
-        'Invite sent. They should open the link in the practitioner web app and complete two-factor setup before viewing your data.',
+        'Invite sent. They should open the email link in the practitioner web app and accept the invite before they appear under active practitioners.',
         { politeness: 'polite' },
       );
     } else if (outcome === 'already_linked') {
@@ -205,9 +227,45 @@ export function PractitionerAccessPage() {
           ? maybeJson.message.trim()
           : 'That practitioner already has an account. They can sign in on the practitioner app.';
       announce(polite, { politeness: 'polite' });
+      await loadGrants();
       return;
     }
     announce('Invite email resent.', { politeness: 'polite' });
+    await loadGrants();
+  };
+
+  const onCancelPendingInvite = async () => {
+    setCancelInviteSubmitting(true);
+    setFormError(null);
+    let res: Response;
+    try {
+      res = await fetchPatientPractitionerAccessCancelPendingInvite();
+    } catch (err) {
+      setCancelInviteSubmitting(false);
+      const msg = practitionerEdgeClientPreflightErrorMessage(
+        err,
+        'You must be signed in to cancel a pending invite.',
+      );
+      setFormError(msg);
+      announce(msg, { politeness: 'assertive' });
+      return;
+    }
+    const maybeJson = (await res.json().catch(() => ({}))) as {
+      error?: string;
+    };
+    setCancelInviteSubmitting(false);
+    if (!res.ok) {
+      const raw =
+        typeof maybeJson.error === 'string' ? maybeJson.error : undefined;
+      const msg = raw ?? 'Unable to cancel the pending invite.';
+      setFormError(msg);
+      announce(msg, { politeness: 'assertive' });
+      return;
+    }
+    announce('Pending practitioner invite cancelled.', {
+      politeness: 'polite',
+    });
+    await loadGrants();
   };
 
   const onRevoke = async () => {
@@ -313,6 +371,47 @@ export function PractitionerAccessPage() {
         </p>
       ) : null}
 
+      {pendingInvite && !loadError ? (
+        <section
+          aria-labelledby={`${formId}-pending-heading`}
+          className="rounded-2xl border border-app-border/90 bg-app-surface p-6 shadow-soft ring-1 ring-[color:var(--app-ring-slate)] sm:p-8"
+        >
+          <h2
+            id={`${formId}-pending-heading`}
+            className="text-lg font-semibold text-app-ink"
+          >
+            Practitioner invite pending
+          </h2>
+          <p className="mt-2 text-sm text-app-muted">
+            We sent an email to{' '}
+            <span className="font-medium text-app-ink">
+              {pendingInvite.inviteeEmail}
+            </span>
+            . They must open that link in the practitioner web app and accept
+            the invite before they are listed under active practitioners. Invite
+            expires {formatInviteExpiry(pendingInvite.expiresAt)}.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="min-h-[44px] rounded-full border border-app-border px-4 text-sm font-semibold text-app-ink shadow-sm transition hover:bg-app-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={resendSubmitting}
+              onClick={() => void onResend(pendingInvite.inviteeEmail)}
+            >
+              {resendSubmitting ? 'Working…' : 'Resend invite email'}
+            </button>
+            <button
+              type="button"
+              className="min-h-[44px] rounded-full border border-app-border px-4 text-sm font-semibold text-app-ink shadow-sm transition hover:bg-app-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={cancelInviteSubmitting}
+              onClick={() => void onCancelPendingInvite()}
+            >
+              {cancelInviteSubmitting ? 'Working…' : 'Cancel pending invite'}
+            </button>
+          </div>
+        </section>
+      ) : null}
+
       {grants && grants.length > 0 && !loadError ? (
         <section
           aria-labelledby={`${formId}-active-heading`}
@@ -368,7 +467,7 @@ export function PractitionerAccessPage() {
         </section>
       ) : null}
 
-      {!loadError ? (
+      {!loadError && !pendingInvite ? (
         <section
           aria-labelledby={`${formId}-invite-heading`}
           className="rounded-2xl border border-app-border/90 bg-app-surface p-6 shadow-soft ring-1 ring-[color:var(--app-ring-slate)] sm:p-8"

@@ -38,6 +38,7 @@ import {
 } from '../../lib/patient-caretaker-edge-api';
 import {
   PRACTITIONER_EDGE_PUBLISHABLE_KEY_ENV_HELP,
+  fetchPractitionerAccessCancelPendingInvite,
   fetchPractitionerAccessGet,
   fetchPractitionerAccessPostInvite,
   fetchPractitionerAccessResendInvite,
@@ -91,6 +92,13 @@ type PractitionerGrantDto = {
   createdAt: string;
 };
 
+type PractitionerPendingInviteDto = {
+  inviteeEmail: string;
+  expiresAt: string;
+  lastInviteSentAt: string | null;
+  createdAt: string | null;
+};
+
 const caretakerInputClassName = `min-h-[52px] rounded-lg px-3 py-2.5 text-base ${nw.input}`;
 
 export function SettingsScreen() {
@@ -131,6 +139,8 @@ export function SettingsScreen() {
   const [practitionerGrants, setPractitionerGrants] = useState<
     PractitionerGrantDto[] | undefined
   >(undefined);
+  const [practitionerPendingInvite, setPractitionerPendingInvite] =
+    useState<PractitionerPendingInviteDto | null>(null);
   const [practitionerLoadError, setPractitionerLoadError] = useState<
     string | null
   >(null);
@@ -138,6 +148,10 @@ export function SettingsScreen() {
     useState(false);
   const [practitionerResendSubmitting, setPractitionerResendSubmitting] =
     useState(false);
+  const [
+    practitionerCancelInviteSubmitting,
+    setPractitionerCancelInviteSubmitting,
+  ] = useState(false);
   const [practitionerRevokeSubmitting, setPractitionerRevokeSubmitting] =
     useState(false);
   const [practitionerEmail, setPractitionerEmail] = useState('');
@@ -239,6 +253,7 @@ export function SettingsScreen() {
       if (sessionError || !session?.access_token?.trim()) {
         if (isMountedRef.current) {
           setPractitionerGrants([]);
+          setPractitionerPendingInvite(null);
           setPractitionerLoadError(
             'Sign in with a network connection to manage practitioner access from this screen.',
           );
@@ -249,6 +264,7 @@ export function SettingsScreen() {
       if (res.status === 401) {
         if (isMountedRef.current) {
           setPractitionerGrants([]);
+          setPractitionerPendingInvite(null);
           setPractitionerLoadError(
             'Your session expired or is no longer valid. Sign in again to manage practitioner access.',
           );
@@ -258,6 +274,7 @@ export function SettingsScreen() {
       if (res.status === 403) {
         if (isMountedRef.current) {
           setPractitionerGrants([]);
+          setPractitionerPendingInvite(null);
           setPractitionerLoadError(
             'Practitioner sharing is only available to patient accounts.',
           );
@@ -270,6 +287,7 @@ export function SettingsScreen() {
         };
         if (isMountedRef.current) {
           setPractitionerGrants([]);
+          setPractitionerPendingInvite(null);
           setPractitionerLoadError(
             body.error === 'server_misconfigured'
               ? 'Practitioner access is temporarily unavailable (Supabase Edge Function or secrets).'
@@ -278,13 +296,18 @@ export function SettingsScreen() {
         }
         return;
       }
-      const body = (await res.json()) as { grants?: PractitionerGrantDto[] };
+      const body = (await res.json()) as {
+        grants?: PractitionerGrantDto[];
+        pendingInvite?: PractitionerPendingInviteDto | null;
+      };
       if (isMountedRef.current) {
         setPractitionerGrants(body.grants ?? []);
+        setPractitionerPendingInvite(body.pendingInvite ?? null);
       }
     } catch (e) {
       if (isMountedRef.current) {
         setPractitionerGrants([]);
+        setPractitionerPendingInvite(null);
         setPractitionerLoadError(
           isMissingPublishableKeyForPractitionerEdge(e)
             ? PRACTITIONER_EDGE_PUBLISHABLE_KEY_ENV_HELP
@@ -311,6 +334,7 @@ export function SettingsScreen() {
     if (!patientPractitionerApiUrl) {
       if (isMountedRef.current) {
         setPractitionerGrants([]);
+        setPractitionerPendingInvite(null);
         setPractitionerLoadError(null);
         setPractitionerFormError(null);
       }
@@ -576,7 +600,7 @@ export function SettingsScreen() {
         const o = maybe.outcome;
         if (o === 'invite_sent') {
           announce(
-            'Invite sent. They should use the practitioner web app link from email and complete two-factor setup.',
+            'Invite sent. They should open the email link in the practitioner web app and accept the invite before they appear under active practitioners.',
             { politeness: 'polite' },
           );
         } else if (o === 'already_linked') {
@@ -656,6 +680,7 @@ export function SettingsScreen() {
         } else {
           announce('Invite email resent.', { politeness: 'polite' });
         }
+        void loadPractitionerGrants();
       }
     } catch (e) {
       if (isMountedRef.current) {
@@ -668,6 +693,62 @@ export function SettingsScreen() {
     } finally {
       if (isMountedRef.current) {
         setPractitionerResendSubmitting(false);
+      }
+    }
+  };
+
+  const onCancelPractitionerPendingInvite = async () => {
+    if (isMountedRef.current) {
+      setPractitionerCancelInviteSubmitting(true);
+      setPractitionerFormError(null);
+    }
+    try {
+      const {
+        data: { session },
+        error: sessionError,
+      } = await getMobileAuthSessionSafe();
+      if (sessionError || !session?.access_token?.trim()) {
+        if (isMountedRef.current) {
+          setPractitionerFormError(
+            'You must be signed in with a valid session to cancel a pending invite.',
+          );
+        }
+        return;
+      }
+      const res = await fetchPractitionerAccessCancelPendingInvite(
+        session.access_token,
+      );
+      const maybe = (await res.json().catch(() => ({}))) as {
+        error?: string;
+      };
+      if (!res.ok) {
+        const msg =
+          typeof maybe.error === 'string'
+            ? maybe.error
+            : 'Unable to cancel the pending invite.';
+        if (isMountedRef.current) {
+          setPractitionerFormError(msg);
+          announce(msg, { politeness: 'assertive' });
+        }
+        return;
+      }
+      if (isMountedRef.current) {
+        announce('Pending practitioner invite cancelled.', {
+          politeness: 'polite',
+        });
+        void loadPractitionerGrants();
+      }
+    } catch (e) {
+      if (isMountedRef.current) {
+        setPractitionerFormError(
+          isMissingPublishableKeyForPractitionerEdge(e)
+            ? PRACTITIONER_EDGE_PUBLISHABLE_KEY_ENV_HELP
+            : 'Something went wrong. Try again.',
+        );
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setPractitionerCancelInviteSubmitting(false);
       }
     }
   };
@@ -1135,6 +1216,64 @@ export function SettingsScreen() {
               </Text>
             ) : null}
             {patientPractitionerApiUrl &&
+            practitionerPendingInvite &&
+            practitionerGrants !== undefined &&
+            !practitionerLoadError ? (
+              <View className={`gap-3 rounded-xl border p-4 ${nw.card}`}>
+                <Text className={`text-base font-semibold ${nw.textInk}`}>
+                  Practitioner invite pending
+                </Text>
+                <Text className={`text-sm ${nw.textMuted}`}>
+                  We sent an email to {practitionerPendingInvite.inviteeEmail}.
+                  They must open that link in the practitioner web app and
+                  accept the invite before they are listed under active
+                  practitioners.
+                </Text>
+                <View className="gap-2">
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Resend practitioner invite email"
+                    accessibilityState={{
+                      disabled: practitionerResendSubmitting,
+                    }}
+                    disabled={practitionerResendSubmitting}
+                    onPress={() =>
+                      void onResendPractitionerInvite(
+                        practitionerPendingInvite.inviteeEmail,
+                      )
+                    }
+                    className={`min-h-[48px] justify-center rounded-xl border border-app-border bg-app-surface px-3 py-2 dark:border-app-border-dark dark:bg-app-surface-dark ${practitionerResendSubmitting ? 'opacity-60' : ''}`}
+                  >
+                    <Text
+                      className={`text-center text-sm font-semibold ${nw.textInk}`}
+                    >
+                      {practitionerResendSubmitting
+                        ? 'Working…'
+                        : 'Resend invite email'}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Cancel pending practitioner invite"
+                    accessibilityState={{
+                      disabled: practitionerCancelInviteSubmitting,
+                    }}
+                    disabled={practitionerCancelInviteSubmitting}
+                    onPress={() => void onCancelPractitionerPendingInvite()}
+                    className={`min-h-[48px] justify-center rounded-xl border border-app-border bg-app-bg px-3 py-2 dark:border-app-border-dark dark:bg-app-bg-dark ${practitionerCancelInviteSubmitting ? 'opacity-60' : ''}`}
+                  >
+                    <Text
+                      className={`text-center text-sm font-semibold ${nw.textInk}`}
+                    >
+                      {practitionerCancelInviteSubmitting
+                        ? 'Working…'
+                        : 'Cancel pending invite'}
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : null}
+            {patientPractitionerApiUrl &&
             (practitionerGrants?.length ?? 0) > 0 &&
             !practitionerLoadError ? (
               <View className={`gap-3 ${nw.card} rounded-xl border p-4`}>
@@ -1208,7 +1347,8 @@ export function SettingsScreen() {
             ) : null}
             {patientPractitionerApiUrl &&
             !practitionerLoadError &&
-            practitionerGrants !== undefined ? (
+            practitionerGrants !== undefined &&
+            !practitionerPendingInvite ? (
               <View className={`gap-3 rounded-xl border p-4 ${nw.card}`}>
                 <Text className={`text-base font-semibold ${nw.textInk}`}>
                   Invite a practitioner

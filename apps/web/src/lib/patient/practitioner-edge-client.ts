@@ -124,8 +124,17 @@ export type PractitionerGrantDto = {
   createdAt: string;
 };
 
+/** Pending practitioner email invite (no `practitioner_access` row yet). */
+export type PractitionerPendingInviteDto = {
+  inviteeEmail: string;
+  expiresAt: string;
+  lastInviteSentAt: string | null;
+  createdAt: string | null;
+};
+
 export type PractitionerAccessGetResponse = {
   grants: PractitionerGrantDto[];
+  pendingInvite: PractitionerPendingInviteDto | null;
 };
 
 /**
@@ -172,9 +181,8 @@ export async function fetchPatientPractitionerAccessPostInvite(
 }
 
 /**
- * POST resend Supabase invite email when a grant is already active for that practitioner.
- *
- * @param practitionerEmail - Same email as the active grant.
+ * POST resend Supabase invite email when a **pending invite** matches that email, or an **active grant**
+ * already exists for that practitioner (same **`redirectTo`** rules).
  */
 export async function fetchPatientPractitionerAccessResendInvite(
   practitionerEmail: string,
@@ -195,5 +203,14 @@ export async function fetchPatientPractitionerAccessRevoke(
 ): Promise<Response> {
   return fetchPatientPractitionerAccessPostJson({
     revokePractitionerUserId: practitionerUserId,
+  });
+}
+
+/**
+ * POST cancel a pending practitioner email invite (patient session).
+ */
+export async function fetchPatientPractitionerAccessCancelPendingInvite(): Promise<Response> {
+  return fetchPatientPractitionerAccessPostJson({
+    cancelPendingPractitionerInvite: true,
   });
 }

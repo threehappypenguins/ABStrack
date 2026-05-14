@@ -19,6 +19,7 @@ import {
   type ReactNode,
 } from 'react';
 import { syncMfaTrustBundleAfterTokenRefresh } from './practitioner-device-trust';
+import { completePractitionerInviteAfterAuth } from './practitioner-invite-complete';
 
 type ProfileRow = Database['public']['Tables']['profiles']['Row'];
 
@@ -217,6 +218,60 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, [session?.user?.id, supabase]);
+
+  const practitionerInviteId =
+    typeof session?.user?.user_metadata?.abstrack_practitioner_invite_id ===
+    'string'
+      ? session.user.user_metadata.abstrack_practitioner_invite_id.trim()
+      : '';
+
+  useEffect(() => {
+    const token = session?.access_token?.trim();
+    const userId = session?.user?.id;
+    if (!token || !practitionerInviteId || !userId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      const result = await completePractitionerInviteAfterAuth(
+        token,
+        practitionerInviteId,
+      );
+      if (cancelled) {
+        return;
+      }
+      if (!result.ok) {
+        console.warn('Practitioner invite finalize:', result.message);
+        return;
+      }
+      const { data, error } = await fetchProfileByUserId(supabase, userId);
+      if (cancelled) {
+        return;
+      }
+      if (error) {
+        setProfileError(
+          error instanceof Error
+            ? error
+            : new Error('Profile refresh failed after invite'),
+        );
+        setProfile(null);
+        return;
+      }
+      setProfile(data ?? null);
+      setProfileError(null);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    session?.access_token,
+    practitionerInviteId,
+    session?.user?.id,
+    supabase,
+  ]);
 
   const value = useMemo(
     () => ({

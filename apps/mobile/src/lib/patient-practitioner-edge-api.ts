@@ -96,7 +96,7 @@ export async function fetchPractitionerAccessGet(accessToken: string) {
  * POST JSON to the practitioner Edge Function.
  *
  * @param accessToken - Supabase session access token (JWT).
- * @param body - Invite, revoke, or resend payload.
+ * @param body - Invite, revoke, resend, cancel pending, or finalize payload.
  */
 export async function fetchPractitionerAccessPostJson(
   accessToken: string,
@@ -127,10 +127,11 @@ export async function fetchPractitionerAccessPostInvite(
 }
 
 /**
- * POST resend invite email for an active grant (patient session).
+ * POST resend invite email when a **pending practitioner invite** matches that email, or an **active grant**
+ * exists for that practitioner (patient session).
  *
  * @param accessToken - Supabase session access token (JWT).
- * @param practitionerEmail - Practitioner email matching the active grant.
+ * @param practitionerEmail - Normalized practitioner email to resend to.
  */
 export async function fetchPractitionerAccessResendInvite(
   accessToken: string,
@@ -154,5 +155,18 @@ export async function fetchPractitionerAccessRevoke(
 ) {
   return fetchPractitionerAccessPostJson(accessToken, {
     revokePractitionerUserId: practitionerUserId,
+  });
+}
+
+/**
+ * POST cancel a pending practitioner email invite (patient session).
+ *
+ * @param accessToken - Supabase session access token (JWT).
+ */
+export async function fetchPractitionerAccessCancelPendingInvite(
+  accessToken: string,
+) {
+  return fetchPractitionerAccessPostJson(accessToken, {
+    cancelPendingPractitionerInvite: true,
   });
 }
