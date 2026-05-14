@@ -19,7 +19,9 @@
  *   role escalation);
  *   `{ revokePractitionerUserId }` set **`revoked_at`** on the matching active grant;
  *   `{ practitionerEmail, resendPractitionerInvite: true }` resend Supabase invite email when an
- *   active grant already exists for that practitioner (same **`redirectTo`** rules). Invite/resend
+ *   active grant already exists for that practitioner (same **`redirectTo`** rules). If Auth reports
+ *   the address is already registered, returns **200** + **`outcome: invite_not_needed`** (no mail;
+ *   practitioner can sign in normally). Invite/resend emails are **throttled** per patient + email
  *   emails are **throttled** per patient + email (**`429`** + **`Retry-After`**, min interval 90s,
  *   durable row in **`practitioner_invite_send_throttle`**; stamp runs **before** Auth mail like caretaker).
  *
@@ -330,6 +332,24 @@ function isPostgresUniqueViolation(err: unknown): boolean {
     err !== null &&
     'code' in err &&
     (err as { code?: string }).code === '23505'
+  );
+}
+
+/**
+ * Detects GoTrue **`inviteUserByEmail`** errors when the email already has an Auth user
+ * (“already registered”, “exists”, etc.).
+ *
+ * @param message - `AuthError.message` or empty.
+ */
+function isAuthInviteEmailAlreadyInUseMessage(message: string): boolean {
+  const lower = message.trim().toLowerCase();
+  if (lower.length === 0) {
+    return false;
+  }
+  return (
+    lower.includes('already') ||
+    lower.includes('registered') ||
+    lower.includes('exists')
   );
 }
 
@@ -869,12 +889,20 @@ Deno.serve(async (req: Request) => {
       { redirectTo },
     );
     if (mailErr) {
-      const msg = (mailErr as { message?: string }).message ?? '';
+      const mailMsg = (mailErr as { message?: string }).message ?? '';
+      if (isAuthInviteEmailAlreadyInUseMessage(mailMsg)) {
+        return jsonResponse(200, {
+          ok: true,
+          outcome: 'invite_not_needed',
+          message:
+            'That address already has a practitioner account. They can sign in on the practitioner app with their email and password; no new invite email was sent.',
+        });
+      }
       console.error('inviteUserByEmail resend', mailErr);
       return jsonResponse(500, {
         error:
-          msg.trim() !== ''
-            ? `Unable to resend the invite email: ${msg}`
+          mailMsg.trim() !== ''
+            ? `Unable to resend the invite email: ${mailMsg}`
             : 'Unable to resend the invite email right now. Try again in a moment.',
       });
     }
@@ -938,13 +966,8 @@ Deno.serve(async (req: Request) => {
     });
 
   if (invErr || !invited.user?.id) {
-    const msg = (invErr as { message?: string } | undefined)?.message ?? '';
-    const lower = msg.toLowerCase();
-    if (
-      lower.includes('already') ||
-      lower.includes('registered') ||
-      lower.includes('exists')
-    ) {
+    const invMsg = (invErr as { message?: string } | undefined)?.message ?? '';
+    if (isAuthInviteEmailAlreadyInUseMessage(invMsg)) {
       let existingId: string | null = null;
       try {
         existingId = await resolveAuthUserIdByEmail(admin, rawEmail);

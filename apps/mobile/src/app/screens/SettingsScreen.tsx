@@ -628,6 +628,8 @@ export function SettingsScreen() {
       const maybe = (await res.json().catch(() => ({}))) as {
         error?: string;
         retryAfterSeconds?: number;
+        outcome?: string;
+        message?: string;
       };
       if (!res.ok) {
         const msg =
@@ -645,7 +647,15 @@ export function SettingsScreen() {
         return;
       }
       if (isMountedRef.current) {
-        announce('Invite email resent.', { politeness: 'polite' });
+        if (maybe.outcome === 'invite_not_needed') {
+          const polite =
+            typeof maybe.message === 'string' && maybe.message.trim() !== ''
+              ? maybe.message.trim()
+              : 'That practitioner already has an account. They can sign in on the practitioner app.';
+          announce(polite, { politeness: 'polite' });
+        } else {
+          announce('Invite email resent.', { politeness: 'polite' });
+        }
       }
     } catch (e) {
       if (isMountedRef.current) {

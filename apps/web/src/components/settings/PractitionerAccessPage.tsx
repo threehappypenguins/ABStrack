@@ -182,6 +182,8 @@ export function PractitionerAccessPage() {
     const maybeJson = (await res.json().catch(() => ({}))) as {
       error?: string;
       retryAfterSeconds?: number;
+      outcome?: string;
+      message?: string;
     };
     setResendSubmitting(false);
     if (!res.ok) {
@@ -195,6 +197,14 @@ export function PractitionerAccessPage() {
           : (raw ?? 'Unable to resend the invite.');
       setFormError(msg);
       announce(msg, { politeness: 'assertive' });
+      return;
+    }
+    if (maybeJson.outcome === 'invite_not_needed') {
+      const polite =
+        typeof maybeJson.message === 'string' && maybeJson.message.trim() !== ''
+          ? maybeJson.message.trim()
+          : 'That practitioner already has an account. They can sign in on the practitioner app.';
+      announce(polite, { politeness: 'polite' });
       return;
     }
     announce('Invite email resent.', { politeness: 'polite' });
