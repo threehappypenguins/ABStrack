@@ -29,11 +29,11 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 /**
  * React context for theme preference; wraps the app to sync DOM, localStorage, and system changes.
- * Initial state uses {@link readStoredTheme} so the first client render matches storage when the
- * initializer runs. A mount-only {@link useLayoutEffect} re-reads storage and applies the theme
- * before paint (needed for SSR hydration where state may start as `system`) so we never run
- * `applyThemeToDocument('system')` after the init script has already set `dark` from stored
- * preference.
+ * Initial state is always `system` so the server HTML and the client's first hydrated render match
+ * (SSR has no `localStorage`; {@link readStoredTheme} in `useState`
+ * would otherwise diverge). A mount-only {@link useLayoutEffect} reads storage and applies the
+ * theme before paint so stored light/dark and UI (for example {@link ThemeMenu} trigger icon) align
+ * immediately without hydration mismatches.
  *
  * User-driven changes call {@link applyThemeToDocument} inside `setPreference` so the class on
  * `<html>` updates immediately; the `[preference]` effect still reconciles other update paths.
@@ -42,9 +42,7 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
  * @returns Provider tree.
  */
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [preference, setPreferenceState] = useState<ThemePreference>(() =>
-    readStoredTheme(),
-  );
+  const [preference, setPreferenceState] = useState<ThemePreference>('system');
 
   useLayoutEffect(() => {
     const stored = readStoredTheme();
