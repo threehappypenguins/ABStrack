@@ -1,4 +1,5 @@
 import './global.css';
+import type { Metadata } from 'next';
 import { Plus_Jakarta_Sans } from 'next/font/google';
 import Script from 'next/script';
 import { ThemeProvider } from '../components/theme/ThemeProvider';
@@ -12,7 +13,7 @@ const fontSans = Plus_Jakarta_Sans({
   display: 'swap',
 });
 
-export const metadata = {
+export const metadata: Metadata = {
   title: 'ABStrack',
   description: 'Patient management application',
 };
