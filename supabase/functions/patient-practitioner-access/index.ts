@@ -1820,15 +1820,6 @@ Deno.serve(async (req: Request) => {
       (pendingResend.invitee_email_normalized as string) === normalizedTarget
     ) {
       const nowMsPending = Date.now();
-      const stampPending = await stampPractitionerInviteSendThrottleOr429(
-        admin,
-        user.id,
-        normalizedTarget,
-        nowMsPending,
-      );
-      if (!stampPending.ok) {
-        return stampPending.response;
-      }
 
       const pendingThrottle = practitionerInviteResendTooSoon(
         pendingResend.last_invite_sent_at as string | null | undefined,
