@@ -1940,9 +1940,8 @@ Deno.serve(async (req: Request) => {
       console.error('inviteUserByEmail resend', mailErr);
       return jsonResponse(500, {
         error:
-          mailMsg.trim() !== ''
-            ? `Unable to resend the invite email: ${mailMsg}`
-            : 'Unable to resend the invite email right now. Try again in a moment.',
+          'Unable to resend the invite email right now. Try again in a moment.',
+        errorCode: 'invite_resend_mail_failed',
       });
     }
 
