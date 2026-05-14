@@ -45,7 +45,6 @@ jobs:
           github-comment: false
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          working-directory: apps/web
 
       - name: Comment preview URL on PR
         continue-on-error: true

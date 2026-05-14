@@ -45,7 +45,6 @@ jobs:
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
           vercel-args: '--prod'
-          working-directory: apps/web
 
       - name: Deploy to Vercel (manual preview)
         if: github.event_name == 'workflow_dispatch' && inputs.deploy_target == 'preview'
@@ -58,7 +57,6 @@ jobs:
           github-comment: false
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          working-directory: apps/web
 
       - name: Print deployment URL
         if: steps.deploy.outputs.preview-url != ''
