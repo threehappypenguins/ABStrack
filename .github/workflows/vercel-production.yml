@@ -38,6 +38,7 @@ jobs:
         id: deploy
         uses: amondnet/vercel-action@v25
         with:
+          vercel-version: '54.0.0'
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           github-comment: false
@@ -51,6 +52,7 @@ jobs:
         id: deploy-preview
         uses: amondnet/vercel-action@v25
         with:
+          vercel-version: '54.0.0'
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           github-comment: false

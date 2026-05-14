@@ -38,6 +38,8 @@ jobs:
         id: deploy
         uses: amondnet/vercel-action@v25
         with:
+          # Action default is vercel@25.x; Vercel’s API now requires a current CLI (≥ npm 48.x).
+          vercel-version: '54.0.0'
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           github-comment: false
