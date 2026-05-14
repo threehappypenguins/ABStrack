@@ -29,14 +29,14 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 /**
  * React context for theme preference; wraps the app to sync DOM, localStorage, and system changes.
+ * Initial state is `system` so server and client first render match for hydration; a mount-only
+ * {@link useLayoutEffect} reads {@link readStoredTheme} and applies before paint.
  *
  * @param props - Props.
  * @returns Provider tree.
  */
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [preference, setPreferenceState] = useState<ThemePreference>(() =>
-    readStoredTheme(),
-  );
+  const [preference, setPreferenceState] = useState<ThemePreference>('system');
 
   useLayoutEffect(() => {
     const stored = readStoredTheme();

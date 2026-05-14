@@ -75,6 +75,8 @@ error.log
 # Next.js
 .next/
 out/
+# Vercel CLI (`vercel link`); contains org/project identifiers — do not commit.
+.vercel/
 # Next.js: auto-generated (`next dev` / `next build`); ignore repo-wide to avoid churn.
 next-env.d.ts
 

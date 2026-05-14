@@ -1,7 +1,6 @@
 import './global.css';
 import { Plus_Jakarta_Sans } from 'next/font/google';
 import Script from 'next/script';
-import { ThemeMenu } from '../components/theme/ThemeMenu';
 import { ThemeProvider } from '../components/theme/ThemeProvider';
 import { THEME_INIT_SCRIPT } from '../lib/theme-init-script';
 import { LiveAnnouncerRoot } from '../components/a11y/LiveAnnouncerRoot';
@@ -30,11 +29,6 @@ export default function RootLayout({
           {THEME_INIT_SCRIPT}
         </Script>
         <ThemeProvider>
-          <div className="pointer-events-none fixed right-3 top-3 z-[200] sm:right-4 sm:top-4">
-            <div className="pointer-events-auto">
-              <ThemeMenu />
-            </div>
-          </div>
           <AuthProvider>
             <LiveAnnouncerRoot>{children}</LiveAnnouncerRoot>
           </AuthProvider>

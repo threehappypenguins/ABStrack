@@ -103,23 +103,46 @@
     scroll-behavior: smooth;
   }
 
-  body {
-    margin: 0;
-    font-family: inherit;
-    line-height: inherit;
-    color: rgb(var(--app-ink) / 1);
-    background-color: rgb(var(--app-bg) / 1);
-    background-image: var(--app-gradient);
-    min-height: 100vh;
-    text-rendering: optimizeLegibility;
-  }
-
   @media (prefers-reduced-motion: reduce) {
     html {
       scroll-behavior: auto;
     }
   }
 }
+
+/* Body rules outside @layer so they win over Tailwind utility overrides */
+body {
+  margin: 0;
+  font-family: inherit;
+  line-height: inherit;
+  color: rgb(var(--app-ink) / 1);
+  background-color: rgb(var(--app-bg) / 1);
+  background-image:
+    linear-gradient(to right, #80808012 1px, transparent 1px),
+    linear-gradient(to bottom, #80808012 1px, transparent 1px),
+    var(--app-gradient);
+  background-size:
+    14px 24px,
+    14px 24px,
+    100% 100%;
+  min-height: 100vh;
+  text-rendering: optimizeLegibility;
+}
+
+html.dark body {
+  background-image:
+    linear-gradient(to right, #ffffff0a 1px, transparent 1px),
+    linear-gradient(to bottom, #ffffff0a 1px, transparent 1px),
+    var(--app-gradient);
+  background-size:
+    14px 24px,
+    14px 24px,
+    100% 100%;
+}
+
+/* Do not style `body` with `prefers-color-scheme`: theme is class-based (`html.dark`) only.
+ * OS-dark + in-app light would otherwise paint a dark viewport behind light semantic tokens. */
+
 h1,
 h2,
 p,
