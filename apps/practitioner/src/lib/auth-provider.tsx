@@ -225,6 +225,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ? session.user.user_metadata.abstrack_practitioner_invite_id.trim()
       : '';
 
+  /**
+   * When **`user_metadata.abstrack_practitioner_invite_id`** is set, completes the patient invite
+   * once. The Edge function clears that metadata on success; **`refreshSession`** loads the updated
+   * JWT so this effect does not repeat finalize on every app load.
+   */
   useEffect(() => {
     const token = session?.access_token?.trim();
     const userId = session?.user?.id;
@@ -245,6 +250,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!result.ok) {
         console.warn('Practitioner invite finalize:', result.message);
         return;
+      }
+      const { error: refreshErr } = await supabase.auth.refreshSession();
+      if (refreshErr) {
+        console.warn(
+          'Practitioner invite finalize: refreshSession after clearing invite metadata',
+          refreshErr,
+        );
       }
       const { data, error } = await fetchProfileByUserId(supabase, userId);
       if (cancelled) {

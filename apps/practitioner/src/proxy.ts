@@ -1,15 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@abstrack/supabase/server';
 
-const protectedRoutes = ['/patients'];
-
-/**
- * True when `pathname` is exactly `route` or a nested path under it.
- */
-function isProtectedPath(pathname: string, route: string): boolean {
-  return pathname === route || pathname.startsWith(`${route}/`);
-}
-
 const authRoutes = ['/login'];
 
 function withSupabaseCookies(
@@ -40,6 +31,8 @@ function withSupabaseCookies(
 /**
  * Next.js 16 **proxy** (replaces `middleware.ts`): session refresh, auth-route redirects, and the
  * Supabase implicit-auth rewrite for `/auth/callback` (same pattern as `apps/web/src/proxy.ts`).
+ * Patient routes (`/patients` and below) stay on the requested URL when signed out so the client
+ * gate component can render the in-app sign-in UI.
  */
 export default async function proxy(req: NextRequest) {
   const { pathname, searchParams } = req.nextUrl;
@@ -59,10 +52,6 @@ export default async function proxy(req: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request: req,
   });
-
-  const isProtectedRoute = protectedRoutes.some((route) =>
-    isProtectedPath(pathname, route),
-  );
 
   const isAuthRoute = authRoutes.includes(pathname);
 
@@ -88,13 +77,6 @@ export default async function proxy(req: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-
-  if (isProtectedRoute && !user) {
-    return withSupabaseCookies(
-      NextResponse.redirect(new URL('/login', req.url)),
-      supabaseResponse,
-    );
-  }
 
   if (isAuthRoute && user) {
     return withSupabaseCookies(

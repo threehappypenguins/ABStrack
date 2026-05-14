@@ -2,9 +2,10 @@
  * Patient-initiated **`practitioner_access`** grants and practitioner email invites (PRD §8).
  * Verified patient session + elevated Supabase client (default secret key from `SUPABASE_SECRET_KEYS`).
  * Writes use **service_role**; RLS includes explicit `TO service_role` policies in
- * `supabase/migrations/20260514120000_practitioner_access_service_role_edge.sql` and
- * **`20260515180000_practitioner_invites.sql`** ( **`practitioner_invite_send_throttle`**,
- * **`practitioner_invites`**, stamp RPCs, **`list_practitioner_auth_emails_for_patient_grants`** ).
+ * `supabase/migrations/20260514120000_practitioner_access_service_role_edge.sql` (**`practitioner_access`**
+ * INSERT/UPDATE, **`practitioner_invite_send_throttle`**, **`stamp_practitioner_invite_send_throttle`**,
+ * **`list_practitioner_auth_emails_for_patient_grants`**) and
+ * **`20260515180000_practitioner_invites.sql`** (**`practitioner_invites`**, **`stamp_practitioner_invite_pre_send`**).
  * User web + mobile call `…/functions/v1/patient-practitioner-access` with user JWT + `apikey` (publishable).
  *
  * Practitioner data reads remain **fail-closed** on MFA (AAL2) via RLS and
@@ -31,8 +32,9 @@
  *   durable row in **`practitioner_invite_send_throttle`**; invite-row **`stamp_practitioner_invite_pre_send`**
  *   runs immediately before Auth mail like caretaker).
  * - **POST** (practitioner session): `{ finalizePractitionerInvite: true, inviteId }` after accepting the
- *   email link — creates **`practitioner_access`**, consumes **`practitioner_invites`** (**200** retry-safe
- *   when already finalized for this practitioner).
+ *   email link — creates **`practitioner_access`**, consumes **`practitioner_invites`**, clears
+ *   **`user_metadata.abstrack_practitioner_invite_id`** on success (**200** retry-safe when already
+ *   finalized for this practitioner).
  *
  * **Invite email:** `auth.admin.inviteUserByEmail` **`redirectTo`** is **`ABSTRACK_PRACTITIONER_INVITE_REDIRECT_TO`**
  * when set (trimmed). Otherwise **`{origin}/auth/callback?next=/`** from **`ABSTRACK_PRACTITIONER_INVITE_WEB_ORIGIN`**
@@ -763,6 +765,51 @@ async function consumePractitionerInviteForFinalize(
   };
 }
 
+/**
+ * Drops **`abstrack_practitioner_invite_id`** from Auth **`user_metadata`** after finalize succeeds
+ * (or idempotent replay) so practitioner clients do not repeat finalize on every load.
+ *
+ * @param admin Elevated Supabase client.
+ * @param userId Practitioner **`auth.users.id`**.
+ */
+async function clearPractitionerInviteMetadataFromAuthUser(
+  admin: SupabaseClient,
+  userId: string,
+): Promise<void> {
+  const { data: authRes, error: getErr } =
+    await admin.auth.admin.getUserById(userId);
+  if (getErr || !authRes?.user) {
+    console.warn(
+      'clear practitioner invite metadata: getUserById',
+      userId,
+      getErr,
+    );
+    return;
+  }
+  const current = authRes.user.user_metadata;
+  if (
+    current == null ||
+    typeof current !== 'object' ||
+    !Object.hasOwn(current, 'abstrack_practitioner_invite_id')
+  ) {
+    return;
+  }
+  const nextMeta: Record<string, unknown> = {
+    ...(current as Record<string, unknown>),
+  };
+  delete nextMeta.abstrack_practitioner_invite_id;
+  const { error: updErr } = await admin.auth.admin.updateUserById(userId, {
+    user_metadata: nextMeta,
+  });
+  if (updErr) {
+    console.warn(
+      'clear practitioner invite metadata: updateUserById',
+      userId,
+      updErr,
+    );
+  }
+}
+
 async function finalizeConsumeInviteAfterGrantPractitioner(
   admin: SupabaseClient,
   inviteId: string,
@@ -779,6 +826,10 @@ async function finalizeConsumeInviteAfterGrantPractitioner(
     nowIso,
   );
   if (consumed.ok) {
+    await clearPractitionerInviteMetadataFromAuthUser(
+      admin,
+      practitionerUserId,
+    );
     return jsonResponse(200, { ok: true, outcome });
   }
   if (consumed.response.status === 404 && rollbackActiveGrantOnConsume404) {
@@ -813,6 +864,10 @@ async function finalizeConsumeInviteAfterGrantPractitioner(
       console.warn(
         'finalize practitioner: invite row missing; idempotent success (no grant rollback)',
         inviteId,
+      );
+      await clearPractitionerInviteMetadataFromAuthUser(
+        admin,
+        practitionerUserId,
       );
       return jsonResponse(200, { ok: true, outcome });
     }
@@ -887,6 +942,7 @@ async function handleFinalizePractitionerInvite(
           error: 'Unable to verify practitioner access. Try again in a moment.',
         });
       }
+      await clearPractitionerInviteMetadataFromAuthUser(admin, user.id);
       return jsonResponse(200, {
         ok: true,
         outcome: pairActive ? 'already_linked' : 'linked',
