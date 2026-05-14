@@ -7,6 +7,7 @@
     "@abstrack/types": "workspace:*",
     "@abstrack/ui": "workspace:*",
     "@supabase/ssr": "^0.6.1",
+    "chart.js": "^4.5.1",
     "next": "~16.0.1",
     "react": "19.1.0",
     "react-dom": "19.1.0",

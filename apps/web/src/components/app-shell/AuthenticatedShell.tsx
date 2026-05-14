@@ -6,6 +6,7 @@ import type { ReactNode } from 'react';
 import { useMemo } from 'react';
 import { NavigationShell } from '@abstrack/ui';
 
+import { ThemeMenu } from '@/components/theme/ThemeMenu';
 import { useWebPhiSubjectUserContext } from '@/lib/patient/use-web-phi-subject-user-context';
 
 const NAV_ITEMS: {
@@ -168,6 +169,7 @@ export function AuthenticatedShell({
                     Log out
                   </button>
                 </form>
+                <ThemeMenu />
               </div>
             </div>
           </header>

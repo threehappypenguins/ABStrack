@@ -1,3 +1,5 @@
+import { PublicChromeThemeBar } from './PublicChromeThemeBar';
+
 /**
  * Single primary landmark for marketing and auth flows. Authenticated app routes under
  * `(app)/` use {@link AuthenticatedShell}’s `<main id="main-content">` instead — the root
@@ -8,5 +10,10 @@ export default function PublicLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return <main id="main-content">{children}</main>;
+  return (
+    <main id="main-content">
+      <PublicChromeThemeBar />
+      {children}
+    </main>
+  );
 }

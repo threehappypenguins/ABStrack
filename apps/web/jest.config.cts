@@ -7,6 +7,7 @@ const createJestConfig = nextJest({
 const config = {
   displayName: '@abstrack/web',
   preset: '../../jest.preset.js',
+  setupFilesAfterEnv: ['<rootDir>/jest-setup.ts'],
   transform: {
     '^(?!.*\\.(js|jsx|ts|tsx|css|json)$)': '@nx/react/plugins/jest',
   },
