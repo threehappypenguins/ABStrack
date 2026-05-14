@@ -229,6 +229,29 @@ Use this when user web runs on your machine (e.g. port **3000**) but Supabase Au
 
 ---
 
+## Patient practitioner Edge Function (`patient-practitioner-access`)
+
+Patients invite healthcare practitioners from **user web** (`apps/web` Settings) and **mobile** (`apps/mobile` Settings). The Edge Function uses **`auth.admin.inviteUserByEmail`** (or links an existing Auth user), sets **`profiles.app_role = practitioner`** via the trusted service client, and inserts **`practitioner_access`** with **`revoked_at` null**. **Revoke** sets **`revoked_at`** (RLS denies future reads; already-viewed data is not erased—PRD §8).
+
+**Server-only secrets (hosted Edge):** `SUPABASE_URL` and **`SUPABASE_SECRET_KEYS`** with a valid **`default`** `sb_secret_…` entry (same model as `patient-caretaker-access` and `practitioner-mfa-auth-audit`). **Do not** use legacy **`SUPABASE_SERVICE_ROLE_KEY`** in new work.
+
+**Invite `redirectTo` (Edge secrets, Supabase Dashboard → Edge Functions → Secrets):**
+
+1. **`ABSTRACK_PRACTITIONER_INVITE_REDIRECT_TO`** — optional. When non-empty after trim, used **verbatim** as Auth **`redirectTo`** (must be listed under **Authentication → URL Configuration → Redirect URLs**). Example: `https://practitioner.example.com/auth/callback?next=/` for PKCE completion on the practitioner Next app (`apps/practitioner` implements **`GET /auth/callback`** with `@supabase/ssr` `exchangeCodeForSession`).
+2. **`ABSTRACK_PRACTITIONER_INVITE_WEB_ORIGIN`** — used **only** when **`ABSTRACK_PRACTITIONER_INVITE_REDIRECT_TO`** is unset/empty. Must be an absolute **`http://` or `https://`** origin (trailing slashes trimmed). The function builds **`{origin}/auth/callback?next=/`** ( **`next`** defaults to practitioner home for TOTP enrollment).
+
+**Database:** apply migration **`20260514120000_practitioner_access_service_role_edge.sql`** (adds **`service_role`** INSERT/UPDATE on **`practitioner_access`**) with your normal **`db push`** flow before relying on the function in cloud.
+
+**Deploy** (repo root, linked project):
+
+```bash
+pnpm dlx supabase functions deploy patient-practitioner-access
+```
+
+**Supabase config:** `supabase/config.toml` sets **`verify_jwt = false`** for this function; the handler validates the Bearer session and requires **`profiles.app_role = patient`** for grant management routes.
+
+---
+
 ## Day-to-day: no database work
 
 - Ordinary app code: no Supabase CLI.

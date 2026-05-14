@@ -36,6 +36,15 @@ import {
   isMissingPublishableKeyForCaretakerEdge,
   resolvePatientCaretakerAccessUrl,
 } from '../../lib/patient-caretaker-edge-api';
+import {
+  PRACTITIONER_EDGE_PUBLISHABLE_KEY_ENV_HELP,
+  fetchPractitionerAccessGet,
+  fetchPractitionerAccessPostInvite,
+  fetchPractitionerAccessResendInvite,
+  fetchPractitionerAccessRevoke,
+  isMissingPublishableKeyForPractitionerEdge,
+  resolvePatientPractitionerAccessUrl,
+} from '../../lib/patient-practitioner-edge-api';
 import { getMobileAuthSessionSafe } from '../../lib/supabase-wiring';
 
 const THEME_OPTIONS: {
@@ -74,6 +83,14 @@ type CaretakerPendingInviteDto = {
   createdAt: string | null;
 };
 
+type PractitionerGrantDto = {
+  id: string;
+  practitionerUserId: string;
+  practitionerEmail: string | null;
+  practitionerDisplayName: string | null;
+  createdAt: string;
+};
+
 const caretakerInputClassName = `min-h-[52px] rounded-lg px-3 py-2.5 text-base ${nw.input}`;
 
 export function SettingsScreen() {
@@ -82,6 +99,7 @@ export function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { colors, themePreference, setThemePreference } = useAppTheme();
   const patientCaretakerApiUrl = resolvePatientCaretakerAccessUrl();
+  const patientPractitionerApiUrl = resolvePatientPractitionerAccessUrl();
   const isMountedRef = useRef(true);
   const [requireReauth, setRequireReauth] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -109,6 +127,23 @@ export function SettingsScreen() {
   const [caretakerFormError, setCaretakerFormError] = useState<string | null>(
     null,
   );
+
+  const [practitionerGrants, setPractitionerGrants] = useState<
+    PractitionerGrantDto[] | undefined
+  >(undefined);
+  const [practitionerLoadError, setPractitionerLoadError] = useState<
+    string | null
+  >(null);
+  const [practitionerInviteSubmitting, setPractitionerInviteSubmitting] =
+    useState(false);
+  const [practitionerResendSubmitting, setPractitionerResendSubmitting] =
+    useState(false);
+  const [practitionerRevokeSubmitting, setPractitionerRevokeSubmitting] =
+    useState(false);
+  const [practitionerEmail, setPractitionerEmail] = useState('');
+  const [practitionerFormError, setPractitionerFormError] = useState<
+    string | null
+  >(null);
 
   const loadCaretakerGrant = useCallback(async () => {
     if (!patientCaretakerApiUrl) {
@@ -189,6 +224,76 @@ export function SettingsScreen() {
     }
   }, [patientCaretakerApiUrl]);
 
+  const loadPractitionerGrants = useCallback(async () => {
+    if (!patientPractitionerApiUrl) {
+      return;
+    }
+    if (isMountedRef.current) {
+      setPractitionerLoadError(null);
+    }
+    try {
+      const {
+        data: { session },
+        error: sessionError,
+      } = await getMobileAuthSessionSafe();
+      if (sessionError || !session?.access_token?.trim()) {
+        if (isMountedRef.current) {
+          setPractitionerGrants([]);
+          setPractitionerLoadError(
+            'Sign in with a network connection to manage practitioner access from this screen.',
+          );
+        }
+        return;
+      }
+      const res = await fetchPractitionerAccessGet(session.access_token);
+      if (res.status === 401) {
+        if (isMountedRef.current) {
+          setPractitionerGrants([]);
+          setPractitionerLoadError(
+            'Your session expired or is no longer valid. Sign in again to manage practitioner access.',
+          );
+        }
+        return;
+      }
+      if (res.status === 403) {
+        if (isMountedRef.current) {
+          setPractitionerGrants([]);
+          setPractitionerLoadError(
+            'Practitioner sharing is only available to patient accounts.',
+          );
+        }
+        return;
+      }
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        if (isMountedRef.current) {
+          setPractitionerGrants([]);
+          setPractitionerLoadError(
+            body.error === 'server_misconfigured'
+              ? 'Practitioner access is temporarily unavailable (Supabase Edge Function or secrets).'
+              : 'Unable to load practitioner access. Try again in a moment.',
+          );
+        }
+        return;
+      }
+      const body = (await res.json()) as { grants?: PractitionerGrantDto[] };
+      if (isMountedRef.current) {
+        setPractitionerGrants(body.grants ?? []);
+      }
+    } catch (e) {
+      if (isMountedRef.current) {
+        setPractitionerGrants([]);
+        setPractitionerLoadError(
+          isMissingPublishableKeyForPractitionerEdge(e)
+            ? PRACTITIONER_EDGE_PUBLISHABLE_KEY_ENV_HELP
+            : 'Unable to load practitioner access. Check your network connection.',
+        );
+      }
+    }
+  }, [patientPractitionerApiUrl]);
+
   useEffect(() => {
     if (!patientCaretakerApiUrl) {
       if (isMountedRef.current) {
@@ -201,6 +306,18 @@ export function SettingsScreen() {
     }
     void loadCaretakerGrant();
   }, [patientCaretakerApiUrl, loadCaretakerGrant]);
+
+  useEffect(() => {
+    if (!patientPractitionerApiUrl) {
+      if (isMountedRef.current) {
+        setPractitionerGrants([]);
+        setPractitionerLoadError(null);
+        setPractitionerFormError(null);
+      }
+      return;
+    }
+    void loadPractitionerGrants();
+  }, [patientPractitionerApiUrl, loadPractitionerGrants]);
 
   const onCancelPendingCaretakerInvite = async () => {
     if (isMountedRef.current) {
@@ -400,6 +517,212 @@ export function SettingsScreen() {
           text: 'Revoke access',
           style: 'destructive',
           onPress: () => void runRevokeCaretaker(),
+        },
+      ],
+    );
+  };
+
+  const onInvitePractitioner = async () => {
+    const trimmed = practitionerEmail.trim();
+    if (!trimmed) {
+      if (isMountedRef.current) {
+        setPractitionerFormError('Enter the practitioner email address.');
+      }
+      return;
+    }
+    if (isMountedRef.current) {
+      setPractitionerInviteSubmitting(true);
+      setPractitionerFormError(null);
+    }
+    try {
+      const {
+        data: { session },
+        error: sessionError,
+      } = await getMobileAuthSessionSafe();
+      if (sessionError || !session?.access_token?.trim()) {
+        if (isMountedRef.current) {
+          setPractitionerFormError(
+            'You must be signed in with a valid session to invite a practitioner.',
+          );
+        }
+        return;
+      }
+      const res = await fetchPractitionerAccessPostInvite(
+        session.access_token,
+        trimmed,
+      );
+      const maybe = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        outcome?: string;
+      };
+      if (!res.ok) {
+        const msg =
+          typeof maybe.error === 'string'
+            ? maybe.error
+            : 'Unable to invite or link practitioner access.';
+        if (isMountedRef.current) {
+          setPractitionerFormError(msg);
+          announce(msg, { politeness: 'assertive' });
+        }
+        return;
+      }
+      if (isMountedRef.current) {
+        setPractitionerEmail('');
+        const o = maybe.outcome;
+        if (o === 'invite_sent') {
+          announce(
+            'Invite sent. They should use the practitioner web app link from email and complete two-factor setup.',
+            { politeness: 'polite' },
+          );
+        } else if (o === 'already_linked') {
+          announce('That practitioner is already linked.', {
+            politeness: 'polite',
+          });
+        } else {
+          announce('Practitioner linked.', { politeness: 'polite' });
+        }
+      }
+      await loadPractitionerGrants();
+    } catch (e) {
+      if (isMountedRef.current) {
+        setPractitionerFormError(
+          isMissingPublishableKeyForPractitionerEdge(e)
+            ? PRACTITIONER_EDGE_PUBLISHABLE_KEY_ENV_HELP
+            : 'Something went wrong. Check EXPO_PUBLIC_SUPABASE_URL, Edge Function deploy, and network, then try again.',
+        );
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setPractitionerInviteSubmitting(false);
+      }
+    }
+  };
+
+  const onResendPractitionerInvite = async (email: string) => {
+    if (isMountedRef.current) {
+      setPractitionerResendSubmitting(true);
+      setPractitionerFormError(null);
+    }
+    try {
+      const {
+        data: { session },
+        error: sessionError,
+      } = await getMobileAuthSessionSafe();
+      if (sessionError || !session?.access_token?.trim()) {
+        if (isMountedRef.current) {
+          setPractitionerFormError(
+            'You must be signed in with a valid session to resend an invite.',
+          );
+        }
+        return;
+      }
+      const res = await fetchPractitionerAccessResendInvite(
+        session.access_token,
+        email.trim(),
+      );
+      const maybe = (await res.json().catch(() => ({}))) as {
+        error?: string;
+      };
+      if (!res.ok) {
+        const msg =
+          typeof maybe.error === 'string'
+            ? maybe.error
+            : 'Unable to resend the invite.';
+        if (isMountedRef.current) {
+          setPractitionerFormError(msg);
+          announce(msg, { politeness: 'assertive' });
+        }
+        return;
+      }
+      if (isMountedRef.current) {
+        announce('Invite email resent.', { politeness: 'polite' });
+      }
+    } catch (e) {
+      if (isMountedRef.current) {
+        setPractitionerFormError(
+          isMissingPublishableKeyForPractitionerEdge(e)
+            ? PRACTITIONER_EDGE_PUBLISHABLE_KEY_ENV_HELP
+            : 'Something went wrong. Try again.',
+        );
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setPractitionerResendSubmitting(false);
+      }
+    }
+  };
+
+  const runRevokePractitioner = async (practitionerUserId: string) => {
+    if (isMountedRef.current) {
+      setPractitionerRevokeSubmitting(true);
+      setPractitionerFormError(null);
+    }
+    try {
+      const {
+        data: { session },
+        error: sessionError,
+      } = await getMobileAuthSessionSafe();
+      if (sessionError || !session?.access_token?.trim()) {
+        if (isMountedRef.current) {
+          setPractitionerFormError(
+            'You must be signed in with a valid session to revoke practitioner access.',
+          );
+        }
+        return;
+      }
+      const res = await fetchPractitionerAccessRevoke(
+        session.access_token,
+        practitionerUserId,
+      );
+      const maybe = (await res.json().catch(() => ({}))) as {
+        error?: string;
+      };
+      if (!res.ok) {
+        const msg =
+          typeof maybe.error === 'string'
+            ? maybe.error
+            : 'Unable to revoke practitioner access.';
+        if (isMountedRef.current) {
+          setPractitionerFormError(msg);
+          announce(msg, { politeness: 'assertive' });
+        }
+        return;
+      }
+      if (isMountedRef.current) {
+        announce(
+          'Practitioner access revoked. Future reads are blocked; data they already saw is not erased.',
+          { politeness: 'polite' },
+        );
+      }
+      await loadPractitionerGrants();
+    } catch (e) {
+      if (isMountedRef.current) {
+        setPractitionerFormError(
+          isMissingPublishableKeyForPractitionerEdge(e)
+            ? PRACTITIONER_EDGE_PUBLISHABLE_KEY_ENV_HELP
+            : 'Something went wrong. Try again.',
+        );
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setPractitionerRevokeSubmitting(false);
+      }
+    }
+  };
+
+  const onConfirmRevokePractitioner = (
+    practitionerUserId: string,
+    label: string,
+  ) => {
+    Alert.alert(
+      'Revoke practitioner access?',
+      `${label} will no longer be authorized to read your data on new requests. Nothing they may already have seen is erased. You can invite them again later.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Revoke access',
+          style: 'destructive',
+          onPress: () => void runRevokePractitioner(practitionerUserId),
         },
       ],
     );
@@ -747,6 +1070,173 @@ export function SettingsScreen() {
                 </View>
               ) : null}
             </>
+          </View>
+
+          <View className="my-2 h-px bg-app-border dark:bg-app-border-dark" />
+
+          <View className="gap-2" accessibilityLabel="Practitioner access">
+            <Text className={`text-base font-semibold ${nw.textInk}`}>
+              Practitioner access
+            </Text>
+            <Text className={`text-base ${nw.textMuted}`}>
+              Invite a healthcare practitioner by email. They complete sign-up
+              only on the ABStrack practitioner web app (not this mobile app),
+              with mandatory two-factor authentication, then can read your data
+              while access stays active. Revoking stops future reads; it does
+              not erase what they may already have viewed.
+            </Text>
+            {!patientPractitionerApiUrl ? (
+              <Text
+                className={`text-sm ${nw.textError}`}
+                accessibilityRole="alert"
+              >
+                Missing EXPO_PUBLIC_SUPABASE_URL. Add it to apps/mobile/.env so
+                practitioner invite and revoke can call your Supabase Edge
+                Function patient-practitioner-access (see repo
+                supabase/functions).
+              </Text>
+            ) : null}
+            {patientPractitionerApiUrl && practitionerLoadError ? (
+              <Text
+                className={`text-sm ${nw.textError}`}
+                accessibilityRole="alert"
+              >
+                {practitionerLoadError}
+              </Text>
+            ) : null}
+            {patientPractitionerApiUrl &&
+            practitionerGrants === undefined &&
+            !practitionerLoadError ? (
+              <Text
+                className={`text-base ${nw.textMuted}`}
+                accessibilityLiveRegion="polite"
+              >
+                Loading practitioner access…
+              </Text>
+            ) : null}
+            {patientPractitionerApiUrl &&
+            (practitionerGrants?.length ?? 0) > 0 &&
+            !practitionerLoadError ? (
+              <View className={`gap-3 ${nw.card} rounded-xl border p-4`}>
+                <Text className={`text-base font-semibold ${nw.textInk}`}>
+                  Active practitioners
+                </Text>
+                {practitionerGrants?.map((g) => {
+                  const label =
+                    g.practitionerEmail?.trim() ||
+                    g.practitionerDisplayName?.trim() ||
+                    'Practitioner account';
+                  return (
+                    <View
+                      key={g.id}
+                      className="gap-2 rounded-lg border border-app-border bg-app-bg p-3 dark:border-app-border-dark dark:bg-app-bg-dark"
+                    >
+                      <Text className={`text-base font-medium ${nw.textInk}`}>
+                        {label}
+                      </Text>
+                      {g.practitionerEmail?.trim() ? (
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel="Resend practitioner invite email"
+                          accessibilityState={{
+                            disabled: practitionerResendSubmitting,
+                          }}
+                          disabled={practitionerResendSubmitting}
+                          onPress={() =>
+                            void onResendPractitionerInvite(
+                              g.practitionerEmail ?? '',
+                            )
+                          }
+                          className={`min-h-[48px] justify-center rounded-xl border border-app-border bg-app-surface px-3 py-2 dark:border-app-border-dark dark:bg-app-surface-dark ${practitionerResendSubmitting ? 'opacity-60' : ''}`}
+                        >
+                          <Text
+                            className={`text-center text-sm font-semibold ${nw.textInk}`}
+                          >
+                            {practitionerResendSubmitting
+                              ? 'Working…'
+                              : 'Resend invite email'}
+                          </Text>
+                        </Pressable>
+                      ) : null}
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Revoke practitioner access for ${label}`}
+                        accessibilityState={{
+                          disabled: practitionerRevokeSubmitting,
+                        }}
+                        disabled={practitionerRevokeSubmitting}
+                        onPress={() =>
+                          onConfirmRevokePractitioner(
+                            g.practitionerUserId,
+                            label,
+                          )
+                        }
+                        className={`min-h-[48px] justify-center rounded-xl border border-app-border bg-app-bg px-3 py-2 dark:border-app-border-dark dark:bg-app-bg-dark ${practitionerRevokeSubmitting ? 'opacity-60' : ''}`}
+                      >
+                        <Text
+                          className={`text-center text-sm font-semibold ${nw.textError}`}
+                        >
+                          {practitionerRevokeSubmitting
+                            ? 'Working…'
+                            : 'Revoke access'}
+                        </Text>
+                      </Pressable>
+                    </View>
+                  );
+                })}
+              </View>
+            ) : null}
+            {patientPractitionerApiUrl &&
+            !practitionerLoadError &&
+            practitionerGrants !== undefined ? (
+              <View className={`gap-3 rounded-xl border p-4 ${nw.card}`}>
+                <Text className={`text-base font-semibold ${nw.textInk}`}>
+                  Invite a practitioner
+                </Text>
+                <Text className={`text-sm ${nw.textMuted}`}>
+                  Enter their work email. If they already have a practitioner
+                  account, access links immediately.
+                </Text>
+                <TextInput
+                  accessibilityLabel="Practitioner email"
+                  accessibilityHint="Healthcare practitioner email for ABStrack practitioner app"
+                  value={practitionerEmail}
+                  onChangeText={setPractitionerEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  editable={!practitionerInviteSubmitting}
+                  placeholder="clinician@hospital.example.com"
+                  className={caretakerInputClassName}
+                />
+                {practitionerFormError ? (
+                  <Text
+                    className={`text-sm ${nw.textError}`}
+                    accessibilityRole="alert"
+                  >
+                    {practitionerFormError}
+                  </Text>
+                ) : null}
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Send practitioner invite or link"
+                  accessibilityState={{
+                    disabled: practitionerInviteSubmitting,
+                  }}
+                  disabled={practitionerInviteSubmitting}
+                  onPress={() => void onInvitePractitioner()}
+                  className={`min-h-[52px] justify-center rounded-xl ${nw.btnPrimary} px-4 py-3 ${practitionerInviteSubmitting ? 'opacity-60' : ''}`}
+                >
+                  <Text
+                    className={`text-center text-base font-semibold ${nw.textOnPrimary}`}
+                  >
+                    {practitionerInviteSubmitting
+                      ? 'Sending…'
+                      : 'Send invite or link'}
+                  </Text>
+                </Pressable>
+              </View>
+            ) : null}
           </View>
 
           {isPowerSyncReplicaDiagnosticsEnabled() ? (
