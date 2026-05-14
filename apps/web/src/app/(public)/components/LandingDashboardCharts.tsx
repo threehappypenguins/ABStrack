@@ -1,9 +1,37 @@
 'use client';
 
 import { useEffect, useRef, useSyncExternalStore } from 'react';
-import { Chart, registerables } from 'chart.js';
+import {
+  ArcElement,
+  BarController,
+  BarElement,
+  CategoryScale,
+  Chart,
+  DoughnutController,
+  Filler,
+  Legend,
+  LinearScale,
+  LineController,
+  LineElement,
+  PointElement,
+  Tooltip,
+} from 'chart.js';
 
-Chart.register(...registerables);
+/** Registers only chart types and scales used on this landing page (bar, doughnut, line). */
+Chart.register(
+  ArcElement,
+  BarController,
+  BarElement,
+  CategoryScale,
+  DoughnutController,
+  Filler,
+  Legend,
+  LinearScale,
+  LineController,
+  LineElement,
+  PointElement,
+  Tooltip,
+);
 
 const WEEK_LABELS = [
   'Jan 1',
