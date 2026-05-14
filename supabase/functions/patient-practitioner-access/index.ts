@@ -3,7 +3,7 @@
  * Verified patient session + elevated Supabase client (default secret key from `SUPABASE_SECRET_KEYS`).
  * Writes use **service_role**; RLS includes explicit `TO service_role` policies in
  * `supabase/migrations/20260514120000_practitioner_access_service_role_edge.sql` (policies,
- * throttle table, and **`stamp_practitioner_invite_send_throttle`** RPC).
+ * throttle table, and **`stamp_practitioner_invite_send_throttle`** / **`list_practitioner_auth_emails_for_patient_grants`** RPCs).
  * User web + mobile call `…/functions/v1/patient-practitioner-access` with user JWT + `apikey` (publishable).
  *
  * Practitioner data reads remain **fail-closed** on MFA (AAL2) via RLS and
@@ -13,6 +13,8 @@
  *
  * HTTP:
  * - **GET** — patient: list active practitioner grants (email + display name from Auth/ profiles).
+ *   Practitioner emails load in one **`list_practitioner_auth_emails_for_patient_grants`** RPC (joins
+ *   **`practitioner_access`** + **`auth.users`**) instead of per-id GoTrue admin calls.
  * - **POST** — patient: `{ practitionerEmail }` send **`inviteUserByEmail`** for new Auth users
  *   (then create **`profiles`** practitioner row if missing), or **link** an existing Auth user only
  *   when **`profiles.app_role`** is already **`practitioner`** (no profile auto-create on link — avoids
@@ -22,8 +24,8 @@
  *   active grant already exists for that practitioner (same **`redirectTo`** rules). If Auth reports
  *   the address is already registered, returns **200** + **`outcome: invite_not_needed`** (no mail;
  *   practitioner can sign in normally). Invite/resend emails are **throttled** per patient + email
- *   emails are **throttled** per patient + email (**`429`** + **`Retry-After`**, min interval 90s,
- *   durable row in **`practitioner_invite_send_throttle`**; stamp runs **before** Auth mail like caretaker).
+ *   (**`429`** + **`Retry-After`**, min interval 90s, durable row in **`practitioner_invite_send_throttle`**;
+ *   stamp runs **before** Auth mail like caretaker).
  *
  * **Invite email:** `auth.admin.inviteUserByEmail` **`redirectTo`** is **`ABSTRACK_PRACTITIONER_INVITE_REDIRECT_TO`**
  * when set (trimmed). Otherwise **`{origin}/auth/callback?next=/`** from **`ABSTRACK_PRACTITIONER_INVITE_WEB_ORIGIN`**
@@ -697,29 +699,31 @@ Deno.serve(async (req: Request) => {
       ...new Set(rowList.map((r) => r.practitioner_user_id as string)),
     ];
 
-    const [{ data: profileRows, error: profilesErr }, authPairs] =
-      await Promise.all([
-        admin
-          .from('profiles')
-          .select('id, display_name')
-          .in('id', practitionerIds),
-        Promise.all(
-          practitionerIds.map(async (id) => {
-            try {
-              const { data: authRes } = await admin.auth.admin.getUserById(id);
-              return {
-                id,
-                email: (authRes.user?.email as string | undefined) ?? null,
-              };
-            } catch {
-              return { id, email: null as string | null };
-            }
-          }),
-        ),
-      ]);
+    const [
+      { data: profileRows, error: profilesErr },
+      { data: emailRows, error: emailsErr },
+    ] = await Promise.all([
+      admin
+        .from('profiles')
+        .select('id, display_name')
+        .in('id', practitionerIds),
+      admin.rpc('list_practitioner_auth_emails_for_patient_grants', {
+        p_patient_user_id: user.id,
+        p_practitioner_user_ids: practitionerIds,
+      }),
+    ]);
 
     if (profilesErr) {
       console.error('profiles batch GET practitioner grants', profilesErr);
+      return jsonResponse(500, {
+        error: 'Unable to load practitioner access right now.',
+      });
+    }
+    if (emailsErr) {
+      console.error(
+        'list_practitioner_auth_emails_for_patient_grants',
+        emailsErr,
+      );
       return jsonResponse(500, {
         error: 'Unable to load practitioner access right now.',
       });
@@ -734,8 +738,15 @@ Deno.serve(async (req: Request) => {
     }
 
     const emailById = new Map<string, string | null>();
-    for (const { id, email } of authPairs) {
-      emailById.set(id, email);
+    const emailList = (emailRows ?? []) as Array<{
+      practitioner_user_id?: string;
+      email?: string | null;
+    }>;
+    for (const row of emailList) {
+      const pid = row.practitioner_user_id;
+      if (typeof pid === 'string' && pid !== '') {
+        emailById.set(pid, row.email ?? null);
+      }
     }
 
     const grants = rowList.map((r) => {

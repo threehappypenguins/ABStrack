@@ -79,8 +79,7 @@ AS $$
   DO UPDATE SET
     last_invite_sent_at = EXCLUDED.last_invite_sent_at
   WHERE
-    t.last_invite_sent_at IS NULL
-    OR t.last_invite_sent_at < p_throttle_cutoff
+    t.last_invite_sent_at < p_throttle_cutoff
   RETURNING patient_user_id;
 $$;
 
@@ -89,3 +88,33 @@ REVOKE ALL ON FUNCTION public.stamp_practitioner_invite_send_throttle(uuid, text
 GRANT EXECUTE ON FUNCTION public.stamp_practitioner_invite_send_throttle(uuid, text, timestamptz, timestamptz) TO service_role;
 
 COMMENT ON FUNCTION public.stamp_practitioner_invite_send_throttle (uuid, text, timestamptz, timestamptz) IS 'Atomically records practitioner invite email send when outside resend window; service_role only.';
+
+-- Batch Auth emails for GET grants: one round-trip instead of N `auth.admin.getUserById` calls (rate limits).
+CREATE OR REPLACE FUNCTION public.list_practitioner_auth_emails_for_patient_grants(
+  p_patient_user_id uuid,
+  p_practitioner_user_ids uuid[]
+)
+RETURNS TABLE (practitioner_user_id uuid, email text)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT DISTINCT ON (u.id)
+    u.id AS practitioner_user_id,
+    u.email::text AS email
+  FROM unnest(p_practitioner_user_ids) AS requested (practitioner_user_id)
+  INNER JOIN public.practitioner_access AS pa
+    ON pa.practitioner_user_id = requested.practitioner_user_id
+   AND pa.patient_user_id = p_patient_user_id
+   AND pa.revoked_at IS NULL
+  INNER JOIN auth.users AS u
+    ON u.id = requested.practitioner_user_id
+  ORDER BY u.id;
+$$;
+
+COMMENT ON FUNCTION public.list_practitioner_auth_emails_for_patient_grants (uuid, uuid[]) IS 'Returns auth.users.email for practitioner ids that have an active practitioner_access grant to the given patient; patient-practitioner-access GET only. SECURITY DEFINER; service_role EXECUTE only.';
+
+REVOKE ALL ON FUNCTION public.list_practitioner_auth_emails_for_patient_grants (uuid, uuid[]) FROM PUBLIC;
+
+GRANT EXECUTE ON FUNCTION public.list_practitioner_auth_emails_for_patient_grants (uuid, uuid[]) TO service_role;
