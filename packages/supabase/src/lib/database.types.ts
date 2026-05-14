@@ -496,6 +496,24 @@ export type Database = {
         }
         Relationships: []
       }
+      practitioner_invite_send_throttle: {
+        Row: {
+          invitee_email_normalized: string
+          last_invite_sent_at: string
+          patient_user_id: string
+        }
+        Insert: {
+          invitee_email_normalized: string
+          last_invite_sent_at: string
+          patient_user_id: string
+        }
+        Update: {
+          invitee_email_normalized?: string
+          last_invite_sent_at?: string
+          patient_user_id?: string
+        }
+        Relationships: []
+      }
       practitioner_observation_notes: {
         Row: {
           body: string
@@ -681,6 +699,13 @@ export type Database = {
         Args: { p_object_name: string }
         Returns: string
       }
+      list_practitioner_auth_emails_for_patient_grants: {
+        Args: { p_patient_user_id: string; p_practitioner_user_ids: string[] }
+        Returns: {
+          email: string
+          practitioner_user_id: string
+        }[]
+      }
       profiles_trusted_session_for_app_role: { Args: never; Returns: boolean }
       reorder_preset_health_markers: {
         Args: { p_ordered_ids: string[]; p_preset_id: string }
@@ -697,6 +722,15 @@ export type Database = {
       stamp_caretaker_invite_pre_send: {
         Args: {
           p_invite_id: string
+          p_stamp: string
+          p_throttle_cutoff: string
+        }
+        Returns: string[]
+      }
+      stamp_practitioner_invite_send_throttle: {
+        Args: {
+          p_invitee_email_normalized: string
+          p_patient_user_id: string
           p_stamp: string
           p_throttle_cutoff: string
         }
