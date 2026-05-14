@@ -1,12 +1,20 @@
 'use client';
 
 import { useAnnounce } from '@abstrack/ui/a11y-web';
+import Image from 'next/image';
+import { Inter } from 'next/font/google';
 import { useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useId, useState } from 'react';
 import { ThemeMenu } from '@/components/theme/ThemeMenu';
 import { useAuth } from '../../lib/auth-provider';
 import { LandingDashboardCharts } from './components/LandingDashboardCharts';
+
+const fontWordmark = Inter({
+  subsets: ['latin'],
+  weight: ['400', '500'],
+  display: 'swap',
+});
 
 const PLAY_STORE_BADGE_SRC =
   'https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png';
@@ -115,9 +123,21 @@ export function LandingPageClient() {
       <header className="relative z-50 border-b border-app-border/80 bg-app-surface/90 backdrop-blur-sm">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            <p className="text-lg font-semibold tracking-tight text-app-ink">
-              ABStrack
-            </p>
+            <a
+              href="/"
+              aria-label="ABStrack home"
+              className="flex min-w-0 items-center gap-2.5 rounded-md text-app-ink outline-none ring-app-ring ring-offset-2 ring-offset-app-bg transition hover:opacity-90 focus-visible:ring-2"
+            >
+              <Image
+                src="/logo.png"
+                alt=""
+                width={40}
+                height={40}
+                className="h-9 w-9 shrink-0 object-contain sm:h-10 sm:w-10"
+                priority
+              />
+              <BrandWordmarkText className="text-lg tracking-tight" />
+            </a>
             <span className="hidden text-xs text-app-muted sm:inline">
               Auto-Brewery Syndrome tracking
             </span>
@@ -312,10 +332,32 @@ export function LandingPageClient() {
         </section>
 
         <footer className="border-t border-app-border/60 pt-8 text-center text-xs text-app-muted">
-          <p>&copy; 2026 ABStrack.</p>
+          <p className="text-center">
+            <span className="inline-flex flex-wrap items-center justify-center gap-x-1 gap-y-0">
+              <span>&copy; 2026</span>
+              <BrandWordmarkText />
+              <span>.</span>
+            </span>
+          </p>
         </footer>
       </div>
     </div>
+  );
+}
+
+/**
+ * Inter wordmark: medium “ABS”, regular “track”, for brand lockups.
+ *
+ * @param props - Props.
+ * @param props.className - Optional extra Tailwind classes (e.g. size, color).
+ * @returns Span with styled product name.
+ */
+function BrandWordmarkText({ className = '' }: { className?: string }) {
+  return (
+    <span className={`${fontWordmark.className} ${className}`.trim()}>
+      <span className="font-medium">ABS</span>
+      <span className="font-normal">track</span>
+    </span>
   );
 }
 
