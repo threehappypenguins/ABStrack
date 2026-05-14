@@ -123,15 +123,20 @@ export function PractitionerAccessPage() {
     const maybeJson = (await res.json().catch(() => ({}))) as {
       error?: string;
       outcome?: string;
+      retryAfterSeconds?: number;
     };
     setInviteSubmitting(false);
     if (!res.ok) {
       const raw =
         typeof maybeJson.error === 'string' ? maybeJson.error : undefined;
       const msg =
-        maybeJson.error === 'server_misconfigured'
-          ? 'Practitioner access is temporarily unavailable (Supabase Edge Function or secrets).'
-          : (raw ?? 'Unable to invite or link practitioner access.');
+        res.status === 429 &&
+        typeof maybeJson.retryAfterSeconds === 'number' &&
+        Number.isFinite(maybeJson.retryAfterSeconds)
+          ? `Please wait about ${Math.max(1, Math.round(maybeJson.retryAfterSeconds))} seconds before sending another invite.`
+          : maybeJson.error === 'server_misconfigured'
+            ? 'Practitioner access is temporarily unavailable (Supabase Edge Function or secrets).'
+            : (raw ?? 'Unable to invite or link practitioner access.');
       setFormError(msg);
       announce(msg, { politeness: 'assertive' });
       return;
@@ -176,12 +181,18 @@ export function PractitionerAccessPage() {
     }
     const maybeJson = (await res.json().catch(() => ({}))) as {
       error?: string;
+      retryAfterSeconds?: number;
     };
     setResendSubmitting(false);
     if (!res.ok) {
       const raw =
         typeof maybeJson.error === 'string' ? maybeJson.error : undefined;
-      const msg = raw ?? 'Unable to resend the invite.';
+      const msg =
+        res.status === 429 &&
+        typeof maybeJson.retryAfterSeconds === 'number' &&
+        Number.isFinite(maybeJson.retryAfterSeconds)
+          ? `Please wait about ${Math.max(1, Math.round(maybeJson.retryAfterSeconds))} seconds before resending the invite.`
+          : (raw ?? 'Unable to resend the invite.');
       setFormError(msg);
       announce(msg, { politeness: 'assertive' });
       return;

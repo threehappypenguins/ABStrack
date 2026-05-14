@@ -2,7 +2,8 @@
  * Patient-initiated **`practitioner_access`** grants and practitioner email invites (PRD §8).
  * Verified patient session + elevated Supabase client (default secret key from `SUPABASE_SECRET_KEYS`).
  * Writes use **service_role**; RLS includes explicit `TO service_role` policies in
- * `supabase/migrations/20260514120000_practitioner_access_service_role_edge.sql`.
+ * `supabase/migrations/20260514120000_practitioner_access_service_role_edge.sql` (policies,
+ * throttle table, and **`stamp_practitioner_invite_send_throttle`** RPC).
  * User web + mobile call `…/functions/v1/patient-practitioner-access` with user JWT + `apikey` (publishable).
  *
  * Practitioner data reads remain **fail-closed** on MFA (AAL2) via RLS and
@@ -12,10 +13,15 @@
  *
  * HTTP:
  * - **GET** — patient: list active practitioner grants (email + display name from Auth/ profiles).
- * - **POST** — patient: `{ practitionerEmail }` invite new account or link existing practitioner;
+ * - **POST** — patient: `{ practitionerEmail }` send **`inviteUserByEmail`** for new Auth users
+ *   (then create **`profiles`** practitioner row if missing), or **link** an existing Auth user only
+ *   when **`profiles.app_role`** is already **`practitioner`** (no profile auto-create on link — avoids
+ *   role escalation);
  *   `{ revokePractitionerUserId }` set **`revoked_at`** on the matching active grant;
  *   `{ practitionerEmail, resendPractitionerInvite: true }` resend Supabase invite email when an
- *   active grant already exists for that practitioner (same **`redirectTo`** rules).
+ *   active grant already exists for that practitioner (same **`redirectTo`** rules). Invite/resend
+ *   emails are **throttled** per patient + email (**`429`** + **`Retry-After`**, min interval 90s,
+ *   durable row in **`practitioner_invite_send_throttle`**; stamp runs **before** Auth mail like caretaker).
  *
  * **Invite email:** `auth.admin.inviteUserByEmail` **`redirectTo`** is **`ABSTRACK_PRACTITIONER_INVITE_REDIRECT_TO`**
  * when set (trimmed). Otherwise **`{origin}/auth/callback?next=/`** from **`ABSTRACK_PRACTITIONER_INVITE_WEB_ORIGIN`**
@@ -121,6 +127,139 @@ function isPlausiblePractitionerInviteEmail(normalized: string): boolean {
   return true;
 }
 
+/** Minimum interval between practitioner **`inviteUserByEmail`** sends for the same patient + email (ms). */
+const PRACTITIONER_INVITE_MIN_RESEND_INTERVAL_MS = 90_000;
+
+/**
+ * @param lastInviteSentAt - `practitioner_invite_send_throttle.last_invite_sent_at` from the last stamp.
+ * @param nowMs - Current epoch milliseconds.
+ */
+function practitionerInviteResendTooSoon(
+  lastInviteSentAt: string | null | undefined,
+  nowMs: number,
+): { tooSoon: true; retryAfterSec: number } | { tooSoon: false } {
+  if (lastInviteSentAt == null || lastInviteSentAt === '') {
+    return { tooSoon: false };
+  }
+  const t = Date.parse(lastInviteSentAt);
+  if (!Number.isFinite(t)) {
+    return { tooSoon: false };
+  }
+  const elapsed = nowMs - t;
+  if (elapsed >= PRACTITIONER_INVITE_MIN_RESEND_INTERVAL_MS) {
+    return { tooSoon: false };
+  }
+  return {
+    tooSoon: true,
+    retryAfterSec: Math.max(
+      1,
+      Math.ceil((PRACTITIONER_INVITE_MIN_RESEND_INTERVAL_MS - elapsed) / 1000),
+    ),
+  };
+}
+
+/**
+ * Atomically stamps **`practitioner_invite_send_throttle`** before **`inviteUserByEmail`** so rapid
+ * retries cannot spam mail. Returns **429** when inside the resend window.
+ */
+async function stampPractitionerInviteSendThrottleOr429(
+  admin: SupabaseClient,
+  patientUserId: string,
+  normalizedEmail: string,
+  nowMs: number,
+): Promise<{ ok: true } | { ok: false; response: Response }> {
+  const stampNowIso = new Date(nowMs).toISOString();
+  const throttleCutoffIso = new Date(
+    nowMs - PRACTITIONER_INVITE_MIN_RESEND_INTERVAL_MS,
+  ).toISOString();
+
+  const { data: stampedRows, error: stampErr } = await admin.rpc(
+    'stamp_practitioner_invite_send_throttle',
+    {
+      p_patient_user_id: patientUserId,
+      p_invitee_email_normalized: normalizedEmail,
+      p_stamp: stampNowIso,
+      p_throttle_cutoff: throttleCutoffIso,
+    },
+  );
+
+  if (stampErr) {
+    console.error('stamp_practitioner_invite_send_throttle', stampErr);
+    return {
+      ok: false,
+      response: jsonResponse(500, {
+        error: 'Unable to record the invite send. Try again in a moment.',
+      }),
+    };
+  }
+
+  const stampedCount = Array.isArray(stampedRows) ? stampedRows.length : 0;
+  if (stampedCount === 1) {
+    return { ok: true };
+  }
+  if (stampedCount > 1) {
+    console.error(
+      'stamp_practitioner_invite_send_throttle unexpected row count',
+      stampedCount,
+    );
+    return {
+      ok: false,
+      response: jsonResponse(500, {
+        error: 'Unable to verify the invite send. Try again in a moment.',
+      }),
+    };
+  }
+
+  const { data: row, error: readErr } = await admin
+    .from('practitioner_invite_send_throttle')
+    .select('last_invite_sent_at')
+    .eq('patient_user_id', patientUserId)
+    .eq('invitee_email_normalized', normalizedEmail)
+    .maybeSingle();
+
+  if (readErr) {
+    console.error('practitioner_invite_send_throttle read', readErr);
+    return {
+      ok: false,
+      response: jsonResponse(500, {
+        error: 'Unable to verify the invite send. Try again in a moment.',
+      }),
+    };
+  }
+
+  const throttle = practitionerInviteResendTooSoon(
+    row?.last_invite_sent_at as string | null | undefined,
+    nowMs,
+  );
+  if (throttle.tooSoon) {
+    return {
+      ok: false,
+      response: jsonResponse(
+        429,
+        {
+          error: 'Please wait before resending the invite.',
+          retryAfterSeconds: throttle.retryAfterSec,
+        },
+        {
+          'Retry-After': String(throttle.retryAfterSec),
+        },
+      ),
+    };
+  }
+
+  return {
+    ok: false,
+    response: jsonResponse(
+      429,
+      {
+        error: 'Please wait before sending another invite.',
+        retryAfterSeconds: 60,
+      },
+      { 'Retry-After': '60' },
+    ),
+  };
+}
+
 function normalizeInviteWebOriginForRedirect(raw: string): string | null {
   const base = raw.trim().replace(/\/+$/, '');
   if (!base) {
@@ -195,11 +334,63 @@ function isPostgresUniqueViolation(err: unknown): boolean {
 }
 
 /**
- * Ensures **`profiles.app_role = practitioner`** for **`userId`** via trusted service client.
+ * **Link-existing path:** requires a **`profiles`** row with **`app_role = practitioner`**.
+ * Does **not** insert a profile (avoids turning an Auth user with a missing or ambiguous profile
+ * into a practitioner). Call only when the user already exists in Auth by email.
+ *
+ * @returns **422** when the profile is missing or the role is not practitioner.
+ */
+async function requirePractitionerProfileForLink(
+  admin: SupabaseClient,
+  userId: string,
+): Promise<{ ok: true } | { ok: false; response: Response }> {
+  const { data: prof, error: readErr } = await admin
+    .from('profiles')
+    .select('app_role')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (readErr) {
+    console.error('profiles read practitioner link', readErr);
+    return {
+      ok: false,
+      response: jsonResponse(500, {
+        error: 'Unable to verify practitioner profile.',
+      }),
+    };
+  }
+
+  if (prof == null) {
+    return {
+      ok: false,
+      response: jsonResponse(422, {
+        error:
+          'That account has no ABStrack profile yet, or it is not registered as a practitioner. Ask them to complete practitioner sign-up first, then try linking this email again.',
+      }),
+    };
+  }
+
+  if (prof.app_role !== 'practitioner') {
+    return {
+      ok: false,
+      response: jsonResponse(422, {
+        error:
+          'That account is not registered as a healthcare practitioner in ABStrack. Use an email tied to the practitioner app, not a patient or caretaker account.',
+      }),
+    };
+  }
+
+  return { ok: true };
+}
+
+/**
+ * **Post-invite path only:** after **`inviteUserByEmail`**, create **`profiles`** with
+ * **`app_role = practitioner`** when missing, or succeed when already practitioner.
+ * Never use for link-by-email of an arbitrary existing Auth user.
  *
  * @returns Error response when an existing profile has a different role.
  */
-async function ensurePractitionerProfile(
+async function ensurePractitionerProfileForInvitedUser(
   admin: SupabaseClient,
   userId: string,
 ): Promise<{ ok: true } | { ok: false; response: Response }> {
@@ -371,7 +562,10 @@ async function linkExistingPractitionerByUserId(
   patientUserId: string,
   practitionerUserId: string,
 ): Promise<Response> {
-  const prof = await ensurePractitionerProfile(admin, practitionerUserId);
+  const prof = await requirePractitionerProfileForLink(
+    admin,
+    practitionerUserId,
+  );
   if (!prof.ok) {
     return prof.response;
   }
@@ -474,38 +668,66 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const grants: Array<{
-      id: string;
-      practitionerUserId: string;
-      practitionerEmail: string | null;
-      practitionerDisplayName: string | null;
-      createdAt: string;
-    }> = [];
+    const rowList = rows ?? [];
+    if (rowList.length === 0) {
+      return jsonResponse(200, { grants: [] });
+    }
 
-    for (const r of rows ?? []) {
-      const pid = r.practitioner_user_id as string;
-      let practitionerEmail: string | null = null;
-      try {
-        const { data: authRes } = await admin.auth.admin.getUserById(pid);
-        practitionerEmail = authRes.user?.email ?? null;
-      } catch {
-        practitionerEmail = null;
-      }
+    const practitionerIds = [
+      ...new Set(rowList.map((r) => r.practitioner_user_id as string)),
+    ];
 
-      const { data: pRow } = await admin
-        .from('profiles')
-        .select('display_name')
-        .eq('id', pid)
-        .maybeSingle();
+    const [{ data: profileRows, error: profilesErr }, authPairs] =
+      await Promise.all([
+        admin
+          .from('profiles')
+          .select('id, display_name')
+          .in('id', practitionerIds),
+        Promise.all(
+          practitionerIds.map(async (id) => {
+            try {
+              const { data: authRes } = await admin.auth.admin.getUserById(id);
+              return {
+                id,
+                email: (authRes.user?.email as string | undefined) ?? null,
+              };
+            } catch {
+              return { id, email: null as string | null };
+            }
+          }),
+        ),
+      ]);
 
-      grants.push({
-        id: r.id as string,
-        practitionerUserId: pid,
-        practitionerEmail,
-        practitionerDisplayName: pRow?.display_name ?? null,
-        createdAt: r.created_at as string,
+    if (profilesErr) {
+      console.error('profiles batch GET practitioner grants', profilesErr);
+      return jsonResponse(500, {
+        error: 'Unable to load practitioner access right now.',
       });
     }
+
+    const displayById = new Map<string, string | null>();
+    for (const p of profileRows ?? []) {
+      const rowId = p.id as string | undefined;
+      if (rowId != null && rowId !== '') {
+        displayById.set(rowId, (p.display_name as string | null) ?? null);
+      }
+    }
+
+    const emailById = new Map<string, string | null>();
+    for (const { id, email } of authPairs) {
+      emailById.set(id, email);
+    }
+
+    const grants = rowList.map((r) => {
+      const pid = r.practitioner_user_id as string;
+      return {
+        id: r.id as string,
+        practitionerUserId: pid,
+        practitionerEmail: emailById.get(pid) ?? null,
+        practitionerDisplayName: displayById.get(pid) ?? null,
+        createdAt: r.created_at as string,
+      };
+    });
 
     return jsonResponse(200, { grants });
   }
@@ -631,6 +853,17 @@ Deno.serve(async (req: Request) => {
       return jsonResponse(500, { error: 'server_misconfigured' });
     }
 
+    const nowMsResend = Date.now();
+    const stampResend = await stampPractitionerInviteSendThrottleOr429(
+      admin,
+      user.id,
+      normalizedTarget,
+      nowMsResend,
+    );
+    if (!stampResend.ok) {
+      return stampResend.response;
+    }
+
     const { error: mailErr } = await admin.auth.admin.inviteUserByEmail(
       normalizedTarget,
       { redirectTo },
@@ -688,6 +921,17 @@ Deno.serve(async (req: Request) => {
     return jsonResponse(500, { error: 'server_misconfigured' });
   }
 
+  const nowMsInvite = Date.now();
+  const stampInvite = await stampPractitionerInviteSendThrottleOr429(
+    admin,
+    user.id,
+    normalizedTarget,
+    nowMsInvite,
+  );
+  if (!stampInvite.ok) {
+    return stampInvite.response;
+  }
+
   const { data: invited, error: invErr } =
     await admin.auth.admin.inviteUserByEmail(normalizedTarget, {
       redirectTo,
@@ -728,7 +972,7 @@ Deno.serve(async (req: Request) => {
 
   const newUserId = invited.user.id;
 
-  const prof = await ensurePractitionerProfile(admin, newUserId);
+  const prof = await ensurePractitionerProfileForInvitedUser(admin, newUserId);
   if (!prof.ok) {
     return prof.response;
   }

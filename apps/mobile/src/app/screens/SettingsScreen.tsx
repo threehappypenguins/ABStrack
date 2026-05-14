@@ -554,12 +554,17 @@ export function SettingsScreen() {
       const maybe = (await res.json().catch(() => ({}))) as {
         error?: string;
         outcome?: string;
+        retryAfterSeconds?: number;
       };
       if (!res.ok) {
         const msg =
-          typeof maybe.error === 'string'
-            ? maybe.error
-            : 'Unable to invite or link practitioner access.';
+          res.status === 429 &&
+          typeof maybe.retryAfterSeconds === 'number' &&
+          Number.isFinite(maybe.retryAfterSeconds)
+            ? `Please wait about ${Math.max(1, Math.round(maybe.retryAfterSeconds))} seconds before sending another invite.`
+            : typeof maybe.error === 'string'
+              ? maybe.error
+              : 'Unable to invite or link practitioner access.';
         if (isMountedRef.current) {
           setPractitionerFormError(msg);
           announce(msg, { politeness: 'assertive' });
@@ -622,12 +627,17 @@ export function SettingsScreen() {
       );
       const maybe = (await res.json().catch(() => ({}))) as {
         error?: string;
+        retryAfterSeconds?: number;
       };
       if (!res.ok) {
         const msg =
-          typeof maybe.error === 'string'
-            ? maybe.error
-            : 'Unable to resend the invite.';
+          res.status === 429 &&
+          typeof maybe.retryAfterSeconds === 'number' &&
+          Number.isFinite(maybe.retryAfterSeconds)
+            ? `Please wait about ${Math.max(1, Math.round(maybe.retryAfterSeconds))} seconds before resending the invite.`
+            : typeof maybe.error === 'string'
+              ? maybe.error
+              : 'Unable to resend the invite.';
         if (isMountedRef.current) {
           setPractitionerFormError(msg);
           announce(msg, { politeness: 'assertive' });
