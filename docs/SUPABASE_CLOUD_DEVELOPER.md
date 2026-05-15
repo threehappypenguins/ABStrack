@@ -229,6 +229,31 @@ Use this when user web runs on your machine (e.g. port **3000**) but Supabase Au
 
 ---
 
+## Patient practitioner Edge Function (`patient-practitioner-access`)
+
+Patients invite healthcare practitioners from **user web** (`apps/web` Settings) and **mobile** (`apps/mobile` Settings). For a **new email** (no Auth user yet), the function inserts a pending **`practitioner_invites`** row and sends **`auth.admin.inviteUserByEmail`** with **`data.abstrack_practitioner_invite_id`** (caretaker-style); it does **not** insert **`practitioner_access`** until the invitee **finalizes** with **POST** `{ finalizePractitionerInvite: true, inviteId }` using their **practitioner** session—that path ensures **`profiles.app_role = practitioner`** when needed, inserts or reactivates **`practitioner_access`** with **`revoked_at` null**, and **consumes** the invite row. **Link-existing** (email already maps to an Auth user whose **`profiles.app_role`** is **`practitioner`**) still creates the grant immediately. **Revoke** sets **`revoked_at`** (RLS denies future reads; already-viewed data is not erased—PRD §8). **Cancel pending** removes the pending invite row. **Invite and resend** throttles (**`429`** + **`Retry-After`**, 90s minimum): pending email flows use **`practitioner_invites.last_invite_sent_at`** and **`stamp_practitioner_invite_pre_send`** before Auth mail (like **`caretaker_invites`**); **active-grant** **`inviteUserByEmail`** resends use **`practitioner_access.last_invite_email_sent_at`** and **`stamp_practitioner_access_last_invite_email_sent_at`**.
+
+**Practitioner MFA and PHI reads (fail-closed, password-gated):** This function only manages grants and invites; **patient data reads** are enforced by RLS (`user_has_practitioner_access`) and the practitioner app patient-route gate. **TOTP + JWT `aal = aal2` are required for PHI only when the practitioner has enabled password sign-in** — Auth **`user_metadata.abstrack_practitioner_password_set`** is set to **`true`** when they save a password on **`/update-password`** (optional on **`/invite/join`**). **Magic-link–only** invitees (flag absent/false) may read with **AAL1** once grant + **`profiles.app_role = practitioner`** are satisfied. **Password** sign-in (credential-stuffing risk) requires enrolled TOTP and an **AAL2** session before patient routes and RLS allow PHI; see migration **`20260517120000_practitioner_mfa_aal2_password_sign_in_only.sql`** and **`practitioner-mfa-auth-audit`** for password-path audit. This is **not** universal mandatory TOTP at first invite acceptance.
+
+**Server-only secrets (hosted Edge):** `SUPABASE_URL` and **`SUPABASE_SECRET_KEYS`** with a valid **`default`** `sb_secret_…` entry (same model as `patient-caretaker-access` and `practitioner-mfa-auth-audit`). **Do not** use legacy **`SUPABASE_SERVICE_ROLE_KEY`** in new work.
+
+**Invite `redirectTo` (Edge secrets, Supabase Dashboard → Edge Functions → Secrets):**
+
+1. **`ABSTRACK_PRACTITIONER_INVITE_REDIRECT_TO`** — optional. When non-empty after trim, used **verbatim** as Auth **`redirectTo`** (must be listed under **Authentication → URL Configuration → Redirect URLs**). Example: `https://practitioner.example.com/auth/callback?next=/invite/join`. If you previously set `next=/`, update the secret to **`next=/invite/join`** (or clear the secret and use **`ABSTRACK_PRACTITIONER_INVITE_WEB_ORIGIN`** so the Edge function builds the URL). The practitioner Next app mirrors user web: **`src/proxy.ts`** (Next.js 16 proxy) rewrites implicit returns to **`/auth/callback/fragment`**, **`app/auth/callback/route.ts`** exchanges PKCE **`?code=`** on the server, and **`app/auth/callback/fragment/page.tsx`** completes **`#access_token=`** sessions in the browser.
+2. **`ABSTRACK_PRACTITIONER_INVITE_WEB_ORIGIN`** — used **only** when **`ABSTRACK_PRACTITIONER_INVITE_REDIRECT_TO`** is unset/empty. Must be an absolute **`http://` or `https://`** origin (trailing slashes trimmed). The function builds **`{origin}/auth/callback?next=/invite/join`** (post-invite landing at **`/invite/join`**: finalize invite, then **Go to patient workspace** for magic-link sign-in, or optional **Create a password** → TOTP on **`/`** only if a password is saved).
+
+**Database:** apply migrations **`20260514120000_practitioner_access_service_role_edge.sql`** (**`service_role`** INSERT/UPDATE on **`practitioner_access`**, **`list_practitioner_auth_emails_for_patient_grants`**), **`20260515180000_practitioner_invites.sql`** (**`practitioner_invites`**, **`stamp_practitioner_invite_pre_send`**), **`20260516200000_practitioner_access_last_invite_email_sent_at.sql`** (**`practitioner_access.last_invite_email_sent_at`**, **`stamp_practitioner_access_last_invite_email_sent_at`**), and **`20260517120000_practitioner_mfa_aal2_password_sign_in_only.sql`** (**`user_has_practitioner_access`**: AAL2 only when **`abstrack_practitioner_password_set`**) with your normal **`db push`** flow before relying on the function in cloud.
+
+**Deploy** (repo root, linked project):
+
+```bash
+pnpm dlx supabase functions deploy patient-practitioner-access
+```
+
+**Supabase config:** `supabase/config.toml` sets **`verify_jwt = false`** for this function; the handler validates the Bearer session. **Patient** routes (list, invite, resend, revoke, cancel pending) require **`profiles.app_role = patient`**; **finalize** uses a **practitioner** session.
+
+---
+
 ## Day-to-day: no database work
 
 - Ordinary app code: no Supabase CLI.

@@ -377,6 +377,10 @@ verify_jwt = false
 [functions.patient-caretaker-access]
 verify_jwt = false
 
+# Patient practitioner grants + Auth invite: validates Bearer in-handler; elevated DB + Auth Admin (secret key).
+[functions.patient-practitioner-access]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

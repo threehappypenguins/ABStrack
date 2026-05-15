@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { useAuth } from '@/lib/auth-provider';
 import { getPatientDataMfaBlockReason } from '@/lib/practitioner-patient-data-access';
+import { practitionerUserHasPasswordSignIn } from '@/lib/practitioner-password-sign-in';
 import { usePractitionerVerifiedTotpCount } from '@/lib/use-practitioner-verified-totp';
 import { PractitionerSignOutButton } from './practitioner-sign-out-button';
 
@@ -25,8 +26,9 @@ const MFA_BLOCK_COPY = {
 } as const;
 
 /**
- * Blocks rendering of practitioner patient-data routes until the session has verified TOTP
- * enrollment and JWT MFA assurance (AAL2). Announces blocking reasons for assistive technology
+ * Blocks rendering of practitioner patient-data routes until password sign-in accounts have
+ * verified TOTP enrollment and JWT MFA assurance (AAL2). Magic-link–only accounts may pass without
+ * MFA. Announces blocking reasons for assistive technology
  * and provides keyboard-reachable actions.
  *
  * @param props - React children rendered only when MFA requirements are satisfied.
@@ -55,10 +57,18 @@ export function PractitionerPatientRoutesGate({
   const signInHeadingRef = useRef<HTMLHeadingElement>(null);
   const lastMfaBlockAnnounced = useRef<'enrollment' | 'aal2' | null>(null);
 
+  const passwordSignInEnabled = practitionerUserHasPasswordSignIn(
+    session?.user,
+  );
+
   const mfaBlockReason =
     practitionerGate == null
       ? null
-      : getPatientDataMfaBlockReason(practitionerGate, verifiedTotpCount);
+      : getPatientDataMfaBlockReason(
+          practitionerGate,
+          verifiedTotpCount,
+          passwordSignInEnabled,
+        );
 
   useEffect(() => {
     if (mfaBlockReason !== 'enrollment' && mfaBlockReason !== 'aal2') {

@@ -48,9 +48,14 @@ const NAV_ITEMS: {
     href: '/settings/caretaker',
     label: 'Caretaker',
     match: (path) =>
-      path === '/settings' ||
-      path === '/settings/caretaker' ||
-      path.startsWith('/settings/'),
+      path === '/settings/caretaker' || path.startsWith('/settings/caretaker/'),
+  },
+  {
+    href: '/settings/practitioner',
+    label: 'Practitioner',
+    match: (path) =>
+      path === '/settings/practitioner' ||
+      path.startsWith('/settings/practitioner/'),
   },
 ];
 
@@ -67,9 +72,9 @@ export type AuthenticatedShellProps = {
 /**
  * Authenticated app chrome: skip link, {@link NavigationShell} with primary nav, sign-out, and a
  * centered main column. Surfaces use CSS variables so light/dark tracks the theme toggle.
- * Primary nav omits the patient-only Caretaker settings link until the web PHI subject context
- * hook finishes resolving (or reports an error): `profileAppRole` is null while resolving, so we
- * default to the stricter caretaker-visible set to avoid a brief incorrect link for caretakers.
+ * Primary nav shows the patient-only Caretaker and Practitioner settings links only when
+ * {@link useWebPhiSubjectUserContext} reports `profileAppRole === 'patient'`, so caretakers,
+ * practitioners, and unresolved roles do not see dead-end routes (Edge returns 403).
  *
  * @param props - Props.
  * @returns Shell layout wrapping page content.
@@ -79,21 +84,17 @@ export function AuthenticatedShell({
   email,
 }: AuthenticatedShellProps) {
   const pathname = usePathname() ?? '/';
-  const {
-    profileAppRole,
-    loading: phiSubjectContextLoading,
-    errorMessage: phiSubjectContextError,
-  } = useWebPhiSubjectUserContext();
+  const { profileAppRole } = useWebPhiSubjectUserContext();
   const navItems = useMemo(() => {
-    const roleUnknownOrCaretaker =
-      phiSubjectContextLoading ||
-      phiSubjectContextError != null ||
-      profileAppRole === 'caretaker';
-    if (roleUnknownOrCaretaker) {
-      return NAV_ITEMS.filter((item) => item.href !== '/settings/caretaker');
+    if (profileAppRole !== 'patient') {
+      return NAV_ITEMS.filter(
+        (item) =>
+          item.href !== '/settings/caretaker' &&
+          item.href !== '/settings/practitioner',
+      );
     }
     return NAV_ITEMS;
-  }, [profileAppRole, phiSubjectContextLoading, phiSubjectContextError]);
+  }, [profileAppRole]);
 
   return (
     <div className="flex min-h-screen flex-col">

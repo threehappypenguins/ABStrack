@@ -476,6 +476,7 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          last_invite_email_sent_at: string | null
           patient_user_id: string
           practitioner_user_id: string
           revoked_at: string | null
@@ -483,6 +484,7 @@ export type Database = {
         Insert: {
           created_at?: string
           id?: string
+          last_invite_email_sent_at?: string | null
           patient_user_id: string
           practitioner_user_id: string
           revoked_at?: string | null
@@ -490,9 +492,43 @@ export type Database = {
         Update: {
           created_at?: string
           id?: string
+          last_invite_email_sent_at?: string | null
           patient_user_id?: string
           practitioner_user_id?: string
           revoked_at?: string | null
+        }
+        Relationships: []
+      }
+      practitioner_invites: {
+        Row: {
+          consumed_at: string | null
+          consumed_practitioner_user_id: string | null
+          created_at: string
+          expires_at: string
+          id: string
+          invitee_email_normalized: string
+          last_invite_sent_at: string | null
+          patient_user_id: string
+        }
+        Insert: {
+          consumed_at?: string | null
+          consumed_practitioner_user_id?: string | null
+          created_at?: string
+          expires_at: string
+          id?: string
+          invitee_email_normalized: string
+          last_invite_sent_at?: string | null
+          patient_user_id: string
+        }
+        Update: {
+          consumed_at?: string | null
+          consumed_practitioner_user_id?: string | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          invitee_email_normalized?: string
+          last_invite_sent_at?: string | null
+          patient_user_id?: string
         }
         Relationships: []
       }
@@ -681,6 +717,13 @@ export type Database = {
         Args: { p_object_name: string }
         Returns: string
       }
+      list_practitioner_auth_emails_for_patient_grants: {
+        Args: { p_patient_user_id: string; p_practitioner_user_ids: string[] }
+        Returns: {
+          email: string
+          practitioner_user_id: string
+        }[]
+      }
       profiles_trusted_session_for_app_role: { Args: never; Returns: boolean }
       reorder_preset_health_markers: {
         Args: { p_ordered_ids: string[]; p_preset_id: string }
@@ -695,6 +738,23 @@ export type Database = {
         Returns: string
       }
       stamp_caretaker_invite_pre_send: {
+        Args: {
+          p_invite_id: string
+          p_stamp: string
+          p_throttle_cutoff: string
+        }
+        Returns: string[]
+      }
+      stamp_practitioner_access_last_invite_email_sent_at: {
+        Args: {
+          p_patient_user_id: string
+          p_practitioner_user_id: string
+          p_stamp: string
+          p_throttle_cutoff: string
+        }
+        Returns: string[]
+      }
+      stamp_practitioner_invite_pre_send: {
         Args: {
           p_invite_id: string
           p_stamp: string

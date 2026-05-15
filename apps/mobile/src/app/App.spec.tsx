@@ -12,6 +12,7 @@ import {
   createMobileSupabaseClient,
   getMobileSupabaseClient,
 } from '../lib/supabase-wiring';
+import * as mobilePhiSubject from '../lib/phi-subject/resolve-mobile-phi-subject-user-context';
 
 jest.mock('@abstrack/supabase', () => {
   const actual =
@@ -706,6 +707,17 @@ describe('mobile auth state sync', () => {
         })),
       },
       from: jest.fn((table: string) => {
+        if (table === 'symptom_presets') {
+          return {
+            select: jest.fn(() => ({
+              order: jest.fn(() => ({
+                order: jest.fn(() =>
+                  Promise.resolve({ data: [], error: null }),
+                ),
+              })),
+            })),
+          };
+        }
         if (table === 'profiles') {
           return {
             select: jest.fn(() => ({
@@ -733,19 +745,41 @@ describe('mobile auth state sync', () => {
     jest.mocked(SecureStore.getItemAsync).mockResolvedValue('false');
     jest.mocked(getMobileSupabaseClient).mockReturnValue(mockClient);
 
+    const phiResolveSpy = jest
+      .spyOn(mobilePhiSubject, 'resolveMobilePhiSubjectUserContext')
+      .mockResolvedValue({
+        ok: true,
+        data: {
+          authUserId: 'user-1',
+          phiSubjectUserId: 'user-1',
+          profileAppRole: 'patient',
+        },
+      });
+
     /** Same as tab navigation test: cold `App` bootstrap must not await an unresolved `getInitialURL()`. */
     const getInitialUrlSpy = jest
       .spyOn(Linking, 'getInitialURL')
       .mockResolvedValue(null);
     try {
-      const { findByLabelText, findByTestId } = render(<App />);
+      const { findByText, findByTestId, queryByLabelText, queryByText } =
+        render(<App />);
 
-      // `episode-start-home-cta` is mounted while the active-episode probe runs; wait for the
-      // primary action that only appears after PHI + resume checks finish (see HomeScreen CTA).
-      fireEvent.press(await findByLabelText("I'm having an episode"));
+      await findByText('Welcome to ABStrack');
+
+      // Home mounts the CTA while PHI scope + active-episode probes run; wait until loading copy
+      // is gone and the start (not resume) control is exposed (see HomeScreen + EpisodeStartHomeCta).
+      const startEpisodeButton = await waitFor(() => {
+        expect(queryByText('Checking for an episode in progress…')).toBeNull();
+        const button = queryByLabelText("I'm having an episode");
+        expect(button).toBeTruthy();
+        return button;
+      });
+
+      fireEvent.press(startEpisodeButton);
       expect(await findByTestId('episode-start-screen-title')).toBeTruthy();
     } finally {
       getInitialUrlSpy.mockRestore();
+      phiResolveSpy.mockRestore();
     }
   });
 

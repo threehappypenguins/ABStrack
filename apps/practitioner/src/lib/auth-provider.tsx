@@ -175,6 +175,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [supabase]);
 
+  const pendingInviteMetadataId =
+    typeof session?.user?.user_metadata?.abstrack_practitioner_invite_id ===
+    'string'
+      ? session.user.user_metadata.abstrack_practitioner_invite_id.trim()
+      : '';
+
   useEffect(() => {
     const userId = session?.user?.id;
     if (!userId) {
@@ -208,7 +214,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setProfile(null);
         return;
       }
-      setProfile(data ?? null);
+      if (data != null) {
+        setProfile(data);
+        return;
+      }
+      const { data: liveSession } = await supabase.auth.getSession();
+      const pendingInviteId =
+        typeof liveSession.session?.user?.user_metadata
+          ?.abstrack_practitioner_invite_id === 'string'
+          ? liveSession.session.user.user_metadata.abstrack_practitioner_invite_id.trim()
+          : '';
+      if (pendingInviteId !== '') {
+        // Finalize runs on `/invite/join`; keep loading until profile exists.
+        setProfile(undefined);
+        return;
+      }
+      const { data: retry, error: retryErr } = await fetchProfileByUserId(
+        supabase,
+        userId,
+      );
+      if (cancelled) {
+        return;
+      }
+      if (retryErr) {
+        const err =
+          retryErr instanceof Error
+            ? retryErr
+            : new Error(
+                typeof retryErr === 'object' &&
+                retryErr !== null &&
+                'message' in retryErr &&
+                typeof (retryErr as { message: unknown }).message === 'string'
+                  ? (retryErr as { message: string }).message
+                  : 'Profile request failed',
+              );
+        setProfileError(err);
+        setProfile(null);
+        return;
+      }
+      setProfile(retry ?? null);
     };
 
     void loadProfile();
@@ -216,7 +260,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [session?.user?.id, supabase]);
+  }, [
+    session?.user?.id,
+    session?.access_token,
+    pendingInviteMetadataId,
+    supabase,
+  ]);
 
   const value = useMemo(
     () => ({
