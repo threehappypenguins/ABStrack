@@ -175,6 +175,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [supabase]);
 
+  const pendingInviteMetadataId =
+    typeof session?.user?.user_metadata?.abstrack_practitioner_invite_id ===
+    'string'
+      ? session.user.user_metadata.abstrack_practitioner_invite_id.trim()
+      : '';
+
   useEffect(() => {
     const userId = session?.user?.id;
     if (!userId) {
@@ -254,7 +260,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [session?.user?.id, supabase]);
+  }, [
+    session?.user?.id,
+    session?.access_token,
+    pendingInviteMetadataId,
+    supabase,
+  ]);
 
   const value = useMemo(
     () => ({
