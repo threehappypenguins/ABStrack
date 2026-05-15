@@ -1,5 +1,6 @@
 type PatientDetailPageProps = {
-  params: { patientId: string };
+  /** Next.js 16 passes dynamic route params as a Promise (await before use). */
+  params: Promise<{ patientId: string }>;
 };
 
 /**
@@ -8,8 +9,10 @@ type PatientDetailPageProps = {
  * @param props - Dynamic route params.
  * @returns Patient detail shell.
  */
-export default function PatientDetailPage({ params }: PatientDetailPageProps) {
-  const { patientId } = params;
+export default async function PatientDetailPage({
+  params,
+}: PatientDetailPageProps) {
+  const { patientId } = await params;
 
   return (
     <div
