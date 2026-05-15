@@ -4,7 +4,10 @@ import type {
   FoodDiaryEntryRow,
   HealthMarkerRow,
 } from '@abstrack/types';
-import { EPISODE_TIMELINE_SOURCE_LIMIT } from './episode-observation-timeline.js';
+import {
+  EPISODE_TIMELINE_SOURCE_LIMIT,
+  episodeTimelineMeasurementDetailWithOptionalNotes,
+} from './episode-observation-timeline.js';
 import { PresetDataError } from './preset-data-error.js';
 import {
   assertActivePractitionerGrantForPatient,
@@ -95,6 +98,10 @@ function profileChain(result: { data: unknown; error: unknown }) {
 }
 
 type ReadModelClientOpts = {
+  /**
+   * `practitioner_access.maybeSingle()` payload: omit for default active grant; pass `null` for no row
+   * (denied path).
+   */
   grant?: { id: string } | null;
   episodes: PractitionerPatientEpisodeRow[];
   episodesError?: unknown;
@@ -165,7 +172,9 @@ function clientForReadModel(opts: ReadModelClientOpts): AbstrackSupabaseClient {
 
   const from = vi.fn((table: string) => {
     if (table === 'practitioner_access') {
-      return grantChain(opts.grant ?? { id: 'grant-1' });
+      const grantRow =
+        opts.grant === undefined ? { id: 'grant-1' } : opts.grant;
+      return grantChain(grantRow);
     }
     if (table === 'episodes') {
       if (opts.episodesError != null) {
@@ -225,6 +234,30 @@ function standaloneMarkerRow(
     systolic_numeric: null,
     diastolic_numeric: null,
     notes: null,
+    created_at: ts,
+    updated_at: ts,
+  };
+}
+
+function episodeMarkerRow(
+  partial: Pick<HealthMarkerRow, 'id' | 'episode_id' | 'recorded_at'> &
+    Partial<Pick<HealthMarkerRow, 'notes' | 'value_numeric'>>,
+): HealthMarkerRow {
+  const ts = partial.recorded_at;
+  return {
+    ...partial,
+    user_id: PATIENT_ID,
+    preset_health_marker_id: null,
+    marker_kind: 'heart_rate',
+    custom_name: null,
+    custom_name_key: null,
+    custom_unit: null,
+    custom_unit_key: null,
+    value_numeric:
+      partial.value_numeric !== undefined ? partial.value_numeric : 72,
+    systolic_numeric: null,
+    diastolic_numeric: null,
+    notes: partial.notes !== undefined ? partial.notes : null,
     created_at: ts,
     updated_at: ts,
   };
@@ -356,6 +389,42 @@ describe('loadPractitionerPatientObservationReadModel', () => {
     );
   });
 
+  it('merges numeric health-marker patient notes into episode timelines (detail / detailFull)', async () => {
+    const ep = episodeFixture('ep-marker-notes', PATIENT_ID);
+    const recordedAt = '2026-06-01T12:00:00.000Z';
+    const marker = episodeMarkerRow({
+      id: 'hm-with-notes',
+      episode_id: ep.id,
+      recorded_at: recordedAt,
+      value_numeric: 88,
+      notes: 'Resting before vitals',
+    });
+    const client = clientForReadModel({
+      episodes: [ep],
+      markers: [marker],
+    });
+
+    const result = await loadPractitionerPatientObservationReadModel(
+      client,
+      PATIENT_ID,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    const hmTimelineRow = result.data.episodesWithTimelines[0]?.timeline.find(
+      (t) => t.kind === 'health_marker' && t.id === 'hm-with-notes',
+    );
+    expect(hmTimelineRow).toBeDefined();
+    expect(hmTimelineRow).toMatchObject({
+      ...episodeTimelineMeasurementDetailWithOptionalNotes(
+        '88',
+        'Resting before vitals',
+      ),
+    });
+  });
+
   it('sets moreEpisodesOmitted when episode query returns over the history cap', async () => {
     const episodes = Array.from(
       { length: PRACTITIONER_PATIENT_EPISODE_HISTORY_CAP + 1 },
@@ -467,6 +536,24 @@ describe('loadPractitionerPatientObservationReadModel', () => {
     expect(block?.timeline.filter((t) => t.kind === 'symptom')).toHaveLength(
       EPISODE_TIMELINE_SOURCE_LIMIT,
     );
+  });
+
+  it('returns permission_denied when grant option is explicitly null', async () => {
+    const client = clientForReadModel({
+      grant: null,
+      episodes: [episodeFixture('ep-no-grant', PATIENT_ID)],
+    });
+
+    const result = await loadPractitionerPatientObservationReadModel(
+      client,
+      PATIENT_ID,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(result.error.code).toBe('permission_denied');
   });
 
   it('propagates episodes select errors', async () => {

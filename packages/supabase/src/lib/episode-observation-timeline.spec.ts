@@ -6,6 +6,10 @@ import {
   type HealthMarkerRow,
 } from '@abstrack/types';
 import {
+  episodeTimelineBloodPressureDetailWithOptionalNotes,
+  episodeTimelineBoundedFoodNote,
+  episodeTimelineBoundedSymptomMarkerText,
+  episodeTimelineMeasurementDetailWithOptionalNotes,
   listEpisodeObservationTimeline,
   mergeEpisodeObservationRowsToTimeline,
   mergeStandaloneHealthAndFoodRowsToTimeline,
@@ -293,7 +297,7 @@ describe('listEpisodeObservationTimeline', () => {
 });
 
 describe('mergeEpisodeObservationRowsToTimeline', () => {
-  it('preserves full free-text symptoms, marker notes, and food notes (no merge-time truncation)', () => {
+  it('uses bounded detail previews and detailFull for long free-text symptoms, note-only markers, numeric markers with notes, and food notes', () => {
     const longSymptom = 's'.repeat(200);
     const longNotes = 'n'.repeat(150);
     const longFood = 'f'.repeat(120);
@@ -313,7 +317,7 @@ describe('mergeEpisodeObservationRowsToTimeline', () => {
       updated_at: '2026-04-24T12:00:00.000Z',
     };
 
-    const hm: HealthMarkerRow = {
+    const hmNoteOnly: HealthMarkerRow = {
       id: 'hm-long',
       user_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
       episode_id: 'eeeeeeee-bbbb-cccc-dddd-aaaaaaaaaaaa',
@@ -332,6 +336,25 @@ describe('mergeEpisodeObservationRowsToTimeline', () => {
       updated_at: '2026-04-24T11:00:00.000Z',
     };
 
+    const hmNumericWithLongNotes: HealthMarkerRow = {
+      id: 'hm-numeric-long-notes',
+      user_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      episode_id: 'eeeeeeee-bbbb-cccc-dddd-aaaaaaaaaaaa',
+      preset_health_marker_id: null,
+      marker_kind: 'heart_rate',
+      custom_name: null,
+      custom_name_key: null,
+      custom_unit: null,
+      custom_unit_key: null,
+      value_numeric: 72,
+      systolic_numeric: null,
+      diastolic_numeric: null,
+      notes: longNotes,
+      recorded_at: '2026-04-24T11:30:00.000Z',
+      created_at: '2026-04-24T11:30:00.000Z',
+      updated_at: '2026-04-24T11:30:00.000Z',
+    };
+
     const fd: FoodDiaryEntryRow = {
       id: 'fd-long',
       user_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
@@ -343,18 +366,114 @@ describe('mergeEpisodeObservationRowsToTimeline', () => {
       updated_at: '2026-04-24T10:00:00.000Z',
     };
 
-    const merged = mergeEpisodeObservationRowsToTimeline([symptom], [hm], [fd]);
+    const merged = mergeEpisodeObservationRowsToTimeline(
+      [symptom],
+      [hmNoteOnly, hmNumericWithLongNotes],
+      [fd],
+    );
     expect(merged.find((r) => r.id === 'sym-long')).toMatchObject({
-      detail: `${'s'.repeat(77)}…`,
-      detailFull: longSymptom,
+      ...episodeTimelineBoundedSymptomMarkerText(longSymptom),
     });
     expect(merged.find((r) => r.id === 'hm-long')).toMatchObject({
-      detail: `${'n'.repeat(77)}…`,
-      detailFull: longNotes,
+      ...episodeTimelineBoundedSymptomMarkerText(longNotes),
+    });
+    expect(merged.find((r) => r.id === 'hm-numeric-long-notes')).toMatchObject({
+      ...episodeTimelineMeasurementDetailWithOptionalNotes('72', longNotes),
     });
     expect(merged.find((r) => r.id === 'fd-long')).toMatchObject({
-      detail: `${'f'.repeat(97)}…`,
-      detailFull: longFood,
+      ...episodeTimelineBoundedFoodNote(longFood),
+    });
+  });
+
+  it('includes optional notes with blood pressure readings', () => {
+    const hm: HealthMarkerRow = {
+      id: 'hm-bp-notes',
+      user_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      episode_id: 'eeeeeeee-bbbb-cccc-dddd-aaaaaaaaaaaa',
+      preset_health_marker_id: null,
+      marker_kind: 'blood_pressure',
+      custom_name: null,
+      custom_name_key: null,
+      custom_unit: null,
+      custom_unit_key: null,
+      value_numeric: null,
+      systolic_numeric: 120,
+      diastolic_numeric: 80,
+      notes: 'Resting, left arm',
+      recorded_at: '2026-04-24T11:30:00.000Z',
+      created_at: '2026-04-24T11:30:00.000Z',
+      updated_at: '2026-04-24T11:30:00.000Z',
+    };
+
+    const merged = mergeEpisodeObservationRowsToTimeline([], [hm], []);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({
+      kind: 'health_marker',
+      id: 'hm-bp-notes',
+      ...episodeTimelineBloodPressureDetailWithOptionalNotes(
+        120,
+        80,
+        'Resting, left arm',
+      ),
+    });
+  });
+
+  it('bounds blood pressure readings with long notes using detailFull', () => {
+    const longNote = 'z'.repeat(120);
+    const hm: HealthMarkerRow = {
+      id: 'hm-bp-long-notes',
+      user_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      episode_id: 'eeeeeeee-bbbb-cccc-dddd-aaaaaaaaaaaa',
+      preset_health_marker_id: null,
+      marker_kind: 'blood_pressure',
+      custom_name: null,
+      custom_name_key: null,
+      custom_unit: null,
+      custom_unit_key: null,
+      value_numeric: null,
+      systolic_numeric: 118,
+      diastolic_numeric: 76,
+      notes: longNote,
+      recorded_at: '2026-04-24T11:31:00.000Z',
+      created_at: '2026-04-24T11:31:00.000Z',
+      updated_at: '2026-04-24T11:31:00.000Z',
+    };
+
+    const merged = mergeEpisodeObservationRowsToTimeline([], [hm], []);
+    expect(merged[0]).toMatchObject({
+      ...episodeTimelineBloodPressureDetailWithOptionalNotes(118, 76, longNote),
+    });
+  });
+
+  it('includes optional notes with numeric measurement markers', () => {
+    const hm: HealthMarkerRow = {
+      id: 'hm-hr-notes',
+      user_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      episode_id: 'eeeeeeee-bbbb-cccc-dddd-aaaaaaaaaaaa',
+      preset_health_marker_id: null,
+      marker_kind: 'heart_rate',
+      custom_name: null,
+      custom_name_key: null,
+      custom_unit: null,
+      custom_unit_key: null,
+      value_numeric: 72,
+      systolic_numeric: null,
+      diastolic_numeric: null,
+      notes: 'After short walk',
+      recorded_at: '2026-04-24T11:32:00.000Z',
+      created_at: '2026-04-24T11:32:00.000Z',
+      updated_at: '2026-04-24T11:32:00.000Z',
+    };
+
+    const merged = mergeEpisodeObservationRowsToTimeline([], [hm], []);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({
+      kind: 'health_marker',
+      id: 'hm-hr-notes',
+      ...episodeTimelineMeasurementDetailWithOptionalNotes(
+        '72',
+        'After short walk',
+      ),
     });
   });
 });

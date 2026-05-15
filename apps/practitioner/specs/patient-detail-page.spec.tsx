@@ -5,9 +5,10 @@ import {
   waitFor,
   within,
 } from '@testing-library/react';
-import type {
-  PractitionerPatientEpisodeRow,
-  PractitionerPatientObservationReadModel,
+import {
+  episodeTimelineBoundedSymptomMarkerText,
+  type PractitionerPatientEpisodeRow,
+  type PractitionerPatientObservationReadModel,
 } from '@abstrack/supabase';
 import { LiveAnnouncerProvider } from '@abstrack/ui/a11y-web';
 import { PractitionerPatientDetailPage } from '../src/app/patients/[patientId]/practitioner-patient-detail-page';
@@ -296,7 +297,7 @@ describe('PractitionerPatientDetailPage', () => {
 
   it('uses expandable disclosure when timeline rows carry detailFull', async () => {
     const longDetail = `${'q'.repeat(161)}TAIL`;
-    const previewDetail = `${'q'.repeat(77)}…`;
+    const bounded = episodeTimelineBoundedSymptomMarkerText(longDetail);
 
     loadPractitionerPatientObservationReadModel.mockResolvedValue({
       ok: true,
@@ -319,8 +320,10 @@ describe('PractitionerPatientDetailPage', () => {
                 sortAt: '2026-04-01T12:05:00.000Z',
                 id: 'sym-long',
                 label: 'Notes',
-                detail: previewDetail,
-                detailFull: longDetail,
+                detail: bounded.detail,
+                ...(bounded.detailFull
+                  ? { detailFull: bounded.detailFull }
+                  : {}),
               },
             ],
           },

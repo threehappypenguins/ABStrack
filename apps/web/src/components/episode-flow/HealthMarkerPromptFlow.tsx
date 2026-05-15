@@ -24,7 +24,9 @@ import {
   cancelActiveEpisodeById,
   completeEpisodePostMarkerStep,
   endEpisodeIfStillActive,
+  episodeTimelineBloodPressureDetailWithOptionalNotes,
   episodeTimelineBoundedSymptomMarkerText,
+  episodeTimelineMeasurementDetailWithOptionalNotes,
   getEpisodeById,
   insertEpisodeHealthMarkerForLine,
   listEpisodeHealthMarkersForEpisode,
@@ -50,25 +52,53 @@ function trimToNull(value: string): string | null {
   return t.length > 0 ? t : null;
 }
 
+/**
+ * Uses notes from the persisted marker row when present; otherwise falls back to draft notes when
+ * the insert response omits `notes`, so the in-memory observation timeline still shows BP / numeric
+ * notes the user just entered.
+ *
+ * @param saved - Row returned from {@link insertEpisodeHealthMarkerForLine}.
+ * @param draftNotes - Notes string from the measurement draft just submitted.
+ */
+function healthMarkerRowWithResolvedNotesForTimeline(
+  saved: HealthMarkerRow,
+  draftNotes: string,
+): HealthMarkerRow {
+  const persisted =
+    saved.notes != null && String(saved.notes).trim() !== ''
+      ? String(saved.notes).trim()
+      : null;
+  const fromDraft = trimToNull(draftNotes);
+  return {
+    ...saved,
+    notes: persisted ?? fromDraft,
+  };
+}
+
 function healthMarkerDetailForTimeline(
   row: HealthMarkerRow,
 ): Pick<EpisodeTimelineItem, 'detail' | 'detailFull'> {
   if (row.marker_kind === 'blood_pressure') {
     if (row.systolic_numeric != null && row.diastolic_numeric != null) {
-      return {
-        detail: `${row.systolic_numeric}/${row.diastolic_numeric}`,
-      };
+      return episodeTimelineBloodPressureDetailWithOptionalNotes(
+        row.systolic_numeric,
+        row.diastolic_numeric,
+        row.notes,
+      );
     }
     return { detail: '—' };
   }
   if (row.value_numeric != null) {
-    let detail = String(row.value_numeric);
+    let measurementDetail = String(row.value_numeric);
     if (row.custom_unit) {
-      detail = `${detail} ${row.custom_unit}`;
+      measurementDetail = `${measurementDetail} ${row.custom_unit}`;
     } else if (row.marker_kind === 'bac') {
-      detail = `${detail} g/dL`;
+      measurementDetail = `${measurementDetail} g/dL`;
     }
-    return { detail };
+    return episodeTimelineMeasurementDetailWithOptionalNotes(
+      measurementDetail,
+      row.notes,
+    );
   }
   const n = row.notes?.trim();
   if (!n) {
@@ -413,7 +443,12 @@ export function HealthMarkerPromptFlow({
       sortAt: result.data.recorded_at,
       id: result.data.id,
       label: markerLineTitle(currentLine),
-      ...healthMarkerDetailForTimeline(result.data),
+      ...healthMarkerDetailForTimeline(
+        healthMarkerRowWithResolvedNotesForTimeline(
+          result.data,
+          currentDraft.notes,
+        ),
+      ),
     };
     setObservationTimeline((prev) =>
       upsertEpisodeTimelineItem(prev, timelineItem),

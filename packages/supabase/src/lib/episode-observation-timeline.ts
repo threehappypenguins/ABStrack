@@ -16,16 +16,35 @@ import { listFoodDiaryEntriesForEpisode } from './food-diary-data.js';
 export const EPISODE_TIMELINE_SOURCE_LIMIT = 200;
 
 /**
- * Maximum run length for {@link EpisodeTimelineItem.detail} for symptom free-text and health-marker
- * note-only rows. Longer source text is previewed in `detail` with {@link EpisodeTimelineItem.detailFull}.
+ * Maximum length of {@link EpisodeTimelineItem.detail} for symptom free-text and health-marker
+ * note-only rows when the source exceeds this cap (truncated `detail` is exactly this many code
+ * units: a prefix of the source plus one ellipsis). Longer source text is previewed in `detail`
+ * with {@link EpisodeTimelineItem.detailFull}.
  */
 export const EPISODE_TIMELINE_SYMPTOM_MARKER_DETAIL_MAX_RUN = 80;
 
 /**
- * Maximum run length for {@link EpisodeTimelineItem.detail} for food diary notes. Longer notes set
- * {@link EpisodeTimelineItem.detailFull}.
+ * Maximum length of {@link EpisodeTimelineItem.detail} for food diary notes when the source exceeds
+ * this cap (truncated `detail` is exactly this many code units: a prefix plus one ellipsis). Longer
+ * notes set {@link EpisodeTimelineItem.detailFull}.
  */
 export const EPISODE_TIMELINE_FOOD_NOTE_DETAIL_MAX_RUN = 100;
+
+/**
+ * Ellipsis appended when {@link EpisodeTimelineItem.detail} truncates long source text. Length is
+ * subtracted from the max-run constants so total `detail` length matches those caps.
+ */
+const EPISODE_TIMELINE_TRUNCATION_ELLIPSIS = '…';
+
+/** Code units kept from source before {@link EPISODE_TIMELINE_TRUNCATION_ELLIPSIS} for symptom/marker notes. */
+const EPISODE_TIMELINE_SYMPTOM_MARKER_DETAIL_PREVIEW_SLICE_LEN =
+  EPISODE_TIMELINE_SYMPTOM_MARKER_DETAIL_MAX_RUN -
+  EPISODE_TIMELINE_TRUNCATION_ELLIPSIS.length;
+
+/** Code units kept from source before {@link EPISODE_TIMELINE_TRUNCATION_ELLIPSIS} for food notes. */
+const EPISODE_TIMELINE_FOOD_NOTE_DETAIL_PREVIEW_SLICE_LEN =
+  EPISODE_TIMELINE_FOOD_NOTE_DETAIL_MAX_RUN -
+  EPISODE_TIMELINE_TRUNCATION_ELLIPSIS.length;
 
 /**
  * One row in a merged, time-ordered episode view (symptoms, health markers, food).
@@ -59,7 +78,7 @@ export function episodeTimelineBoundedSymptomMarkerText(trimmed: string): {
     return { detail: trimmed };
   }
   return {
-    detail: `${trimmed.slice(0, 77)}…`,
+    detail: `${trimmed.slice(0, EPISODE_TIMELINE_SYMPTOM_MARKER_DETAIL_PREVIEW_SLICE_LEN)}${EPISODE_TIMELINE_TRUNCATION_ELLIPSIS}`,
     detailFull: trimmed,
   };
 }
@@ -77,9 +96,70 @@ export function episodeTimelineBoundedFoodNote(trimmed: string): {
     return { detail: trimmed };
   }
   return {
-    detail: `${trimmed.slice(0, 97)}…`,
+    detail: `${trimmed.slice(0, EPISODE_TIMELINE_FOOD_NOTE_DETAIL_PREVIEW_SLICE_LEN)}${EPISODE_TIMELINE_TRUNCATION_ELLIPSIS}`,
     detailFull: trimmed,
   };
+}
+
+/**
+ * Builds bounded timeline detail for a primary measurement line (for example `120/80`, `72`,
+ * `0.08 g/dL`) plus optional {@link HealthMarkerRow.notes}. Uses the same cap as
+ * {@link episodeTimelineBoundedSymptomMarkerText}.
+ *
+ * @param measurementDetail - Reading shown even when `notes` is empty (typically not `'—'`).
+ * @param notes - Raw notes field from the marker row; trimmed; omitted when empty.
+ * @returns Bounded {@link EpisodeTimelineItem.detail} / optional {@link EpisodeTimelineItem.detailFull}.
+ */
+export function episodeTimelineMeasurementDetailWithOptionalNotes(
+  measurementDetail: string,
+  notes: string | null | undefined,
+): {
+  detail: string;
+  detailFull?: string;
+} {
+  return combineMeasurementLineWithOptionalPatientNotes(
+    measurementDetail,
+    notes,
+  );
+}
+
+function combineMeasurementLineWithOptionalPatientNotes(
+  measurementDetail: string,
+  notes: string | null | undefined,
+): {
+  detail: string;
+  detailFull?: string;
+} {
+  const n = notes?.trim();
+  if (!n) {
+    return { detail: measurementDetail };
+  }
+  const combined = `${measurementDetail} · ${n}`;
+  return episodeTimelineBoundedSymptomMarkerText(combined);
+}
+
+/**
+ * Builds {@link EpisodeTimelineItem.detail} / {@link EpisodeTimelineItem.detailFull} for a blood
+ * pressure systolic/diastolic pair plus optional {@link HealthMarkerRow.notes}. The combined string
+ * uses the same length cap as {@link episodeTimelineBoundedSymptomMarkerText}.
+ *
+ * @param systolicNumeric - Stored systolic value (typically mmHg).
+ * @param diastolicNumeric - Stored diastolic value (typically mmHg).
+ * @param notes - Raw notes field from the marker row; trimmed; omitted from `detail` when empty.
+ * @returns Bounded timeline detail shape for merged timelines and in-flow observation lists.
+ */
+export function episodeTimelineBloodPressureDetailWithOptionalNotes(
+  systolicNumeric: number,
+  diastolicNumeric: number,
+  notes: string | null | undefined,
+): {
+  detail: string;
+  detailFull?: string;
+} {
+  return combineMeasurementLineWithOptionalPatientNotes(
+    `${systolicNumeric}/${diastolicNumeric}`,
+    notes,
+  );
 }
 
 function healthMarkerTimelineLabel(
@@ -149,15 +229,27 @@ function pushHealthMarkerRowsToTimelineItems(
     let detailFull: string | undefined;
     if (m.marker_kind === 'blood_pressure') {
       if (m.systolic_numeric != null && m.diastolic_numeric != null) {
-        detail = `${m.systolic_numeric}/${m.diastolic_numeric}`;
+        const parts = episodeTimelineBloodPressureDetailWithOptionalNotes(
+          m.systolic_numeric,
+          m.diastolic_numeric,
+          m.notes,
+        );
+        detail = parts.detail;
+        detailFull = parts.detailFull;
       }
     } else if (m.value_numeric != null) {
-      detail = String(m.value_numeric);
+      let measurement = String(m.value_numeric);
       if (m.custom_unit) {
-        detail = `${detail} ${m.custom_unit}`;
+        measurement = `${measurement} ${m.custom_unit}`;
       } else if (m.marker_kind === 'bac') {
-        detail = `${detail} g/dL`;
+        measurement = `${measurement} g/dL`;
       }
+      const parts = episodeTimelineMeasurementDetailWithOptionalNotes(
+        measurement,
+        m.notes,
+      );
+      detail = parts.detail;
+      detailFull = parts.detailFull;
     } else {
       const n = m.notes?.trim();
       if (n) {
@@ -203,7 +295,8 @@ function pushFoodDiaryRowsToTimelineItems(
  * @param symptoms - Episode symptom rows (uses `created_at` for ordering).
  * @param healthMarkers - Health marker rows (uses `recorded_at`).
  * @param foods - Food diary rows (uses `logged_at`).
- * @returns Sorted timeline rows. Long free-text, marker notes, and food descriptions use bounded
+ * @returns Sorted timeline rows. Long free-text, marker notes (including notes paired with blood
+ *   pressure readings or numeric measurements), and food descriptions use bounded
  *   {@link EpisodeTimelineItem.detail} with optional {@link EpisodeTimelineItem.detailFull}.
  */
 export function mergeEpisodeObservationRowsToTimeline(

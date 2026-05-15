@@ -101,6 +101,12 @@ jest.mock('@abstrack/supabase', () => {
   const preset = jest.requireActual<
     typeof import('../../../../../packages/supabase/src/lib/preset-data-error')
   >('../../../../../packages/supabase/src/lib/preset-data-error.ts');
+  /** Built module only: source pulls `./preset-data.js` etc., which Jest cannot resolve here. */
+  const timelineActual = jest.requireActual<
+    typeof import('../../../../../packages/supabase/dist/lib/episode-observation-timeline')
+  >(
+    '../../../../../packages/supabase/dist/lib/episode-observation-timeline.js',
+  );
   const { isMealTag } =
     jest.requireActual<typeof import('@abstrack/types')>('@abstrack/types');
   const { PresetDataError } = preset;
@@ -229,6 +235,12 @@ jest.mock('@abstrack/supabase', () => {
       mockValidateAndNormalizeFoodDiaryCreateCore,
     compareEpisodeTimelineItems: mockCompareEpisodeTimelineItems,
     upsertEpisodeTimelineItem: mockUpsertEpisodeTimelineItem,
+    episodeTimelineBloodPressureDetailWithOptionalNotes:
+      timelineActual.episodeTimelineBloodPressureDetailWithOptionalNotes,
+    episodeTimelineBoundedSymptomMarkerText:
+      timelineActual.episodeTimelineBoundedSymptomMarkerText,
+    episodeTimelineMeasurementDetailWithOptionalNotes:
+      timelineActual.episodeTimelineMeasurementDetailWithOptionalNotes,
     cancelActiveEpisodeById: jest.fn(),
     completeEpisodePostMarkerStep: jest.fn(),
     createFoodDiaryEntry: jest.fn(),
