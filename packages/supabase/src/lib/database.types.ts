@@ -476,6 +476,7 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          last_invite_email_sent_at: string | null
           patient_user_id: string
           practitioner_user_id: string
           revoked_at: string | null
@@ -483,6 +484,7 @@ export type Database = {
         Insert: {
           created_at?: string
           id?: string
+          last_invite_email_sent_at?: string | null
           patient_user_id: string
           practitioner_user_id: string
           revoked_at?: string | null
@@ -490,27 +492,10 @@ export type Database = {
         Update: {
           created_at?: string
           id?: string
+          last_invite_email_sent_at?: string | null
           patient_user_id?: string
           practitioner_user_id?: string
           revoked_at?: string | null
-        }
-        Relationships: []
-      }
-      practitioner_invite_send_throttle: {
-        Row: {
-          invitee_email_normalized: string
-          last_invite_sent_at: string
-          patient_user_id: string
-        }
-        Insert: {
-          invitee_email_normalized: string
-          last_invite_sent_at: string
-          patient_user_id: string
-        }
-        Update: {
-          invitee_email_normalized?: string
-          last_invite_sent_at?: string
-          patient_user_id?: string
         }
         Relationships: []
       }
@@ -755,6 +740,15 @@ export type Database = {
       stamp_caretaker_invite_pre_send: {
         Args: {
           p_invite_id: string
+          p_stamp: string
+          p_throttle_cutoff: string
+        }
+        Returns: string[]
+      }
+      stamp_practitioner_access_last_invite_email_sent_at: {
+        Args: {
+          p_patient_user_id: string
+          p_practitioner_user_id: string
           p_stamp: string
           p_throttle_cutoff: string
         }
