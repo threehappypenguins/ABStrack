@@ -202,6 +202,9 @@ export function validateAndNormalizeFoodDiaryCreateCore(
 /**
  * Lists food diary entries for one user (newest first).
  *
+ * Order matches merged observation timelines: `logged_at` descending, then `id` descending (food
+ * rows use `logged_at` as `sortAt` in {@link compareEpisodeTimelineItems}).
+ *
  * @param client - Supabase client (RLS applies).
  * @param userId - `auth.users.id` / `food_diary_entries.user_id`.
  * @param options - Pagination (`limit`, default `50`; `offset`, default `0`), optional
@@ -244,7 +247,6 @@ export async function listFoodDiaryEntriesForUser(
     }
     const r = await query
       .order('logged_at', { ascending: false })
-      .order('created_at', { ascending: false })
       .order('id', { ascending: false })
       .range(offset, rangeEnd);
     return {
@@ -256,6 +258,9 @@ export async function listFoodDiaryEntriesForUser(
 
 /**
  * Lists food diary entries linked to one episode (newest first).
+ *
+ * Order matches merged observation timelines: `logged_at` descending, then `id` descending (same
+ * tie-break as {@link compareEpisodeTimelineItems} for `kind: 'food'` rows).
  *
  * @param client - Supabase client (RLS applies).
  * @param episodeId - `episodes.id` linked from `food_diary_entries.episode_id`.
@@ -273,7 +278,6 @@ export async function listFoodDiaryEntriesForEpisode(
       .select('*')
       .eq('episode_id', episodeId)
       .order('logged_at', { ascending: false })
-      .order('created_at', { ascending: false })
       .order('id', { ascending: false })
       .limit(limit);
     return {

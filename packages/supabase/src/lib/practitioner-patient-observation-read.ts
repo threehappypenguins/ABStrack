@@ -298,10 +298,15 @@ export async function assertActivePractitionerGrantForPatient(
 
 /**
  * Loads **read-only** episode histories (merged symptom + marker + episode-tied food timelines) plus
- * standalone health markers / food diary for one patient. Intended for practitioner §8 review surfaces.
+ * standalone health markers / food diary for one patient. Intended for practitioner patient-detail
+ * review surfaces.
  *
  * Ordering matches the episode observation timeline helper: **oldest first** within merged lists,
- * with `id` as a stable tie-breaker when timestamps match.
+ * with `id` as a stable tie-breaker when timestamps match. Episode-bound health-marker and
+ * episode-tied food streams use {@link listEpisodeHealthMarkersForEpisode} and
+ * {@link listFoodDiaryEntriesForEpisode} ordering aligned with that tie-break (`recorded_at` /
+ * `logged_at`, then `id`) so capped windows match the merged list; standalone markers and food use
+ * the same rules via {@link listStandaloneHealthMarkersForUser} and {@link listFoodDiaryEntriesForUser}.
  *
  * Episode-bound timelines load {@link EPISODE_TIMELINE_SOURCE_LIMIT} + 1 rows per stream **per episode**
  * via list helpers (PostgREST `LIMIT`, no extra migrations), in waves of

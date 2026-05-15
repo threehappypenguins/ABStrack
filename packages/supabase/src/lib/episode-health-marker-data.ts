@@ -67,6 +67,11 @@ export function validateHealthMarkerNumericPayload(
 /**
  * Lists persisted `health_markers` rows for one episode, newest first.
  *
+ * Order matches merged observation timelines: `recorded_at` descending, then `id` descending so a
+ * capped window (for example practitioner patient timelines / {@link EPISODE_TIMELINE_SOURCE_LIMIT}) keeps the same
+ * rows as {@link compareEpisodeTimelineItems} would when `sortAt` ties on `recorded_at` (health
+ * markers use `recorded_at` as `sortAt`).
+ *
  * @param client - Supabase client (RLS applies).
  * @param episodeId - `episodes.id`.
  * @param options - Optional cap (`limit`) for newest rows after source ordering.
@@ -85,7 +90,6 @@ export async function listEpisodeHealthMarkersForEpisode(
       .select('*')
       .eq('episode_id', episodeId)
       .order('recorded_at', { ascending: false })
-      .order('created_at', { ascending: false })
       .order('id', { ascending: false });
     if (limit != null) {
       query = query.limit(limit);
@@ -100,6 +104,9 @@ export async function listEpisodeHealthMarkersForEpisode(
 
 /**
  * Lists standalone `health_markers` rows for one user (`episode_id` is null), newest first.
+ *
+ * Order matches merged standalone timelines: `recorded_at` descending, then `id` descending (same
+ * tie-break as {@link compareEpisodeTimelineItems} for health-marker rows).
  *
  * @param client - Supabase client (RLS applies).
  * @param userId - `health_markers.user_id`.
@@ -139,7 +146,6 @@ export async function listStandaloneHealthMarkersForUser(
     }
     const r = await query
       .order('recorded_at', { ascending: false })
-      .order('created_at', { ascending: false })
       .order('id', { ascending: false })
       .range(offset, rangeEnd);
     return {
