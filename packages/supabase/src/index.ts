@@ -138,6 +138,12 @@ export {
   type EpisodeTimelineItem,
   upsertEpisodeTimelineItem,
 } from './lib/episode-observation-timeline.js';
+export type { PractitionerPatientDirectoryEntry } from './lib/practitioner-patient-directory-data.js';
+export {
+  formatPractitionerPatientDirectoryLabel,
+  formatPractitionerPatientGrantedAt,
+  listActivePractitionerPatientDirectory,
+} from './lib/practitioner-patient-directory-data.js';
 export {
   createFoodDiaryEntry,
   deleteFoodDiaryEntry,
