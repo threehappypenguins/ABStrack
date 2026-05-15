@@ -295,6 +295,157 @@ describe('PractitionerPatientDetailPage', () => {
     expect(await screen.findByText('StandaloneRow-40')).toBeTruthy();
   });
 
+  it('resets standalone lazy-mount when patientUserId changes from a small list to a large one', async () => {
+    const patientA = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+    const patientB = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+
+    const smallTimeline = Array.from({ length: 5 }, (_, i) => ({
+      kind: 'symptom' as const,
+      sortAt: `2026-04-01T12:${String(i).padStart(2, '0')}:00.000Z`,
+      id: `a-stand-${i}`,
+      label: `PatientA-${i}`,
+      detail: 'Note',
+    }));
+
+    const largeTimeline = Array.from({ length: 41 }, (_, i) => ({
+      kind: 'symptom' as const,
+      sortAt: `2026-04-01T13:${String(i).padStart(2, '0')}:00.000Z`,
+      id: `b-stand-${i}`,
+      label: `PatientB-${i}`,
+      detail: 'Note',
+    }));
+
+    loadPractitionerPatientObservationReadModel.mockImplementation(
+      async (_client, uid: string) => {
+        if (uid === patientA) {
+          return {
+            ok: true,
+            data: {
+              patientUserId: patientA,
+              patientDisplayName: 'Alex',
+              moreEpisodesOmitted: false,
+              standaloneHealthMarkersTruncated: false,
+              standaloneFoodDiaryTruncated: false,
+              standaloneTimeline: smallTimeline,
+              episodesWithTimelines: [],
+            },
+          };
+        }
+        if (uid === patientB) {
+          return {
+            ok: true,
+            data: {
+              patientUserId: patientB,
+              patientDisplayName: 'Bob',
+              moreEpisodesOmitted: false,
+              standaloneHealthMarkersTruncated: false,
+              standaloneFoodDiaryTruncated: false,
+              standaloneTimeline: largeTimeline,
+              episodesWithTimelines: [],
+            },
+          };
+        }
+        throw new Error(`unexpected patient ${uid}`);
+      },
+    );
+
+    const { rerender } = render(
+      <LiveAnnouncerProvider>
+        <PractitionerPatientDetailPage patientUserId={patientA} />
+      </LiveAnnouncerProvider>,
+    );
+
+    await screen.findByText('Alex');
+    expect(screen.getByText('PatientA-4')).toBeTruthy();
+
+    rerender(
+      <LiveAnnouncerProvider>
+        <PractitionerPatientDetailPage patientUserId={patientB} />
+      </LiveAnnouncerProvider>,
+    );
+
+    await screen.findByText('Bob');
+    expect(screen.queryByText('PatientB-40')).toBeNull();
+
+    fireEvent.click(screen.getByText('Show standalone entries'));
+    expect(await screen.findByText('PatientB-40')).toBeTruthy();
+  });
+
+  it('resets standalone lazy-mount when patientUserId changes from a large list to a small one', async () => {
+    const patientA = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+    const patientB = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+
+    const largeTimeline = Array.from({ length: 41 }, (_, i) => ({
+      kind: 'symptom' as const,
+      sortAt: `2026-04-01T12:${String(i).padStart(2, '0')}:00.000Z`,
+      id: `a-stand-${i}`,
+      label: `PatientA-${i}`,
+      detail: 'Note',
+    }));
+
+    const smallTimeline = Array.from({ length: 5 }, (_, i) => ({
+      kind: 'symptom' as const,
+      sortAt: `2026-04-01T13:${String(i).padStart(2, '0')}:00.000Z`,
+      id: `b-stand-${i}`,
+      label: `PatientB-${i}`,
+      detail: 'Note',
+    }));
+
+    loadPractitionerPatientObservationReadModel.mockImplementation(
+      async (_client, uid: string) => {
+        if (uid === patientA) {
+          return {
+            ok: true,
+            data: {
+              patientUserId: patientA,
+              patientDisplayName: 'Alex',
+              moreEpisodesOmitted: false,
+              standaloneHealthMarkersTruncated: false,
+              standaloneFoodDiaryTruncated: false,
+              standaloneTimeline: largeTimeline,
+              episodesWithTimelines: [],
+            },
+          };
+        }
+        if (uid === patientB) {
+          return {
+            ok: true,
+            data: {
+              patientUserId: patientB,
+              patientDisplayName: 'Bob',
+              moreEpisodesOmitted: false,
+              standaloneHealthMarkersTruncated: false,
+              standaloneFoodDiaryTruncated: false,
+              standaloneTimeline: smallTimeline,
+              episodesWithTimelines: [],
+            },
+          };
+        }
+        throw new Error(`unexpected patient ${uid}`);
+      },
+    );
+
+    const { rerender } = render(
+      <LiveAnnouncerProvider>
+        <PractitionerPatientDetailPage patientUserId={patientA} />
+      </LiveAnnouncerProvider>,
+    );
+
+    await screen.findByText('Alex');
+    expect(screen.queryByText('PatientA-40')).toBeNull();
+    fireEvent.click(screen.getByText('Show standalone entries'));
+    expect(await screen.findByText('PatientA-40')).toBeTruthy();
+
+    rerender(
+      <LiveAnnouncerProvider>
+        <PractitionerPatientDetailPage patientUserId={patientB} />
+      </LiveAnnouncerProvider>,
+    );
+
+    await screen.findByText('Bob');
+    expect(screen.getByText('PatientB-4')).toBeTruthy();
+  });
+
   it('uses expandable disclosure when timeline rows carry detailFull', async () => {
     const longDetail = `${'q'.repeat(161)}TAIL`;
     const bounded = episodeTimelineBoundedSymptomMarkerText(longDetail);

@@ -313,6 +313,9 @@ function PractitionerEpisodeTimelineCard({
  * Standalone markers + food list; lazy-mount when row count exceeds
  * {@link PRACTITIONER_STANDALONE_TIMELINE_LAZY_THRESHOLD} to limit initial DOM size.
  *
+ * The patient detail page mounts this with `key={patientUserId}` so client navigations between
+ * patients reset lazy/collapsed state instead of reusing the previous patient's disclosure state.
+ *
  * @param props.ariaLabelledBy - Id of the surrounding section heading (`<h2>`) used for `aria-labelledby`.
  */
 function PractitionerStandaloneTimelineSection({
@@ -653,6 +656,7 @@ export function PractitionerPatientDetailPage({
           </p>
           <div className="mt-6">
             <PractitionerStandaloneTimelineSection
+              key={patientUserId}
               standaloneTimeline={model.standaloneTimeline}
               markersTruncated={model.standaloneHealthMarkersTruncated}
               foodTruncated={model.standaloneFoodDiaryTruncated}

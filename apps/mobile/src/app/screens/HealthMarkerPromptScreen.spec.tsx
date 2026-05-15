@@ -101,15 +101,65 @@ jest.mock('@abstrack/supabase', () => {
   const preset = jest.requireActual<
     typeof import('../../../../../packages/supabase/src/lib/preset-data-error')
   >('../../../../../packages/supabase/src/lib/preset-data-error.ts');
-  /** Built module only: source pulls `./preset-data.js` etc., which Jest cannot resolve here. */
-  const timelineActual = jest.requireActual<
-    typeof import('../../../../../packages/supabase/dist/lib/episode-observation-timeline')
-  >(
-    '../../../../../packages/supabase/dist/lib/episode-observation-timeline.js',
-  );
   const { isMealTag } =
     jest.requireActual<typeof import('@abstrack/types')>('@abstrack/types');
   const { PresetDataError } = preset;
+
+  /**
+   * Pure timeline detail helpers mirroring `packages/supabase/src/lib/episode-observation-timeline.ts`
+   * (inline so Jest does not depend on `packages/supabase/dist` or ESM `.js` import resolution).
+   */
+  const MOCK_EP_TIMELINE_SYMPTOM_MARKER_DETAIL_MAX_RUN = 80;
+  const MOCK_EP_TIMELINE_TRUNCATION_ELLIPSIS = '…';
+  const MOCK_EP_TIMELINE_SYMPTOM_MARKER_PREVIEW_SLICE_LEN =
+    MOCK_EP_TIMELINE_SYMPTOM_MARKER_DETAIL_MAX_RUN -
+    MOCK_EP_TIMELINE_TRUNCATION_ELLIPSIS.length;
+
+  function episodeTimelineBoundedSymptomMarkerText(trimmed: string): {
+    detail: string;
+    detailFull?: string;
+  } {
+    if (trimmed.length <= MOCK_EP_TIMELINE_SYMPTOM_MARKER_DETAIL_MAX_RUN) {
+      return { detail: trimmed };
+    }
+    return {
+      detail: `${trimmed.slice(0, MOCK_EP_TIMELINE_SYMPTOM_MARKER_PREVIEW_SLICE_LEN)}${MOCK_EP_TIMELINE_TRUNCATION_ELLIPSIS}`,
+      detailFull: trimmed,
+    };
+  }
+
+  function combineMeasurementLineWithOptionalPatientNotes(
+    measurementDetail: string,
+    notes: string | null | undefined,
+  ): { detail: string; detailFull?: string } {
+    const n = notes?.trim();
+    if (!n) {
+      return { detail: measurementDetail };
+    }
+    const combined = `${measurementDetail} · ${n}`;
+    return episodeTimelineBoundedSymptomMarkerText(combined);
+  }
+
+  function episodeTimelineMeasurementDetailWithOptionalNotes(
+    measurementDetail: string,
+    notes: string | null | undefined,
+  ): { detail: string; detailFull?: string } {
+    return combineMeasurementLineWithOptionalPatientNotes(
+      measurementDetail,
+      notes,
+    );
+  }
+
+  function episodeTimelineBloodPressureDetailWithOptionalNotes(
+    systolicNumeric: number,
+    diastolicNumeric: number,
+    notes: string | null | undefined,
+  ): { detail: string; detailFull?: string } {
+    return combineMeasurementLineWithOptionalPatientNotes(
+      `${systolicNumeric}/${diastolicNumeric}`,
+      notes,
+    );
+  }
 
   /**
    * Subset of {@link validateAndNormalizeFoodDiaryCreateCore} / {@link normalizeFoodDiaryEntryUpdate}
@@ -235,12 +285,9 @@ jest.mock('@abstrack/supabase', () => {
       mockValidateAndNormalizeFoodDiaryCreateCore,
     compareEpisodeTimelineItems: mockCompareEpisodeTimelineItems,
     upsertEpisodeTimelineItem: mockUpsertEpisodeTimelineItem,
-    episodeTimelineBloodPressureDetailWithOptionalNotes:
-      timelineActual.episodeTimelineBloodPressureDetailWithOptionalNotes,
-    episodeTimelineBoundedSymptomMarkerText:
-      timelineActual.episodeTimelineBoundedSymptomMarkerText,
-    episodeTimelineMeasurementDetailWithOptionalNotes:
-      timelineActual.episodeTimelineMeasurementDetailWithOptionalNotes,
+    episodeTimelineBloodPressureDetailWithOptionalNotes,
+    episodeTimelineBoundedSymptomMarkerText,
+    episodeTimelineMeasurementDetailWithOptionalNotes,
     cancelActiveEpisodeById: jest.fn(),
     completeEpisodePostMarkerStep: jest.fn(),
     createFoodDiaryEntry: jest.fn(),
