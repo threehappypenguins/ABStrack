@@ -113,29 +113,47 @@ type ReadModelClientOpts = {
   symptomsError?: unknown;
   markersError?: unknown;
   foodsError?: unknown;
+  /**
+   * Full replacement for the episode-symptoms list mock (default filters {@link ReadModelClientOpts.symptoms}
+   * by `episode_id`). Use when a test needs custom async behavior such as concurrency instrumentation.
+   */
+  listEpisodeSymptomsForEpisodeOverride?: (
+    client: AbstrackSupabaseClient,
+    episodeId: string,
+    options?: { limit?: number; orderBy?: 'preset' | 'recent' },
+  ) => Promise<
+    | { ok: true; data: EpisodeSymptomRow[] }
+    | { ok: false; error: PresetDataError }
+  >;
 };
 
 function episodeObservationListMocks(opts: ReadModelClientOpts): void {
-  listEpisodeSymptomsForEpisode.mockImplementation(
-    async (_c, episodeId: string) => {
-      if (opts.symptomsError != null) {
-        const msg =
-          typeof opts.symptomsError === 'object' &&
-          opts.symptomsError !== null &&
-          'message' in opts.symptomsError
-            ? String(
-                (opts.symptomsError as { message?: unknown }).message ??
-                  'symptoms failed',
-              )
-            : 'symptoms failed';
-        return { ok: false, error: new PresetDataError('unknown', msg) };
-      }
-      return {
-        ok: true,
-        data: (opts.symptoms ?? []).filter((s) => s.episode_id === episodeId),
-      };
-    },
-  );
+  if (opts.listEpisodeSymptomsForEpisodeOverride != null) {
+    listEpisodeSymptomsForEpisode.mockImplementation(
+      opts.listEpisodeSymptomsForEpisodeOverride,
+    );
+  } else {
+    listEpisodeSymptomsForEpisode.mockImplementation(
+      async (_c, episodeId: string) => {
+        if (opts.symptomsError != null) {
+          const msg =
+            typeof opts.symptomsError === 'object' &&
+            opts.symptomsError !== null &&
+            'message' in opts.symptomsError
+              ? String(
+                  (opts.symptomsError as { message?: unknown }).message ??
+                    'symptoms failed',
+                )
+              : 'symptoms failed';
+          return { ok: false, error: new PresetDataError('unknown', msg) };
+        }
+        return {
+          ok: true,
+          data: (opts.symptoms ?? []).filter((s) => s.episode_id === episodeId),
+        };
+      },
+    );
+  }
 
   listEpisodeHealthMarkersForEpisode.mockImplementation(
     async (_c, episodeId: string) => {
@@ -398,25 +416,18 @@ describe('loadPractitionerPatientObservationReadModel', () => {
 
     let symptomInFlight = 0;
     let maxSymptomInFlight = 0;
-    listEpisodeSymptomsForEpisode.mockImplementation(async () => {
-      symptomInFlight += 1;
-      maxSymptomInFlight = Math.max(maxSymptomInFlight, symptomInFlight);
-      await new Promise<void>((resolve) => {
-        setTimeout(resolve, 25);
-      });
-      symptomInFlight -= 1;
-      return { ok: true as const, data: [] };
+    const client = clientForReadModel({
+      episodes,
+      listEpisodeSymptomsForEpisodeOverride: async () => {
+        symptomInFlight += 1;
+        maxSymptomInFlight = Math.max(maxSymptomInFlight, symptomInFlight);
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, 25);
+        });
+        symptomInFlight -= 1;
+        return { ok: true as const, data: [] };
+      },
     });
-    listEpisodeHealthMarkersForEpisode.mockResolvedValue({
-      ok: true,
-      data: [],
-    });
-    listFoodDiaryEntriesForEpisode.mockResolvedValue({
-      ok: true,
-      data: [],
-    });
-
-    const client = clientForReadModel({ episodes });
 
     const result = await loadPractitionerPatientObservationReadModel(
       client,
@@ -424,9 +435,7 @@ describe('loadPractitionerPatientObservationReadModel', () => {
     );
 
     expect(result.ok).toBe(true);
-    expect(maxSymptomInFlight).toBeLessThanOrEqual(
-      PRACTITIONER_EPISODE_TIMELINE_LOAD_CHUNK,
-    );
+    expect(maxSymptomInFlight).toBe(PRACTITIONER_EPISODE_TIMELINE_LOAD_CHUNK);
     expect(listEpisodeSymptomsForEpisode).toHaveBeenCalledTimes(episodeCount);
   });
 

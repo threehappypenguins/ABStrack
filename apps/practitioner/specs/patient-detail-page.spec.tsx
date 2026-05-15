@@ -7,6 +7,7 @@ import {
 } from '@testing-library/react';
 import {
   episodeTimelineBoundedSymptomMarkerText,
+  formatPractitionerPatientDirectoryLabel,
   type PractitionerPatientEpisodeRow,
   type PractitionerPatientObservationReadModel,
 } from '@abstrack/supabase';
@@ -79,7 +80,7 @@ describe('PractitionerPatientDetailPage', () => {
     ).toBe(true);
   });
 
-  it('does not apply stale read models when patientUserId changes before an earlier request settles', async () => {
+  it('when the first patient request is still pending, navigation supersedes it so a late response cannot replace the new route', async () => {
     const patientA = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
     const patientB = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 
@@ -159,7 +160,104 @@ describe('PractitionerPatientDetailPage', () => {
     expect(screen.queryByText('Stale Wrong Name')).toBeNull();
   });
 
-  it('does not apply stale error responses when patientUserId changes before an earlier request settles', async () => {
+  /**
+   * Regression: after patient A has **already** reached `ready` (not only while A's first fetch is
+   * in-flight), `loadState` can still hold A until the next effect runs `load`. UI must gate on
+   * `patientUserId` so B's route never shows A's timeline or display name while B is loading.
+   */
+  it('after patient A read model is ready, navigation to patient B hides A PHI until B load completes', async () => {
+    const patientA = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+    const patientB = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+
+    let resolveB!: (value: {
+      ok: true;
+      data: PractitionerPatientObservationReadModel;
+    }) => void;
+    const slowB = new Promise<{
+      ok: true;
+      data: PractitionerPatientObservationReadModel;
+    }>((resolve) => {
+      resolveB = resolve;
+    });
+
+    loadPractitionerPatientObservationReadModel.mockImplementation(
+      async (_client, uid) => {
+        if (uid === patientA) {
+          return {
+            ok: true,
+            data: {
+              patientUserId: patientA,
+              patientDisplayName: 'Alice Alpha',
+              moreEpisodesOmitted: false,
+              standaloneHealthMarkersTruncated: false,
+              standaloneFoodDiaryTruncated: false,
+              standaloneTimeline: [],
+              episodesWithTimelines: [
+                {
+                  episode: episodeRow(),
+                  moreSymptomsOmitted: false,
+                  moreHealthMarkersOmitted: false,
+                  moreFoodDiaryOmitted: false,
+                  timeline: [
+                    {
+                      kind: 'symptom',
+                      sortAt: '2026-04-01T12:00:00.000Z',
+                      id: 'sym-alice-only',
+                      label: 'OnlyOnPatientAliceTimeline',
+                      detail: 'Yes',
+                    },
+                  ],
+                },
+              ],
+            },
+          };
+        }
+        if (uid === patientB) {
+          return slowB;
+        }
+        throw new Error(`unexpected patient ${String(uid)}`);
+      },
+    );
+
+    const { rerender } = render(
+      <LiveAnnouncerProvider>
+        <PractitionerPatientDetailPage patientUserId={patientA} />
+      </LiveAnnouncerProvider>,
+    );
+
+    expect(await screen.findByText('Alice Alpha')).toBeTruthy();
+    expect(screen.getByText('OnlyOnPatientAliceTimeline')).toBeTruthy();
+
+    rerender(
+      <LiveAnnouncerProvider>
+        <PractitionerPatientDetailPage patientUserId={patientB} />
+      </LiveAnnouncerProvider>,
+    );
+
+    expect(screen.queryByText('Alice Alpha')).toBeNull();
+    expect(screen.queryByText('OnlyOnPatientAliceTimeline')).toBeNull();
+    expect(screen.getByText('Loading patient record…')).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(
+      formatPractitionerPatientDirectoryLabel(patientB, null),
+    );
+
+    resolveB({
+      ok: true,
+      data: {
+        patientUserId: patientB,
+        patientDisplayName: 'Bob Jones',
+        moreEpisodesOmitted: false,
+        standaloneHealthMarkersTruncated: false,
+        standaloneFoodDiaryTruncated: false,
+        standaloneTimeline: [],
+        episodesWithTimelines: [],
+      },
+    });
+
+    expect(await screen.findByText('Bob Jones')).toBeTruthy();
+  });
+
+  it('when the first patient error is still pending, navigation supersedes it so a late failure cannot surface on the new route', async () => {
     const patientA = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
     const patientB = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 

@@ -25,7 +25,7 @@ import {
 type PatientDetailLoadState =
   | { kind: 'loading' }
   | { kind: 'ready'; model: PractitionerPatientObservationReadModel }
-  | { kind: 'error'; message: string };
+  | { kind: 'error'; patientUserId: string; message: string };
 
 type PractitionerPatientDetailPageProps = {
   /** Patient `auth.users.id` (dynamic route segment). */
@@ -437,6 +437,8 @@ function StandaloneObservationTruncationNotice({
  * Overlapping async loads (navigating between patients, rapid retries) are ignored once superseded
  * so an older response cannot replace state while the route targets a different `patientUserId`
  * (including error payloads and announcements: each `load` compares the route ref to its captured id).
+ * While `loadState` may still hold the previous patient until `load` runs, **ready/error UI is gated**
+ * on `patientUserId` so the current route never renders another patient’s PHI or errors.
  *
  * @param props - Patient user id from the route.
  * @returns Patient detail UI with loading, error, and empty states.
@@ -477,7 +479,7 @@ export function PractitionerPatientDetailPage({
 
     if (!result.ok) {
       const message = result.error.message;
-      setLoadState({ kind: 'error', message });
+      setLoadState({ kind: 'error', patientUserId, message });
       announce(message, { politeness: 'assertive' });
       return;
     }
@@ -503,18 +505,36 @@ export function PractitionerPatientDetailPage({
   }, [load]);
 
   const title = useMemo(() => {
-    if (loadState.kind !== 'ready') {
-      return formatPractitionerPatientDirectoryLabel(patientUserId, null);
+    if (
+      loadState.kind === 'ready' &&
+      loadState.model.patientUserId === patientUserId
+    ) {
+      return formatPractitionerPatientDirectoryLabel(
+        patientUserId,
+        loadState.model.patientDisplayName,
+      );
     }
-    return formatPractitionerPatientDirectoryLabel(
-      patientUserId,
-      loadState.model.patientDisplayName,
-    );
+    return formatPractitionerPatientDirectoryLabel(patientUserId, null);
   }, [loadState, patientUserId]);
 
-  const isLoading = loadState.kind === 'loading';
-  const errorMessage = loadState.kind === 'error' ? loadState.message : null;
-  const model = loadState.kind === 'ready' ? loadState.model : null;
+  const routeReadyModel =
+    loadState.kind === 'ready' &&
+    loadState.model.patientUserId === patientUserId
+      ? loadState.model
+      : null;
+
+  const errorMessage =
+    loadState.kind === 'error' && loadState.patientUserId === patientUserId
+      ? loadState.message
+      : null;
+
+  const isLoading =
+    loadState.kind === 'loading' ||
+    (loadState.kind === 'ready' &&
+      loadState.model.patientUserId !== patientUserId) ||
+    (loadState.kind === 'error' && loadState.patientUserId !== patientUserId);
+
+  const model = routeReadyModel;
 
   return (
     <div
