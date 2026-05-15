@@ -53,9 +53,11 @@ function trimToNull(value: string): string | null {
 }
 
 /**
- * Uses notes from the persisted marker row when present; otherwise falls back to draft notes when
- * the insert response omits `notes`, so the in-memory observation timeline still shows BP / numeric
- * notes the user just entered.
+ * Prefer non-empty `saved.notes` on the row returned from {@link insertEpisodeHealthMarkerForLine}
+ * (that helper persists `notes` and uses `.select('*')`, so the response should normally include them).
+ * If `notes` is still null/blank on that object, merge in the draft the patient just submitted so the
+ * in-memory timeline stays correct in the same render — **purely defensive**, not because the
+ * standard insert path is expected to drop free text.
  *
  * @param saved - Row returned from {@link insertEpisodeHealthMarkerForLine}.
  * @param draftNotes - Notes string from the measurement draft just submitted.

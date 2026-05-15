@@ -435,7 +435,8 @@ function StandaloneObservationTruncationNotice({
  * markers, episode-tied food) plus standalone markers and food diary (PRD §8; no writes to PHI).
  *
  * Overlapping async loads (navigating between patients, rapid retries) are ignored once superseded
- * so an older response cannot replace state while the route targets a different `patientUserId`.
+ * so an older response cannot replace state while the route targets a different `patientUserId`
+ * (including error payloads and announcements: each `load` compares the route ref to its captured id).
  *
  * @param props - Patient user id from the route.
  * @returns Patient detail UI with loading, error, and empty states.
@@ -467,6 +468,10 @@ export function PractitionerPatientDetailPage({
     );
 
     if (requestToken !== loadRequestTokenRef.current) {
+      return;
+    }
+
+    if (patientUserIdRef.current !== patientUserId) {
       return;
     }
 

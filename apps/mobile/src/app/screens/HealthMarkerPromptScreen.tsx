@@ -109,9 +109,11 @@ function trimToNull(value: string): string | null {
 }
 
 /**
- * Uses notes from the persisted marker row when present; otherwise falls back to draft notes. Some
- * insert paths (notably offline-first SQLite round-trips) return a row without `notes` populated even
- * though the value was saved, which would drop free-text from the in-memory timeline.
+ * Prefer non-empty `saved.notes` from the row returned right after insert; otherwise merge in the
+ * draft the patient just submitted so {@link healthMarkerDetailForTimeline} can show BP / numeric
+ * notes in the same render. Offline-first (PowerSync) and REST paths both map `notes` back on the
+ * inserted row when present — this stays defensive when `notes` is still null/blank on that object
+ * (timing, partial shapes, or other edge cases), without implying a gap in the SQLite write path.
  *
  * @param saved - Row returned from {@link insertEpisodeHealthMarkerLineOfflineFirst}.
  * @param draftNotes - Notes string from the measurement draft just submitted.

@@ -32,6 +32,14 @@ export const PRACTITIONER_PATIENT_EPISODE_HISTORY_CAP = 100;
  */
 export const PRACTITIONER_STANDALONE_OBSERVATION_CAP = 200;
 
+/**
+ * How many episode timelines load at once inside {@link loadEpisodeTimelinesBatched}. Each episode
+ * still fans out to **three** list helpers (symptoms, markers, episode food), so a single wave is at
+ * most `this × 3` concurrent PostgREST requests — bounded to protect browser connection pools and
+ * avoid rate-limit spikes on patients with long histories (see {@link PRACTITIONER_PATIENT_EPISODE_HISTORY_CAP}).
+ */
+export const PRACTITIONER_EPISODE_TIMELINE_LOAD_CHUNK = 5;
+
 /** One patient's episode rows as visible to practitioner read paths (Supabase-generated shape). */
 export type PractitionerPatientEpisodeRow =
   Database['public']['Tables']['episodes']['Row'];
@@ -91,7 +99,8 @@ type EpisodeTimelineBatchEntry = {
 
 /**
  * Loads bounded episode-bound observations for one episode using existing list helpers (each query
- * applies `LIMIT` on the server). Three parallel requests per episode; see {@link loadEpisodeTimelinesBatched}.
+ * applies `LIMIT` on the server). Three parallel requests per episode; waves of episodes are capped
+ * by {@link PRACTITIONER_EPISODE_TIMELINE_LOAD_CHUNK} in {@link loadEpisodeTimelinesBatched}.
  *
  * @param client - Supabase client (RLS applies).
  * @param episodeId - `episodes.id`.
@@ -147,8 +156,9 @@ async function loadEpisodeTimelineForEpisode(
 }
 
 /**
- * Loads all requested episode timelines in parallel ({@link loadEpisodeTimelineForEpisode} per id).
- * See **AGENTS.md** (“Practitioner episode timelines”) for the intentional tradeoff vs batched `.in` without limits.
+ * Loads all requested episode timelines in waves of {@link PRACTITIONER_EPISODE_TIMELINE_LOAD_CHUNK}
+ * episodes ({@link loadEpisodeTimelineForEpisode} per id, `Promise.all` inside each wave only).
+ * Preserves per-episode caps and result order while bounding worst-case concurrent PostgREST traffic.
  *
  * @param client - Supabase client (RLS applies).
  * @param episodeIds - Episode primary keys (length ≤ {@link PRACTITIONER_PATIENT_EPISODE_HISTORY_CAP}).
@@ -161,17 +171,22 @@ async function loadEpisodeTimelinesBatched(
     return { ok: true, data: new Map() };
   }
 
+  const out = new Map<string, EpisodeTimelineBatchEntry>();
+  const chunk = PRACTITIONER_EPISODE_TIMELINE_LOAD_CHUNK;
+
   try {
-    const entries = await Promise.all(
-      episodeIds.map((eid) => loadEpisodeTimelineForEpisode(client, eid)),
-    );
-    const out = new Map<string, EpisodeTimelineBatchEntry>();
-    for (let i = 0; i < episodeIds.length; i++) {
-      const row = entries[i];
-      if (!row.ok) {
-        return row;
+    for (let offset = 0; offset < episodeIds.length; offset += chunk) {
+      const slice = episodeIds.slice(offset, offset + chunk);
+      const entries = await Promise.all(
+        slice.map((eid) => loadEpisodeTimelineForEpisode(client, eid)),
+      );
+      for (let j = 0; j < slice.length; j++) {
+        const row = entries[j];
+        if (!row.ok) {
+          return row;
+        }
+        out.set(slice[j], row.data);
       }
-      out.set(episodeIds[i], row.data);
     }
     return { ok: true, data: out };
   } catch (caught) {
@@ -289,8 +304,9 @@ export async function assertActivePractitionerGrantForPatient(
  * with `id` as a stable tie-breaker when timestamps match.
  *
  * Episode-bound timelines load {@link EPISODE_TIMELINE_SOURCE_LIMIT} + 1 rows per stream **per episode**
- * via list helpers (PostgREST `LIMIT`, no extra migrations). {@link PractitionerPatientEpisodeObservationBlock}
- * reports when a stream still has older rows beyond that cap.
+ * via list helpers (PostgREST `LIMIT`, no extra migrations), in waves of
+ * {@link PRACTITIONER_EPISODE_TIMELINE_LOAD_CHUNK} episodes so concurrent requests stay bounded.
+ * {@link PractitionerPatientEpisodeObservationBlock} reports when a stream still has older rows beyond that cap.
  *
  * @param client - Browser Supabase client (practitioner session; RLS applies).
  * @param patientUserId - Patient auth user id (same UUID as `/patients/[patientId]`).

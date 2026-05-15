@@ -159,6 +159,83 @@ describe('PractitionerPatientDetailPage', () => {
     expect(screen.queryByText('Stale Wrong Name')).toBeNull();
   });
 
+  it('does not apply stale error responses when patientUserId changes before an earlier request settles', async () => {
+    const patientA = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+    const patientB = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+
+    let resolveSlow!: (value: {
+      ok: false;
+      error: { message: string; code: string; name: string };
+    }) => void;
+    const slowPromise = new Promise<{
+      ok: false;
+      error: { message: string; code: string; name: string };
+    }>((resolve) => {
+      resolveSlow = resolve;
+    });
+
+    loadPractitionerPatientObservationReadModel.mockImplementation(
+      async (_client, uid) => {
+        if (uid === patientA) {
+          return slowPromise;
+        }
+        if (uid === patientB) {
+          return {
+            ok: true,
+            data: {
+              patientUserId: patientB,
+              patientDisplayName: 'Bob Jones',
+              moreEpisodesOmitted: false,
+              standaloneHealthMarkersTruncated: false,
+              standaloneFoodDiaryTruncated: false,
+              standaloneTimeline: [],
+              episodesWithTimelines: [],
+            },
+          };
+        }
+        throw new Error(`unexpected patient ${String(uid)}`);
+      },
+    );
+
+    const { rerender } = render(
+      <LiveAnnouncerProvider>
+        <PractitionerPatientDetailPage patientUserId={patientA} />
+      </LiveAnnouncerProvider>,
+    );
+
+    await waitFor(() =>
+      expect(loadPractitionerPatientObservationReadModel).toHaveBeenCalledWith(
+        expect.anything(),
+        patientA,
+      ),
+    );
+
+    rerender(
+      <LiveAnnouncerProvider>
+        <PractitionerPatientDetailPage patientUserId={patientB} />
+      </LiveAnnouncerProvider>,
+    );
+
+    expect(await screen.findByText('Bob Jones')).toBeTruthy();
+
+    resolveSlow({
+      ok: false,
+      error: {
+        code: 'unknown',
+        message: 'Stale error for patient A',
+        name: 'PresetDataError',
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { level: 1 }).textContent).toContain(
+        'Bob Jones',
+      );
+    });
+    expect(screen.queryByText('Stale error for patient A')).toBeNull();
+    expect(screen.queryByRole('button', { name: /try again/i })).toBeNull();
+  });
+
   it('renders a symptom row from a successful timeline load', async () => {
     loadPractitionerPatientObservationReadModel.mockResolvedValue({
       ok: true,
