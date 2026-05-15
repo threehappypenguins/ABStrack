@@ -467,7 +467,7 @@ export function PractitionerAccessPage() {
         </section>
       ) : null}
 
-      {!loadError && !pendingInvite ? (
+      {!loadError && pendingInvite === null ? (
         <section
           aria-labelledby={`${formId}-invite-heading`}
           className="rounded-2xl border border-app-border/90 bg-app-surface p-6 shadow-soft ring-1 ring-[color:var(--app-ring-slate)] sm:p-8"
