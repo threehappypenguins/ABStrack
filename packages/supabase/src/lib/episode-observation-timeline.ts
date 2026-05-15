@@ -12,7 +12,8 @@ import { listEpisodeHealthMarkersForEpisode } from './episode-health-marker-data
 import { listEpisodeSymptomsForEpisode } from './episode-symptom-data.js';
 import { listFoodDiaryEntriesForEpisode } from './food-diary-data.js';
 
-const EPISODE_TIMELINE_SOURCE_LIMIT = 200;
+/** Max rows pulled per observation source when building one episode timeline (symptoms / markers / food). */
+export const EPISODE_TIMELINE_SOURCE_LIMIT = 200;
 
 /**
  * One row in a merged, time-ordered episode view (symptoms, health markers, food).
@@ -23,6 +24,10 @@ export type EpisodeTimelineItem = {
   sortAt: string;
   id: string;
   label: string;
+  /**
+   * Human-readable observation payload. Notes and free-text answers are kept in full here;
+   * UI surfaces should clamp or expand visually rather than truncating in merge helpers.
+   */
   detail: string;
 };
 
@@ -62,8 +67,7 @@ function pushSymptomRowsToTimelineItems(
     ) {
       detail = `Severity ${s.response_severity}`;
     } else if (s.response_type === 'free_text' && s.response_text) {
-      const t = s.response_text.trim();
-      detail = t.length > 80 ? `${t.slice(0, 77)}…` : t;
+      detail = s.response_text.trim();
     } else if (s.response_type === 'photo') {
       detail = 'Photo';
     } else if (s.response_type === 'video') {
@@ -99,7 +103,7 @@ function pushHealthMarkerRowsToTimelineItems(
     } else {
       const n = m.notes?.trim();
       if (n) {
-        detail = n.length > 80 ? `${n.slice(0, 77)}…` : n;
+        detail = n;
       }
     }
     const kindLabel = healthMarkerTimelineLabel(m.marker_kind, m.custom_name);
@@ -124,7 +128,7 @@ function pushFoodDiaryRowsToTimelineItems(
       sortAt: f.logged_at,
       id: f.id,
       label: f.meal_tag,
-      detail: note.length > 100 ? `${note.slice(0, 97)}…` : note,
+      detail: note,
     });
   }
 }

@@ -134,6 +134,7 @@ export {
 } from './lib/episode-health-marker-data.js';
 export {
   compareEpisodeTimelineItems,
+  EPISODE_TIMELINE_SOURCE_LIMIT,
   listEpisodeObservationTimeline,
   mergeEpisodeObservationRowsToTimeline,
   mergeStandaloneHealthAndFoodRowsToTimeline,
@@ -147,6 +148,7 @@ export {
   listActivePractitionerPatientDirectory,
 } from './lib/practitioner-patient-directory-data.js';
 export type {
+  PractitionerPatientEpisodeObservationBlock,
   PractitionerPatientEpisodeRow,
   PractitionerPatientObservationReadModel,
 } from './lib/practitioner-patient-observation-read.js';
@@ -154,6 +156,7 @@ export {
   assertActivePractitionerGrantForPatient,
   loadPractitionerPatientObservationReadModel,
   PRACTITIONER_PATIENT_EPISODE_HISTORY_CAP,
+  PRACTITIONER_STANDALONE_OBSERVATION_CAP,
 } from './lib/practitioner-patient-observation-read.js';
 export {
   createFoodDiaryEntry,

@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   PRESET_HEALTH_MARKER_KIND_LABELS,
+  type EpisodeSymptomRow,
   type FoodDiaryEntryRow,
   type HealthMarkerRow,
 } from '@abstrack/types';
 import {
   listEpisodeObservationTimeline,
+  mergeEpisodeObservationRowsToTimeline,
   mergeStandaloneHealthAndFoodRowsToTimeline,
 } from './episode-observation-timeline.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
@@ -287,6 +289,64 @@ describe('listEpisodeObservationTimeline', () => {
         detail: 'Still include me',
       },
     ]);
+  });
+});
+
+describe('mergeEpisodeObservationRowsToTimeline', () => {
+  it('preserves full free-text symptoms, marker notes, and food notes (no merge-time truncation)', () => {
+    const longSymptom = 's'.repeat(200);
+    const longNotes = 'n'.repeat(150);
+    const longFood = 'f'.repeat(120);
+
+    const symptom: EpisodeSymptomRow = {
+      id: 'sym-long',
+      user_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      episode_id: 'eeeeeeee-bbbb-cccc-dddd-aaaaaaaaaaaa',
+      preset_symptom_id: null,
+      symptom_name: 'Free note',
+      response_type: 'free_text',
+      response_boolean: null,
+      response_severity: null,
+      response_text: longSymptom,
+      sort_order: 0,
+      created_at: '2026-04-24T12:00:00.000Z',
+      updated_at: '2026-04-24T12:00:00.000Z',
+    };
+
+    const hm: HealthMarkerRow = {
+      id: 'hm-long',
+      user_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      episode_id: 'eeeeeeee-bbbb-cccc-dddd-aaaaaaaaaaaa',
+      preset_health_marker_id: null,
+      marker_kind: 'custom',
+      custom_name: null,
+      custom_name_key: null,
+      custom_unit: null,
+      custom_unit_key: null,
+      value_numeric: null,
+      systolic_numeric: null,
+      diastolic_numeric: null,
+      notes: longNotes,
+      recorded_at: '2026-04-24T11:00:00.000Z',
+      created_at: '2026-04-24T11:00:00.000Z',
+      updated_at: '2026-04-24T11:00:00.000Z',
+    };
+
+    const fd: FoodDiaryEntryRow = {
+      id: 'fd-long',
+      user_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      episode_id: 'eeeeeeee-bbbb-cccc-dddd-aaaaaaaaaaaa',
+      meal_tag: 'Lunch',
+      food_note: longFood,
+      logged_at: '2026-04-24T10:00:00.000Z',
+      created_at: '2026-04-24T10:00:00.000Z',
+      updated_at: '2026-04-24T10:00:00.000Z',
+    };
+
+    const merged = mergeEpisodeObservationRowsToTimeline([symptom], [hm], [fd]);
+    expect(merged.find((r) => r.id === 'sym-long')?.detail).toBe(longSymptom);
+    expect(merged.find((r) => r.id === 'hm-long')?.detail).toBe(longNotes);
+    expect(merged.find((r) => r.id === 'fd-long')?.detail).toBe(longFood);
   });
 });
 

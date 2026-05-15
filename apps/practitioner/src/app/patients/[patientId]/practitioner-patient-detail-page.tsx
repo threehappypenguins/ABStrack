@@ -1,9 +1,11 @@
 'use client';
 
 import {
+  EPISODE_TIMELINE_SOURCE_LIMIT,
   formatPractitionerPatientDirectoryLabel,
   loadPractitionerPatientObservationReadModel,
   PRACTITIONER_PATIENT_EPISODE_HISTORY_CAP,
+  PRACTITIONER_STANDALONE_OBSERVATION_CAP,
   type EpisodeTimelineItem,
   type PractitionerPatientEpisodeRow,
   type PractitionerPatientObservationReadModel,
@@ -44,6 +46,47 @@ function observationKindNoun(kind: EpisodeTimelineItem['kind']): string {
   return 'Food diary';
 }
 
+/** Above this length, episode timeline rows clamp visually with an explicit expand control. */
+const PRACTITIONER_TIMELINE_DETAIL_EXPAND_THRESHOLD = 160;
+
+/**
+ * Renders a timeline row's detail text: compact values inline; long clinical notes use native disclosure.
+ *
+ * @param props - `EpisodeTimelineItem.detail` from the practitioner read model.
+ */
+function PractitionerTimelineObservationDetail({ detail }: { detail: string }) {
+  const trimmed = detail.trim();
+  const needsExpand =
+    trimmed.length > PRACTITIONER_TIMELINE_DETAIL_EXPAND_THRESHOLD &&
+    trimmed !== '—';
+
+  if (!needsExpand) {
+    return (
+      <span className="mt-0.5 block whitespace-pre-wrap break-words text-app-muted">
+        {detail || '—'}
+      </span>
+    );
+  }
+
+  return (
+    <details className="group mt-0.5">
+      <summary className="min-h-11 cursor-pointer list-none rounded-md py-2 text-left [&::-webkit-details-marker]:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg">
+        <span className="block break-words whitespace-pre-wrap text-app-muted group-open:hidden line-clamp-3">
+          {detail}
+        </span>
+        <span className="mt-1 hidden text-sm font-medium text-app-primary group-open:inline">
+          Collapse full note
+        </span>
+      </summary>
+      <div className="mt-2 border-l-2 border-app-border pl-3">
+        <p className="break-words whitespace-pre-wrap text-app-muted">
+          {detail}
+        </p>
+      </div>
+    </details>
+  );
+}
+
 function episodeSummaryHeading(episode: PractitionerPatientEpisodeRow): string {
   const start = formatObservationTimestamp(episode.started_at);
   if (episode.ended_at) {
@@ -51,6 +94,92 @@ function episodeSummaryHeading(episode: PractitionerPatientEpisodeRow): string {
     return `${episode.episode_type} episode · ${start} – ${end}`;
   }
   return `${episode.episode_type} episode · ${start} · Ongoing`;
+}
+
+function EpisodeObservationTruncationNotice({
+  moreSymptomsOmitted,
+  moreHealthMarkersOmitted,
+  moreFoodDiaryOmitted,
+  streamCap,
+}: {
+  moreSymptomsOmitted: boolean;
+  moreHealthMarkersOmitted: boolean;
+  moreFoodDiaryOmitted: boolean;
+  streamCap: number;
+}) {
+  if (
+    !moreSymptomsOmitted &&
+    !moreHealthMarkersOmitted &&
+    !moreFoodDiaryOmitted
+  ) {
+    return null;
+  }
+
+  return (
+    <div
+      className="mt-3 rounded-lg border border-app-border/80 bg-app-bg/40 px-3 py-2 text-sm text-app-muted"
+      role="status"
+    >
+      <p className="font-medium text-app-ink">Incomplete episode timeline</p>
+      <ul className="mt-1 list-disc space-y-1 pl-5">
+        {moreSymptomsOmitted ? (
+          <li>
+            Symptoms: only the {streamCap} most recent observations are shown;
+            older symptom rows exist but are not listed.
+          </li>
+        ) : null}
+        {moreHealthMarkersOmitted ? (
+          <li>
+            Health markers: only the {streamCap} most recent episode-bound
+            entries are shown; older marker rows exist but are not listed.
+          </li>
+        ) : null}
+        {moreFoodDiaryOmitted ? (
+          <li>
+            Food diary: only the {streamCap} most recent episode-tied meals are
+            shown; older food entries exist but are not listed.
+          </li>
+        ) : null}
+      </ul>
+    </div>
+  );
+}
+
+function StandaloneObservationTruncationNotice({
+  markersTruncated,
+  foodTruncated,
+  cap,
+}: {
+  markersTruncated: boolean;
+  foodTruncated: boolean;
+  cap: number;
+}) {
+  if (!markersTruncated && !foodTruncated) {
+    return null;
+  }
+
+  return (
+    <div
+      className="mt-4 rounded-lg border border-app-border/80 bg-app-bg/40 px-3 py-2 text-sm text-app-muted"
+      role="status"
+    >
+      <p className="font-medium text-app-ink">Incomplete standalone history</p>
+      <ul className="mt-1 list-disc space-y-1 pl-5">
+        {markersTruncated ? (
+          <li>
+            Health markers: showing the {cap} most recent standalone entries;
+            older markers are not listed.
+          </li>
+        ) : null}
+        {foodTruncated ? (
+          <li>
+            Food diary: showing the {cap} most recent standalone entries; older
+            entries are not listed.
+          </li>
+        ) : null}
+      </ul>
+    </div>
+  );
 }
 
 /**
@@ -206,58 +335,72 @@ export function PractitionerPatientDetailPage({
             id as tie-breaker).
           </p>
           <div className="mt-6 space-y-8">
-            {model.episodesWithTimelines.map(({ episode, timeline }) => {
-              const regionId = `${episodeRegionPrefix}-${episode.id}`;
-              return (
-                <section
-                  key={episode.id}
-                  className="rounded-xl border border-app-border bg-app-surface p-5 shadow-soft"
-                  aria-labelledby={`${regionId}-heading`}
-                >
-                  <h3
-                    id={`${regionId}-heading`}
-                    className="text-base font-semibold text-app-ink"
+            {model.episodesWithTimelines.map(
+              ({
+                episode,
+                timeline,
+                moreSymptomsOmitted,
+                moreHealthMarkersOmitted,
+                moreFoodDiaryOmitted,
+              }) => {
+                const regionId = `${episodeRegionPrefix}-${episode.id}`;
+                return (
+                  <section
+                    key={episode.id}
+                    className="rounded-xl border border-app-border bg-app-surface p-5 shadow-soft"
+                    aria-labelledby={`${regionId}-heading`}
                   >
-                    {episodeSummaryHeading(episode)}
-                  </h3>
-                  {episode.episode_label?.trim() ? (
-                    <p className="mt-1 text-sm text-app-muted">
-                      {episode.episode_label.trim()}
-                    </p>
-                  ) : null}
-                  {timeline.length === 0 ? (
-                    <p className="mt-4 text-sm text-app-muted" role="status">
-                      No observations recorded for this episode.
-                    </p>
-                  ) : (
-                    <ol className="mt-4 list-decimal space-y-3 pl-5 text-sm text-app-ink">
-                      {timeline.map((row) => {
-                        const time = formatObservationTimestamp(row.sortAt);
-                        const kind = observationKindNoun(row.kind);
-                        const ann = `${kind} at ${time}. ${row.label}. ${row.detail}.`;
-                        return (
-                          <li
-                            key={`${row.kind}-${row.id}`}
-                            className="pl-1"
-                            aria-label={ann}
-                          >
-                            <span className="block text-xs font-medium uppercase tracking-wide text-app-muted">
-                              {kind} · {time}
-                            </span>
-                            <span className="mt-0.5 block font-medium">
-                              {row.label}
-                            </span>
-                            <span className="mt-0.5 block text-app-muted">
-                              {row.detail}
-                            </span>
-                          </li>
-                        );
-                      })}
-                    </ol>
-                  )}
-                </section>
-              );
-            })}
+                    <h3
+                      id={`${regionId}-heading`}
+                      className="text-base font-semibold text-app-ink"
+                    >
+                      {episodeSummaryHeading(episode)}
+                    </h3>
+                    {episode.episode_label?.trim() ? (
+                      <p className="mt-1 text-sm text-app-muted">
+                        {episode.episode_label.trim()}
+                      </p>
+                    ) : null}
+                    <EpisodeObservationTruncationNotice
+                      moreSymptomsOmitted={moreSymptomsOmitted}
+                      moreHealthMarkersOmitted={moreHealthMarkersOmitted}
+                      moreFoodDiaryOmitted={moreFoodDiaryOmitted}
+                      streamCap={EPISODE_TIMELINE_SOURCE_LIMIT}
+                    />
+                    {timeline.length === 0 ? (
+                      <p className="mt-4 text-sm text-app-muted" role="status">
+                        No observations recorded for this episode.
+                      </p>
+                    ) : (
+                      <ol className="mt-4 list-decimal space-y-3 pl-5 text-sm text-app-ink">
+                        {timeline.map((row) => {
+                          const time = formatObservationTimestamp(row.sortAt);
+                          const kind = observationKindNoun(row.kind);
+                          const ann = `${kind} at ${time}. ${row.label}. ${row.detail}.`;
+                          return (
+                            <li
+                              key={`${row.kind}-${row.id}`}
+                              className="pl-1"
+                              aria-label={ann}
+                            >
+                              <span className="block text-xs font-medium uppercase tracking-wide text-app-muted">
+                                {kind} · {time}
+                              </span>
+                              <span className="mt-0.5 block font-medium">
+                                {row.label}
+                              </span>
+                              <PractitionerTimelineObservationDetail
+                                detail={row.detail}
+                              />
+                            </li>
+                          );
+                        })}
+                      </ol>
+                    )}
+                  </section>
+                );
+              },
+            )}
           </div>
         </section>
       ) : null}
@@ -277,6 +420,11 @@ export function PractitionerPatientDetailPage({
             Entries logged outside any episode (not tied to a flare record),
             oldest first.
           </p>
+          <StandaloneObservationTruncationNotice
+            markersTruncated={model.standaloneHealthMarkersTruncated}
+            foodTruncated={model.standaloneFoodDiaryTruncated}
+            cap={PRACTITIONER_STANDALONE_OBSERVATION_CAP}
+          />
           <ol className="mt-4 list-decimal space-y-3 pl-5 text-sm text-app-ink">
             {model.standaloneTimeline.map((row) => {
               const time = formatObservationTimestamp(row.sortAt);
@@ -292,9 +440,7 @@ export function PractitionerPatientDetailPage({
                     {kind} · {time}
                   </span>
                   <span className="mt-0.5 block font-medium">{row.label}</span>
-                  <span className="mt-0.5 block text-app-muted">
-                    {row.detail}
-                  </span>
+                  <PractitionerTimelineObservationDetail detail={row.detail} />
                 </li>
               );
             })}
@@ -318,7 +464,7 @@ export function PractitionerPatientDetailPage({
           </h2>
           <p className="mt-2 text-sm text-app-muted">
             This patient has not logged health markers or food outside of an
-            episode, or none are in the recent window shown here.
+            episode in the loaded window, or none appear here.
           </p>
         </div>
       ) : null}

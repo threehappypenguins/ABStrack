@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import type { PractitionerPatientEpisodeRow } from '@abstrack/supabase';
 import { LiveAnnouncerProvider } from '@abstrack/ui/a11y-web';
 import { PractitionerPatientDetailPage } from '../src/app/patients/[patientId]/practitioner-patient-detail-page';
@@ -76,10 +76,15 @@ describe('PractitionerPatientDetailPage', () => {
         patientUserId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
         patientDisplayName: 'Alex Kim',
         moreEpisodesOmitted: false,
+        standaloneHealthMarkersTruncated: false,
+        standaloneFoodDiaryTruncated: false,
         standaloneTimeline: [],
         episodesWithTimelines: [
           {
             episode: episodeRow(),
+            moreSymptomsOmitted: false,
+            moreHealthMarkersOmitted: false,
+            moreFoodDiaryOmitted: false,
             timeline: [
               {
                 kind: 'symptom',
@@ -103,5 +108,64 @@ describe('PractitionerPatientDetailPage', () => {
     expect(await screen.findByText('Alex Kim')).toBeTruthy();
     expect(screen.getByText('Nausea')).toBeTruthy();
     expect(screen.getByText('Yes')).toBeTruthy();
+  });
+
+  it('uses expandable disclosure for long observation detail text', async () => {
+    const longDetail = `${'q'.repeat(161)}TAIL`;
+
+    loadPractitionerPatientObservationReadModel.mockResolvedValue({
+      ok: true,
+      data: {
+        patientUserId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+        patientDisplayName: 'Alex Kim',
+        moreEpisodesOmitted: false,
+        standaloneHealthMarkersTruncated: false,
+        standaloneFoodDiaryTruncated: false,
+        standaloneTimeline: [],
+        episodesWithTimelines: [
+          {
+            episode: episodeRow(),
+            moreSymptomsOmitted: false,
+            moreHealthMarkersOmitted: false,
+            moreFoodDiaryOmitted: false,
+            timeline: [
+              {
+                kind: 'symptom',
+                sortAt: '2026-04-01T12:05:00.000Z',
+                id: 'sym-long',
+                label: 'Notes',
+                detail: longDetail,
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    render(
+      <LiveAnnouncerProvider>
+        <PractitionerPatientDetailPage patientUserId="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" />
+      </LiveAnnouncerProvider>,
+    );
+
+    await screen.findByText('Alex Kim');
+    expect(
+      (await screen.findAllByText(longDetail, { hidden: true })).length,
+    ).toBeGreaterThanOrEqual(1);
+    const notesHeading = screen.getByText('Notes');
+    const row = notesHeading.closest('li');
+    expect(row).toBeTruthy();
+    const detailsEl = row!.querySelector('details');
+    expect(detailsEl).toBeTruthy();
+    expect(detailsEl!.hasAttribute('open')).toBe(false);
+
+    const summaryEl = detailsEl!.querySelector('summary');
+    expect(summaryEl).toBeTruthy();
+    fireEvent.click(summaryEl!);
+
+    expect(detailsEl!.hasAttribute('open')).toBe(true);
+    expect(
+      within(row as HTMLElement).getByText('Collapse full note'),
+    ).toBeTruthy();
   });
 });
