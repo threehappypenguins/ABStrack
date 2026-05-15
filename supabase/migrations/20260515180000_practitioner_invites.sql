@@ -70,7 +70,7 @@ AS $$
   SET last_invite_sent_at = p_stamp
   WHERE id = p_invite_id
     AND consumed_at IS NULL
-    AND (last_invite_sent_at IS NULL OR last_invite_sent_at < p_throttle_cutoff)
+    AND (last_invite_sent_at IS NULL OR last_invite_sent_at <= p_throttle_cutoff)
   RETURNING id;
 $$;
 
@@ -78,4 +78,38 @@ REVOKE ALL ON FUNCTION public.stamp_practitioner_invite_pre_send(uuid, timestamp
 
 GRANT EXECUTE ON FUNCTION public.stamp_practitioner_invite_pre_send(uuid, timestamptz, timestamptz) TO service_role;
 
-COMMENT ON FUNCTION public.stamp_practitioner_invite_pre_send (uuid, timestamptz, timestamptz) IS 'Atomically stamps practitioner_invites.last_invite_sent_at before inviteUserByEmail; service_role only.';
+COMMENT ON FUNCTION public.stamp_practitioner_invite_pre_send (uuid, timestamptz, timestamptz) IS 'Atomically stamps practitioner_invites.last_invite_sent_at before inviteUserByEmail when last send is null or <= p_throttle_cutoff (inclusive minimum-interval boundary, matches Edge); service_role only.';
+
+-- Inclusive resend boundary: match Edge `elapsed >= interval` (same cutoff as
+-- `stamp_practitioner_invite_pre_send`). Replaces `stamp_practitioner_invite_send_throttle` from
+-- 20260514120000_practitioner_access_service_role_edge.sql after that migration is already applied.
+CREATE OR REPLACE FUNCTION public.stamp_practitioner_invite_send_throttle(
+  p_patient_user_id uuid,
+  p_invitee_email_normalized text,
+  p_stamp timestamptz,
+  p_throttle_cutoff timestamptz
+)
+RETURNS SETOF uuid
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  INSERT INTO public.practitioner_invite_send_throttle AS t (
+    patient_user_id,
+    invitee_email_normalized,
+    last_invite_sent_at
+  )
+  VALUES (p_patient_user_id, p_invitee_email_normalized, p_stamp)
+  ON CONFLICT (patient_user_id, invitee_email_normalized)
+  DO UPDATE SET
+    last_invite_sent_at = EXCLUDED.last_invite_sent_at
+  WHERE
+    t.last_invite_sent_at <= p_throttle_cutoff
+  RETURNING patient_user_id;
+$$;
+
+REVOKE ALL ON FUNCTION public.stamp_practitioner_invite_send_throttle(uuid, text, timestamptz, timestamptz) FROM PUBLIC;
+
+GRANT EXECUTE ON FUNCTION public.stamp_practitioner_invite_send_throttle(uuid, text, timestamptz, timestamptz) TO service_role;
+
+COMMENT ON FUNCTION public.stamp_practitioner_invite_send_throttle (uuid, text, timestamptz, timestamptz) IS 'Atomically records practitioner invite email send when outside resend window; service_role only.';
