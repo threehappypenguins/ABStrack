@@ -134,6 +134,24 @@ jest.mock('../../lib/network/mobile-device-netinfo', () => ({
   fetchMobileDeviceIsConnected: jest.fn(async () => true),
 }));
 
+/**
+ * Stabilize {@link EpisodesManagementPanel}'s scope-reset effect: the real hook resolves auth +
+ * PHI asynchronously and toggles `loading`, which changes `scopeKey` several times per mount and
+ * repeatedly resets list state + bumps `loadGenRef`. That races `useFocusEffect`'s load (especially
+ * under Jest's mocked `useFocusEffect`, which does not run blur cleanup when `loadInitial`'s
+ * identity changes), producing flaky navigation assertions for Resume.
+ */
+jest.mock('../../lib/auth/use-mobile-phi-subject-user-context', () => ({
+  useMobilePhiSubjectUserContext: jest.fn(() => ({
+    authUserId: 'user-1',
+    phiSubjectUserId: 'user-1',
+    loading: false,
+    errorMessage: null,
+    profileAppRole: 'patient' as const,
+    refresh: jest.fn(),
+  })),
+}));
+
 function makeEpisodeRow(overrides: Partial<EpisodeRow> = {}): EpisodeRow {
   return {
     id: 'ep-1',
@@ -294,13 +312,18 @@ describe('EpisodesScreen', () => {
 
     renderEpisodesScreen();
 
-    const resumeBtn = await screen.findByLabelText('Resume this episode');
+    const resumeBtn = await screen.findByRole('button', {
+      name: 'Resume this episode',
+    });
+
     fireEvent.press(resumeBtn);
 
-    expect(mockNavigate).toHaveBeenCalledWith('SymptomPrompt', {
-      episodeId: 'ep-resume',
-      symptomPresetId: 'preset-99',
-      resume: true,
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('SymptomPrompt', {
+        episodeId: 'ep-resume',
+        symptomPresetId: 'preset-99',
+        resume: true,
+      });
     });
   });
 
@@ -318,13 +341,18 @@ describe('EpisodesScreen', () => {
 
     renderEpisodesScreen();
 
-    const resumeBtn = await screen.findByLabelText('Resume this episode');
+    const resumeBtn = await screen.findByRole('button', {
+      name: 'Resume this episode',
+    });
+
     fireEvent.press(resumeBtn);
 
-    expect(mockNavigate).toHaveBeenCalledWith('HealthMarkerPrompt', {
-      episodeId: 'ep-end-step',
-      resume: true,
-      hub: true,
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('HealthMarkerPrompt', {
+        episodeId: 'ep-end-step',
+        resume: true,
+        hub: true,
+      });
     });
   });
 

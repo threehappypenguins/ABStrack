@@ -1,9 +1,4 @@
-import type {
-  EpisodeSymptomRow,
-  FoodDiaryEntryRow,
-  HealthMarkerRow,
-  Uuid,
-} from '@abstrack/types';
+import type { Uuid } from '@abstrack/types';
 import type { Database } from './database.types.js';
 import { PresetDataError, toPresetDataError } from './preset-data-error.js';
 import type { PresetDataResult } from './preset-data.js';
@@ -13,8 +8,15 @@ import {
   mergeStandaloneHealthAndFoodRowsToTimeline,
   type EpisodeTimelineItem,
 } from './episode-observation-timeline.js';
-import { listStandaloneHealthMarkersForUser } from './episode-health-marker-data.js';
-import { listFoodDiaryEntriesForUser } from './food-diary-data.js';
+import {
+  listEpisodeHealthMarkersForEpisode,
+  listStandaloneHealthMarkersForUser,
+} from './episode-health-marker-data.js';
+import { listEpisodeSymptomsForEpisode } from './episode-symptom-data.js';
+import {
+  listFoodDiaryEntriesForEpisode,
+  listFoodDiaryEntriesForUser,
+} from './food-diary-data.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
 
 /**
@@ -73,100 +75,11 @@ type PractitionerAccessGrantIdRow = Pick<
   'id'
 >;
 
-/** Descending ISO timestamp comparison (newest first); fallback string compare if unparsable. */
-function compareIsoDesc(aIso: string, bIso: string): number {
-  const aMs = Date.parse(aIso);
-  const bMs = Date.parse(bIso);
-  const aOk = Number.isFinite(aMs);
-  const bOk = Number.isFinite(bMs);
-  if (aOk && bOk && aMs !== bMs) {
-    return bMs - aMs;
-  }
-  return bIso.localeCompare(aIso);
-}
-
-function compareEpisodeSymptomRowsRecentFirst(
-  a: EpisodeSymptomRow,
-  b: EpisodeSymptomRow,
-): number {
-  const byTime = compareIsoDesc(a.created_at, b.created_at);
-  if (byTime !== 0) {
-    return byTime;
-  }
-  return b.id.localeCompare(a.id);
-}
-
-function compareHealthMarkerRowsRecentFirst(
-  a: HealthMarkerRow,
-  b: HealthMarkerRow,
-): number {
-  let c = compareIsoDesc(a.recorded_at, b.recorded_at);
-  if (c !== 0) {
-    return c;
-  }
-  c = compareIsoDesc(a.created_at, b.created_at);
-  if (c !== 0) {
-    return c;
-  }
-  return b.id.localeCompare(a.id);
-}
-
-function compareFoodDiaryRowsRecentFirst(
-  a: FoodDiaryEntryRow,
-  b: FoodDiaryEntryRow,
-): number {
-  let c = compareIsoDesc(a.logged_at, b.logged_at);
-  if (c !== 0) {
-    return c;
-  }
-  c = compareIsoDesc(a.created_at, b.created_at);
-  if (c !== 0) {
-    return c;
-  }
-  return b.id.localeCompare(a.id);
-}
-
-function bucketRowsByEpisodeId<T extends { episode_id: string | null }>(
-  rows: T[],
-): Map<string, T[]> {
-  const map = new Map<string, T[]>();
-  for (const row of rows) {
-    const eid = row.episode_id;
-    if (eid == null) {
-      continue;
-    }
-    const list = map.get(eid);
-    if (list) {
-      list.push(row);
-    } else {
-      map.set(eid, [row]);
-    }
-  }
-  return map;
-}
-
-function cappedRecentEpisodeSymptoms(
-  rows: EpisodeSymptomRow[],
-): EpisodeSymptomRow[] {
-  return [...rows]
-    .sort(compareEpisodeSymptomRowsRecentFirst)
-    .slice(0, EPISODE_TIMELINE_SOURCE_LIMIT);
-}
-
-function cappedRecentEpisodeHealthMarkers(
-  rows: HealthMarkerRow[],
-): HealthMarkerRow[] {
-  return [...rows]
-    .sort(compareHealthMarkerRowsRecentFirst)
-    .slice(0, EPISODE_TIMELINE_SOURCE_LIMIT);
-}
-
-function cappedRecentEpisodeFood(
-  rows: FoodDiaryEntryRow[],
-): FoodDiaryEntryRow[] {
-  return [...rows]
-    .sort(compareFoodDiaryRowsRecentFirst)
-    .slice(0, EPISODE_TIMELINE_SOURCE_LIMIT);
+/**
+ * Fetch `limit + 1` newest rows per stream so omission flags match {@link EPISODE_TIMELINE_SOURCE_LIMIT}.
+ */
+function practitionerEpisodeObservationWindowLimit(): number {
+  return EPISODE_TIMELINE_SOURCE_LIMIT + 1;
 }
 
 type EpisodeTimelineBatchEntry = {
@@ -177,17 +90,71 @@ type EpisodeTimelineBatchEntry = {
 };
 
 /**
- * Loads all episode-bound symptoms, markers, and food for `episodeIds` in **three** round-trips,
- * then caps and merges per episode to match {@link mergeEpisodeObservationRowsToTimeline} / the
- * single-episode list helpers (newest-first cap per source, then merged oldest-first timeline).
+ * Loads bounded episode-bound observations for one episode using existing list helpers (each query
+ * applies `LIMIT` on the server). Three parallel requests per episode; see {@link loadEpisodeTimelinesBatched}.
  *
  * @param client - Supabase client (RLS applies).
- * @param patientUserId - Episode owner (`episodes.user_id`); narrows reads and matches RLS intent.
- * @param episodeIds - Episode primary keys to include (typically the loaded history cap set).
+ * @param episodeId - `episodes.id`.
+ */
+async function loadEpisodeTimelineForEpisode(
+  client: AbstrackSupabaseClient,
+  episodeId: Uuid,
+): Promise<PresetDataResult<EpisodeTimelineBatchEntry>> {
+  const windowLimit = practitionerEpisodeObservationWindowLimit();
+  const [syR, hmR, fdR] = await Promise.all([
+    listEpisodeSymptomsForEpisode(client, episodeId, {
+      limit: windowLimit,
+      orderBy: 'recent',
+    }),
+    listEpisodeHealthMarkersForEpisode(client, episodeId, {
+      limit: windowLimit,
+    }),
+    listFoodDiaryEntriesForEpisode(client, episodeId, {
+      limit: windowLimit,
+    }),
+  ]);
+
+  if (!syR.ok) {
+    return syR;
+  }
+  if (!hmR.ok) {
+    return hmR;
+  }
+  if (!fdR.ok) {
+    return fdR;
+  }
+
+  const rawSy = syR.data;
+  const rawHm = hmR.data;
+  const rawFd = fdR.data;
+  const moreSymptomsOmitted = rawSy.length > EPISODE_TIMELINE_SOURCE_LIMIT;
+  const moreHealthMarkersOmitted = rawHm.length > EPISODE_TIMELINE_SOURCE_LIMIT;
+  const moreFoodDiaryOmitted = rawFd.length > EPISODE_TIMELINE_SOURCE_LIMIT;
+
+  return {
+    ok: true,
+    data: {
+      timeline: mergeEpisodeObservationRowsToTimeline(
+        rawSy.slice(0, EPISODE_TIMELINE_SOURCE_LIMIT),
+        rawHm.slice(0, EPISODE_TIMELINE_SOURCE_LIMIT),
+        rawFd.slice(0, EPISODE_TIMELINE_SOURCE_LIMIT),
+      ),
+      moreSymptomsOmitted,
+      moreHealthMarkersOmitted,
+      moreFoodDiaryOmitted,
+    },
+  };
+}
+
+/**
+ * Loads all requested episode timelines in parallel ({@link loadEpisodeTimelineForEpisode} per id).
+ * See **AGENTS.md** (“Practitioner episode timelines”) for the intentional tradeoff vs batched `.in` without limits.
+ *
+ * @param client - Supabase client (RLS applies).
+ * @param episodeIds - Episode primary keys (length ≤ {@link PRACTITIONER_PATIENT_EPISODE_HISTORY_CAP}).
  */
 async function loadEpisodeTimelinesBatched(
   client: AbstrackSupabaseClient,
-  patientUserId: Uuid,
   episodeIds: Uuid[],
 ): Promise<PresetDataResult<Map<string, EpisodeTimelineBatchEntry>>> {
   if (episodeIds.length === 0) {
@@ -195,64 +162,17 @@ async function loadEpisodeTimelinesBatched(
   }
 
   try {
-    const [syR, hmR, fdR] = await Promise.all([
-      client
-        .from('episode_symptoms')
-        .select('*')
-        .eq('user_id', patientUserId)
-        .in('episode_id', episodeIds),
-      client
-        .from('health_markers')
-        .select('*')
-        .eq('user_id', patientUserId)
-        .in('episode_id', episodeIds),
-      client
-        .from('food_diary_entries')
-        .select('*')
-        .eq('user_id', patientUserId)
-        .in('episode_id', episodeIds),
-    ]);
-
-    if (syR.error) {
-      return { ok: false, error: toPresetDataError(syR.error) };
-    }
-    if (hmR.error) {
-      return { ok: false, error: toPresetDataError(hmR.error) };
-    }
-    if (fdR.error) {
-      return { ok: false, error: toPresetDataError(fdR.error) };
-    }
-
-    const symptomsByEp = bucketRowsByEpisodeId(
-      (syR.data ?? []) as EpisodeSymptomRow[],
+    const entries = await Promise.all(
+      episodeIds.map((eid) => loadEpisodeTimelineForEpisode(client, eid)),
     );
-    const markersByEp = bucketRowsByEpisodeId(
-      (hmR.data ?? []) as HealthMarkerRow[],
-    );
-    const foodByEp = bucketRowsByEpisodeId(
-      (fdR.data ?? []) as FoodDiaryEntryRow[],
-    );
-
     const out = new Map<string, EpisodeTimelineBatchEntry>();
-    for (const eid of episodeIds) {
-      const rawSy = symptomsByEp.get(eid) ?? [];
-      const rawHm = markersByEp.get(eid) ?? [];
-      const rawFd = foodByEp.get(eid) ?? [];
-      const moreSymptomsOmitted = rawSy.length > EPISODE_TIMELINE_SOURCE_LIMIT;
-      const moreHealthMarkersOmitted =
-        rawHm.length > EPISODE_TIMELINE_SOURCE_LIMIT;
-      const moreFoodDiaryOmitted = rawFd.length > EPISODE_TIMELINE_SOURCE_LIMIT;
-      const sy = cappedRecentEpisodeSymptoms(rawSy);
-      const hm = cappedRecentEpisodeHealthMarkers(rawHm);
-      const fd = cappedRecentEpisodeFood(rawFd);
-      out.set(eid, {
-        timeline: mergeEpisodeObservationRowsToTimeline(sy, hm, fd),
-        moreSymptomsOmitted,
-        moreHealthMarkersOmitted,
-        moreFoodDiaryOmitted,
-      });
+    for (let i = 0; i < episodeIds.length; i++) {
+      const row = entries[i];
+      if (!row.ok) {
+        return row;
+      }
+      out.set(episodeIds[i], row.data);
     }
-
     return { ok: true, data: out };
   } catch (caught) {
     return { ok: false, error: toPresetDataError(caught) };
@@ -368,9 +288,9 @@ export async function assertActivePractitionerGrantForPatient(
  * Ordering matches the episode observation timeline helper: **oldest first** within merged lists,
  * with `id` as a stable tie-breaker when timestamps match.
  *
- * Episode-bound timelines apply {@link EPISODE_TIMELINE_SOURCE_LIMIT} per stream (symptoms, markers,
- * food); {@link PractitionerPatientEpisodeObservationBlock} exposes when each stream was capped using
- * batched row counts.
+ * Episode-bound timelines load {@link EPISODE_TIMELINE_SOURCE_LIMIT} + 1 rows per stream **per episode**
+ * via list helpers (PostgREST `LIMIT`, no extra migrations). {@link PractitionerPatientEpisodeObservationBlock}
+ * reports when a stream still has older rows beyond that cap.
  *
  * @param client - Browser Supabase client (practitioner session; RLS applies).
  * @param patientUserId - Patient auth user id (same UUID as `/patients/[patientId]`).
@@ -407,7 +327,7 @@ export async function loadPractitionerPatientObservationReadModel(
         offset: 0,
         standaloneOnly: true,
       }),
-      loadEpisodeTimelinesBatched(client, patientUserId, episodeIds),
+      loadEpisodeTimelinesBatched(client, episodeIds),
     ]);
 
   if (!profileRes.ok) {

@@ -344,9 +344,18 @@ describe('mergeEpisodeObservationRowsToTimeline', () => {
     };
 
     const merged = mergeEpisodeObservationRowsToTimeline([symptom], [hm], [fd]);
-    expect(merged.find((r) => r.id === 'sym-long')?.detail).toBe(longSymptom);
-    expect(merged.find((r) => r.id === 'hm-long')?.detail).toBe(longNotes);
-    expect(merged.find((r) => r.id === 'fd-long')?.detail).toBe(longFood);
+    expect(merged.find((r) => r.id === 'sym-long')).toMatchObject({
+      detail: `${'s'.repeat(77)}…`,
+      detailFull: longSymptom,
+    });
+    expect(merged.find((r) => r.id === 'hm-long')).toMatchObject({
+      detail: `${'n'.repeat(77)}…`,
+      detailFull: longNotes,
+    });
+    expect(merged.find((r) => r.id === 'fd-long')).toMatchObject({
+      detail: `${'f'.repeat(97)}…`,
+      detailFull: longFood,
+    });
   });
 });
 

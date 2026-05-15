@@ -134,7 +134,11 @@ export {
 } from './lib/episode-health-marker-data.js';
 export {
   compareEpisodeTimelineItems,
+  EPISODE_TIMELINE_FOOD_NOTE_DETAIL_MAX_RUN,
   EPISODE_TIMELINE_SOURCE_LIMIT,
+  EPISODE_TIMELINE_SYMPTOM_MARKER_DETAIL_MAX_RUN,
+  episodeTimelineBoundedFoodNote,
+  episodeTimelineBoundedSymptomMarkerText,
   listEpisodeObservationTimeline,
   mergeEpisodeObservationRowsToTimeline,
   mergeStandaloneHealthAndFoodRowsToTimeline,

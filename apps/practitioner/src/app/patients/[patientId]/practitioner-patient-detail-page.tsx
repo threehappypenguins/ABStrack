@@ -13,7 +13,14 @@ import {
 import { getSupabaseBrowserClient } from '@abstrack/supabase/browser';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
 import Link from 'next/link';
-import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 type PatientDetailLoadState =
   | { kind: 'loading' }
@@ -46,19 +53,29 @@ function observationKindNoun(kind: EpisodeTimelineItem['kind']): string {
   return 'Food diary';
 }
 
-/** Above this length, episode timeline rows clamp visually with an explicit expand control. */
+/** Above this length, practitioner timeline rows clamp visually when there is no separate full-detail field. */
 const PRACTITIONER_TIMELINE_DETAIL_EXPAND_THRESHOLD = 160;
 
 /**
- * Renders a timeline row's detail text: compact values inline; long clinical notes use native disclosure.
+ * Renders timeline observation detail: compact inline preview; native disclosure when full text is split out or very long.
+ * Closed-state **Show full note** / open-state **Collapse full note** labels supplement the hidden twistie so keyboard and screen-reader users see an explicit expand affordance.
  *
- * @param props - `EpisodeTimelineItem.detail` from the practitioner read model.
+ * @param props.detail - Bounded preview (`EpisodeTimelineItem.detail`).
+ * @param props.detailFull - Full note when present (`EpisodeTimelineItem.detailFull`).
  */
-function PractitionerTimelineObservationDetail({ detail }: { detail: string }) {
-  const trimmed = detail.trim();
+function PractitionerTimelineObservationDetail({
+  detail,
+  detailFull,
+}: {
+  detail: string;
+  detailFull?: string;
+}) {
+  const fullText = detailFull ?? detail;
+  const trimmedPreview = detail.trim();
   const needsExpand =
-    trimmed.length > PRACTITIONER_TIMELINE_DETAIL_EXPAND_THRESHOLD &&
-    trimmed !== '—';
+    detailFull != null ||
+    (trimmedPreview.length > PRACTITIONER_TIMELINE_DETAIL_EXPAND_THRESHOLD &&
+      trimmedPreview !== '—');
 
   if (!needsExpand) {
     return (
@@ -74,13 +91,16 @@ function PractitionerTimelineObservationDetail({ detail }: { detail: string }) {
         <span className="block break-words whitespace-pre-wrap text-app-muted group-open:hidden line-clamp-3">
           {detail}
         </span>
-        <span className="mt-1 hidden text-sm font-medium text-app-primary group-open:inline">
+        <span className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-app-primary underline underline-offset-4 group-open:hidden">
+          Show full note
+        </span>
+        <span className="mt-2 hidden min-h-11 items-center text-sm font-semibold text-app-primary underline underline-offset-4 group-open:inline-flex">
           Collapse full note
         </span>
       </summary>
       <div className="mt-2 border-l-2 border-app-border pl-3">
         <p className="break-words whitespace-pre-wrap text-app-muted">
-          {detail}
+          {fullText}
         </p>
       </div>
     </details>
@@ -145,6 +165,231 @@ function EpisodeObservationTruncationNotice({
   );
 }
 
+/** Standalone timeline rows above this: section starts collapsed and list mounts on expand. */
+const PRACTITIONER_STANDALONE_TIMELINE_LAZY_THRESHOLD = 40;
+
+function PractitionerObservationTimelineList({
+  rows,
+  rowKeyPrefix,
+}: {
+  rows: EpisodeTimelineItem[];
+  rowKeyPrefix: string;
+}) {
+  return (
+    <ol className="mt-4 list-decimal space-y-3 pl-5 text-sm text-app-ink">
+      {rows.map((row) => {
+        const time = formatObservationTimestamp(row.sortAt);
+        const kind = observationKindNoun(row.kind);
+        const fullDetail = row.detailFull ?? row.detail;
+        const ann = `${kind} at ${time}. ${row.label}. ${fullDetail}.`;
+        return (
+          <li
+            key={`${rowKeyPrefix}-${row.kind}-${row.id}`}
+            className="pl-1"
+            aria-label={ann}
+          >
+            <span className="block text-xs font-medium uppercase tracking-wide text-app-muted">
+              {kind} · {time}
+            </span>
+            <span className="mt-0.5 block font-medium">{row.label}</span>
+            <PractitionerTimelineObservationDetail
+              detail={row.detail}
+              detailFull={row.detailFull}
+            />
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+/**
+ * One episode card: collapsible shell so observation rows mount only after expand (except index 0,
+ * open by default). Avoids rendering tens of thousands of DOM nodes when many capped episodes load.
+ *
+ * @param props.episodeIndex - `0` is the newest episode and stays expanded initially with its timeline mounted.
+ */
+function PractitionerEpisodeTimelineCard({
+  episode,
+  timeline,
+  moreSymptomsOmitted,
+  moreHealthMarkersOmitted,
+  moreFoodDiaryOmitted,
+  episodeIndex,
+  regionId,
+}: {
+  episode: PractitionerPatientEpisodeRow;
+  timeline: EpisodeTimelineItem[];
+  moreSymptomsOmitted: boolean;
+  moreHealthMarkersOmitted: boolean;
+  moreFoodDiaryOmitted: boolean;
+  episodeIndex: number;
+  regionId: string;
+}) {
+  const defaultOpen = episodeIndex === 0;
+  const hasObservations = timeline.length > 0;
+  const [listMounted, setListMounted] = useState(
+    defaultOpen || !hasObservations,
+  );
+  const [expanded, setExpanded] = useState(defaultOpen);
+
+  const anyStreamTruncated =
+    moreSymptomsOmitted || moreHealthMarkersOmitted || moreFoodDiaryOmitted;
+
+  const observationSummary =
+    timeline.length === 0
+      ? 'No observations in loaded window'
+      : `${timeline.length} observation${timeline.length === 1 ? '' : 's'} in loaded window`;
+
+  return (
+    <details
+      className="rounded-xl border border-app-border bg-app-surface p-5 shadow-soft"
+      aria-labelledby={`${regionId}-heading`}
+      open={expanded}
+      onToggle={(e) => {
+        const nextOpen = e.currentTarget.open;
+        setExpanded(nextOpen);
+        if (nextOpen) {
+          setListMounted(true);
+        }
+      }}
+    >
+      <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg">
+        <span
+          id={`${regionId}-heading`}
+          className="text-base font-semibold text-app-ink"
+        >
+          {episodeSummaryHeading(episode)}
+        </span>
+        <span className="mt-1 block text-sm text-app-muted">
+          {observationSummary}
+        </span>
+        {anyStreamTruncated ? (
+          <span className="mt-1 block text-xs text-app-muted">
+            Loaded streams may omit older rows (cap{' '}
+            {EPISODE_TIMELINE_SOURCE_LIMIT} per type).
+          </span>
+        ) : null}
+        <span className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-app-primary underline underline-offset-4">
+          {expanded ? 'Hide episode timeline' : 'Show episode timeline'}
+        </span>
+      </summary>
+
+      <div className="mt-4 border-t border-app-border pt-4">
+        {episode.episode_label?.trim() ? (
+          <p className="text-sm text-app-muted">
+            {episode.episode_label.trim()}
+          </p>
+        ) : null}
+        <EpisodeObservationTruncationNotice
+          moreSymptomsOmitted={moreSymptomsOmitted}
+          moreHealthMarkersOmitted={moreHealthMarkersOmitted}
+          moreFoodDiaryOmitted={moreFoodDiaryOmitted}
+          streamCap={EPISODE_TIMELINE_SOURCE_LIMIT}
+        />
+        {listMounted ? (
+          hasObservations ? (
+            <PractitionerObservationTimelineList
+              rows={timeline}
+              rowKeyPrefix={`${episode.id}`}
+            />
+          ) : (
+            <p className="mt-4 text-sm text-app-muted" role="status">
+              No observations recorded for this episode.
+            </p>
+          )
+        ) : (
+          <p className="sr-only">
+            Expand “Show episode timeline” to load observations for this
+            episode.
+          </p>
+        )}
+      </div>
+    </details>
+  );
+}
+
+/**
+ * Standalone markers + food list; lazy-mount when row count exceeds
+ * {@link PRACTITIONER_STANDALONE_TIMELINE_LAZY_THRESHOLD} to limit initial DOM size.
+ *
+ * @param props.ariaLabelledBy - Id of the surrounding section heading (`<h2>`) used for `aria-labelledby`.
+ */
+function PractitionerStandaloneTimelineSection({
+  standaloneTimeline,
+  markersTruncated,
+  foodTruncated,
+  ariaLabelledBy,
+}: {
+  standaloneTimeline: EpisodeTimelineItem[];
+  markersTruncated: boolean;
+  foodTruncated: boolean;
+  /** Section heading element id (e.g. standalone `<h2>`) so the disclosure shares one landmark label. */
+  ariaLabelledBy: string;
+}) {
+  const n = standaloneTimeline.length;
+  const startCollapsed = n > PRACTITIONER_STANDALONE_TIMELINE_LAZY_THRESHOLD;
+  const [listMounted, setListMounted] = useState(!startCollapsed);
+  const [expanded, setExpanded] = useState(!startCollapsed);
+
+  const observationSummary =
+    n === 0
+      ? 'No standalone entries'
+      : `${n} standalone ${n === 1 ? 'entry' : 'entries'} in loaded window`;
+
+  return (
+    <details
+      className="rounded-xl border border-app-border bg-app-surface p-5 shadow-soft"
+      aria-labelledby={ariaLabelledBy}
+      open={expanded}
+      onToggle={(e) => {
+        const nextOpen = e.currentTarget.open;
+        setExpanded(nextOpen);
+        if (nextOpen) {
+          setListMounted(true);
+        }
+      }}
+    >
+      <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg">
+        <span className="text-base font-semibold text-app-ink">
+          Observation list
+        </span>
+        <span className="mt-1 block text-sm text-app-muted">
+          {observationSummary}
+        </span>
+        {markersTruncated || foodTruncated ? (
+          <span className="mt-1 block text-xs text-app-muted">
+            Loaded standalone streams may omit older rows (cap{' '}
+            {PRACTITIONER_STANDALONE_OBSERVATION_CAP} per type).
+          </span>
+        ) : null}
+        <span className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-app-primary underline underline-offset-4">
+          {expanded ? 'Hide standalone entries' : 'Show standalone entries'}
+        </span>
+      </summary>
+
+      <div className="mt-4 border-t border-app-border pt-4">
+        <StandaloneObservationTruncationNotice
+          markersTruncated={markersTruncated}
+          foodTruncated={foodTruncated}
+          cap={PRACTITIONER_STANDALONE_OBSERVATION_CAP}
+        />
+        {listMounted ? (
+          <PractitionerObservationTimelineList
+            rows={standaloneTimeline}
+            rowKeyPrefix="standalone"
+          />
+        ) : (
+          <p className="sr-only">
+            Expand “Show standalone entries” to load the standalone observation
+            list.
+          </p>
+        )}
+      </div>
+    </details>
+  );
+}
+
 function StandaloneObservationTruncationNotice({
   markersTruncated,
   foodTruncated,
@@ -186,6 +431,9 @@ function StandaloneObservationTruncationNotice({
  * Per-patient practitioner read-only view: time-ordered episode-bound observations (symptoms, health
  * markers, episode-tied food) plus standalone markers and food diary (PRD §8; no writes to PHI).
  *
+ * Overlapping async loads (navigating between patients, rapid retries) are ignored once superseded
+ * so an older response cannot replace state while the route targets a different `patientUserId`.
+ *
  * @param props - Patient user id from the route.
  * @returns Patient detail UI with loading, error, and empty states.
  */
@@ -197,20 +445,36 @@ export function PractitionerPatientDetailPage({
   const pageId = useId();
   const episodeRegionPrefix = `${pageId}-episode`;
 
+  /** Monotonic token: bump when a load starts; effect cleanup bumps to drop in-flight work on route change/unmount. */
+  const loadRequestTokenRef = useRef(0);
+  /** Latest route id for post-await checks (response must match UI target). */
+  const patientUserIdRef = useRef(patientUserId);
+  patientUserIdRef.current = patientUserId;
+
   const [loadState, setLoadState] = useState<PatientDetailLoadState>({
     kind: 'loading',
   });
 
   const load = useCallback(async () => {
+    const requestToken = ++loadRequestTokenRef.current;
     setLoadState({ kind: 'loading' });
     const result = await loadPractitionerPatientObservationReadModel(
       supabase,
       patientUserId,
     );
+
+    if (requestToken !== loadRequestTokenRef.current) {
+      return;
+    }
+
     if (!result.ok) {
       const message = result.error.message;
       setLoadState({ kind: 'error', message });
       announce(message, { politeness: 'assertive' });
+      return;
+    }
+
+    if (result.data.patientUserId !== patientUserIdRef.current) {
       return;
     }
 
@@ -225,6 +489,9 @@ export function PractitionerPatientDetailPage({
 
   useEffect(() => {
     void load();
+    return () => {
+      loadRequestTokenRef.current += 1;
+    };
   }, [load]);
 
   const title = useMemo(() => {
@@ -336,67 +603,31 @@ export function PractitionerPatientDetailPage({
           </p>
           <div className="mt-6 space-y-8">
             {model.episodesWithTimelines.map(
-              ({
-                episode,
-                timeline,
-                moreSymptomsOmitted,
-                moreHealthMarkersOmitted,
-                moreFoodDiaryOmitted,
-              }) => {
+              (
+                {
+                  episode,
+                  timeline,
+                  moreSymptomsOmitted,
+                  moreHealthMarkersOmitted,
+                  moreFoodDiaryOmitted,
+                },
+                episodeIndex,
+              ) => {
                 const regionId = `${episodeRegionPrefix}-${episode.id}`;
                 return (
                   <section
                     key={episode.id}
-                    className="rounded-xl border border-app-border bg-app-surface p-5 shadow-soft"
                     aria-labelledby={`${regionId}-heading`}
                   >
-                    <h3
-                      id={`${regionId}-heading`}
-                      className="text-base font-semibold text-app-ink"
-                    >
-                      {episodeSummaryHeading(episode)}
-                    </h3>
-                    {episode.episode_label?.trim() ? (
-                      <p className="mt-1 text-sm text-app-muted">
-                        {episode.episode_label.trim()}
-                      </p>
-                    ) : null}
-                    <EpisodeObservationTruncationNotice
+                    <PractitionerEpisodeTimelineCard
+                      episode={episode}
+                      timeline={timeline}
                       moreSymptomsOmitted={moreSymptomsOmitted}
                       moreHealthMarkersOmitted={moreHealthMarkersOmitted}
                       moreFoodDiaryOmitted={moreFoodDiaryOmitted}
-                      streamCap={EPISODE_TIMELINE_SOURCE_LIMIT}
+                      episodeIndex={episodeIndex}
+                      regionId={regionId}
                     />
-                    {timeline.length === 0 ? (
-                      <p className="mt-4 text-sm text-app-muted" role="status">
-                        No observations recorded for this episode.
-                      </p>
-                    ) : (
-                      <ol className="mt-4 list-decimal space-y-3 pl-5 text-sm text-app-ink">
-                        {timeline.map((row) => {
-                          const time = formatObservationTimestamp(row.sortAt);
-                          const kind = observationKindNoun(row.kind);
-                          const ann = `${kind} at ${time}. ${row.label}. ${row.detail}.`;
-                          return (
-                            <li
-                              key={`${row.kind}-${row.id}`}
-                              className="pl-1"
-                              aria-label={ann}
-                            >
-                              <span className="block text-xs font-medium uppercase tracking-wide text-app-muted">
-                                {kind} · {time}
-                              </span>
-                              <span className="mt-0.5 block font-medium">
-                                {row.label}
-                              </span>
-                              <PractitionerTimelineObservationDetail
-                                detail={row.detail}
-                              />
-                            </li>
-                          );
-                        })}
-                      </ol>
-                    )}
                   </section>
                 );
               },
@@ -420,31 +651,14 @@ export function PractitionerPatientDetailPage({
             Entries logged outside any episode (not tied to a flare record),
             oldest first.
           </p>
-          <StandaloneObservationTruncationNotice
-            markersTruncated={model.standaloneHealthMarkersTruncated}
-            foodTruncated={model.standaloneFoodDiaryTruncated}
-            cap={PRACTITIONER_STANDALONE_OBSERVATION_CAP}
-          />
-          <ol className="mt-4 list-decimal space-y-3 pl-5 text-sm text-app-ink">
-            {model.standaloneTimeline.map((row) => {
-              const time = formatObservationTimestamp(row.sortAt);
-              const kind = observationKindNoun(row.kind);
-              const ann = `${kind} at ${time}. ${row.label}. ${row.detail}.`;
-              return (
-                <li
-                  key={`standalone-${row.kind}-${row.id}`}
-                  className="pl-1"
-                  aria-label={ann}
-                >
-                  <span className="block text-xs font-medium uppercase tracking-wide text-app-muted">
-                    {kind} · {time}
-                  </span>
-                  <span className="mt-0.5 block font-medium">{row.label}</span>
-                  <PractitionerTimelineObservationDetail detail={row.detail} />
-                </li>
-              );
-            })}
-          </ol>
+          <div className="mt-6">
+            <PractitionerStandaloneTimelineSection
+              standaloneTimeline={model.standaloneTimeline}
+              markersTruncated={model.standaloneHealthMarkersTruncated}
+              foodTruncated={model.standaloneFoodDiaryTruncated}
+              ariaLabelledBy={`${pageId}-standalone-heading`}
+            />
+          </div>
         </section>
       ) : null}
 

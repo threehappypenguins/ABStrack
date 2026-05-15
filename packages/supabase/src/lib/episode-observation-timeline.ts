@@ -16,6 +16,18 @@ import { listFoodDiaryEntriesForEpisode } from './food-diary-data.js';
 export const EPISODE_TIMELINE_SOURCE_LIMIT = 200;
 
 /**
+ * Maximum run length for {@link EpisodeTimelineItem.detail} for symptom free-text and health-marker
+ * note-only rows. Longer source text is previewed in `detail` with {@link EpisodeTimelineItem.detailFull}.
+ */
+export const EPISODE_TIMELINE_SYMPTOM_MARKER_DETAIL_MAX_RUN = 80;
+
+/**
+ * Maximum run length for {@link EpisodeTimelineItem.detail} for food diary notes. Longer notes set
+ * {@link EpisodeTimelineItem.detailFull}.
+ */
+export const EPISODE_TIMELINE_FOOD_NOTE_DETAIL_MAX_RUN = 100;
+
+/**
  * One row in a merged, time-ordered episode view (symptoms, health markers, food).
  */
 export type EpisodeTimelineItem = {
@@ -25,11 +37,50 @@ export type EpisodeTimelineItem = {
   id: string;
   label: string;
   /**
-   * Human-readable observation payload. Notes and free-text answers are kept in full here;
-   * UI surfaces should clamp or expand visually rather than truncating in merge helpers.
+   * Inline-safe preview for compact lists (bounded for long free-text, marker notes, and food notes).
+   * Use {@link detailFull} for the complete string when present.
    */
   detail: string;
+  /** Full clinical or diary text when it was longer than the inline cap for this row kind. */
+  detailFull?: string;
 };
+
+/**
+ * Inline-safe {@link EpisodeTimelineItem.detail} (and optional {@link EpisodeTimelineItem.detailFull})
+ * for symptom free-text or health-marker notes, matching merge helper rules.
+ *
+ * @param trimmed - Already-trimmed source text.
+ */
+export function episodeTimelineBoundedSymptomMarkerText(trimmed: string): {
+  detail: string;
+  detailFull?: string;
+} {
+  if (trimmed.length <= EPISODE_TIMELINE_SYMPTOM_MARKER_DETAIL_MAX_RUN) {
+    return { detail: trimmed };
+  }
+  return {
+    detail: `${trimmed.slice(0, 77)}…`,
+    detailFull: trimmed,
+  };
+}
+
+/**
+ * Inline-safe {@link EpisodeTimelineItem.detail} for food diary notes, matching merge helper rules.
+ *
+ * @param trimmed - Already-trimmed `food_note`.
+ */
+export function episodeTimelineBoundedFoodNote(trimmed: string): {
+  detail: string;
+  detailFull?: string;
+} {
+  if (trimmed.length <= EPISODE_TIMELINE_FOOD_NOTE_DETAIL_MAX_RUN) {
+    return { detail: trimmed };
+  }
+  return {
+    detail: `${trimmed.slice(0, 97)}…`,
+    detailFull: trimmed,
+  };
+}
 
 function healthMarkerTimelineLabel(
   kind: string,
@@ -59,6 +110,7 @@ function pushSymptomRowsToTimelineItems(
   for (const s of rows) {
     const symptomLabel = s.symptom_name.trim();
     let detail = '—';
+    let detailFull: string | undefined;
     if (s.response_type === 'yes_no' && s.response_boolean != null) {
       detail = s.response_boolean ? 'Yes' : 'No';
     } else if (
@@ -67,7 +119,11 @@ function pushSymptomRowsToTimelineItems(
     ) {
       detail = `Severity ${s.response_severity}`;
     } else if (s.response_type === 'free_text' && s.response_text) {
-      detail = s.response_text.trim();
+      const bounded = episodeTimelineBoundedSymptomMarkerText(
+        s.response_text.trim(),
+      );
+      detail = bounded.detail;
+      detailFull = bounded.detailFull;
     } else if (s.response_type === 'photo') {
       detail = 'Photo';
     } else if (s.response_type === 'video') {
@@ -79,6 +135,7 @@ function pushSymptomRowsToTimelineItems(
       id: s.id,
       label: symptomLabel.length > 0 ? symptomLabel : 'Symptom entry',
       detail,
+      ...(detailFull ? { detailFull } : {}),
     });
   }
 }
@@ -89,6 +146,7 @@ function pushHealthMarkerRowsToTimelineItems(
 ): void {
   for (const m of rows) {
     let detail = '—';
+    let detailFull: string | undefined;
     if (m.marker_kind === 'blood_pressure') {
       if (m.systolic_numeric != null && m.diastolic_numeric != null) {
         detail = `${m.systolic_numeric}/${m.diastolic_numeric}`;
@@ -103,7 +161,9 @@ function pushHealthMarkerRowsToTimelineItems(
     } else {
       const n = m.notes?.trim();
       if (n) {
-        detail = n;
+        const bounded = episodeTimelineBoundedSymptomMarkerText(n);
+        detail = bounded.detail;
+        detailFull = bounded.detailFull;
       }
     }
     const kindLabel = healthMarkerTimelineLabel(m.marker_kind, m.custom_name);
@@ -113,6 +173,7 @@ function pushHealthMarkerRowsToTimelineItems(
       id: m.id,
       label: kindLabel,
       detail,
+      ...(detailFull ? { detailFull } : {}),
     });
   }
 }
@@ -123,12 +184,14 @@ function pushFoodDiaryRowsToTimelineItems(
 ): void {
   for (const f of rows) {
     const note = f.food_note.trim();
+    const bounded = episodeTimelineBoundedFoodNote(note);
     items.push({
       kind: 'food',
       sortAt: f.logged_at,
       id: f.id,
       label: f.meal_tag,
-      detail: note,
+      detail: bounded.detail,
+      ...(bounded.detailFull ? { detailFull: bounded.detailFull } : {}),
     });
   }
 }
@@ -140,7 +203,8 @@ function pushFoodDiaryRowsToTimelineItems(
  * @param symptoms - Episode symptom rows (uses `created_at` for ordering).
  * @param healthMarkers - Health marker rows (uses `recorded_at`).
  * @param foods - Food diary rows (uses `logged_at`).
- * @returns Sorted timeline rows.
+ * @returns Sorted timeline rows. Long free-text, marker notes, and food descriptions use bounded
+ *   {@link EpisodeTimelineItem.detail} with optional {@link EpisodeTimelineItem.detailFull}.
  */
 export function mergeEpisodeObservationRowsToTimeline(
   symptoms: EpisodeSymptomRow[],

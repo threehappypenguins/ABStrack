@@ -16,14 +16,23 @@ import {
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
 
 const listStandaloneHealthMarkersForUser = vi.hoisted(() => vi.fn());
+const listEpisodeHealthMarkersForEpisode = vi.hoisted(() => vi.fn());
 const listFoodDiaryEntriesForUser = vi.hoisted(() => vi.fn());
+const listFoodDiaryEntriesForEpisode = vi.hoisted(() => vi.fn());
+const listEpisodeSymptomsForEpisode = vi.hoisted(() => vi.fn());
 
 vi.mock('./episode-health-marker-data.js', () => ({
   listStandaloneHealthMarkersForUser,
+  listEpisodeHealthMarkersForEpisode,
+}));
+
+vi.mock('./episode-symptom-data.js', () => ({
+  listEpisodeSymptomsForEpisode,
 }));
 
 vi.mock('./food-diary-data.js', () => ({
   listFoodDiaryEntriesForUser,
+  listFoodDiaryEntriesForEpisode,
 }));
 
 const PATIENT_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
@@ -85,22 +94,6 @@ function profileChain(result: { data: unknown; error: unknown }) {
   };
 }
 
-function batchAwaitableChain(result: { data: unknown; error: unknown }) {
-  const p = Promise.resolve(result);
-  const self = {
-    select: vi.fn(() => self),
-    eq: vi.fn(() => self),
-    in: vi.fn(() => p),
-    then: (
-      onFulfilled?: (v: unknown) => unknown,
-      onRejected?: (e: unknown) => unknown,
-    ) => p.then(onFulfilled, onRejected),
-    catch: p.catch.bind(p),
-    finally: p.finally.bind(p),
-  };
-  return self;
-}
-
 type ReadModelClientOpts = {
   grant?: { id: string } | null;
   episodes: PractitionerPatientEpisodeRow[];
@@ -114,7 +107,62 @@ type ReadModelClientOpts = {
   foodsError?: unknown;
 };
 
+function episodeObservationListMocks(opts: ReadModelClientOpts): void {
+  listEpisodeSymptomsForEpisode.mockImplementation(
+    async (_c, episodeId: string) => {
+      if (opts.symptomsError != null) {
+        const msg =
+          typeof opts.symptomsError === 'object' &&
+          opts.symptomsError !== null &&
+          'message' in opts.symptomsError
+            ? String(
+                (opts.symptomsError as { message?: unknown }).message ??
+                  'symptoms failed',
+              )
+            : 'symptoms failed';
+        return { ok: false, error: new PresetDataError('unknown', msg) };
+      }
+      return {
+        ok: true,
+        data: (opts.symptoms ?? []).filter((s) => s.episode_id === episodeId),
+      };
+    },
+  );
+
+  listEpisodeHealthMarkersForEpisode.mockImplementation(
+    async (_c, episodeId: string) => {
+      if (opts.markersError != null) {
+        return {
+          ok: false,
+          error: new PresetDataError('unknown', 'markers failed'),
+        };
+      }
+      return {
+        ok: true,
+        data: (opts.markers ?? []).filter((m) => m.episode_id === episodeId),
+      };
+    },
+  );
+
+  listFoodDiaryEntriesForEpisode.mockImplementation(
+    async (_c, episodeId: string) => {
+      if (opts.foodsError != null) {
+        return {
+          ok: false,
+          error: new PresetDataError('unknown', 'foods failed'),
+        };
+      }
+      return {
+        ok: true,
+        data: (opts.foods ?? []).filter((f) => f.episode_id === episodeId),
+      };
+    },
+  );
+}
+
 function clientForReadModel(opts: ReadModelClientOpts): AbstrackSupabaseClient {
+  episodeObservationListMocks(opts);
+
   const from = vi.fn((table: string) => {
     if (table === 'practitioner_access') {
       return grantChain(opts.grant ?? { id: 'grant-1' });
@@ -135,24 +183,6 @@ function clientForReadModel(opts: ReadModelClientOpts): AbstrackSupabaseClient {
       return profileChain({
         data: opts.profile ?? { display_name: 'Jordan' },
         error: null,
-      });
-    }
-    if (table === 'episode_symptoms') {
-      return batchAwaitableChain({
-        data: opts.symptoms ?? [],
-        error: opts.symptomsError ?? null,
-      });
-    }
-    if (table === 'health_markers') {
-      return batchAwaitableChain({
-        data: opts.markers ?? [],
-        error: opts.markersError ?? null,
-      });
-    }
-    if (table === 'food_diary_entries') {
-      return batchAwaitableChain({
-        data: opts.foods ?? [],
-        error: opts.foodsError ?? null,
       });
     }
     throw new Error(`unexpected table in mock: ${table}`);
@@ -232,7 +262,10 @@ describe('assertActivePractitionerGrantForPatient', () => {
 describe('loadPractitionerPatientObservationReadModel', () => {
   beforeEach(() => {
     listStandaloneHealthMarkersForUser.mockReset();
+    listEpisodeHealthMarkersForEpisode.mockReset();
     listFoodDiaryEntriesForUser.mockReset();
+    listFoodDiaryEntriesForEpisode.mockReset();
+    listEpisodeSymptomsForEpisode.mockReset();
     listStandaloneHealthMarkersForUser.mockResolvedValue({
       ok: true,
       data: [],
@@ -283,6 +316,26 @@ describe('loadPractitionerPatientObservationReadModel', () => {
     expect(block.moreFoodDiaryOmitted).toBe(false);
 
     expect(block.timeline.map((t) => t.id)).toEqual(['sym-old', 'sym-new']);
+
+    const windowLimit = EPISODE_TIMELINE_SOURCE_LIMIT + 1;
+    expect(listEpisodeSymptomsForEpisode).toHaveBeenCalledWith(
+      client,
+      ep.id,
+      expect.objectContaining({
+        limit: windowLimit,
+        orderBy: 'recent',
+      }),
+    );
+    expect(listEpisodeHealthMarkersForEpisode).toHaveBeenCalledWith(
+      client,
+      ep.id,
+      expect.objectContaining({ limit: windowLimit }),
+    );
+    expect(listFoodDiaryEntriesForEpisode).toHaveBeenCalledWith(
+      client,
+      ep.id,
+      expect.objectContaining({ limit: windowLimit }),
+    );
 
     expect(listStandaloneHealthMarkersForUser).toHaveBeenCalledWith(
       client,
@@ -430,7 +483,7 @@ describe('loadPractitionerPatientObservationReadModel', () => {
     expect(result.ok).toBe(false);
   });
 
-  it('propagates batched episode_symptoms errors', async () => {
+  it('propagates episode symptom list failures', async () => {
     const ep = episodeFixture('ep-e', PATIENT_ID);
     const client = clientForReadModel({
       episodes: [ep],
@@ -463,5 +516,29 @@ describe('loadPractitionerPatientObservationReadModel', () => {
       return;
     }
     expect(result.error.message).toContain('Standalone markers failed');
+  });
+
+  it('calls per-episode observation list helpers once per episode in the loaded window', async () => {
+    const episodes = Array.from(
+      { length: PRACTITIONER_PATIENT_EPISODE_HISTORY_CAP },
+      (_, i) => episodeFixture(`ep-${String(i).padStart(3, '0')}`, PATIENT_ID),
+    );
+    const client = clientForReadModel({ episodes });
+
+    const result = await loadPractitionerPatientObservationReadModel(
+      client,
+      PATIENT_ID,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(listEpisodeSymptomsForEpisode).toHaveBeenCalledTimes(
+      PRACTITIONER_PATIENT_EPISODE_HISTORY_CAP,
+    );
+    expect(listEpisodeHealthMarkersForEpisode).toHaveBeenCalledTimes(
+      PRACTITIONER_PATIENT_EPISODE_HISTORY_CAP,
+    );
+    expect(listFoodDiaryEntriesForEpisode).toHaveBeenCalledTimes(
+      PRACTITIONER_PATIENT_EPISODE_HISTORY_CAP,
+    );
   });
 });

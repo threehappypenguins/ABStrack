@@ -35,6 +35,7 @@ import {
   validatePresetHealthMarkerCustomFields,
 } from '@abstrack/types';
 import {
+  episodeTimelineBoundedSymptomMarkerText,
   getEpisodeById,
   listEpisodeObservationTimeline,
   listPresetHealthMarkersForPreset,
@@ -113,12 +114,16 @@ function formatTimelineInstant(isoLike: string): string {
   return new Date(ms).toLocaleString();
 }
 
-function healthMarkerDetailForTimeline(row: HealthMarkerRow): string {
+function healthMarkerDetailForTimeline(
+  row: HealthMarkerRow,
+): Pick<EpisodeTimelineItem, 'detail' | 'detailFull'> {
   if (row.marker_kind === 'blood_pressure') {
     if (row.systolic_numeric != null && row.diastolic_numeric != null) {
-      return `${row.systolic_numeric}/${row.diastolic_numeric}`;
+      return {
+        detail: `${row.systolic_numeric}/${row.diastolic_numeric}`,
+      };
     }
-    return '—';
+    return { detail: '—' };
   }
   if (row.value_numeric != null) {
     let detail = String(row.value_numeric);
@@ -127,10 +132,13 @@ function healthMarkerDetailForTimeline(row: HealthMarkerRow): string {
     } else if (row.marker_kind === 'bac') {
       detail = `${detail} g/dL`;
     }
-    return detail;
+    return { detail };
   }
   const n = row.notes?.trim();
-  return n ? (n.length > 80 ? `${n.slice(0, 77)}…` : n) : '—';
+  if (!n) {
+    return { detail: '—' };
+  }
+  return episodeTimelineBoundedSymptomMarkerText(n);
 }
 
 function markerLineTitle(line: PresetHealthMarkerRow): string {
@@ -652,7 +660,7 @@ export function HealthMarkerPromptScreen() {
       sortAt: result.data.recorded_at,
       id: result.data.id,
       label: markerLineTitle(currentLine),
-      detail: healthMarkerDetailForTimeline(result.data),
+      ...healthMarkerDetailForTimeline(result.data),
     };
     setObservationTimeline((prev) =>
       upsertEpisodeTimelineItem(prev, timelineItem),
