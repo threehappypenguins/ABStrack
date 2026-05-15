@@ -1,4 +1,5 @@
--- Patient-sent practitioner email invites before `practitioner_access` exists (caretaker-style flow).
+-- Patient-sent practitioner email invites before a practitioner_access grant row exists for this
+-- patient (caretaker-style flow; the practitioner_access table is in core schema, but no grant yet).
 -- One pending row per patient (partial unique). Consumed when the invitee finalizes via Edge.
 -- RLS deny-by-default; explicit service_role policies match `caretaker_invites`.
 
@@ -26,7 +27,7 @@ CREATE INDEX practitioner_invites_pending_by_email_idx ON public.practitioner_in
 WHERE
   consumed_at IS NULL;
 
-COMMENT ON TABLE public.practitioner_invites IS 'Patient-sent practitioner invite before `practitioner_access`; one pending row per patient (partial unique).';
+COMMENT ON TABLE public.practitioner_invites IS 'Patient-sent practitioner invite before a practitioner_access grant row exists for this patient; one pending row per patient (partial unique).';
 
 ALTER TABLE public.practitioner_invites ENABLE ROW LEVEL SECURITY;
 

@@ -190,7 +190,7 @@ function practitionerInviteResendTooSoon(
 /**
  * Atomically stamps **`practitioner_access.last_invite_email_sent_at`** before **`inviteUserByEmail`**
  * for an **active grant** resend (no pending **`practitioner_invites`** row). Returns **429** when inside
- * the resend window.
+ * the resend window, or **404** when there is no longer an active grant for that pair.
  */
 async function stampPractitionerAccessInviteEmailSentAtOr429(
   admin: SupabaseClient,
@@ -264,8 +264,18 @@ async function stampPractitionerAccessInviteEmailSentAtOr429(
     };
   }
 
+  if (row == null) {
+    return {
+      ok: false,
+      response: jsonResponse(404, {
+        error:
+          'No active practitioner access for that email. Access may have been revoked—send a new invite from settings if you still want to link them.',
+      }),
+    };
+  }
+
   const throttle = practitionerInviteResendTooSoon(
-    row?.last_invite_email_sent_at as string | null | undefined,
+    row.last_invite_email_sent_at as string | null | undefined,
     nowMs,
   );
   if (throttle.tooSoon) {
@@ -284,16 +294,16 @@ async function stampPractitionerAccessInviteEmailSentAtOr429(
     };
   }
 
+  console.warn(
+    'stamp_practitioner_access_last_invite_email_sent_at returned no rows but active grant read is not throttled',
+    patientUserId,
+    practitionerUserId,
+  );
   return {
     ok: false,
-    response: jsonResponse(
-      429,
-      {
-        error: 'Please wait before sending another invite.',
-        retryAfterSeconds: 60,
-      },
-      { 'Retry-After': '60' },
-    ),
+    response: jsonResponse(500, {
+      error: 'Unable to verify the invite send. Try again in a moment.',
+    }),
   };
 }
 
