@@ -12,7 +12,8 @@ import {
   createMobileSupabaseClient,
   getMobileSupabaseClient,
 } from '../lib/supabase-wiring';
-import * as mobilePhiSubject from '../lib/phi-subject/resolve-mobile-phi-subject-user-context';
+import * as mobilePhiHook from '../lib/auth/use-mobile-phi-subject-user-context';
+import * as mobileNetinfo from '../lib/network/mobile-device-netinfo';
 
 jest.mock('@abstrack/supabase', () => {
   const actual =
@@ -745,41 +746,49 @@ describe('mobile auth state sync', () => {
     jest.mocked(SecureStore.getItemAsync).mockResolvedValue('false');
     jest.mocked(getMobileSupabaseClient).mockReturnValue(mockClient);
 
-    const phiResolveSpy = jest
-      .spyOn(mobilePhiSubject, 'resolveMobilePhiSubjectUserContext')
-      .mockResolvedValue({
-        ok: true,
-        data: {
-          authUserId: 'user-1',
-          phiSubjectUserId: 'user-1',
-          profileAppRole: 'patient',
-        },
+    /**
+     * Home `activeEpisodeLoading` stays true until PHI scope and the network active-episode probe
+     * finish. Spy the hook (not only `resolveMobilePhiSubjectUserContext`) so CI does not burn the
+     * full `asyncUtilTimeout` waiting on async auth/NetInfo/focus-effect ordering.
+     */
+    const phiHookSpy = jest
+      .spyOn(mobilePhiHook, 'useMobilePhiSubjectUserContext')
+      .mockReturnValue({
+        loading: false,
+        errorMessage: null,
+        authUserId: 'user-1',
+        phiSubjectUserId: 'user-1',
+        profileAppRole: 'patient',
+        refresh: jest.fn(),
       });
+    const netConnectedSpy = jest
+      .spyOn(mobileNetinfo, 'fetchMobileDeviceIsConnected')
+      .mockResolvedValue(true);
 
     /** Same as tab navigation test: cold `App` bootstrap must not await an unresolved `getInitialURL()`. */
     const getInitialUrlSpy = jest
       .spyOn(Linking, 'getInitialURL')
       .mockResolvedValue(null);
     try {
-      const { findByText, findByTestId, queryByLabelText, queryByText } =
+      const { findByText, findByTestId, findByLabelText, queryByText } =
         render(<App />);
 
       await findByText('Welcome to ABStrack');
 
-      // Home mounts the CTA while PHI scope + active-episode probes run; wait until loading copy
-      // is gone and the start (not resume) control is exposed (see HomeScreen + EpisodeStartHomeCta).
-      const startEpisodeButton = await waitFor(() => {
-        expect(queryByText('Checking for an episode in progress…')).toBeNull();
-        const button = queryByLabelText("I'm having an episode");
-        expect(button).toBeTruthy();
-        return button;
+      // Wait for Home to leave the active-episode probe spinner, then the start CTA (not resume).
+      await waitFor(() => {
+        expect(
+          queryByText('Checking for an episode in progress…'),
+        ).toBeNull();
       });
+      const startEpisodeButton = await findByLabelText("I'm having an episode");
 
       fireEvent.press(startEpisodeButton);
       expect(await findByTestId('episode-start-screen-title')).toBeTruthy();
     } finally {
       getInitialUrlSpy.mockRestore();
-      phiResolveSpy.mockRestore();
+      phiHookSpy.mockRestore();
+      netConnectedSpy.mockRestore();
     }
   });
 
