@@ -3,9 +3,10 @@
  * Verified patient session + elevated Supabase client (default secret key from `SUPABASE_SECRET_KEYS`).
  * Writes use **service_role**; RLS includes explicit `TO service_role` policies in
  * `supabase/migrations/20260514120000_practitioner_access_service_role_edge.sql` (**`practitioner_access`**
- * INSERT/UPDATE, **`practitioner_invite_send_throttle`**, **`stamp_practitioner_invite_send_throttle`**,
- * **`list_practitioner_auth_emails_for_patient_grants`**) and
- * **`20260515180000_practitioner_invites.sql`** (**`practitioner_invites`**, **`stamp_practitioner_invite_pre_send`**).
+ * service_role INSERT/UPDATE, **`list_practitioner_auth_emails_for_patient_grants`**),
+ * **`20260515180000_practitioner_invites.sql`** (**`practitioner_invites`**, **`stamp_practitioner_invite_pre_send`**),
+ * and **`20260516200000_practitioner_access_last_invite_email_sent_at.sql`**
+ * (**`practitioner_access.last_invite_email_sent_at`**, **`stamp_practitioner_access_last_invite_email_sent_at`**).
  * User web + mobile call `…/functions/v1/patient-practitioner-access` with user JWT + `apikey` (publishable).
  *
  * Practitioner data reads remain **fail-closed** on MFA (AAL2) via RLS and
@@ -28,9 +29,10 @@
  *   `{ practitionerEmail, resendPractitionerInvite: true }` resend when a matching **pending invite** exists
  *   or an **active grant** exists for that email (same **`redirectTo`** rules). If Auth reports the address
  *   is already registered on an active-grant resend, returns **200** + **`outcome: invite_not_needed`**.
- *   Invite/resend emails are **throttled** per patient + email (**`429`** + **`Retry-After`**, min interval 90s,
- *   durable row in **`practitioner_invite_send_throttle`**; invite-row **`stamp_practitioner_invite_pre_send`**
- *   runs immediately before Auth mail like caretaker).
+ *   Invite/resend emails are **throttled** (**`429`** + **`Retry-After`**, min interval 90s): pending
+ *   flows use **`practitioner_invites.last_invite_sent_at`** + **`stamp_practitioner_invite_pre_send`**
+ *   (caretaker parity); **active-grant** **`inviteUserByEmail`** resends use
+ *   **`practitioner_access.last_invite_email_sent_at`** + **`stamp_practitioner_access_last_invite_email_sent_at`**.
  * - **POST** (practitioner session): `{ finalizePractitionerInvite: true, inviteId }` after accepting the
  *   email link — creates **`practitioner_access`**, consumes **`practitioner_invites`**, clears
  *   **`user_metadata.abstrack_practitioner_invite_id`** on success (**200** retry-safe when already
@@ -157,7 +159,8 @@ const PRACTITIONER_INVITE_RESEND_REFRESH_EXPIRY_REMAINING_MS =
   48 * 60 * 60 * 1000;
 
 /**
- * @param lastInviteSentAt - `practitioner_invite_send_throttle.last_invite_sent_at` from the last stamp.
+ * @param lastInviteSentAt - ISO time of last recorded invite email send (`practitioner_invites` or
+ *   `practitioner_access` throttle column).
  * @param nowMs - Current epoch milliseconds.
  */
 function practitionerInviteResendTooSoon(
@@ -185,13 +188,14 @@ function practitionerInviteResendTooSoon(
 }
 
 /**
- * Atomically stamps **`practitioner_invite_send_throttle`** before **`inviteUserByEmail`** so rapid
- * retries cannot spam mail. Returns **429** when inside the resend window.
+ * Atomically stamps **`practitioner_access.last_invite_email_sent_at`** before **`inviteUserByEmail`**
+ * for an **active grant** resend (no pending **`practitioner_invites`** row). Returns **429** when inside
+ * the resend window.
  */
-async function stampPractitionerInviteSendThrottleOr429(
+async function stampPractitionerAccessInviteEmailSentAtOr429(
   admin: SupabaseClient,
   patientUserId: string,
-  normalizedEmail: string,
+  practitionerUserId: string,
   nowMs: number,
 ): Promise<{ ok: true } | { ok: false; response: Response }> {
   const stampNowIso = new Date(nowMs).toISOString();
@@ -200,17 +204,20 @@ async function stampPractitionerInviteSendThrottleOr429(
   ).toISOString();
 
   const { data: stampedRows, error: stampErr } = await admin.rpc(
-    'stamp_practitioner_invite_send_throttle',
+    'stamp_practitioner_access_last_invite_email_sent_at',
     {
       p_patient_user_id: patientUserId,
-      p_invitee_email_normalized: normalizedEmail,
+      p_practitioner_user_id: practitionerUserId,
       p_stamp: stampNowIso,
       p_throttle_cutoff: throttleCutoffIso,
     },
   );
 
   if (stampErr) {
-    console.error('stamp_practitioner_invite_send_throttle', stampErr);
+    console.error(
+      'stamp_practitioner_access_last_invite_email_sent_at',
+      stampErr,
+    );
     return {
       ok: false,
       response: jsonResponse(500, {
@@ -225,7 +232,7 @@ async function stampPractitionerInviteSendThrottleOr429(
   }
   if (stampedCount > 1) {
     console.error(
-      'stamp_practitioner_invite_send_throttle unexpected row count',
+      'stamp_practitioner_access_last_invite_email_sent_at unexpected row count',
       stampedCount,
     );
     return {
@@ -237,14 +244,18 @@ async function stampPractitionerInviteSendThrottleOr429(
   }
 
   const { data: row, error: readErr } = await admin
-    .from('practitioner_invite_send_throttle')
-    .select('last_invite_sent_at')
+    .from('practitioner_access')
+    .select('last_invite_email_sent_at')
     .eq('patient_user_id', patientUserId)
-    .eq('invitee_email_normalized', normalizedEmail)
+    .eq('practitioner_user_id', practitionerUserId)
+    .is('revoked_at', null)
     .maybeSingle();
 
   if (readErr) {
-    console.error('practitioner_invite_send_throttle read', readErr);
+    console.error(
+      'practitioner_access last_invite_email_sent_at read',
+      readErr,
+    );
     return {
       ok: false,
       response: jsonResponse(500, {
@@ -254,7 +265,7 @@ async function stampPractitionerInviteSendThrottleOr429(
   }
 
   const throttle = practitionerInviteResendTooSoon(
-    row?.last_invite_sent_at as string | null | undefined,
+    row?.last_invite_email_sent_at as string | null | undefined,
     nowMs,
   );
   if (throttle.tooSoon) {
@@ -1904,10 +1915,10 @@ Deno.serve(async (req: Request) => {
     }
 
     const nowMsResend = Date.now();
-    const stampResend = await stampPractitionerInviteSendThrottleOr429(
+    const stampResend = await stampPractitionerAccessInviteEmailSentAtOr429(
       admin,
       user.id,
-      normalizedTarget,
+      practitionerUserId,
       nowMsResend,
     );
     if (!stampResend.ok) {
@@ -1985,17 +1996,6 @@ Deno.serve(async (req: Request) => {
     return jsonResponse(500, {
       error: 'Unable to clear previous pending invite. Try again in a moment.',
     });
-  }
-
-  const nowMsInvite = Date.now();
-  const stampInvite = await stampPractitionerInviteSendThrottleOr429(
-    admin,
-    user.id,
-    normalizedTarget,
-    nowMsInvite,
-  );
-  if (!stampInvite.ok) {
-    return stampInvite.response;
   }
 
   const newExpiresAt = practitionerInviteExpiresAtIso();
