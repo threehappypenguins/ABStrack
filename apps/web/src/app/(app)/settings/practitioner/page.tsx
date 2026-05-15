@@ -4,7 +4,7 @@ import { PractitionerAccessPage } from '@/components/settings/PractitionerAccess
 export const metadata: Metadata = {
   title: 'Practitioner access | ABStrack',
   description:
-    'Invite or revoke a healthcare practitioner who can read your ABStrack data from the practitioner web app after two-factor setup.',
+    'Invite or revoke a healthcare practitioner who can read your ABStrack data from the practitioner web app; two-factor is required only if they use password sign-in.',
 };
 
 /**

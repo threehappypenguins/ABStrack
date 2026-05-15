@@ -1180,11 +1180,13 @@ export function SettingsScreen() {
               Practitioner access
             </Text>
             <Text className={`text-base ${nw.textMuted}`}>
-              Invite a healthcare practitioner by email. They complete sign-up
-              only on the ABStrack practitioner web app (not this mobile app),
-              with mandatory two-factor authentication, then can read your data
-              while access stays active. Revoking stops future reads; it does
-              not erase what they may already have viewed.
+              Invite a healthcare practitioner by email. They accept the invite
+              on the ABStrack practitioner web app (not this mobile app),
+              usually via the email link. They can read your data while access
+              stays active. Two-factor authentication is required only if they
+              set a password for email sign-in; magic-link sign-in alone does
+              not require it. Revoking stops future reads; it does not erase
+              what they may already have viewed.
             </Text>
             {!patientPractitionerApiUrl ? (
               <Text

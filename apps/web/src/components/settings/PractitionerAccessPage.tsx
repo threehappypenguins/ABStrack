@@ -31,8 +31,8 @@ function formatInviteExpiry(iso: string): string {
 
 /**
  * Patient settings: invite or link healthcare practitioners who use the separate practitioner web app
- * (read-only access after they complete mandatory TOTP; PRD §8). Grants and revokes go through the
- * `patient-practitioner-access` Edge Function.
+ * (read-only access after invite acceptance; TOTP required only when they enable password sign-in;
+ * PRD §8). Grants and revokes go through the `patient-practitioner-access` Edge Function.
  *
  * @returns Settings page content.
  */
@@ -350,12 +350,13 @@ export function PractitionerAccessPage() {
           Practitioner access
         </h1>
         <p className="mt-2 text-sm text-app-muted">
-          Enter your clinician&apos;s email to send an invitation. They sign in
-          only on the separate ABStrack practitioner web app (not this patient
-          app), complete mandatory two-factor authentication, and can then read
-          your shared health data while access stays active. Revoking stops
-          future reads; it does not erase data they may already have viewed (PRD
-          §8).
+          Enter your clinician&apos;s email to send an invitation. They accept
+          it on the separate ABStrack practitioner web app (not this patient
+          app), usually via the email link. They can read your shared health
+          data while access stays active. Two-factor authentication is required
+          only if they set a password for email sign-in; magic-link sign-in
+          alone does not require it. Revoking stops future reads; it does not
+          erase data they may already have viewed (PRD §8).
         </p>
       </div>
 

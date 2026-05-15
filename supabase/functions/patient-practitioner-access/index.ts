@@ -9,8 +9,11 @@
  * (**`practitioner_access.last_invite_email_sent_at`**, **`stamp_practitioner_access_last_invite_email_sent_at`**).
  * User web + mobile call `…/functions/v1/patient-practitioner-access` with user JWT + `apikey` (publishable).
  *
- * Practitioner data reads remain **fail-closed** on MFA (AAL2) via RLS and
- * `practitioner-mfa-auth-audit`; this function only manages the **grant row** and Auth invite.
+ * Practitioner PHI reads are **fail-closed** on grant + `profiles.app_role` via RLS. When JWT
+ * `user_metadata.abstrack_practitioner_password_set` is true, `user_has_practitioner_access` also
+ * requires **`aal = aal2`** (password sign-in / TOTP); magic-link–only practitioners may read with
+ * AAL1. `practitioner-mfa-auth-audit` supports password-path MFA failures. This function only
+ * manages the **grant row**, pending **`practitioner_invites`**, and Auth invite — not PHI reads.
  * Revoking sets **`revoked_at`** (patient data the practitioner already saw is not erased; future
  * reads are denied by RLS per PRD).
  *
