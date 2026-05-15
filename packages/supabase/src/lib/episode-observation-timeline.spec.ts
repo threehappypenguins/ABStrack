@@ -1,9 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   PRESET_HEALTH_MARKER_KIND_LABELS,
+  type FoodDiaryEntryRow,
   type HealthMarkerRow,
 } from '@abstrack/types';
-import { listEpisodeObservationTimeline } from './episode-observation-timeline.js';
+import {
+  listEpisodeObservationTimeline,
+  mergeStandaloneHealthAndFoodRowsToTimeline,
+} from './episode-observation-timeline.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
 
 const listEpisodeSymptomsForEpisode = vi.hoisted(() => vi.fn());
@@ -283,5 +287,41 @@ describe('listEpisodeObservationTimeline', () => {
         detail: 'Still include me',
       },
     ]);
+  });
+});
+
+describe('mergeStandaloneHealthAndFoodRowsToTimeline', () => {
+  it('uses id as tie-breaker when marker and food share the same instant', () => {
+    const hm: HealthMarkerRow = {
+      id: 'marker-b',
+      user_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      episode_id: null,
+      preset_health_marker_id: null,
+      marker_kind: 'heart_rate',
+      custom_name: null,
+      custom_name_key: null,
+      custom_unit: null,
+      custom_unit_key: null,
+      value_numeric: 72,
+      systolic_numeric: null,
+      diastolic_numeric: null,
+      recorded_at: '2026-04-24T12:00:00.000Z',
+      notes: null,
+      created_at: '2026-04-24T12:00:00.000Z',
+      updated_at: '2026-04-24T12:00:00.000Z',
+    };
+    const food: FoodDiaryEntryRow = {
+      id: 'food-a',
+      user_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      episode_id: null,
+      meal_tag: 'Lunch',
+      food_note: 'Soup',
+      logged_at: '2026-04-24T12:00:00.000Z',
+      created_at: '2026-04-24T12:00:00.000Z',
+      updated_at: '2026-04-24T12:00:00.000Z',
+    };
+
+    const items = mergeStandaloneHealthAndFoodRowsToTimeline([hm], [food]);
+    expect(items.map((r) => r.id)).toEqual(['food-a', 'marker-b']);
   });
 });

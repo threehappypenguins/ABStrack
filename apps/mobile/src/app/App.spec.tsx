@@ -770,16 +770,15 @@ describe('mobile auth state sync', () => {
       .spyOn(Linking, 'getInitialURL')
       .mockResolvedValue(null);
     try {
-      const { findByText, findByTestId, findByLabelText, queryByText } =
-        render(<App />);
+      const { findByText, findByTestId, findByLabelText, queryByText } = render(
+        <App />,
+      );
 
       await findByText('Welcome to ABStrack');
 
       // Wait for Home to leave the active-episode probe spinner, then the start CTA (not resume).
       await waitFor(() => {
-        expect(
-          queryByText('Checking for an episode in progress…'),
-        ).toBeNull();
+        expect(queryByText('Checking for an episode in progress…')).toBeNull();
       });
       const startEpisodeButton = await findByLabelText("I'm having an episode");
 

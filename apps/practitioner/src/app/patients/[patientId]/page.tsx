@@ -1,29 +1,21 @@
+import { PractitionerPatientDetailPage } from './practitioner-patient-detail-page';
+
 type PatientDetailPageProps = {
   /** Next.js 16 passes dynamic route params as a Promise (await before use). */
   params: Promise<{ patientId: string }>;
 };
 
 /**
- * Per-patient practitioner view (placeholder). The parent layout enforces MFA before this renders.
+ * Per-patient practitioner view: read-only PHI timelines (PRD §8). Parent layout enforces MFA before
+ * this renders.
  *
  * @param props - Dynamic route params.
- * @returns Patient detail shell.
+ * @returns Patient detail client tree.
  */
 export default async function PatientDetailPage({
   params,
 }: PatientDetailPageProps) {
   const { patientId } = await params;
 
-  return (
-    <div
-      id="practitioner-patient-detail"
-      className="mx-auto max-w-3xl px-4 py-8 sm:px-6"
-    >
-      <h1 className="text-2xl font-semibold text-app-ink">Patient</h1>
-      <p className="mt-2 font-mono text-sm text-app-muted">{patientId}</p>
-      <p className="mt-4 text-sm text-app-muted">
-        Detailed patient tools will appear here as they are implemented.
-      </p>
-    </div>
-  );
+  return <PractitionerPatientDetailPage patientUserId={patientId} />;
 }
