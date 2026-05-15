@@ -19,7 +19,6 @@ import {
   type ReactNode,
 } from 'react';
 import { syncMfaTrustBundleAfterTokenRefresh } from './practitioner-device-trust';
-import { completePractitionerInviteAfterAuth } from './practitioner-invite-complete';
 
 type ProfileRow = Database['public']['Tables']['profiles']['Row'];
 
@@ -209,7 +208,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setProfile(null);
         return;
       }
-      setProfile(data ?? null);
+      if (data != null) {
+        setProfile(data);
+        return;
+      }
+      const { data: liveSession } = await supabase.auth.getSession();
+      const pendingInviteId =
+        typeof liveSession.session?.user?.user_metadata
+          ?.abstrack_practitioner_invite_id === 'string'
+          ? liveSession.session.user.user_metadata.abstrack_practitioner_invite_id.trim()
+          : '';
+      if (pendingInviteId !== '') {
+        // Finalize runs on `/invite/join`; keep loading until profile exists.
+        setProfile(undefined);
+        return;
+      }
+      const { data: retry, error: retryErr } = await fetchProfileByUserId(
+        supabase,
+        userId,
+      );
+      if (cancelled) {
+        return;
+      }
+      if (retryErr) {
+        const err =
+          retryErr instanceof Error
+            ? retryErr
+            : new Error(
+                typeof retryErr === 'object' &&
+                retryErr !== null &&
+                'message' in retryErr &&
+                typeof (retryErr as { message: unknown }).message === 'string'
+                  ? (retryErr as { message: string }).message
+                  : 'Profile request failed',
+              );
+        setProfileError(err);
+        setProfile(null);
+        return;
+      }
+      setProfile(retry ?? null);
     };
 
     void loadProfile();
@@ -218,72 +255,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, [session?.user?.id, supabase]);
-
-  const practitionerInviteId =
-    typeof session?.user?.user_metadata?.abstrack_practitioner_invite_id ===
-    'string'
-      ? session.user.user_metadata.abstrack_practitioner_invite_id.trim()
-      : '';
-
-  /**
-   * When **`user_metadata.abstrack_practitioner_invite_id`** is set, completes the patient invite
-   * once. The Edge function clears that metadata on success; **`refreshSession`** loads the updated
-   * JWT so this effect does not repeat finalize on every app load.
-   */
-  useEffect(() => {
-    const token = session?.access_token?.trim();
-    const userId = session?.user?.id;
-    if (!token || !practitionerInviteId || !userId) {
-      return;
-    }
-
-    let cancelled = false;
-
-    void (async () => {
-      const result = await completePractitionerInviteAfterAuth(
-        token,
-        practitionerInviteId,
-      );
-      if (cancelled) {
-        return;
-      }
-      if (!result.ok) {
-        console.warn('Practitioner invite finalize:', result.message);
-        return;
-      }
-      const { error: refreshErr } = await supabase.auth.refreshSession();
-      if (refreshErr) {
-        console.warn(
-          'Practitioner invite finalize: refreshSession after clearing invite metadata',
-          refreshErr,
-        );
-      }
-      const { data, error } = await fetchProfileByUserId(supabase, userId);
-      if (cancelled) {
-        return;
-      }
-      if (error) {
-        setProfileError(
-          error instanceof Error
-            ? error
-            : new Error('Profile refresh failed after invite'),
-        );
-        setProfile(null);
-        return;
-      }
-      setProfile(data ?? null);
-      setProfileError(null);
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    session?.access_token,
-    practitionerInviteId,
-    session?.user?.id,
-    supabase,
-  ]);
 
   const value = useMemo(
     () => ({

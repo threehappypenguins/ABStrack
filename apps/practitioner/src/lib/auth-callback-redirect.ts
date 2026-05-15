@@ -1,4 +1,6 @@
-const DEFAULT_REDIRECT_PATH = '/';
+import { PRACTITIONER_INVITE_JOIN_PATH } from './practitioner-invite-join';
+
+const DEFAULT_REDIRECT_PATH = PRACTITIONER_INVITE_JOIN_PATH;
 
 /**
  * User-facing message when an email auth link cannot be completed (expired, reused, or malformed).

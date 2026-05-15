@@ -39,7 +39,7 @@
  *   finalized for this practitioner).
  *
  * **Invite email:** `auth.admin.inviteUserByEmail` **`redirectTo`** is **`ABSTRACK_PRACTITIONER_INVITE_REDIRECT_TO`**
- * when set (trimmed). Otherwise **`{origin}/auth/callback?next=/`** from **`ABSTRACK_PRACTITIONER_INVITE_WEB_ORIGIN`**
+ * when set (trimmed). Otherwise **`{origin}/auth/callback?next=/invite/join`** from **`ABSTRACK_PRACTITIONER_INVITE_WEB_ORIGIN`**
  * (trimmed, trailing slashes stripped, absolute **http** or **https**). Values must appear in Supabase Auth
  * **Redirect URLs** for the practitioner web app host.
  *
@@ -1194,7 +1194,7 @@ function resolvePractitionerInviteRedirectTo(): string | null {
   const redirectTo =
     explicitRedirect ||
     (inviteWebOrigin
-      ? `${inviteWebOrigin}/auth/callback?next=${encodeURIComponent('/')}`
+      ? `${inviteWebOrigin}/auth/callback?next=${encodeURIComponent('/invite/join')}`
       : '');
   return redirectTo.length > 0 ? redirectTo : null;
 }
