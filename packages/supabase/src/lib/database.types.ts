@@ -514,6 +514,39 @@ export type Database = {
         }
         Relationships: []
       }
+      practitioner_invites: {
+        Row: {
+          consumed_at: string | null
+          consumed_practitioner_user_id: string | null
+          created_at: string
+          expires_at: string
+          id: string
+          invitee_email_normalized: string
+          last_invite_sent_at: string | null
+          patient_user_id: string
+        }
+        Insert: {
+          consumed_at?: string | null
+          consumed_practitioner_user_id?: string | null
+          created_at?: string
+          expires_at: string
+          id?: string
+          invitee_email_normalized: string
+          last_invite_sent_at?: string | null
+          patient_user_id: string
+        }
+        Update: {
+          consumed_at?: string | null
+          consumed_practitioner_user_id?: string | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          invitee_email_normalized?: string
+          last_invite_sent_at?: string | null
+          patient_user_id?: string
+        }
+        Relationships: []
+      }
       practitioner_observation_notes: {
         Row: {
           body: string
@@ -720,6 +753,14 @@ export type Database = {
         Returns: string
       }
       stamp_caretaker_invite_pre_send: {
+        Args: {
+          p_invite_id: string
+          p_stamp: string
+          p_throttle_cutoff: string
+        }
+        Returns: string[]
+      }
+      stamp_practitioner_invite_pre_send: {
         Args: {
           p_invite_id: string
           p_stamp: string
