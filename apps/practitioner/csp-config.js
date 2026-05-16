@@ -84,6 +84,15 @@ function buildPractitionerCspDirectives(opts) {
 
   const connectSrc = Array.from(connectParts).join(' ');
 
+  const imgParts = new Set(["'self'", 'blob:', 'data:']);
+  const mediaParts = new Set(["'self'", 'blob:']);
+  if (origins) {
+    imgParts.add(origins.httpOrigin);
+    mediaParts.add(origins.httpOrigin);
+  }
+  const imgSrc = Array.from(imgParts).join(' ');
+  const mediaSrc = Array.from(mediaParts).join(' ');
+
   const scriptParts = ["'self'", "'unsafe-inline'"];
   if (isDev) {
     scriptParts.push("'unsafe-eval'");
@@ -94,7 +103,8 @@ function buildPractitionerCspDirectives(opts) {
     "default-src 'self'",
     `script-src ${scriptParts.join(' ')}`,
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' blob: data:",
+    `img-src ${imgSrc}`,
+    `media-src ${mediaSrc}`,
     "font-src 'self'",
     `connect-src ${connectSrc}`,
     "worker-src 'self' blob:",

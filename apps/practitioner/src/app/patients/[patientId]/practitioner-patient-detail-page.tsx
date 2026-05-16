@@ -7,12 +7,14 @@ import {
   PRACTITIONER_PATIENT_EPISODE_HISTORY_CAP,
   PRACTITIONER_PATIENT_OBSERVATION_GRANT_DENIED_MESSAGE,
   PRACTITIONER_STANDALONE_OBSERVATION_CAP,
+  type AbstrackSupabaseClient,
   type EpisodeTimelineItem,
   type PractitionerPatientEpisodeRow,
   type PractitionerPatientObservationReadModel,
 } from '@abstrack/supabase';
 import { getSupabaseBrowserClient } from '@abstrack/supabase/browser';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
+import { PractitionerSymptomMediaViewer } from '../../../components/practitioner-symptom-media-viewer';
 import Link from 'next/link';
 import {
   useCallback,
@@ -42,6 +44,25 @@ function formatObservationTimestamp(iso: string): string {
     dateStyle: 'medium',
     timeStyle: 'short',
   });
+}
+
+/**
+ * When the merged timeline shows a photo/video symptom placeholder (`Photo` / `Video`), returns the
+ * media kind for {@link PractitionerSymptomMediaViewer}; otherwise `null`.
+ */
+function symptomMediaKindFromTimelineRow(
+  row: EpisodeTimelineItem,
+): 'photo' | 'video' | null {
+  if (row.kind !== 'symptom') {
+    return null;
+  }
+  if (row.detail === 'Photo') {
+    return 'photo';
+  }
+  if (row.detail === 'Video') {
+    return 'video';
+  }
+  return null;
 }
 
 function observationKindNoun(kind: EpisodeTimelineItem['kind']): string {
@@ -186,9 +207,14 @@ function EpisodeObservationTruncationNotice({
 function PractitionerObservationTimelineList({
   rows,
   rowKeyPrefix,
+  episodeId,
+  supabase,
 }: {
   rows: EpisodeTimelineItem[];
   rowKeyPrefix: string;
+  /** When set, photo/video symptom rows can load episode media via signed URLs. */
+  episodeId?: string;
+  supabase?: AbstrackSupabaseClient;
 }) {
   return (
     <ul
@@ -200,6 +226,7 @@ function PractitionerObservationTimelineList({
         const kind = observationKindNoun(row.kind);
         const previewDetail = row.detail.trim() ? row.detail : '—';
         const ann = `${kind} at ${time}. ${row.label}. ${previewDetail}.`;
+        const mediaKind = symptomMediaKindFromTimelineRow(row);
         return (
           <li
             key={`${rowKeyPrefix}-${row.kind}-${row.id}`}
@@ -211,10 +238,20 @@ function PractitionerObservationTimelineList({
               {kind} · {time}
             </span>
             <span className="mt-0.5 block font-medium">{row.label}</span>
-            <PractitionerTimelineObservationDetail
-              detail={row.detail}
-              detailFull={row.detailFull}
-            />
+            {mediaKind && episodeId && supabase ? (
+              <PractitionerSymptomMediaViewer
+                supabase={supabase}
+                episodeId={episodeId}
+                episodeSymptomId={row.id}
+                mediaKind={mediaKind}
+                symptomLabel={row.label}
+              />
+            ) : (
+              <PractitionerTimelineObservationDetail
+                detail={row.detail}
+                detailFull={row.detailFull}
+              />
+            )}
           </li>
         );
       })}
@@ -233,6 +270,7 @@ function PractitionerEpisodeTimelineCard({
   moreHealthMarkersOmitted,
   moreFoodDiaryOmitted,
   regionId,
+  supabase,
 }: {
   episode: PractitionerPatientEpisodeRow;
   timeline: EpisodeTimelineItem[];
@@ -240,6 +278,7 @@ function PractitionerEpisodeTimelineCard({
   moreHealthMarkersOmitted: boolean;
   moreFoodDiaryOmitted: boolean;
   regionId: string;
+  supabase: AbstrackSupabaseClient;
 }) {
   const hasObservations = timeline.length > 0;
   const [listMounted, setListMounted] = useState(false);
@@ -312,6 +351,8 @@ function PractitionerEpisodeTimelineCard({
             <PractitionerObservationTimelineList
               rows={timeline}
               rowKeyPrefix={`${episode.id}`}
+              episodeId={episode.id}
+              supabase={supabase}
             />
           ) : (
             <p className="mt-4 text-sm text-app-muted" role="status">
@@ -686,6 +727,7 @@ export function PractitionerPatientDetailPage({
                       moreHealthMarkersOmitted={moreHealthMarkersOmitted}
                       moreFoodDiaryOmitted={moreFoodDiaryOmitted}
                       regionId={regionId}
+                      supabase={supabase}
                     />
                   </section>
                 );
