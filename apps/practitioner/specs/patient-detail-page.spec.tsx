@@ -14,6 +14,26 @@ import {
 import { LiveAnnouncerProvider } from '@abstrack/ui/a11y-web';
 import { PractitionerPatientDetailPage } from '../src/app/patients/[patientId]/practitioner-patient-detail-page';
 
+/**
+ * Fire a click on the `<summary>` that contains the control label so `<details>` toggles reliably in jsdom.
+ *
+ * @param label - Text shown inside the disclosure summary.
+ * @param index - Which occurrence when multiple disclosures reuse the same label.
+ */
+function clickDetailsToggle(label: string, index = 0): void {
+  const node = screen.getAllByText(label)[index];
+  if (!node) {
+    throw new Error(
+      `Missing disclosure label "${label}" at index ${String(index)}`,
+    );
+  }
+  const summary = node.closest('summary');
+  if (!summary) {
+    throw new Error(`Expected <summary> wrapping "${label}"`);
+  }
+  fireEvent.click(summary);
+}
+
 const loadPractitionerPatientObservationReadModel = jest.fn();
 
 jest.mock('@abstrack/supabase/browser', () => ({
@@ -218,6 +238,7 @@ describe('PractitionerPatientDetailPage', () => {
     );
 
     expect(await screen.findByText('Alice Alpha')).toBeTruthy();
+    clickDetailsToggle('Show episode timeline');
     expect(screen.getByText('OnlyOnPatientAliceTimeline')).toBeTruthy();
 
     rerender(
@@ -363,6 +384,7 @@ describe('PractitionerPatientDetailPage', () => {
     );
 
     expect(await screen.findByText('Alex Kim')).toBeTruthy();
+    clickDetailsToggle('Show episode timeline');
     expect(screen.getByText('Nausea')).toBeTruthy();
     expect(screen.getByText('Yes')).toBeTruthy();
   });
@@ -420,7 +442,7 @@ describe('PractitionerPatientDetailPage', () => {
     await screen.findByText('Alex Kim');
     expect(screen.queryByText('LaterEpisodeSymptom')).toBeNull();
 
-    fireEvent.click(screen.getByText('Show episode timeline'));
+    clickDetailsToggle('Show episode timeline', 1);
 
     expect(await screen.findByText('LaterEpisodeSymptom')).toBeTruthy();
     expect(screen.getByText('Yes')).toBeTruthy();
@@ -457,7 +479,7 @@ describe('PractitionerPatientDetailPage', () => {
     await screen.findByText('Alex Kim');
     expect(screen.queryByText('StandaloneRow-40')).toBeNull();
 
-    fireEvent.click(screen.getByText('Show standalone entries'));
+    clickDetailsToggle('Show standalone entries');
 
     expect(await screen.findByText('StandaloneRow-40')).toBeTruthy();
   });
@@ -523,6 +545,8 @@ describe('PractitionerPatientDetailPage', () => {
     );
 
     await screen.findByText('Alex');
+    expect(screen.queryByText('PatientA-4')).toBeNull();
+    clickDetailsToggle('Show standalone entries');
     expect(screen.getByText('PatientA-4')).toBeTruthy();
 
     rerender(
@@ -534,7 +558,7 @@ describe('PractitionerPatientDetailPage', () => {
     await screen.findByText('Bob');
     expect(screen.queryByText('PatientB-40')).toBeNull();
 
-    fireEvent.click(screen.getByText('Show standalone entries'));
+    clickDetailsToggle('Show standalone entries');
     expect(await screen.findByText('PatientB-40')).toBeTruthy();
   });
 
@@ -600,7 +624,7 @@ describe('PractitionerPatientDetailPage', () => {
 
     await screen.findByText('Alex');
     expect(screen.queryByText('PatientA-40')).toBeNull();
-    fireEvent.click(screen.getByText('Show standalone entries'));
+    clickDetailsToggle('Show standalone entries');
     expect(await screen.findByText('PatientA-40')).toBeTruthy();
 
     rerender(
@@ -610,6 +634,8 @@ describe('PractitionerPatientDetailPage', () => {
     );
 
     await screen.findByText('Bob');
+    expect(screen.queryByText('PatientB-4')).toBeNull();
+    clickDetailsToggle('Show standalone entries');
     expect(screen.getByText('PatientB-4')).toBeTruthy();
   });
 
@@ -656,6 +682,7 @@ describe('PractitionerPatientDetailPage', () => {
     );
 
     await screen.findByText('Alex Kim');
+    clickDetailsToggle('Show episode timeline');
     expect(
       (await screen.findAllByText(longDetail, { hidden: true })).length,
     ).toBeGreaterThanOrEqual(1);

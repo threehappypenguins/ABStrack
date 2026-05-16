@@ -87,7 +87,18 @@ function PractitionerTimelineObservationDetail({
 
   return (
     <details className="group mt-0.5">
-      <summary className="min-h-11 cursor-pointer list-none rounded-md py-2 text-left [&::-webkit-details-marker]:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg">
+      <summary
+        className="min-h-11 cursor-pointer list-none rounded-md py-2 text-left transition-colors hover:bg-app-muted/10 [&::-webkit-details-marker]:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+        onClick={(e) => {
+          e.preventDefault();
+          const root = e.currentTarget.parentElement;
+          if (!root || root.tagName !== 'DETAILS') {
+            return;
+          }
+          const detailsEl = root as HTMLDetailsElement;
+          detailsEl.open = !detailsEl.open;
+        }}
+      >
         <span className="block break-words whitespace-pre-wrap text-app-muted group-open:hidden line-clamp-3">
           {detail}
         </span>
@@ -165,9 +176,6 @@ function EpisodeObservationTruncationNotice({
   );
 }
 
-/** Standalone timeline rows above this: section starts collapsed and list mounts on expand. */
-const PRACTITIONER_STANDALONE_TIMELINE_LAZY_THRESHOLD = 40;
-
 /**
  * Renders a time-ordered list of observation rows. Each `<li>` uses an `aria-label` built from the
  * **inline preview** (`detail`) only so announcements match the collapsed disclosure surface; when
@@ -182,7 +190,10 @@ function PractitionerObservationTimelineList({
   rowKeyPrefix: string;
 }) {
   return (
-    <ol className="mt-4 list-decimal space-y-3 pl-5 text-sm text-app-ink">
+    <ul
+      role="list"
+      className="mt-2 w-full list-none space-y-6 p-0 text-sm text-app-ink"
+    >
       {rows.map((row) => {
         const time = formatObservationTimestamp(row.sortAt);
         const kind = observationKindNoun(row.kind);
@@ -191,7 +202,8 @@ function PractitionerObservationTimelineList({
         return (
           <li
             key={`${rowKeyPrefix}-${row.kind}-${row.id}`}
-            className="pl-1"
+            role="listitem"
+            className="border-l-2 border-app-border pl-4"
             aria-label={ann}
           >
             <span className="block text-xs font-medium uppercase tracking-wide text-app-muted">
@@ -205,15 +217,13 @@ function PractitionerObservationTimelineList({
           </li>
         );
       })}
-    </ol>
+    </ul>
   );
 }
 
 /**
- * One episode card: collapsible shell so observation rows mount only after expand (except index 0,
- * open by default). Avoids rendering tens of thousands of DOM nodes when many capped episodes load.
- *
- * @param props.episodeIndex - `0` is the newest episode and stays expanded initially with its timeline mounted.
+ * One episode card: collapsible shell so observation rows mount only after expand. Avoids rendering
+ * tens of thousands of DOM nodes when many capped episodes load.
  */
 function PractitionerEpisodeTimelineCard({
   episode,
@@ -221,7 +231,6 @@ function PractitionerEpisodeTimelineCard({
   moreSymptomsOmitted,
   moreHealthMarkersOmitted,
   moreFoodDiaryOmitted,
-  episodeIndex,
   regionId,
 }: {
   episode: PractitionerPatientEpisodeRow;
@@ -229,15 +238,11 @@ function PractitionerEpisodeTimelineCard({
   moreSymptomsOmitted: boolean;
   moreHealthMarkersOmitted: boolean;
   moreFoodDiaryOmitted: boolean;
-  episodeIndex: number;
   regionId: string;
 }) {
-  const defaultOpen = episodeIndex === 0;
   const hasObservations = timeline.length > 0;
-  const [listMounted, setListMounted] = useState(
-    defaultOpen || !hasObservations,
-  );
-  const [expanded, setExpanded] = useState(defaultOpen);
+  const [listMounted, setListMounted] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   const anyStreamTruncated =
     moreSymptomsOmitted || moreHealthMarkersOmitted || moreFoodDiaryOmitted;
@@ -249,44 +254,52 @@ function PractitionerEpisodeTimelineCard({
 
   return (
     <details
-      className="rounded-xl border border-app-border bg-app-surface p-5 shadow-soft"
+      className="w-full rounded-xl border border-app-border bg-app-surface p-5 text-left shadow-soft"
       aria-labelledby={`${regionId}-heading`}
-      open={expanded}
-      onToggle={(e) => {
-        const nextOpen = e.currentTarget.open;
-        setExpanded(nextOpen);
-        if (nextOpen) {
-          setListMounted(true);
-        }
-      }}
     >
-      <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg">
+      <summary
+        className="flex w-full cursor-pointer list-none flex-col items-start gap-1 text-left transition-colors hover:bg-app-muted/5 [&::-webkit-details-marker]:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+        onClick={(e) => {
+          e.preventDefault();
+          const root = e.currentTarget.parentElement;
+          if (!root || root.tagName !== 'DETAILS') {
+            return;
+          }
+          const detailsEl = root as HTMLDetailsElement;
+          const nextOpen = !detailsEl.open;
+          detailsEl.open = nextOpen;
+          setExpanded(nextOpen);
+          if (nextOpen) {
+            setListMounted(true);
+          }
+        }}
+      >
         <span
           id={`${regionId}-heading`}
-          className="text-base font-semibold text-app-ink"
+          className="text-base font-semibold leading-snug text-app-ink"
         >
           {episodeSummaryHeading(episode)}
         </span>
-        <span className="mt-1 block text-sm text-app-muted">
+        {episode.episode_label?.trim() ? (
+          <span className="text-sm font-medium text-app-muted">
+            {episode.episode_label.trim()}
+          </span>
+        ) : null}
+        <span className="block text-sm text-app-muted">
           {observationSummary}
         </span>
         {anyStreamTruncated ? (
-          <span className="mt-1 block text-xs text-app-muted">
+          <span className="block text-xs text-app-muted">
             Loaded streams may omit older rows (cap{' '}
             {EPISODE_TIMELINE_SOURCE_LIMIT} per type).
           </span>
         ) : null}
-        <span className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-app-primary underline underline-offset-4">
+        <span className="mt-1 inline-flex min-h-11 items-center text-sm font-semibold text-app-primary underline underline-offset-4">
           {expanded ? 'Hide episode timeline' : 'Show episode timeline'}
         </span>
       </summary>
 
-      <div className="mt-4 border-t border-app-border pt-4">
-        {episode.episode_label?.trim() ? (
-          <p className="text-sm text-app-muted">
-            {episode.episode_label.trim()}
-          </p>
-        ) : null}
+      <div className="mt-6 w-full border-t border-app-border pt-6">
         <EpisodeObservationTruncationNotice
           moreSymptomsOmitted={moreSymptomsOmitted}
           moreHealthMarkersOmitted={moreHealthMarkersOmitted}
@@ -316,8 +329,8 @@ function PractitionerEpisodeTimelineCard({
 }
 
 /**
- * Standalone markers + food list; lazy-mount when row count exceeds
- * {@link PRACTITIONER_STANDALONE_TIMELINE_LAZY_THRESHOLD} to limit initial DOM size.
+ * Standalone markers + food list. Starts **collapsed**; the observation list mounts on first expand
+ * to keep initial DOM small for long histories.
  *
  * The patient detail page mounts this with `key={patientUserId}` so client navigations between
  * patients reset lazy/collapsed state instead of reusing the previous patient's disclosure state.
@@ -337,9 +350,8 @@ function PractitionerStandaloneTimelineSection({
   ariaLabelledBy: string;
 }) {
   const n = standaloneTimeline.length;
-  const startCollapsed = n > PRACTITIONER_STANDALONE_TIMELINE_LAZY_THRESHOLD;
-  const [listMounted, setListMounted] = useState(!startCollapsed);
-  const [expanded, setExpanded] = useState(!startCollapsed);
+  const [listMounted, setListMounted] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   const observationSummary =
     n === 0
@@ -348,18 +360,26 @@ function PractitionerStandaloneTimelineSection({
 
   return (
     <details
-      className="rounded-xl border border-app-border bg-app-surface p-5 shadow-soft"
+      className="w-full rounded-xl border border-app-border bg-app-surface p-5 text-left shadow-soft"
       aria-labelledby={ariaLabelledBy}
-      open={expanded}
-      onToggle={(e) => {
-        const nextOpen = e.currentTarget.open;
-        setExpanded(nextOpen);
-        if (nextOpen) {
-          setListMounted(true);
-        }
-      }}
     >
-      <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg">
+      <summary
+        className="flex w-full cursor-pointer list-none flex-col items-start gap-1 text-left transition-colors hover:bg-app-muted/5 [&::-webkit-details-marker]:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+        onClick={(e) => {
+          e.preventDefault();
+          const root = e.currentTarget.parentElement;
+          if (!root || root.tagName !== 'DETAILS') {
+            return;
+          }
+          const detailsEl = root as HTMLDetailsElement;
+          const nextOpen = !detailsEl.open;
+          detailsEl.open = nextOpen;
+          setExpanded(nextOpen);
+          if (nextOpen) {
+            setListMounted(true);
+          }
+        }}
+      >
         <span className="text-base font-semibold text-app-ink">
           Observation list
         </span>
@@ -377,7 +397,7 @@ function PractitionerStandaloneTimelineSection({
         </span>
       </summary>
 
-      <div className="mt-4 border-t border-app-border pt-4">
+      <div className="mt-6 w-full border-t border-app-border pt-6">
         <StandaloneObservationTruncationNotice
           markersTruncated={markersTruncated}
           foodTruncated={foodTruncated}
@@ -637,16 +657,13 @@ export function PractitionerPatientDetailPage({
           </p>
           <div className="mt-6 space-y-8">
             {model.episodesWithTimelines.map(
-              (
-                {
-                  episode,
-                  timeline,
-                  moreSymptomsOmitted,
-                  moreHealthMarkersOmitted,
-                  moreFoodDiaryOmitted,
-                },
-                episodeIndex,
-              ) => {
+              ({
+                episode,
+                timeline,
+                moreSymptomsOmitted,
+                moreHealthMarkersOmitted,
+                moreFoodDiaryOmitted,
+              }) => {
                 const regionId = `${episodeRegionPrefix}-${episode.id}`;
                 return (
                   <section
@@ -659,7 +676,6 @@ export function PractitionerPatientDetailPage({
                       moreSymptomsOmitted={moreSymptomsOmitted}
                       moreHealthMarkersOmitted={moreHealthMarkersOmitted}
                       moreFoodDiaryOmitted={moreFoodDiaryOmitted}
-                      episodeIndex={episodeIndex}
                       regionId={regionId}
                     />
                   </section>
