@@ -72,8 +72,14 @@ export function PractitionerSymptomMediaViewer({
   const { announce } = useAnnounce();
   const [state, setState] = useState<MediaViewState>({ phase: 'idle' });
   const photoDialogRef = useRef<HTMLDialogElement>(null);
+  const photoDialogCloseButtonRef = useRef<HTMLButtonElement>(null);
   const photoDialogTitleId = useId();
   const loadInFlightRef = useRef(false);
+  /** Last signed object key + media type; used to refresh without re-listing `episode_media`. */
+  const readyStorageRef = useRef<{
+    storageKey: string;
+    mediaType: 'photo' | 'video';
+  } | null>(null);
 
   const closePhotoModal = useCallback(() => {
     const el = photoDialogRef.current;
@@ -86,17 +92,65 @@ export function PractitionerSymptomMediaViewer({
     const el = photoDialogRef.current;
     if (el) {
       setDialogModalOpen(el, true);
+      queueMicrotask(() => {
+        photoDialogCloseButtonRef.current?.focus();
+      });
     }
     announce(`Full size photo opened for ${symptomLabel}.`, {
       politeness: 'polite',
     });
   }, [announce, symptomLabel]);
 
+  const signStorageKey = useCallback(
+    async (
+      rawKey: string,
+      mediaType: 'photo' | 'video',
+      options?: { announceLoaded?: boolean },
+    ): Promise<void> => {
+      const storageKey = rawKey.trim();
+      const { signedUrl, errorMessage } =
+        await createEpisodeMediaSignedDisplayUrl(
+          supabase,
+          storageKey,
+          EPISODE_MEDIA_SIGNED_URL_TTL_SECONDS,
+        );
+      const signingFailure =
+        typeof errorMessage === 'string' ? errorMessage.trim() : '';
+      readyStorageRef.current = { storageKey, mediaType };
+      setState({
+        phase: 'ready',
+        storageKey,
+        signedUrl,
+        mediaType,
+        loadError: signedUrl
+          ? null
+          : signingFailure !== ''
+            ? signingFailure
+            : 'Could not create media link.',
+      });
+      if (signedUrl) {
+        if (options?.announceLoaded !== false) {
+          announce(
+            `${mediaType === 'video' ? 'Video' : 'Photo'} loaded for ${symptomLabel}.`,
+            { politeness: 'polite' },
+          );
+        }
+        return;
+      }
+      announce(
+        signingFailure !== '' ? signingFailure : 'Could not create media link.',
+        { politeness: 'assertive' },
+      );
+    },
+    [announce, supabase, symptomLabel],
+  );
+
   const loadMedia = useCallback(async () => {
     if (loadInFlightRef.current) {
       return;
     }
     loadInFlightRef.current = true;
+    readyStorageRef.current = null;
     setState({ phase: 'loading' });
     try {
       const listed = await listEpisodeMediaForEpisode(supabase, episodeId, {
@@ -115,42 +169,10 @@ export function PractitionerSymptomMediaViewer({
         announce(message, { politeness: 'polite' });
         return;
       }
-      const rawKey = row.storage_object_key;
-      const { signedUrl, errorMessage } =
-        await createEpisodeMediaSignedDisplayUrl(
-          supabase,
-          rawKey,
-          EPISODE_MEDIA_SIGNED_URL_TTL_SECONDS,
-        );
       const mediaType: 'photo' | 'video' = isMediaType(row.media_type)
         ? row.media_type
         : mediaKind;
-      const signingFailure =
-        typeof errorMessage === 'string' ? errorMessage.trim() : '';
-      setState({
-        phase: 'ready',
-        storageKey: rawKey.trim(),
-        signedUrl,
-        mediaType,
-        loadError: signedUrl
-          ? null
-          : signingFailure !== ''
-            ? signingFailure
-            : 'Could not create media link.',
-      });
-      if (signedUrl) {
-        announce(
-          `${mediaType === 'video' ? 'Video' : 'Photo'} loaded for ${symptomLabel}.`,
-          { politeness: 'polite' },
-        );
-      } else {
-        announce(
-          signingFailure !== ''
-            ? signingFailure
-            : 'Could not create media link.',
-          { politeness: 'assertive' },
-        );
-      }
+      await signStorageKey(row.storage_object_key, mediaType);
     } catch {
       const message = 'Unable to load media preview.';
       setState({ phase: 'error', message });
@@ -163,9 +185,37 @@ export function PractitionerSymptomMediaViewer({
     episodeId,
     episodeSymptomId,
     mediaKind,
+    signStorageKey,
     supabase,
-    symptomLabel,
   ]);
+
+  /**
+   * Re-signs {@link MediaViewState} `storageKey` after expiry without re-querying `episode_media`.
+   * Falls back to {@link loadMedia} when no key is stored yet.
+   */
+  const refreshMediaLink = useCallback(async () => {
+    if (loadInFlightRef.current) {
+      return;
+    }
+    const cached = readyStorageRef.current;
+    if (!cached?.storageKey) {
+      await loadMedia();
+      return;
+    }
+    loadInFlightRef.current = true;
+    setState({ phase: 'loading' });
+    try {
+      await signStorageKey(cached.storageKey, cached.mediaType, {
+        announceLoaded: false,
+      });
+    } catch {
+      const message = 'Unable to load media preview.';
+      setState({ phase: 'error', message });
+      announce(message, { politeness: 'assertive' });
+    } finally {
+      loadInFlightRef.current = false;
+    }
+  }, [announce, loadMedia, signStorageKey]);
 
   const onDisplayError = useCallback(() => {
     closeDialogIfOpen(photoDialogRef.current);
@@ -264,10 +314,11 @@ export function PractitionerSymptomMediaViewer({
                   }}
                 >
                   <div className="fixed inset-0 flex items-center justify-center p-4">
-                    <button
-                      type="button"
+                    <div
+                      role="presentation"
+                      aria-hidden="true"
+                      data-testid="photo-modal-backdrop"
                       className="absolute inset-0 h-full w-full cursor-default bg-black/60"
-                      aria-label="Close photo viewer"
                       onClick={closePhotoModal}
                     />
                     <div
@@ -282,6 +333,7 @@ export function PractitionerSymptomMediaViewer({
                           {symptomLabel}
                         </h2>
                         <button
+                          ref={photoDialogCloseButtonRef}
                           type="button"
                           className="inline-flex min-h-11 shrink-0 items-center rounded-lg border border-app-border px-4 py-2 text-sm font-semibold text-app-ink transition hover:bg-app-muted/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
                           onClick={closePhotoModal}
@@ -310,7 +362,7 @@ export function PractitionerSymptomMediaViewer({
           <button
             type="button"
             className="inline-flex min-h-11 items-center rounded-lg border border-app-border px-3 py-2 text-sm font-semibold text-app-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
-            onClick={() => void loadMedia()}
+            onClick={() => void refreshMediaLink()}
           >
             Refresh media link
           </button>

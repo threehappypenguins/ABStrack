@@ -802,6 +802,7 @@ describe('PractitionerPatientDetailPage', () => {
     await waitFor(() => {
       expect(createEpisodeMediaSignedDisplayUrl).toHaveBeenCalledTimes(2);
     });
+    expect(listEpisodeMediaForEpisode).toHaveBeenCalledTimes(1);
     const refreshedPreview = screen
       .getByRole('button', { name: /view full size photo for rash photo/i })
       .querySelector('img');
@@ -896,9 +897,7 @@ describe('PractitionerPatientDetailPage', () => {
 
     fireEvent.click(openFullSize);
     const dialogAgain = await screen.findByRole('dialog');
-    fireEvent.click(
-      screen.getByRole('button', { name: /close photo viewer/i }),
-    );
+    fireEvent.click(within(dialogAgain).getByTestId('photo-modal-backdrop'));
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).toBeNull();
     });
