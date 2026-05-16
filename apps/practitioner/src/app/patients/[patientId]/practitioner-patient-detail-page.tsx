@@ -168,6 +168,12 @@ function EpisodeObservationTruncationNotice({
 /** Standalone timeline rows above this: section starts collapsed and list mounts on expand. */
 const PRACTITIONER_STANDALONE_TIMELINE_LAZY_THRESHOLD = 40;
 
+/**
+ * Renders a time-ordered list of observation rows. Each `<li>` uses an `aria-label` built from the
+ * **inline preview** (`detail`) only so announcements match the collapsed disclosure surface; when
+ * `detailFull` exists, the full note stays inside {@link PractitionerTimelineObservationDetail} until
+ * the user expands **Show full note**.
+ */
 function PractitionerObservationTimelineList({
   rows,
   rowKeyPrefix,
@@ -180,8 +186,8 @@ function PractitionerObservationTimelineList({
       {rows.map((row) => {
         const time = formatObservationTimestamp(row.sortAt);
         const kind = observationKindNoun(row.kind);
-        const fullDetail = row.detailFull ?? row.detail;
-        const ann = `${kind} at ${time}. ${row.label}. ${fullDetail}.`;
+        const previewDetail = row.detail.trim() ? row.detail : '—';
+        const ann = `${kind} at ${time}. ${row.label}. ${previewDetail}.`;
         return (
           <li
             key={`${rowKeyPrefix}-${row.kind}-${row.id}`}

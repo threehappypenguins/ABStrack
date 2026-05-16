@@ -325,6 +325,64 @@ describe('loadPractitionerPatientObservationReadModel', () => {
     listFoodDiaryEntriesForUser.mockResolvedValue({ ok: true, data: [] });
   });
 
+  it('queries episodes with started_at desc, id desc tie-break, and history cap + 1 limit', async () => {
+    const orderCalls: { column: string; ascending: boolean }[] = [];
+    let limitArg: number | undefined;
+    const episodesResolved = Promise.resolve({ data: [], error: null });
+    const episodesChain = {
+      select: vi.fn(() => episodesChain),
+      eq: vi.fn(() => episodesChain),
+      order: vi.fn((column: string, opts?: { ascending?: boolean }) => {
+        orderCalls.push({
+          column,
+          ascending: opts?.ascending ?? true,
+        });
+        return episodesChain;
+      }),
+      limit: vi.fn((n: number) => {
+        limitArg = n;
+        return episodesResolved;
+      }),
+      then: (
+        onFulfilled?: (v: unknown) => unknown,
+        onRejected?: (e: unknown) => unknown,
+      ) => episodesResolved.then(onFulfilled, onRejected),
+      catch: episodesResolved.catch.bind(episodesResolved),
+      finally: episodesResolved.finally.bind(episodesResolved),
+    };
+
+    const from = vi.fn((table: string) => {
+      if (table === 'practitioner_access') {
+        return grantChain({ id: 'grant-1' });
+      }
+      if (table === 'episodes') {
+        return episodesChain;
+      }
+      if (table === 'profiles') {
+        return profileChain({
+          data: { display_name: null },
+          error: null,
+        });
+      }
+      throw new Error(`unexpected table in mock: ${table}`);
+    });
+    const client = { from } as unknown as AbstrackSupabaseClient;
+
+    const result = await loadPractitionerPatientObservationReadModel(
+      client,
+      PATIENT_ID,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(episodesChain.select).toHaveBeenCalledWith('*');
+    expect(episodesChain.eq).toHaveBeenCalledWith('user_id', PATIENT_ID);
+    expect(orderCalls).toEqual([
+      { column: 'started_at', ascending: false },
+      { column: 'id', ascending: false },
+    ]);
+    expect(limitArg).toBe(PRACTITIONER_PATIENT_EPISODE_HISTORY_CAP + 1);
+  });
+
   it('returns consolidated read model when grants, episodes, batch PHI, and profile succeed', async () => {
     const ep = episodeFixture('ep-one', PATIENT_ID);
     const symptoms = [
