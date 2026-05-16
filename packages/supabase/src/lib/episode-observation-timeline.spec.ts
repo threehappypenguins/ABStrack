@@ -1,10 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   PRESET_HEALTH_MARKER_KIND_LABELS,
+  type EpisodeSymptomRow,
+  type FoodDiaryEntryRow,
   type HealthMarkerRow,
 } from '@abstrack/types';
-import { listEpisodeObservationTimeline } from './episode-observation-timeline.js';
+import {
+  EPISODE_TIMELINE_FOOD_NOTE_DETAIL_MAX_RUN,
+  EPISODE_TIMELINE_SYMPTOM_MARKER_DETAIL_MAX_RUN,
+  listEpisodeObservationTimeline,
+  mergeEpisodeObservationRowsToTimeline,
+  mergeStandaloneHealthAndFoodRowsToTimeline,
+} from './episode-observation-timeline.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
+
+const TRUNCATION_ELLIPSIS = '…';
+
+const SYMPTOM_MARKER_PREVIEW_CODE_UNITS =
+  EPISODE_TIMELINE_SYMPTOM_MARKER_DETAIL_MAX_RUN - TRUNCATION_ELLIPSIS.length;
+const FOOD_NOTE_PREVIEW_CODE_UNITS =
+  EPISODE_TIMELINE_FOOD_NOTE_DETAIL_MAX_RUN - TRUNCATION_ELLIPSIS.length;
 
 const listEpisodeSymptomsForEpisode = vi.hoisted(() => vi.fn());
 const listEpisodeHealthMarkersForEpisode = vi.hoisted(() => vi.fn());
@@ -283,5 +298,242 @@ describe('listEpisodeObservationTimeline', () => {
         detail: 'Still include me',
       },
     ]);
+  });
+});
+
+describe('mergeEpisodeObservationRowsToTimeline', () => {
+  it('uses bounded detail previews and detailFull for long free-text symptoms, note-only markers, numeric markers with notes, and food notes', () => {
+    const longSymptom = 's'.repeat(200);
+    const longNotes = 'n'.repeat(150);
+    const longFood = 'f'.repeat(120);
+
+    const symptom: EpisodeSymptomRow = {
+      id: 'sym-long',
+      user_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      episode_id: 'eeeeeeee-bbbb-cccc-dddd-aaaaaaaaaaaa',
+      preset_symptom_id: null,
+      symptom_name: 'Free note',
+      response_type: 'free_text',
+      response_boolean: null,
+      response_severity: null,
+      response_text: longSymptom,
+      sort_order: 0,
+      created_at: '2026-04-24T12:00:00.000Z',
+      updated_at: '2026-04-24T12:00:00.000Z',
+    };
+
+    const hmNoteOnly: HealthMarkerRow = {
+      id: 'hm-long',
+      user_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      episode_id: 'eeeeeeee-bbbb-cccc-dddd-aaaaaaaaaaaa',
+      preset_health_marker_id: null,
+      marker_kind: 'custom',
+      custom_name: null,
+      custom_name_key: null,
+      custom_unit: null,
+      custom_unit_key: null,
+      value_numeric: null,
+      systolic_numeric: null,
+      diastolic_numeric: null,
+      notes: longNotes,
+      recorded_at: '2026-04-24T11:00:00.000Z',
+      created_at: '2026-04-24T11:00:00.000Z',
+      updated_at: '2026-04-24T11:00:00.000Z',
+    };
+
+    const hmNumericWithLongNotes: HealthMarkerRow = {
+      id: 'hm-numeric-long-notes',
+      user_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      episode_id: 'eeeeeeee-bbbb-cccc-dddd-aaaaaaaaaaaa',
+      preset_health_marker_id: null,
+      marker_kind: 'heart_rate',
+      custom_name: null,
+      custom_name_key: null,
+      custom_unit: null,
+      custom_unit_key: null,
+      value_numeric: 72,
+      systolic_numeric: null,
+      diastolic_numeric: null,
+      notes: longNotes,
+      recorded_at: '2026-04-24T11:30:00.000Z',
+      created_at: '2026-04-24T11:30:00.000Z',
+      updated_at: '2026-04-24T11:30:00.000Z',
+    };
+
+    const fd: FoodDiaryEntryRow = {
+      id: 'fd-long',
+      user_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      episode_id: 'eeeeeeee-bbbb-cccc-dddd-aaaaaaaaaaaa',
+      meal_tag: 'Lunch',
+      food_note: longFood,
+      logged_at: '2026-04-24T10:00:00.000Z',
+      created_at: '2026-04-24T10:00:00.000Z',
+      updated_at: '2026-04-24T10:00:00.000Z',
+    };
+
+    const merged = mergeEpisodeObservationRowsToTimeline(
+      [symptom],
+      [hmNoteOnly, hmNumericWithLongNotes],
+      [fd],
+    );
+    const numericCombined = `72 · ${longNotes}`;
+    expect(merged.find((r) => r.id === 'sym-long')).toEqual(
+      expect.objectContaining({
+        kind: 'symptom',
+        id: 'sym-long',
+        label: 'Free note',
+        detail: `${longSymptom.slice(0, SYMPTOM_MARKER_PREVIEW_CODE_UNITS)}${TRUNCATION_ELLIPSIS}`,
+        detailFull: longSymptom,
+      }),
+    );
+    expect(merged.find((r) => r.id === 'hm-long')).toEqual(
+      expect.objectContaining({
+        kind: 'health_marker',
+        id: 'hm-long',
+        detail: `${longNotes.slice(0, SYMPTOM_MARKER_PREVIEW_CODE_UNITS)}${TRUNCATION_ELLIPSIS}`,
+        detailFull: longNotes,
+      }),
+    );
+    expect(merged.find((r) => r.id === 'hm-numeric-long-notes')).toEqual(
+      expect.objectContaining({
+        kind: 'health_marker',
+        id: 'hm-numeric-long-notes',
+        detail: `${numericCombined.slice(0, SYMPTOM_MARKER_PREVIEW_CODE_UNITS)}${TRUNCATION_ELLIPSIS}`,
+        detailFull: numericCombined,
+      }),
+    );
+    expect(merged.find((r) => r.id === 'fd-long')).toEqual(
+      expect.objectContaining({
+        kind: 'food',
+        id: 'fd-long',
+        detail: `${longFood.slice(0, FOOD_NOTE_PREVIEW_CODE_UNITS)}${TRUNCATION_ELLIPSIS}`,
+        detailFull: longFood,
+      }),
+    );
+  });
+
+  it('includes optional notes with blood pressure readings', () => {
+    const hm: HealthMarkerRow = {
+      id: 'hm-bp-notes',
+      user_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      episode_id: 'eeeeeeee-bbbb-cccc-dddd-aaaaaaaaaaaa',
+      preset_health_marker_id: null,
+      marker_kind: 'blood_pressure',
+      custom_name: null,
+      custom_name_key: null,
+      custom_unit: null,
+      custom_unit_key: null,
+      value_numeric: null,
+      systolic_numeric: 120,
+      diastolic_numeric: 80,
+      notes: 'Resting, left arm',
+      recorded_at: '2026-04-24T11:30:00.000Z',
+      created_at: '2026-04-24T11:30:00.000Z',
+      updated_at: '2026-04-24T11:30:00.000Z',
+    };
+
+    const merged = mergeEpisodeObservationRowsToTimeline([], [hm], []);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({
+      kind: 'health_marker',
+      id: 'hm-bp-notes',
+      detail: '120/80 · Resting, left arm',
+    });
+  });
+
+  it('bounds blood pressure readings with long notes using detailFull', () => {
+    const longNote = 'z'.repeat(120);
+    const hm: HealthMarkerRow = {
+      id: 'hm-bp-long-notes',
+      user_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      episode_id: 'eeeeeeee-bbbb-cccc-dddd-aaaaaaaaaaaa',
+      preset_health_marker_id: null,
+      marker_kind: 'blood_pressure',
+      custom_name: null,
+      custom_name_key: null,
+      custom_unit: null,
+      custom_unit_key: null,
+      value_numeric: null,
+      systolic_numeric: 118,
+      diastolic_numeric: 76,
+      notes: longNote,
+      recorded_at: '2026-04-24T11:31:00.000Z',
+      created_at: '2026-04-24T11:31:00.000Z',
+      updated_at: '2026-04-24T11:31:00.000Z',
+    };
+
+    const merged = mergeEpisodeObservationRowsToTimeline([], [hm], []);
+    const combined = `118/76 · ${longNote}`;
+    expect(merged[0]).toMatchObject({
+      kind: 'health_marker',
+      id: 'hm-bp-long-notes',
+      detail: `${combined.slice(0, SYMPTOM_MARKER_PREVIEW_CODE_UNITS)}${TRUNCATION_ELLIPSIS}`,
+      detailFull: combined,
+    });
+  });
+
+  it('includes optional notes with numeric measurement markers', () => {
+    const hm: HealthMarkerRow = {
+      id: 'hm-hr-notes',
+      user_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      episode_id: 'eeeeeeee-bbbb-cccc-dddd-aaaaaaaaaaaa',
+      preset_health_marker_id: null,
+      marker_kind: 'heart_rate',
+      custom_name: null,
+      custom_name_key: null,
+      custom_unit: null,
+      custom_unit_key: null,
+      value_numeric: 72,
+      systolic_numeric: null,
+      diastolic_numeric: null,
+      notes: 'After short walk',
+      recorded_at: '2026-04-24T11:32:00.000Z',
+      created_at: '2026-04-24T11:32:00.000Z',
+      updated_at: '2026-04-24T11:32:00.000Z',
+    };
+
+    const merged = mergeEpisodeObservationRowsToTimeline([], [hm], []);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({
+      kind: 'health_marker',
+      id: 'hm-hr-notes',
+      detail: '72 · After short walk',
+    });
+  });
+});
+
+describe('mergeStandaloneHealthAndFoodRowsToTimeline', () => {
+  it('uses id as tie-breaker when marker and food share the same instant', () => {
+    const hm: HealthMarkerRow = {
+      id: 'marker-b',
+      user_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      episode_id: null,
+      preset_health_marker_id: null,
+      marker_kind: 'heart_rate',
+      custom_name: null,
+      custom_name_key: null,
+      custom_unit: null,
+      custom_unit_key: null,
+      value_numeric: 72,
+      systolic_numeric: null,
+      diastolic_numeric: null,
+      recorded_at: '2026-04-24T12:00:00.000Z',
+      notes: null,
+      created_at: '2026-04-24T12:00:00.000Z',
+      updated_at: '2026-04-24T12:00:00.000Z',
+    };
+    const food: FoodDiaryEntryRow = {
+      id: 'food-a',
+      user_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      episode_id: null,
+      meal_tag: 'Lunch',
+      food_note: 'Soup',
+      logged_at: '2026-04-24T12:00:00.000Z',
+      created_at: '2026-04-24T12:00:00.000Z',
+      updated_at: '2026-04-24T12:00:00.000Z',
+    };
+
+    const items = mergeStandaloneHealthAndFoodRowsToTimeline([hm], [food]);
+    expect(items.map((r) => r.id)).toEqual(['food-a', 'marker-b']);
   });
 });

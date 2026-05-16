@@ -24,6 +24,9 @@ import {
   cancelActiveEpisodeById,
   completeEpisodePostMarkerStep,
   endEpisodeIfStillActive,
+  episodeTimelineBloodPressureDetailWithOptionalNotes,
+  episodeTimelineBoundedSymptomMarkerText,
+  episodeTimelineMeasurementDetailWithOptionalNotes,
   getEpisodeById,
   insertEpisodeHealthMarkerForLine,
   listEpisodeHealthMarkersForEpisode,
@@ -49,24 +52,61 @@ function trimToNull(value: string): string | null {
   return t.length > 0 ? t : null;
 }
 
-function healthMarkerDetailForTimeline(row: HealthMarkerRow): string {
+/**
+ * Prefer non-empty `saved.notes` on the row returned from {@link insertEpisodeHealthMarkerForLine}
+ * (that helper persists `notes` and uses `.select('*')`, so the response should normally include them).
+ * If `notes` is still null/blank on that object, merge in the draft the patient just submitted so the
+ * in-memory timeline stays correct in the same render — **purely defensive**, not because the
+ * standard insert path is expected to drop free text.
+ *
+ * @param saved - Row returned from {@link insertEpisodeHealthMarkerForLine}.
+ * @param draftNotes - Notes string from the measurement draft just submitted.
+ */
+function healthMarkerRowWithResolvedNotesForTimeline(
+  saved: HealthMarkerRow,
+  draftNotes: string,
+): HealthMarkerRow {
+  const persisted =
+    saved.notes != null && String(saved.notes).trim() !== ''
+      ? String(saved.notes).trim()
+      : null;
+  const fromDraft = trimToNull(draftNotes);
+  return {
+    ...saved,
+    notes: persisted ?? fromDraft,
+  };
+}
+
+function healthMarkerDetailForTimeline(
+  row: HealthMarkerRow,
+): Pick<EpisodeTimelineItem, 'detail' | 'detailFull'> {
   if (row.marker_kind === 'blood_pressure') {
     if (row.systolic_numeric != null && row.diastolic_numeric != null) {
-      return `${row.systolic_numeric}/${row.diastolic_numeric}`;
+      return episodeTimelineBloodPressureDetailWithOptionalNotes(
+        row.systolic_numeric,
+        row.diastolic_numeric,
+        row.notes,
+      );
     }
-    return '—';
+    return { detail: '—' };
   }
   if (row.value_numeric != null) {
-    let detail = String(row.value_numeric);
+    let measurementDetail = String(row.value_numeric);
     if (row.custom_unit) {
-      detail = `${detail} ${row.custom_unit}`;
+      measurementDetail = `${measurementDetail} ${row.custom_unit}`;
     } else if (row.marker_kind === 'bac') {
-      detail = `${detail} g/dL`;
+      measurementDetail = `${measurementDetail} g/dL`;
     }
-    return detail;
+    return episodeTimelineMeasurementDetailWithOptionalNotes(
+      measurementDetail,
+      row.notes,
+    );
   }
   const n = row.notes?.trim();
-  return n ? (n.length > 80 ? `${n.slice(0, 77)}…` : n) : '—';
+  if (!n) {
+    return { detail: '—' };
+  }
+  return episodeTimelineBoundedSymptomMarkerText(n);
 }
 
 export type HealthMarkerPromptFlowProps = {
@@ -405,7 +445,12 @@ export function HealthMarkerPromptFlow({
       sortAt: result.data.recorded_at,
       id: result.data.id,
       label: markerLineTitle(currentLine),
-      detail: healthMarkerDetailForTimeline(result.data),
+      ...healthMarkerDetailForTimeline(
+        healthMarkerRowWithResolvedNotesForTimeline(
+          result.data,
+          currentDraft.notes,
+        ),
+      ),
     };
     setObservationTimeline((prev) =>
       upsertEpisodeTimelineItem(prev, timelineItem),

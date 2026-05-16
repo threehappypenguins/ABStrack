@@ -35,6 +35,9 @@ import {
   validatePresetHealthMarkerCustomFields,
 } from '@abstrack/types';
 import {
+  episodeTimelineBloodPressureDetailWithOptionalNotes,
+  episodeTimelineBoundedSymptomMarkerText,
+  episodeTimelineMeasurementDetailWithOptionalNotes,
   getEpisodeById,
   listEpisodeObservationTimeline,
   listPresetHealthMarkersForPreset,
@@ -105,6 +108,31 @@ function trimToNull(value: string): string | null {
   return t.length > 0 ? t : null;
 }
 
+/**
+ * Prefer non-empty `saved.notes` from the row returned right after insert; otherwise merge in the
+ * draft the patient just submitted so {@link healthMarkerDetailForTimeline} can show BP / numeric
+ * notes in the same render. Offline-first (PowerSync) and REST paths both map `notes` back on the
+ * inserted row when present — this stays defensive when `notes` is still null/blank on that object
+ * (timing, partial shapes, or other edge cases), without implying a gap in the SQLite write path.
+ *
+ * @param saved - Row returned from {@link insertEpisodeHealthMarkerLineOfflineFirst}.
+ * @param draftNotes - Notes string from the measurement draft just submitted.
+ */
+function healthMarkerRowWithResolvedNotesForTimeline(
+  saved: HealthMarkerRow,
+  draftNotes: string,
+): HealthMarkerRow {
+  const persisted =
+    saved.notes != null && String(saved.notes).trim() !== ''
+      ? String(saved.notes).trim()
+      : null;
+  const fromDraft = trimToNull(draftNotes);
+  return {
+    ...saved,
+    notes: persisted ?? fromDraft,
+  };
+}
+
 function formatTimelineInstant(isoLike: string): string {
   const ms = Date.parse(isoLike);
   if (!Number.isFinite(ms)) {
@@ -113,24 +141,36 @@ function formatTimelineInstant(isoLike: string): string {
   return new Date(ms).toLocaleString();
 }
 
-function healthMarkerDetailForTimeline(row: HealthMarkerRow): string {
+function healthMarkerDetailForTimeline(
+  row: HealthMarkerRow,
+): Pick<EpisodeTimelineItem, 'detail' | 'detailFull'> {
   if (row.marker_kind === 'blood_pressure') {
     if (row.systolic_numeric != null && row.diastolic_numeric != null) {
-      return `${row.systolic_numeric}/${row.diastolic_numeric}`;
+      return episodeTimelineBloodPressureDetailWithOptionalNotes(
+        row.systolic_numeric,
+        row.diastolic_numeric,
+        row.notes,
+      );
     }
-    return '—';
+    return { detail: '—' };
   }
   if (row.value_numeric != null) {
-    let detail = String(row.value_numeric);
+    let measurementDetail = String(row.value_numeric);
     if (row.custom_unit) {
-      detail = `${detail} ${row.custom_unit}`;
+      measurementDetail = `${measurementDetail} ${row.custom_unit}`;
     } else if (row.marker_kind === 'bac') {
-      detail = `${detail} g/dL`;
+      measurementDetail = `${measurementDetail} g/dL`;
     }
-    return detail;
+    return episodeTimelineMeasurementDetailWithOptionalNotes(
+      measurementDetail,
+      row.notes,
+    );
   }
   const n = row.notes?.trim();
-  return n ? (n.length > 80 ? `${n.slice(0, 77)}…` : n) : '—';
+  if (!n) {
+    return { detail: '—' };
+  }
+  return episodeTimelineBoundedSymptomMarkerText(n);
 }
 
 function markerLineTitle(line: PresetHealthMarkerRow): string {
@@ -652,7 +692,12 @@ export function HealthMarkerPromptScreen() {
       sortAt: result.data.recorded_at,
       id: result.data.id,
       label: markerLineTitle(currentLine),
-      detail: healthMarkerDetailForTimeline(result.data),
+      ...healthMarkerDetailForTimeline(
+        healthMarkerRowWithResolvedNotesForTimeline(
+          result.data,
+          currentDraft.notes,
+        ),
+      ),
     };
     setObservationTimeline((prev) =>
       upsertEpisodeTimelineItem(prev, timelineItem),

@@ -210,14 +210,14 @@ describe('buildHealthMarkerInsertRowForPresetLine', () => {
 });
 
 describe('listEpisodeHealthMarkersForEpisode', () => {
-  it('orders by recorded_at desc, then created_at desc, then id desc', async () => {
+  it('orders by recorded_at desc, then id desc (merged timeline tie-break)', async () => {
     const orderCalls: { column: string; ascending: boolean }[] = [];
     const orderFn = vi.fn((column: string, opts?: { ascending?: boolean }) => {
       orderCalls.push({
         column,
         ascending: opts?.ascending ?? true,
       });
-      if (orderCalls.length < 3) {
+      if (orderCalls.length < 2) {
         return { order: orderFn };
       }
       return Promise.resolve({ data: [], error: null });
@@ -237,7 +237,6 @@ describe('listEpisodeHealthMarkersForEpisode', () => {
     expect(result.ok).toBe(true);
     expect(orderCalls).toEqual([
       { column: 'recorded_at', ascending: false },
-      { column: 'created_at', ascending: false },
       { column: 'id', ascending: false },
     ]);
   });
@@ -697,6 +696,39 @@ describe('createStandaloneHealthMarkerForLine', () => {
 });
 
 describe('listStandaloneHealthMarkersForUser', () => {
+  it('orders by recorded_at desc, then id desc (merged standalone timeline tie-break)', async () => {
+    const orderCalls: { column: string; ascending: boolean }[] = [];
+    const range = vi.fn(async () => ({ data: [], error: null }));
+    const orderBuilder = {
+      order: vi.fn((column: string, opts?: { ascending?: boolean }) => {
+        orderCalls.push({
+          column,
+          ascending: opts?.ascending ?? true,
+        });
+        return orderBuilder;
+      }),
+      range,
+    };
+    const isFn = vi.fn(() => orderBuilder);
+    const eq = vi.fn(() => ({ is: isFn }));
+    const client = {
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({ eq })),
+      })),
+    } as unknown as AbstrackSupabaseClient;
+
+    const result = await listStandaloneHealthMarkersForUser(client, 'u1', {
+      limit: 10,
+      offset: 0,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(orderCalls).toEqual([
+      { column: 'recorded_at', ascending: false },
+      { column: 'id', ascending: false },
+    ]);
+  });
+
   it('filters episode_id null, orders, and ranges', async () => {
     const rows = [{ id: 'hm-1' }];
     const range = vi.fn(async () => ({ data: rows, error: null }));

@@ -1,5 +1,7 @@
 import {
   PRESET_HEALTH_MARKER_KIND_LABELS,
+  type EpisodeSymptomRow,
+  type FoodDiaryEntryRow,
   type HealthMarkerRow,
   type Uuid,
 } from '@abstrack/types';
@@ -9,20 +11,30 @@ import type { AbstrackSupabaseClient } from './supabase-client-type.js';
 import { listEpisodeHealthMarkersForEpisode } from './episode-health-marker-data.js';
 import { listEpisodeSymptomsForEpisode } from './episode-symptom-data.js';
 import { listFoodDiaryEntriesForEpisode } from './food-diary-data.js';
+import {
+  compareEpisodeTimelineItems,
+  episodeTimelineBloodPressureDetailWithOptionalNotes,
+  episodeTimelineBoundedFoodNote,
+  episodeTimelineBoundedSymptomMarkerText,
+  episodeTimelineMeasurementDetailWithOptionalNotes,
+  type EpisodeTimelineItem,
+} from './episode-observation-timeline-core.js';
 
-const EPISODE_TIMELINE_SOURCE_LIMIT = 200;
+export {
+  compareEpisodeTimelineItems,
+  EPISODE_TIMELINE_FOOD_NOTE_DETAIL_MAX_RUN,
+  EPISODE_TIMELINE_SYMPTOM_MARKER_DETAIL_MAX_RUN,
+  episodeTimelineBloodPressureDetailWithOptionalNotes,
+  episodeTimelineBoundedFoodNote,
+  episodeTimelineBoundedSymptomMarkerText,
+  episodeTimelineMeasurementDetailWithOptionalNotes,
+  upsertEpisodeTimelineItem,
+} from './episode-observation-timeline-core.js';
 
-/**
- * One row in a merged, time-ordered episode view (symptoms, health markers, food).
- */
-export type EpisodeTimelineItem = {
-  kind: 'symptom' | 'health_marker' | 'food';
-  /** ISO string used for ordering (`created_at` / `recorded_at` / `logged_at`). */
-  sortAt: string;
-  id: string;
-  label: string;
-  detail: string;
-};
+export type { EpisodeTimelineItem } from './episode-observation-timeline-core.js';
+
+/** Max rows pulled per observation source when building one episode timeline (symptoms / markers / food). */
+export const EPISODE_TIMELINE_SOURCE_LIMIT = 200;
 
 function healthMarkerTimelineLabel(
   kind: string,
@@ -45,53 +57,152 @@ function healthMarkerTimelineLabel(
   return custom && custom.length > 0 ? custom : kind;
 }
 
-/**
- * Compares two timeline items using the canonical merged-history ordering: oldest timestamp first,
- * then `id` as a stable tie-breaker.
- *
- * @param a - Left timeline item.
- * @param b - Right timeline item.
- * @returns Negative when `a` sorts before `b`.
- */
-export function compareEpisodeTimelineItems(
-  a: EpisodeTimelineItem,
-  b: EpisodeTimelineItem,
-): number {
-  const aMs = Date.parse(a.sortAt);
-  const bMs = Date.parse(b.sortAt);
-  const aValid = Number.isFinite(aMs);
-  const bValid = Number.isFinite(bMs);
-  if (aValid && bValid) {
-    const c = aMs - bMs;
-    if (c !== 0) {
-      return c;
+function pushSymptomRowsToTimelineItems(
+  items: EpisodeTimelineItem[],
+  rows: EpisodeSymptomRow[],
+): void {
+  for (const s of rows) {
+    const symptomLabel = s.symptom_name.trim();
+    let detail = '—';
+    let detailFull: string | undefined;
+    if (s.response_type === 'yes_no' && s.response_boolean != null) {
+      detail = s.response_boolean ? 'Yes' : 'No';
+    } else if (
+      s.response_type === 'severity_scale' &&
+      s.response_severity != null
+    ) {
+      detail = `Severity ${s.response_severity}`;
+    } else if (s.response_type === 'free_text' && s.response_text) {
+      const bounded = episodeTimelineBoundedSymptomMarkerText(
+        s.response_text.trim(),
+      );
+      detail = bounded.detail;
+      detailFull = bounded.detailFull;
+    } else if (s.response_type === 'photo') {
+      detail = 'Photo';
+    } else if (s.response_type === 'video') {
+      detail = 'Video';
     }
-  } else {
-    // Defensive fallback for unexpected timestamp serialization.
-    const c = a.sortAt.localeCompare(b.sortAt);
-    if (c !== 0) {
-      return c;
-    }
+    items.push({
+      kind: 'symptom',
+      sortAt: s.created_at,
+      id: s.id,
+      label: symptomLabel.length > 0 ? symptomLabel : 'Symptom entry',
+      detail,
+      ...(detailFull ? { detailFull } : {}),
+    });
   }
-  // Stable tie-break so merged timeline order is deterministic.
-  return a.id.localeCompare(b.id);
+}
+
+function pushHealthMarkerRowsToTimelineItems(
+  items: EpisodeTimelineItem[],
+  rows: HealthMarkerRow[],
+): void {
+  for (const m of rows) {
+    let detail = '—';
+    let detailFull: string | undefined;
+    if (m.marker_kind === 'blood_pressure') {
+      if (m.systolic_numeric != null && m.diastolic_numeric != null) {
+        const parts = episodeTimelineBloodPressureDetailWithOptionalNotes(
+          m.systolic_numeric,
+          m.diastolic_numeric,
+          m.notes,
+        );
+        detail = parts.detail;
+        detailFull = parts.detailFull;
+      }
+    } else if (m.value_numeric != null) {
+      let measurement = String(m.value_numeric);
+      if (m.custom_unit) {
+        measurement = `${measurement} ${m.custom_unit}`;
+      } else if (m.marker_kind === 'bac') {
+        measurement = `${measurement} g/dL`;
+      }
+      const parts = episodeTimelineMeasurementDetailWithOptionalNotes(
+        measurement,
+        m.notes,
+      );
+      detail = parts.detail;
+      detailFull = parts.detailFull;
+    } else {
+      const n = m.notes?.trim();
+      if (n) {
+        const bounded = episodeTimelineBoundedSymptomMarkerText(n);
+        detail = bounded.detail;
+        detailFull = bounded.detailFull;
+      }
+    }
+    const kindLabel = healthMarkerTimelineLabel(m.marker_kind, m.custom_name);
+    items.push({
+      kind: 'health_marker',
+      sortAt: m.recorded_at,
+      id: m.id,
+      label: kindLabel,
+      detail,
+      ...(detailFull ? { detailFull } : {}),
+    });
+  }
+}
+
+function pushFoodDiaryRowsToTimelineItems(
+  items: EpisodeTimelineItem[],
+  rows: FoodDiaryEntryRow[],
+): void {
+  for (const f of rows) {
+    const note = f.food_note.trim();
+    const bounded = episodeTimelineBoundedFoodNote(note);
+    items.push({
+      kind: 'food',
+      sortAt: f.logged_at,
+      id: f.id,
+      label: f.meal_tag,
+      detail: bounded.detail,
+      ...(bounded.detailFull ? { detailFull: bounded.detailFull } : {}),
+    });
+  }
 }
 
 /**
- * Inserts or replaces one timeline row in-memory and returns a canonically sorted copy.
+ * Builds a merged, time-ordered list of symptom, health-marker, and food-diary observations for UI
+ * surfaces (same ordering rules as {@link compareEpisodeTimelineItems}).
  *
- * @param prev - Existing timeline rows.
- * @param next - Row to insert/replace by (`kind`, `id`).
- * @returns New sorted timeline rows.
+ * @param symptoms - Episode symptom rows (uses `created_at` for ordering).
+ * @param healthMarkers - Health marker rows (uses `recorded_at`).
+ * @param foods - Food diary rows (uses `logged_at`).
+ * @returns Sorted timeline rows. Long free-text, marker notes (including notes paired with blood
+ *   pressure readings or numeric measurements), and food descriptions use bounded
+ *   {@link EpisodeTimelineItem.detail} with optional {@link EpisodeTimelineItem.detailFull}.
  */
-export function upsertEpisodeTimelineItem(
-  prev: EpisodeTimelineItem[],
-  next: EpisodeTimelineItem,
+export function mergeEpisodeObservationRowsToTimeline(
+  symptoms: EpisodeSymptomRow[],
+  healthMarkers: HealthMarkerRow[],
+  foods: FoodDiaryEntryRow[],
 ): EpisodeTimelineItem[] {
-  const rows = prev.filter((r) => !(r.kind === next.kind && r.id === next.id));
-  rows.push(next);
-  rows.sort(compareEpisodeTimelineItems);
-  return rows;
+  const items: EpisodeTimelineItem[] = [];
+  pushSymptomRowsToTimelineItems(items, symptoms);
+  pushHealthMarkerRowsToTimelineItems(items, healthMarkers);
+  pushFoodDiaryRowsToTimelineItems(items, foods);
+  items.sort(compareEpisodeTimelineItems);
+  return items;
+}
+
+/**
+ * Standalone health markers and food diary rows (no episode), merged with the same ordering as
+ * episode-bound timelines.
+ *
+ * @param healthMarkers - `episode_id IS NULL` health marker rows.
+ * @param foods - Food diary rows with no episode link.
+ * @returns Sorted timeline rows.
+ */
+export function mergeStandaloneHealthAndFoodRowsToTimeline(
+  healthMarkers: HealthMarkerRow[],
+  foods: FoodDiaryEntryRow[],
+): EpisodeTimelineItem[] {
+  const items: EpisodeTimelineItem[] = [];
+  pushHealthMarkerRowsToTimelineItems(items, healthMarkers);
+  pushFoodDiaryRowsToTimelineItems(items, foods);
+  items.sort(compareEpisodeTimelineItems);
+  return items;
 }
 
 /**
@@ -140,76 +251,11 @@ export async function listEpisodeObservationTimeline(
     if (!fd.ok) {
       return { data: null, error: fd.error };
     }
-    const items: EpisodeTimelineItem[] = [];
-
-    for (const s of sy.data) {
-      const symptomLabel = s.symptom_name.trim();
-      let detail = '—';
-      if (s.response_type === 'yes_no' && s.response_boolean != null) {
-        detail = s.response_boolean ? 'Yes' : 'No';
-      } else if (
-        s.response_type === 'severity_scale' &&
-        s.response_severity != null
-      ) {
-        detail = `Severity ${s.response_severity}`;
-      } else if (s.response_type === 'free_text' && s.response_text) {
-        const t = s.response_text.trim();
-        detail = t.length > 80 ? `${t.slice(0, 77)}…` : t;
-      } else if (s.response_type === 'photo') {
-        detail = 'Photo';
-      } else if (s.response_type === 'video') {
-        detail = 'Video';
-      }
-      items.push({
-        kind: 'symptom',
-        sortAt: s.created_at,
-        id: s.id,
-        label: symptomLabel.length > 0 ? symptomLabel : 'Symptom entry',
-        detail,
-      });
-    }
-
-    for (const m of hm.data) {
-      let detail = '—';
-      if (m.marker_kind === 'blood_pressure') {
-        if (m.systolic_numeric != null && m.diastolic_numeric != null) {
-          detail = `${m.systolic_numeric}/${m.diastolic_numeric}`;
-        }
-      } else if (m.value_numeric != null) {
-        detail = String(m.value_numeric);
-        if (m.custom_unit) {
-          detail = `${detail} ${m.custom_unit}`;
-        } else if (m.marker_kind === 'bac') {
-          detail = `${detail} g/dL`;
-        }
-      } else {
-        const n = m.notes?.trim();
-        if (n) {
-          detail = n.length > 80 ? `${n.slice(0, 77)}…` : n;
-        }
-      }
-      const kindLabel = healthMarkerTimelineLabel(m.marker_kind, m.custom_name);
-      items.push({
-        kind: 'health_marker',
-        sortAt: m.recorded_at,
-        id: m.id,
-        label: kindLabel,
-        detail,
-      });
-    }
-
-    for (const f of fd.data) {
-      const note = f.food_note.trim();
-      items.push({
-        kind: 'food',
-        sortAt: f.logged_at,
-        id: f.id,
-        label: f.meal_tag,
-        detail: note.length > 100 ? `${note.slice(0, 97)}…` : note,
-      });
-    }
-
-    items.sort(compareEpisodeTimelineItems);
+    const items = mergeEpisodeObservationRowsToTimeline(
+      sy.data,
+      hm.data,
+      fd.data,
+    );
     return { data: items, error: null };
   });
 }

@@ -356,6 +356,10 @@ export function mapSqliteRowToHealthMarkerRow(
 /**
  * Lists health marker measurements for one episode from the local replica (newest first).
  *
+ * Ordering matches `listEpisodeHealthMarkersForEpisode` in `@abstrack/supabase` (`recorded_at`
+ * descending, then `id` descending) so REST and offline-first reads agree when `recorded_at` ties
+ * under a `LIMIT` (no `created_at` tie-break).
+ *
  * @param db - Open PowerSync database.
  * @param episodeId - `episodes.id`.
  * @param limit - Optional cap (same semantics as Supabase helper).
@@ -375,7 +379,7 @@ SELECT id, user_id, episode_id, preset_health_marker_id, marker_kind, custom_nam
   recorded_at, notes, created_at, updated_at
 FROM health_markers
 WHERE episode_id = ?
-ORDER BY recorded_at DESC, created_at DESC, id DESC
+ORDER BY recorded_at DESC, id DESC
 ${lim != null ? `LIMIT ${lim}` : ''}
 `.trim();
   const rows = await db.getAll(sql, [episodeId]);

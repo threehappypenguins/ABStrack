@@ -75,6 +75,12 @@ Do **not** change `.github/workflows/*` deployment, permissions, or secrets with
 
 Do **not** add **`week_`** (or other week-number-style prefixes) to **code, identifiers, or file/folder paths**. Use **feature- or domain-based** names instead (for example `page-states`, not `week4`).
 
+## Practitioner episode timelines (`loadPractitionerPatientObservationReadModel`)
+
+Episode-bound symptom / marker / food history for the practitioner patient detail page loads **per episode** via **`listEpisodeSymptomsForEpisode`**, **`listEpisodeHealthMarkersForEpisode`**, and **`listFoodDiaryEntriesForEpisode`**, each with **`limit: EPISODE_TIMELINE_SOURCE_LIMIT + 1`** (newest first). That applies the cap **in Postgres through PostgREST `LIMIT`** without an extra migration.
+
+**Do not** flag this as “must use batched `.in('episode_id', …)` + RPC/window SQL” in review: episodes are short-lived and row counts per episode are expected to be modest; **avoid regressing** to a single `.select('*').in('episode_id', …)` across many episodes **with no per-episode limit** (that would ship unbounded rows for a hot episode). If product assumptions change materially, propose changes **with Sarah’s migration workflow**—do not invent schema changes silently.
+
 ## MCP servers (documentation and APIs)
 
 This workspace has **MCP servers** (for example Context7 for library and framework docs, Nx, Supabase, Next.js devtools, and the in-editor browser). **Use them** to pull **current** documentation and API details instead of relying only on training data. That helps avoid **deprecated** patterns, outdated APIs, and wrong version-specific behavior.

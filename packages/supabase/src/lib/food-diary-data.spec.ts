@@ -173,7 +173,7 @@ describe('normalizeFoodDiaryEntryUpdate', () => {
 });
 
 describe('listFoodDiaryEntriesForUser', () => {
-  it('orders by logged_at desc, created_at desc, id desc and applies default range', async () => {
+  it('orders by logged_at desc, then id desc (merged timeline tie-break) and applies default range', async () => {
     const rows: FoodDiaryEntryRow[] = [baseRow];
     const range = vi.fn(async () => ({ data: rows, error: null }));
     const orderBuilder = {
@@ -197,10 +197,7 @@ describe('listFoodDiaryEntriesForUser', () => {
     expect(orderBuilder.order).toHaveBeenNthCalledWith(1, 'logged_at', {
       ascending: false,
     });
-    expect(orderBuilder.order).toHaveBeenNthCalledWith(2, 'created_at', {
-      ascending: false,
-    });
-    expect(orderBuilder.order).toHaveBeenNthCalledWith(3, 'id', {
+    expect(orderBuilder.order).toHaveBeenNthCalledWith(2, 'id', {
       ascending: false,
     });
     expect(range).toHaveBeenCalledWith(0, 49);
@@ -308,6 +305,12 @@ describe('listFoodDiaryEntriesForEpisode', () => {
     expect(result.ok).toBe(true);
     expect(eq).toHaveBeenCalledWith('episode_id', 'ep-1');
     expect(limit).toHaveBeenCalledWith(10);
+    expect(orderBuilder.order).toHaveBeenNthCalledWith(1, 'logged_at', {
+      ascending: false,
+    });
+    expect(orderBuilder.order).toHaveBeenNthCalledWith(2, 'id', {
+      ascending: false,
+    });
   });
 });
 

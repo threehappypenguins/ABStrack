@@ -134,7 +134,16 @@ export {
 } from './lib/episode-health-marker-data.js';
 export {
   compareEpisodeTimelineItems,
+  EPISODE_TIMELINE_FOOD_NOTE_DETAIL_MAX_RUN,
+  EPISODE_TIMELINE_SOURCE_LIMIT,
+  EPISODE_TIMELINE_SYMPTOM_MARKER_DETAIL_MAX_RUN,
+  episodeTimelineBloodPressureDetailWithOptionalNotes,
+  episodeTimelineBoundedFoodNote,
+  episodeTimelineBoundedSymptomMarkerText,
+  episodeTimelineMeasurementDetailWithOptionalNotes,
   listEpisodeObservationTimeline,
+  mergeEpisodeObservationRowsToTimeline,
+  mergeStandaloneHealthAndFoodRowsToTimeline,
   type EpisodeTimelineItem,
   upsertEpisodeTimelineItem,
 } from './lib/episode-observation-timeline.js';
@@ -144,6 +153,21 @@ export {
   formatPractitionerPatientGrantedAt,
   listActivePractitionerPatientDirectory,
 } from './lib/practitioner-patient-directory-data.js';
+export type {
+  PractitionerPatientEpisodeObservationBlock,
+  PractitionerPatientEpisodeRow,
+  PractitionerPatientObservationReadModel,
+} from './lib/practitioner-patient-observation-read.js';
+export {
+  assertActivePractitionerGrantForPatient,
+  loadPractitionerPatientObservationReadModel,
+  PRACTITIONER_EPISODE_TIMELINE_LOAD_CHUNK,
+  PRACTITIONER_PATIENT_EPISODE_HISTORY_CAP,
+  PRACTITIONER_PATIENT_EPISODE_LIST_SELECT,
+  PRACTITIONER_PATIENT_OBSERVATION_GRANT_DENIED_MESSAGE,
+  PRACTITIONER_PATIENT_OBSERVATION_INVALID_PATIENT_ID_MESSAGE,
+  PRACTITIONER_STANDALONE_OBSERVATION_CAP,
+} from './lib/practitioner-patient-observation-read.js';
 export {
   createFoodDiaryEntry,
   deleteFoodDiaryEntry,
