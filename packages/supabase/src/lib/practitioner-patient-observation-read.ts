@@ -268,6 +268,38 @@ export const PRACTITIONER_PATIENT_OBSERVATION_GRANT_DENIED_MESSAGE =
   'You do not have access to this patient, or the link is no longer active.' as const;
 
 /**
+ * User-facing copy when `patientUserId` is not canonical UUID text (for example a forged or mistyped
+ * `/patients/[patientId]` segment). Returned as {@link PresetDataError} `code` `validation_error` so
+ * callers avoid PostgREST cast failures on UUID-typed RPCs and filters.
+ */
+export const PRACTITIONER_PATIENT_OBSERVATION_INVALID_PATIENT_ID_MESSAGE =
+  'That patient address is not valid. Open the patient from your patient list again.' as const;
+
+/**
+ * PostgreSQL-style UUID text (8-4-4-4-12 hex with hyphens). Rejects arbitrary route segments before
+ * they hit UUID-typed RPC arguments or `uuid` column filters, without requiring a specific RFC
+ * version nibble (test fixtures and auth ids may use non-canonical version fields).
+ */
+const PATIENT_USER_ID_UUID_TEXT_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function validatePatientUserIdForObservationRead(
+  patientUserId: string,
+): PresetDataResult<Uuid> {
+  const trimmed = patientUserId.trim();
+  if (!PATIENT_USER_ID_UUID_TEXT_RE.test(trimmed)) {
+    return {
+      ok: false,
+      error: new PresetDataError(
+        'validation_error',
+        PRACTITIONER_PATIENT_OBSERVATION_INVALID_PATIENT_ID_MESSAGE,
+      ),
+    };
+  }
+  return { ok: true, data: trimmed as Uuid };
+}
+
+/**
  * Verifies the **signed-in user** is allowed to act as a **practitioner** for this patient before
  * running broader PHI selects (fail-fast when there is no grant, the route was forged, or MFA rules
  * block access).
@@ -282,15 +314,22 @@ export const PRACTITIONER_PATIENT_OBSERVATION_GRANT_DENIED_MESSAGE =
  * via this path.
  *
  * @param client - Browser Supabase client (practitioner session; RLS applies).
- * @param patientUserId - `auth.users.id` of the patient.
+ * @param patientUserId - `auth.users.id` of the patient (canonical UUID text; invalid values return
+ *   `validation_error` without calling PostgREST).
  */
 export async function assertActivePractitionerGrantForPatient(
   client: AbstrackSupabaseClient,
   patientUserId: Uuid,
 ): Promise<PresetDataResult<void>> {
+  const idRes = validatePatientUserIdForObservationRead(patientUserId);
+  if (!idRes.ok) {
+    return { ok: false, error: idRes.error };
+  }
+  const canonicalPatientUserId = idRes.data;
+
   try {
     const { data, error } = await client.rpc('user_has_practitioner_access', {
-      p_patient_user_id: patientUserId,
+      p_patient_user_id: canonicalPatientUserId,
     });
 
     if (error) {
@@ -335,21 +374,31 @@ export async function assertActivePractitionerGrantForPatient(
  * in this read path.
  *
  * @param client - Browser Supabase client (practitioner session; RLS applies).
- * @param patientUserId - Patient auth user id (same UUID as `/patients/[patientId]`).
+ * @param patientUserId - Patient auth user id (same UUID as `/patients/[patientId]`). Non-canonical
+ *   UUID text returns `validation_error` without calling PostgREST.
  */
 export async function loadPractitionerPatientObservationReadModel(
   client: AbstrackSupabaseClient,
   patientUserId: Uuid,
 ): Promise<PresetDataResult<PractitionerPatientObservationReadModel>> {
+  const idRes = validatePatientUserIdForObservationRead(patientUserId);
+  if (!idRes.ok) {
+    return idRes;
+  }
+  const patientScopeUserId = idRes.data;
+
   const gate = await assertActivePractitionerGrantForPatient(
     client,
-    patientUserId,
+    patientScopeUserId,
   );
   if (!gate.ok) {
     return gate;
   }
 
-  const episodesResult = await loadEpisodesRecentFirst(client, patientUserId);
+  const episodesResult = await loadEpisodesRecentFirst(
+    client,
+    patientScopeUserId,
+  );
   if (!episodesResult.ok) {
     return episodesResult;
   }
@@ -359,12 +408,12 @@ export async function loadPractitionerPatientObservationReadModel(
 
   const [profileRes, standaloneHm, standaloneFood, timelinesBatch] =
     await Promise.all([
-      loadPatientDisplayName(client, patientUserId),
-      listStandaloneHealthMarkersForUser(client, patientUserId, {
+      loadPatientDisplayName(client, patientScopeUserId),
+      listStandaloneHealthMarkersForUser(client, patientScopeUserId, {
         limit: PRACTITIONER_STANDALONE_OBSERVATION_CAP + 1,
         offset: 0,
       }),
-      listFoodDiaryEntriesForUser(client, patientUserId, {
+      listFoodDiaryEntriesForUser(client, patientScopeUserId, {
         limit: PRACTITIONER_STANDALONE_OBSERVATION_CAP + 1,
         offset: 0,
         standaloneOnly: true,
@@ -416,7 +465,7 @@ export async function loadPractitionerPatientObservationReadModel(
   return {
     ok: true,
     data: {
-      patientUserId,
+      patientUserId: patientScopeUserId,
       patientDisplayName: profileRes.data,
       episodesWithTimelines,
       standaloneTimeline,

@@ -3,6 +3,7 @@ import type {
   EpisodeSymptomRow,
   FoodDiaryEntryRow,
   HealthMarkerRow,
+  Uuid,
 } from '@abstrack/types';
 import {
   EPISODE_TIMELINE_SOURCE_LIMIT,
@@ -15,6 +16,7 @@ import {
   PRACTITIONER_EPISODE_TIMELINE_LOAD_CHUNK,
   PRACTITIONER_PATIENT_EPISODE_HISTORY_CAP,
   PRACTITIONER_PATIENT_EPISODE_LIST_SELECT,
+  PRACTITIONER_PATIENT_OBSERVATION_INVALID_PATIENT_ID_MESSAGE,
   PRACTITIONER_STANDALONE_OBSERVATION_CAP,
   type PractitionerPatientEpisodeRow,
 } from './practitioner-patient-observation-read.js';
@@ -279,6 +281,44 @@ function episodeMarkerRow(
 }
 
 describe('assertActivePractitionerGrantForPatient', () => {
+  it('returns validation_error without calling RPC when patientUserId is not a UUID', async () => {
+    const rpc = vi.fn();
+    const client = { rpc } as unknown as AbstrackSupabaseClient;
+
+    const result = await assertActivePractitionerGrantForPatient(
+      client,
+      'not-a-uuid' as Uuid,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(result.error.code).toBe('validation_error');
+    expect(result.error.message).toBe(
+      PRACTITIONER_PATIENT_OBSERVATION_INVALID_PATIENT_ID_MESSAGE,
+    );
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('trims surrounding whitespace before calling user_has_practitioner_access', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: true,
+      error: null,
+    });
+    const client = { rpc } as unknown as AbstrackSupabaseClient;
+
+    const result = await assertActivePractitionerGrantForPatient(
+      client,
+      `  ${PATIENT_ID}  ` as Uuid,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(rpc).toHaveBeenCalledWith('user_has_practitioner_access', {
+      p_patient_user_id: PATIENT_ID,
+    });
+  });
+
   it('returns permission_denied when user_has_practitioner_access is false', async () => {
     const rpc = vi.fn().mockResolvedValue({
       data: false,
@@ -315,6 +355,25 @@ describe('loadPractitionerPatientObservationReadModel', () => {
       data: [],
     });
     listFoodDiaryEntriesForUser.mockResolvedValue({ ok: true, data: [] });
+  });
+
+  it('returns validation_error for malformed patient id without calling Supabase', async () => {
+    const rpc = vi.fn();
+    const from = vi.fn();
+    const client = { from, rpc } as unknown as AbstrackSupabaseClient;
+
+    const result = await loadPractitionerPatientObservationReadModel(
+      client,
+      'not-a-uuid' as Uuid,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(result.error.code).toBe('validation_error');
+    expect(rpc).not.toHaveBeenCalled();
+    expect(from).not.toHaveBeenCalled();
   });
 
   it('queries episodes with started_at desc, id desc tie-break, and history cap + 1 limit', async () => {

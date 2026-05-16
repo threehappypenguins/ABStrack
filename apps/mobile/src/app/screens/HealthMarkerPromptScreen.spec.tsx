@@ -23,63 +23,6 @@ import { lightAppColors } from '../theme/app-colors';
 import { HealthMarkerPromptScreen } from './HealthMarkerPromptScreen';
 
 /**
- * In-memory timeline sort/merge matching {@link compareEpisodeTimelineItems} /
- * {@link upsertEpisodeTimelineItem} in `@abstrack/supabase` (avoids loading the full package barrel in Jest).
- */
-type MockTimelineItem = {
-  kind: string;
-  sortAt: string;
-  id: string;
-  label: string;
-  detail: string;
-};
-
-/**
- * Mirrors {@link compareEpisodeTimelineItems} ordering closely enough for tests.
- *
- * **Important:** `Array.sort` requires a **consistent** comparator (transitivity). The naive split
- * “both finite → numeric else string” is wrong when exactly one side parses: you must not compare
- * parsed vs unparsed timestamps in the string branch. A broken comparator can make V8’s sort spin or
- * misbehave badly under load.
- */
-function mockCompareEpisodeTimelineItems(
-  a: MockTimelineItem,
-  b: MockTimelineItem,
-): number {
-  const aMs = Date.parse(a.sortAt);
-  const bMs = Date.parse(b.sortAt);
-  const aValid = Number.isFinite(aMs);
-  const bValid = Number.isFinite(bMs);
-
-  if (aValid && bValid) {
-    const c = aMs - bMs;
-    if (c !== 0) {
-      return c;
-    }
-  } else if (!aValid && !bValid) {
-    const c = a.sortAt.localeCompare(b.sortAt);
-    if (c !== 0) {
-      return c;
-    }
-  } else {
-    // Exactly one parses: order deterministically without mixing number vs string compare.
-    return aValid ? -1 : 1;
-  }
-
-  return a.id.localeCompare(b.id);
-}
-
-function mockUpsertEpisodeTimelineItem(
-  prev: MockTimelineItem[],
-  next: MockTimelineItem,
-): MockTimelineItem[] {
-  const rows = prev.filter((r) => !(r.kind === next.kind && r.id === next.id));
-  rows.push(next);
-  rows.sort(mockCompareEpisodeTimelineItems);
-  return rows;
-}
-
-/**
  * Typed access to the Jest mock for `@abstrack/supabase` (see {@link jest.mock} factory below).
  * Prefixed `mock` so {@link jest.mock} factories may reference it (Jest restriction).
  *
@@ -105,61 +48,11 @@ jest.mock('@abstrack/supabase', () => {
     jest.requireActual<typeof import('@abstrack/types')>('@abstrack/types');
   const { PresetDataError } = preset;
 
-  /**
-   * Pure timeline detail helpers mirroring `packages/supabase/src/lib/episode-observation-timeline.ts`
-   * (inline so Jest does not depend on `packages/supabase/dist` or ESM `.js` import resolution).
-   */
-  const MOCK_EP_TIMELINE_SYMPTOM_MARKER_DETAIL_MAX_RUN = 80;
-  const MOCK_EP_TIMELINE_TRUNCATION_ELLIPSIS = '…';
-  const MOCK_EP_TIMELINE_SYMPTOM_MARKER_PREVIEW_SLICE_LEN =
-    MOCK_EP_TIMELINE_SYMPTOM_MARKER_DETAIL_MAX_RUN -
-    MOCK_EP_TIMELINE_TRUNCATION_ELLIPSIS.length;
-
-  function episodeTimelineBoundedSymptomMarkerText(trimmed: string): {
-    detail: string;
-    detailFull?: string;
-  } {
-    if (trimmed.length <= MOCK_EP_TIMELINE_SYMPTOM_MARKER_DETAIL_MAX_RUN) {
-      return { detail: trimmed };
-    }
-    return {
-      detail: `${trimmed.slice(0, MOCK_EP_TIMELINE_SYMPTOM_MARKER_PREVIEW_SLICE_LEN)}${MOCK_EP_TIMELINE_TRUNCATION_ELLIPSIS}`,
-      detailFull: trimmed,
-    };
-  }
-
-  function combineMeasurementLineWithOptionalPatientNotes(
-    measurementDetail: string,
-    notes: string | null | undefined,
-  ): { detail: string; detailFull?: string } {
-    const n = notes?.trim();
-    if (!n) {
-      return { detail: measurementDetail };
-    }
-    const combined = `${measurementDetail} · ${n}`;
-    return episodeTimelineBoundedSymptomMarkerText(combined);
-  }
-
-  function episodeTimelineMeasurementDetailWithOptionalNotes(
-    measurementDetail: string,
-    notes: string | null | undefined,
-  ): { detail: string; detailFull?: string } {
-    return combineMeasurementLineWithOptionalPatientNotes(
-      measurementDetail,
-      notes,
-    );
-  }
-
-  function episodeTimelineBloodPressureDetailWithOptionalNotes(
-    systolicNumeric: number,
-    diastolicNumeric: number,
-    notes: string | null | undefined,
-  ): { detail: string; detailFull?: string } {
-    return combineMeasurementLineWithOptionalPatientNotes(
-      `${systolicNumeric}/${diastolicNumeric}`,
-      notes,
-    );
-  }
+  const timelineCore = jest.requireActual<
+    typeof import('../../../../../packages/supabase/src/lib/episode-observation-timeline-core.ts')
+  >(
+    '../../../../../packages/supabase/src/lib/episode-observation-timeline-core.ts',
+  );
 
   /**
    * Subset of {@link validateAndNormalizeFoodDiaryCreateCore} / {@link normalizeFoodDiaryEntryUpdate}
@@ -283,11 +176,14 @@ jest.mock('@abstrack/supabase', () => {
     normalizeFoodDiaryEntryUpdate: mockNormalizeFoodDiaryEntryUpdate,
     validateAndNormalizeFoodDiaryCreateCore:
       mockValidateAndNormalizeFoodDiaryCreateCore,
-    compareEpisodeTimelineItems: mockCompareEpisodeTimelineItems,
-    upsertEpisodeTimelineItem: mockUpsertEpisodeTimelineItem,
-    episodeTimelineBloodPressureDetailWithOptionalNotes,
-    episodeTimelineBoundedSymptomMarkerText,
-    episodeTimelineMeasurementDetailWithOptionalNotes,
+    compareEpisodeTimelineItems: timelineCore.compareEpisodeTimelineItems,
+    upsertEpisodeTimelineItem: timelineCore.upsertEpisodeTimelineItem,
+    episodeTimelineBloodPressureDetailWithOptionalNotes:
+      timelineCore.episodeTimelineBloodPressureDetailWithOptionalNotes,
+    episodeTimelineBoundedSymptomMarkerText:
+      timelineCore.episodeTimelineBoundedSymptomMarkerText,
+    episodeTimelineMeasurementDetailWithOptionalNotes:
+      timelineCore.episodeTimelineMeasurementDetailWithOptionalNotes,
     cancelActiveEpisodeById: jest.fn(),
     completeEpisodePostMarkerStep: jest.fn(),
     createFoodDiaryEntry: jest.fn(),

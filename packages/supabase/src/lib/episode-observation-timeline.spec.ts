@@ -6,15 +6,20 @@ import {
   type HealthMarkerRow,
 } from '@abstrack/types';
 import {
-  episodeTimelineBloodPressureDetailWithOptionalNotes,
-  episodeTimelineBoundedFoodNote,
-  episodeTimelineBoundedSymptomMarkerText,
-  episodeTimelineMeasurementDetailWithOptionalNotes,
+  EPISODE_TIMELINE_FOOD_NOTE_DETAIL_MAX_RUN,
+  EPISODE_TIMELINE_SYMPTOM_MARKER_DETAIL_MAX_RUN,
   listEpisodeObservationTimeline,
   mergeEpisodeObservationRowsToTimeline,
   mergeStandaloneHealthAndFoodRowsToTimeline,
 } from './episode-observation-timeline.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
+
+const TRUNCATION_ELLIPSIS = '…';
+
+const SYMPTOM_MARKER_PREVIEW_CODE_UNITS =
+  EPISODE_TIMELINE_SYMPTOM_MARKER_DETAIL_MAX_RUN - TRUNCATION_ELLIPSIS.length;
+const FOOD_NOTE_PREVIEW_CODE_UNITS =
+  EPISODE_TIMELINE_FOOD_NOTE_DETAIL_MAX_RUN - TRUNCATION_ELLIPSIS.length;
 
 const listEpisodeSymptomsForEpisode = vi.hoisted(() => vi.fn());
 const listEpisodeHealthMarkersForEpisode = vi.hoisted(() => vi.fn());
@@ -371,18 +376,40 @@ describe('mergeEpisodeObservationRowsToTimeline', () => {
       [hmNoteOnly, hmNumericWithLongNotes],
       [fd],
     );
-    expect(merged.find((r) => r.id === 'sym-long')).toMatchObject({
-      ...episodeTimelineBoundedSymptomMarkerText(longSymptom),
-    });
-    expect(merged.find((r) => r.id === 'hm-long')).toMatchObject({
-      ...episodeTimelineBoundedSymptomMarkerText(longNotes),
-    });
-    expect(merged.find((r) => r.id === 'hm-numeric-long-notes')).toMatchObject({
-      ...episodeTimelineMeasurementDetailWithOptionalNotes('72', longNotes),
-    });
-    expect(merged.find((r) => r.id === 'fd-long')).toMatchObject({
-      ...episodeTimelineBoundedFoodNote(longFood),
-    });
+    const numericCombined = `72 · ${longNotes}`;
+    expect(merged.find((r) => r.id === 'sym-long')).toEqual(
+      expect.objectContaining({
+        kind: 'symptom',
+        id: 'sym-long',
+        label: 'Free note',
+        detail: `${longSymptom.slice(0, SYMPTOM_MARKER_PREVIEW_CODE_UNITS)}${TRUNCATION_ELLIPSIS}`,
+        detailFull: longSymptom,
+      }),
+    );
+    expect(merged.find((r) => r.id === 'hm-long')).toEqual(
+      expect.objectContaining({
+        kind: 'health_marker',
+        id: 'hm-long',
+        detail: `${longNotes.slice(0, SYMPTOM_MARKER_PREVIEW_CODE_UNITS)}${TRUNCATION_ELLIPSIS}`,
+        detailFull: longNotes,
+      }),
+    );
+    expect(merged.find((r) => r.id === 'hm-numeric-long-notes')).toEqual(
+      expect.objectContaining({
+        kind: 'health_marker',
+        id: 'hm-numeric-long-notes',
+        detail: `${numericCombined.slice(0, SYMPTOM_MARKER_PREVIEW_CODE_UNITS)}${TRUNCATION_ELLIPSIS}`,
+        detailFull: numericCombined,
+      }),
+    );
+    expect(merged.find((r) => r.id === 'fd-long')).toEqual(
+      expect.objectContaining({
+        kind: 'food',
+        id: 'fd-long',
+        detail: `${longFood.slice(0, FOOD_NOTE_PREVIEW_CODE_UNITS)}${TRUNCATION_ELLIPSIS}`,
+        detailFull: longFood,
+      }),
+    );
   });
 
   it('includes optional notes with blood pressure readings', () => {
@@ -410,11 +437,7 @@ describe('mergeEpisodeObservationRowsToTimeline', () => {
     expect(merged[0]).toMatchObject({
       kind: 'health_marker',
       id: 'hm-bp-notes',
-      ...episodeTimelineBloodPressureDetailWithOptionalNotes(
-        120,
-        80,
-        'Resting, left arm',
-      ),
+      detail: '120/80 · Resting, left arm',
     });
   });
 
@@ -440,8 +463,12 @@ describe('mergeEpisodeObservationRowsToTimeline', () => {
     };
 
     const merged = mergeEpisodeObservationRowsToTimeline([], [hm], []);
+    const combined = `118/76 · ${longNote}`;
     expect(merged[0]).toMatchObject({
-      ...episodeTimelineBloodPressureDetailWithOptionalNotes(118, 76, longNote),
+      kind: 'health_marker',
+      id: 'hm-bp-long-notes',
+      detail: `${combined.slice(0, SYMPTOM_MARKER_PREVIEW_CODE_UNITS)}${TRUNCATION_ELLIPSIS}`,
+      detailFull: combined,
     });
   });
 
@@ -470,10 +497,7 @@ describe('mergeEpisodeObservationRowsToTimeline', () => {
     expect(merged[0]).toMatchObject({
       kind: 'health_marker',
       id: 'hm-hr-notes',
-      ...episodeTimelineMeasurementDetailWithOptionalNotes(
-        '72',
-        'After short walk',
-      ),
+      detail: '72 · After short walk',
     });
   });
 });
