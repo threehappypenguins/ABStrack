@@ -36,6 +36,8 @@ function clickDetailsToggle(label: string, index = 0): void {
 }
 
 const loadPractitionerPatientObservationReadModel = jest.fn();
+const listEpisodeMediaForEpisode = jest.fn();
+const createEpisodeMediaSignedDisplayUrl = jest.fn();
 
 jest.mock('@abstrack/supabase/browser', () => ({
   getSupabaseBrowserClient: jest.fn(() => ({})),
@@ -50,6 +52,10 @@ jest.mock('@abstrack/supabase', () => {
     ...actual,
     loadPractitionerPatientObservationReadModel: (...args: unknown[]) =>
       loadPractitionerPatientObservationReadModel(...args),
+    listEpisodeMediaForEpisode: (...args: unknown[]) =>
+      listEpisodeMediaForEpisode(...args),
+    createEpisodeMediaSignedDisplayUrl: (...args: unknown[]) =>
+      createEpisodeMediaSignedDisplayUrl(...args),
   };
 });
 
@@ -66,6 +72,8 @@ function episodeRow(): PractitionerPatientEpisodeRow {
 describe('PractitionerPatientDetailPage', () => {
   beforeEach(() => {
     loadPractitionerPatientObservationReadModel.mockReset();
+    listEpisodeMediaForEpisode.mockReset();
+    createEpisodeMediaSignedDisplayUrl.mockReset();
   });
 
   it('shows an alert when the read model returns permission_denied', async () => {
@@ -690,6 +698,214 @@ describe('PractitionerPatientDetailPage', () => {
     expect(screen.queryByText('PatientB-4')).toBeNull();
     clickDetailsToggle('Show standalone entries');
     expect(screen.getByText('PatientB-4')).toBeTruthy();
+  });
+
+  it('loads photo symptom media via signed URL and supports refresh after display error', async () => {
+    const episodeId = 'eeeeeeee-bbbb-cccc-dddd-aaaaaaaaaaaa';
+    const symptomId = 'sym-photo-1';
+
+    loadPractitionerPatientObservationReadModel.mockResolvedValue({
+      ok: true,
+      data: {
+        patientUserId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+        patientDisplayName: 'Alex Kim',
+        moreEpisodesOmitted: false,
+        standaloneHealthMarkersTruncated: false,
+        standaloneFoodDiaryTruncated: false,
+        standaloneTimeline: [],
+        episodesWithTimelines: [
+          {
+            episode: episodeRow(),
+            moreSymptomsOmitted: false,
+            moreHealthMarkersOmitted: false,
+            moreFoodDiaryOmitted: false,
+            timeline: [
+              {
+                kind: 'symptom',
+                sortAt: '2026-04-01T12:05:00.000Z',
+                id: symptomId,
+                label: 'Rash photo',
+                detail: 'Photo',
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    listEpisodeMediaForEpisode.mockResolvedValue({
+      ok: true,
+      data: [
+        {
+          episode_symptom_id: symptomId,
+          storage_object_key: 'user/ep/photo-1.jpg',
+          thumbnail_storage_key: null,
+          media_type: 'photo',
+          upload_completed_at: '2026-04-01T12:05:01.000Z',
+          duration_seconds: null,
+        },
+      ],
+    });
+
+    createEpisodeMediaSignedDisplayUrl
+      .mockResolvedValueOnce({
+        signedUrl: 'https://example.test/signed-photo',
+        errorMessage: null,
+      })
+      .mockResolvedValueOnce({
+        signedUrl: 'https://example.test/signed-photo-refreshed',
+        errorMessage: null,
+      });
+
+    render(
+      <LiveAnnouncerProvider>
+        <PractitionerPatientDetailPage patientUserId="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" />
+      </LiveAnnouncerProvider>,
+    );
+
+    await screen.findByText('Alex Kim');
+    clickDetailsToggle('Show episode timeline');
+
+    const viewPhoto = await screen.findByRole('button', {
+      name: /view photo/i,
+    });
+    fireEvent.click(viewPhoto);
+
+    await waitFor(() => {
+      expect(listEpisodeMediaForEpisode).toHaveBeenCalledWith(
+        expect.anything(),
+        episodeId,
+        { episodeSymptomIds: [symptomId] },
+      );
+    });
+
+    const previewButton = await screen.findByRole('button', {
+      name: /view full size photo for rash photo/i,
+    });
+    const previewImg = previewButton.querySelector('img');
+    expect(previewImg).toBeTruthy();
+    expect(previewImg!.getAttribute('src')).toBe(
+      'https://example.test/signed-photo',
+    );
+
+    fireEvent.error(previewImg!);
+
+    const viewer = screen.getByTestId('practitioner-symptom-media-viewer');
+    expect(within(viewer).getByRole('alert').textContent).toMatch(
+      /link expired or unavailable/i,
+    );
+
+    fireEvent.click(
+      within(viewer).getByRole('button', { name: /refresh media link/i }),
+    );
+
+    await waitFor(() => {
+      expect(createEpisodeMediaSignedDisplayUrl).toHaveBeenCalledTimes(2);
+    });
+    const refreshedPreview = screen
+      .getByRole('button', { name: /view full size photo for rash photo/i })
+      .querySelector('img');
+    expect(refreshedPreview?.getAttribute('src')).toBe(
+      'https://example.test/signed-photo-refreshed',
+    );
+  });
+
+  it('reopens the full-size photo modal after Close without reloading media', async () => {
+    loadPractitionerPatientObservationReadModel.mockResolvedValue({
+      ok: true,
+      data: {
+        patientUserId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+        patientDisplayName: 'Alex Kim',
+        moreEpisodesOmitted: false,
+        standaloneHealthMarkersTruncated: false,
+        standaloneFoodDiaryTruncated: false,
+        standaloneTimeline: [],
+        episodesWithTimelines: [
+          {
+            episode: episodeRow(),
+            moreSymptomsOmitted: false,
+            moreHealthMarkersOmitted: false,
+            moreFoodDiaryOmitted: false,
+            timeline: [
+              {
+                kind: 'symptom',
+                sortAt: '2026-04-01T12:05:00.000Z',
+                id: 'sym-photo-reopen',
+                label: 'Rash photo',
+                detail: 'Photo',
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    listEpisodeMediaForEpisode.mockResolvedValue({
+      ok: true,
+      data: [
+        {
+          episode_symptom_id: 'sym-photo-reopen',
+          storage_object_key: 'user/ep/photo-reopen.jpg',
+          thumbnail_storage_key: null,
+          media_type: 'photo',
+          upload_completed_at: '2026-04-01T12:05:01.000Z',
+          duration_seconds: null,
+        },
+      ],
+    });
+
+    createEpisodeMediaSignedDisplayUrl.mockResolvedValue({
+      signedUrl: 'https://example.test/signed-photo',
+      errorMessage: null,
+    });
+
+    HTMLDialogElement.prototype.showModal =
+      HTMLDialogElement.prototype.showModal ||
+      function showModal(this: HTMLDialogElement) {
+        this.open = true;
+      };
+    HTMLDialogElement.prototype.close =
+      HTMLDialogElement.prototype.close ||
+      function close(this: HTMLDialogElement) {
+        this.open = false;
+        this.dispatchEvent(new Event('close'));
+      };
+
+    render(
+      <LiveAnnouncerProvider>
+        <PractitionerPatientDetailPage patientUserId="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" />
+      </LiveAnnouncerProvider>,
+    );
+
+    await screen.findByText('Alex Kim');
+    clickDetailsToggle('Show episode timeline');
+    fireEvent.click(await screen.findByRole('button', { name: /view photo/i }));
+
+    const openFullSize = await screen.findByRole('button', {
+      name: /view full size photo for rash photo/i,
+    });
+
+    fireEvent.click(openFullSize);
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: /^close$/i }));
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+
+    fireEvent.click(openFullSize);
+    const dialogAgain = await screen.findByRole('dialog');
+    fireEvent.click(
+      screen.getByRole('button', { name: /close photo viewer/i }),
+    );
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+
+    fireEvent.click(openFullSize);
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+    expect(createEpisodeMediaSignedDisplayUrl).toHaveBeenCalledTimes(1);
   });
 
   it('uses expandable disclosure when timeline rows carry detailFull', async () => {

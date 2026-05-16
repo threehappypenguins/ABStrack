@@ -69,6 +69,10 @@ connect-src 'self' https://abc.supabase.co wss://abc.supabase.co`;
     expect(value).toContain('connect-src');
     expect(value).toContain('https://abc.supabase.co');
     expect(value).toContain('wss://abc.supabase.co');
+    expect(value).toContain('img-src');
+    expect(value).toContain('media-src');
+    expect(value).toMatch(/img-src[^;]*https:\/\/abc\.supabase\.co/);
+    expect(value).toMatch(/media-src[^;]*https:\/\/abc\.supabase\.co/);
     expect(value).toContain('upgrade-insecure-requests');
   });
 
