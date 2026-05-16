@@ -487,7 +487,11 @@ function mapSqliteRowToFoodDiaryEntryRow(
 }
 
 /**
- * Lists food diary rows for one episode from SQLite (same sort as REST helper).
+ * Lists food diary rows for one episode from SQLite (newest first).
+ *
+ * Ordering matches `listFoodDiaryEntriesForEpisode` in `@abstrack/supabase` (`logged_at` descending,
+ * then `id` descending) so REST and offline-first reads agree when `logged_at` ties under a
+ * `LIMIT` (no `created_at` tie-break).
  *
  * @param db - Initialized PowerSync database.
  * @param episodeId - Episode id.
@@ -500,7 +504,7 @@ export async function listFoodDiaryEntriesForEpisodePowerSyncDb(
 ): Promise<PresetDataResult<FoodDiaryEntryRow[]>> {
   try {
     const rows = await db.getAll<Record<string, unknown>>(
-      `SELECT * FROM food_diary_entries WHERE episode_id = ? ORDER BY logged_at DESC, created_at DESC, id DESC LIMIT ?`,
+      `SELECT * FROM food_diary_entries WHERE episode_id = ? ORDER BY logged_at DESC, id DESC LIMIT ?`,
       [episodeId, limit],
     );
     const out: FoodDiaryEntryRow[] = [];
