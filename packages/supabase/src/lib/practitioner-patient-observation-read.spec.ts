@@ -55,16 +55,6 @@ function episodeFixture(
   };
 }
 
-function grantChain(row: { id: string } | null) {
-  const p = Promise.resolve({ data: row, error: null });
-  return {
-    select: vi.fn().mockReturnThis(),
-    eq: vi.fn().mockReturnThis(),
-    is: vi.fn().mockReturnThis(),
-    maybeSingle: vi.fn(() => p),
-  };
-}
-
 function episodesAwaitableChain(result: { data: unknown; error: unknown }) {
   const p = Promise.resolve(result);
   const self = {
@@ -93,8 +83,8 @@ function profileChain(result: { data: unknown; error: unknown }) {
 
 type ReadModelClientOpts = {
   /**
-   * `practitioner_access.maybeSingle()` payload: omit for default active grant; pass `null` for no row
-   * (denied path).
+   * Controls the mocked `user_has_practitioner_access` RPC: omit or pass `{ id }` for `true`;
+   * pass `null` for `false` (denied path).
    */
   grant?: { id: string } | null;
   episodes: PractitionerPatientEpisodeRow[];
@@ -182,12 +172,25 @@ function episodeObservationListMocks(opts: ReadModelClientOpts): void {
 function clientForReadModel(opts: ReadModelClientOpts): AbstrackSupabaseClient {
   episodeObservationListMocks(opts);
 
+  const rpc = vi.fn(
+    async (
+      fn: string,
+      args: { p_patient_user_id: string },
+    ): Promise<{ data: boolean; error: null }> => {
+      if (fn !== 'user_has_practitioner_access') {
+        throw new Error(`unexpected rpc in test client: ${fn}`);
+      }
+      if (args.p_patient_user_id !== PATIENT_ID) {
+        throw new Error(
+          `unexpected patient id in user_has_practitioner_access: ${args.p_patient_user_id}`,
+        );
+      }
+      const allowed = opts.grant !== null;
+      return { data: allowed, error: null };
+    },
+  );
+
   const from = vi.fn((table: string) => {
-    if (table === 'practitioner_access') {
-      const grantRow =
-        opts.grant === undefined ? { id: 'grant-1' } : opts.grant;
-      return grantChain(grantRow);
-    }
     if (table === 'episodes') {
       if (opts.episodesError != null) {
         return episodesAwaitableChain({
@@ -208,7 +211,7 @@ function clientForReadModel(opts: ReadModelClientOpts): AbstrackSupabaseClient {
     }
     throw new Error(`unexpected table in mock: ${table}`);
   });
-  return { from } as unknown as AbstrackSupabaseClient;
+  return { from, rpc } as unknown as AbstrackSupabaseClient;
 }
 
 function symptomRow(
@@ -276,16 +279,12 @@ function episodeMarkerRow(
 }
 
 describe('assertActivePractitionerGrantForPatient', () => {
-  it('returns permission_denied when practitioner_access has no matching row', async () => {
-    const maybeSingle = vi.fn().mockResolvedValue({
-      data: null,
+  it('returns permission_denied when user_has_practitioner_access is false', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: false,
       error: null,
     });
-    const is = vi.fn().mockReturnValue({ maybeSingle });
-    const eq = vi.fn().mockReturnValue({ is });
-    const select = vi.fn().mockReturnValue({ eq });
-    const from = vi.fn().mockReturnValue({ select });
-    const client = { from } as unknown as AbstrackSupabaseClient;
+    const client = { rpc } as unknown as AbstrackSupabaseClient;
 
     const result = await assertActivePractitionerGrantForPatient(
       client,
@@ -298,9 +297,9 @@ describe('assertActivePractitionerGrantForPatient', () => {
     }
     expect(result.error.code).toBe('permission_denied');
 
-    expect(from).toHaveBeenCalledWith('practitioner_access');
-    expect(eq).toHaveBeenCalledWith('patient_user_id', PATIENT_ID);
-    expect(is).toHaveBeenCalledWith('revoked_at', null);
+    expect(rpc).toHaveBeenCalledWith('user_has_practitioner_access', {
+      p_patient_user_id: PATIENT_ID,
+    });
   });
 });
 
@@ -344,10 +343,11 @@ describe('loadPractitionerPatientObservationReadModel', () => {
       finally: episodesResolved.finally.bind(episodesResolved),
     };
 
+    const rpc = vi.fn().mockResolvedValue({
+      data: true,
+      error: null,
+    });
     const from = vi.fn((table: string) => {
-      if (table === 'practitioner_access') {
-        return grantChain({ id: 'grant-1' });
-      }
       if (table === 'episodes') {
         return episodesChain;
       }
@@ -359,7 +359,7 @@ describe('loadPractitionerPatientObservationReadModel', () => {
       }
       throw new Error(`unexpected table in mock: ${table}`);
     });
-    const client = { from } as unknown as AbstrackSupabaseClient;
+    const client = { from, rpc } as unknown as AbstrackSupabaseClient;
 
     const result = await loadPractitionerPatientObservationReadModel(
       client,
@@ -367,6 +367,9 @@ describe('loadPractitionerPatientObservationReadModel', () => {
     );
 
     expect(result.ok).toBe(true);
+    expect(rpc).toHaveBeenCalledWith('user_has_practitioner_access', {
+      p_patient_user_id: PATIENT_ID,
+    });
     expect(episodesChain.select).toHaveBeenCalledWith(
       PRACTITIONER_PATIENT_EPISODE_LIST_SELECT,
     );

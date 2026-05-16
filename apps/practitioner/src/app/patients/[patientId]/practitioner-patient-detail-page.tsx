@@ -5,6 +5,7 @@ import {
   formatPractitionerPatientDirectoryLabel,
   loadPractitionerPatientObservationReadModel,
   PRACTITIONER_PATIENT_EPISODE_HISTORY_CAP,
+  PRACTITIONER_PATIENT_OBSERVATION_GRANT_DENIED_MESSAGE,
   PRACTITIONER_STANDALONE_OBSERVATION_CAP,
   type EpisodeTimelineItem,
   type PractitionerPatientEpisodeRow,
@@ -504,7 +505,14 @@ export function PractitionerPatientDetailPage({
     }
 
     if (!result.ok) {
-      const message = result.error.message;
+      // Align with practitioner-patients-page list load: MFA/RLS `permission_denied` → recovery copy;
+      // keep explicit no-grant copy from `PRACTITIONER_PATIENT_OBSERVATION_GRANT_DENIED_MESSAGE`.
+      const message =
+        result.error.code === 'permission_denied' &&
+        result.error.message !==
+          PRACTITIONER_PATIENT_OBSERVATION_GRANT_DENIED_MESSAGE
+          ? 'Patient access requires two-factor sign-in for this session. Sign out, sign in again, and complete MFA when prompted.'
+          : result.error.message;
       setLoadState({ kind: 'error', patientUserId, message });
       announce(message, { politeness: 'assertive' });
       return;

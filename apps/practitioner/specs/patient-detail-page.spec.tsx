@@ -8,6 +8,7 @@ import {
 import {
   episodeTimelineBoundedSymptomMarkerText,
   formatPractitionerPatientDirectoryLabel,
+  PRACTITIONER_PATIENT_OBSERVATION_GRANT_DENIED_MESSAGE,
   type PractitionerPatientEpisodeRow,
   type PractitionerPatientObservationReadModel,
 } from '@abstrack/supabase';
@@ -72,8 +73,7 @@ describe('PractitionerPatientDetailPage', () => {
       ok: false,
       error: {
         code: 'permission_denied',
-        message:
-          'You do not have access to this patient, or the link is no longer active.',
+        message: PRACTITIONER_PATIENT_OBSERVATION_GRANT_DENIED_MESSAGE,
         name: 'PresetDataError',
       },
     });
@@ -90,6 +90,28 @@ describe('PractitionerPatientDetailPage', () => {
     expect(
       inlineAlert?.textContent?.toLowerCase().includes('do not have access'),
     ).toBe(true);
+  });
+
+  it('shows MFA recovery copy when permission_denied is the generic preset-data message', async () => {
+    loadPractitionerPatientObservationReadModel.mockResolvedValue({
+      ok: false,
+      error: {
+        code: 'permission_denied',
+        message: 'You do not have permission to do that.',
+        name: 'PresetDataError',
+      },
+    });
+
+    render(
+      <LiveAnnouncerProvider>
+        <PractitionerPatientDetailPage patientUserId="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" />
+      </LiveAnnouncerProvider>,
+    );
+
+    const tryAgain = await screen.findByRole('button', { name: /try again/i });
+    const inlineAlert = tryAgain.closest('[role="alert"]');
+    expect(inlineAlert).toBeTruthy();
+    expect(inlineAlert?.textContent).toContain('two-factor');
   });
 
   it('when the first patient request is still pending, navigation supersedes it so a late response cannot replace the new route', async () => {

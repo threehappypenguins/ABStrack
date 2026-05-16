@@ -88,11 +88,6 @@ export type PractitionerPatientObservationReadModel = {
   standaloneFoodDiaryTruncated: boolean;
 };
 
-type PractitionerAccessGrantIdRow = Pick<
-  Database['public']['Tables']['practitioner_access']['Row'],
-  'id'
->;
-
 /**
  * Fetch `limit + 1` newest rows per stream so omission flags match {@link EPISODE_TIMELINE_SOURCE_LIMIT}.
  */
@@ -265,10 +260,26 @@ async function loadPatientDisplayName(
 }
 
 /**
- * Verifies there is an **active** `practitioner_access` row for `patient_user_id` under RLS before
- * running broader PHI selects (fail-fast when the practitioner has no grant or route was forged).
+ * User-facing copy when the observation read gate rejects the patient because the signed-in practitioner
+ * has no active grant (or `user_has_practitioner_access` returned false). Distinct from RLS/MFA session
+ * failures that map to generic `permission_denied` messages elsewhere.
+ */
+export const PRACTITIONER_PATIENT_OBSERVATION_GRANT_DENIED_MESSAGE =
+  'You do not have access to this patient, or the link is no longer active.' as const;
+
+/**
+ * Verifies the **signed-in user** is allowed to act as a **practitioner** for this patient before
+ * running broader PHI selects (fail-fast when there is no grant, the route was forged, or MFA rules
+ * block access).
  *
- * Uses **SELECT-only** queries end-to-end; practitioners never INSERT/UPDATE PHI tables via this helper.
+ * Delegates to Postgres `public.user_has_practitioner_access`, which requires an active
+ * `practitioner_access` row with `practitioner_user_id = auth.uid()`, matching `patient_user_id`, a
+ * practitioner profile role, and the project’s MFA/AAL2 rules for password-sign-in practitioners.
+ * This is **not** the same as selecting any `practitioner_access` row visible under RLS (patients may
+ * read their own grant rows).
+ *
+ * Uses read-only RPC plus downstream SELECT helpers; practitioners never INSERT/UPDATE PHI tables
+ * via this path.
  *
  * @param client - Browser Supabase client (practitioner session; RLS applies).
  * @param patientUserId - `auth.users.id` of the patient.
@@ -278,24 +289,20 @@ export async function assertActivePractitionerGrantForPatient(
   patientUserId: Uuid,
 ): Promise<PresetDataResult<void>> {
   try {
-    const { data, error } = await client
-      .from('practitioner_access')
-      .select('id')
-      .eq('patient_user_id', patientUserId)
-      .is('revoked_at', null)
-      .maybeSingle();
+    const { data, error } = await client.rpc('user_has_practitioner_access', {
+      p_patient_user_id: patientUserId,
+    });
 
     if (error) {
       return { ok: false, error: toPresetDataError(error) };
     }
 
-    const row = data as PractitionerAccessGrantIdRow | null;
-    if (row == null) {
+    if (data !== true) {
       return {
         ok: false,
         error: new PresetDataError(
           'permission_denied',
-          'You do not have access to this patient, or the link is no longer active.',
+          PRACTITIONER_PATIENT_OBSERVATION_GRANT_DENIED_MESSAGE,
         ),
       };
     }
