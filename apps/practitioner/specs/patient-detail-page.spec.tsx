@@ -811,6 +811,92 @@ describe('PractitionerPatientDetailPage', () => {
     );
   });
 
+  it('loads video symptom media via signed URL and renders an inline video player', async () => {
+    const episodeId = 'eeeeeeee-bbbb-cccc-dddd-aaaaaaaaaaaa';
+    const symptomId = 'sym-video-1';
+
+    loadPractitionerPatientObservationReadModel.mockResolvedValue({
+      ok: true,
+      data: {
+        patientUserId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+        patientDisplayName: 'Alex Kim',
+        moreEpisodesOmitted: false,
+        standaloneHealthMarkersTruncated: false,
+        standaloneFoodDiaryTruncated: false,
+        standaloneTimeline: [],
+        episodesWithTimelines: [
+          {
+            episode: episodeRow(),
+            moreSymptomsOmitted: false,
+            moreHealthMarkersOmitted: false,
+            moreFoodDiaryOmitted: false,
+            timeline: [
+              {
+                kind: 'symptom',
+                sortAt: '2026-04-01T12:05:00.000Z',
+                id: symptomId,
+                label: 'Tremor clip',
+                detail: 'Video',
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    listEpisodeMediaForEpisode.mockResolvedValue({
+      ok: true,
+      data: [
+        {
+          episode_symptom_id: symptomId,
+          storage_object_key: 'user/ep/video-1.mp4',
+          thumbnail_storage_key: null,
+          media_type: 'video',
+          upload_completed_at: '2026-04-01T12:05:01.000Z',
+          duration_seconds: 12,
+        },
+      ],
+    });
+
+    createEpisodeMediaSignedDisplayUrl.mockResolvedValue({
+      signedUrl: 'https://example.test/signed-video',
+      errorMessage: null,
+    });
+
+    render(
+      <LiveAnnouncerProvider>
+        <PractitionerPatientDetailPage patientUserId="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" />
+      </LiveAnnouncerProvider>,
+    );
+
+    await screen.findByText('Alex Kim');
+    clickDetailsToggle('Show episode timeline');
+
+    fireEvent.click(await screen.findByRole('button', { name: /view video/i }));
+
+    await waitFor(() => {
+      expect(listEpisodeMediaForEpisode).toHaveBeenCalledWith(
+        expect.anything(),
+        episodeId,
+        { episodeSymptomIds: [symptomId] },
+      );
+    });
+
+    const viewer = screen.getByTestId('practitioner-symptom-media-viewer');
+    await waitFor(() => {
+      expect(viewer.querySelector('video')).toBeTruthy();
+    });
+    const video = viewer.querySelector('video');
+    expect(video!.hasAttribute('controls')).toBe(true);
+    expect(video!.getAttribute('src')).toBe(
+      'https://example.test/signed-video',
+    );
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: /view full size/i }),
+    ).toBeNull();
+  });
+
   it('reopens the full-size photo modal after Close without reloading media', async () => {
     loadPractitionerPatientObservationReadModel.mockResolvedValue({
       ok: true,
@@ -897,7 +983,7 @@ describe('PractitionerPatientDetailPage', () => {
 
     fireEvent.click(openFullSize);
     const dialogAgain = await screen.findByRole('dialog');
-    fireEvent.click(within(dialogAgain).getByTestId('photo-modal-backdrop'));
+    fireEvent.click(within(dialogAgain).getByTestId('photo-modal-scrim'));
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).toBeNull();
     });

@@ -313,17 +313,21 @@ export function PractitionerSymptomMediaViewer({
                     closePhotoModal();
                   }}
                 >
-                  <div className="fixed inset-0 flex items-center justify-center p-4">
-                    <div
-                      role="presentation"
-                      aria-hidden="true"
-                      data-testid="photo-modal-backdrop"
-                      className="absolute inset-0 h-full w-full cursor-default bg-black/60"
-                      onClick={closePhotoModal}
-                    />
+                  <div
+                    data-testid="photo-modal-scrim"
+                    className="fixed inset-0 flex cursor-default items-center justify-center bg-black/60 p-4"
+                    onClick={(event) => {
+                      if (event.target === event.currentTarget) {
+                        closePhotoModal();
+                      }
+                    }}
+                  >
                     <div
                       role="document"
-                      className="relative z-10 flex max-h-[95vh] max-w-[min(95vw,64rem)] flex-col gap-4 rounded-2xl border border-app-border/90 bg-app-surface p-4 text-app-ink shadow-xl"
+                      className="flex max-h-[95vh] max-w-[min(95vw,64rem)] flex-col gap-4 rounded-2xl border border-app-border/90 bg-app-surface p-4 text-app-ink shadow-xl"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                      }}
                     >
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <h2
