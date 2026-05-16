@@ -114,6 +114,37 @@ describe('PractitionerPatientDetailPage', () => {
     expect(inlineAlert?.textContent).toContain('two-factor');
   });
 
+  it('loads successfully when the route id has surrounding whitespace', async () => {
+    const canonicalId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+    const paddedRouteId = `  ${canonicalId}  `;
+
+    loadPractitionerPatientObservationReadModel.mockResolvedValue({
+      ok: true,
+      data: {
+        patientUserId: canonicalId,
+        patientDisplayName: 'Alex Kim',
+        moreEpisodesOmitted: false,
+        standaloneHealthMarkersTruncated: false,
+        standaloneFoodDiaryTruncated: false,
+        standaloneTimeline: [],
+        episodesWithTimelines: [],
+      },
+    });
+
+    render(
+      <LiveAnnouncerProvider>
+        <PractitionerPatientDetailPage patientUserId={paddedRouteId} />
+      </LiveAnnouncerProvider>,
+    );
+
+    expect(await screen.findByText('Alex Kim')).toBeTruthy();
+    expect(loadPractitionerPatientObservationReadModel).toHaveBeenCalledWith(
+      expect.anything(),
+      canonicalId,
+    );
+    expect(screen.queryByText(/loading patient record/i)).toBeNull();
+  });
+
   it('when the first patient request is still pending, navigation supersedes it so a late response cannot replace the new route', async () => {
     const patientA = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
     const patientB = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';

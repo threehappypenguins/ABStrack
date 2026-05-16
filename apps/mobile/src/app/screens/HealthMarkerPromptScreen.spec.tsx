@@ -49,7 +49,7 @@ jest.mock('@abstrack/supabase', () => {
   const { PresetDataError } = preset;
 
   const timelineCore = jest.requireActual<
-    typeof import('../../../../../packages/supabase/src/lib/episode-observation-timeline-core.ts')
+    typeof import('../../../../../packages/supabase/src/lib/episode-observation-timeline-core')
   >(
     '../../../../../packages/supabase/src/lib/episode-observation-timeline-core.ts',
   );

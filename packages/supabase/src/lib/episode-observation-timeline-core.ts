@@ -172,12 +172,14 @@ export function compareEpisodeTimelineItems(
     if (c !== 0) {
       return c;
     }
-  } else {
-    // Defensive fallback for unexpected timestamp serialization.
+  } else if (!aValid && !bValid) {
     const c = a.sortAt.localeCompare(b.sortAt);
     if (c !== 0) {
       return c;
     }
+  } else {
+    // Exactly one parses: never mix numeric time with lexicographic string compare (non-transitive).
+    return aValid ? -1 : 1;
   }
   // Stable tie-break so merged timeline order is deterministic.
   return a.id.localeCompare(b.id);

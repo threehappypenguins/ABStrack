@@ -467,12 +467,13 @@ function StandaloneObservationTruncationNotice({
  * While `loadState` may still hold the previous patient until `load` runs, **ready/error UI is gated**
  * on `patientUserId` so the current route never renders another patient’s PHI or errors.
  *
- * @param props - Patient user id from the route.
+ * @param props - Patient user id from the route (trimmed once for loads, staleness checks, and UI).
  * @returns Patient detail UI with loading, error, and empty states.
  */
 export function PractitionerPatientDetailPage({
-  patientUserId,
+  patientUserId: patientUserIdFromRoute,
 }: PractitionerPatientDetailPageProps) {
+  const patientUserId = patientUserIdFromRoute.trim();
   const { announce } = useAnnounce();
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const pageId = useId();
