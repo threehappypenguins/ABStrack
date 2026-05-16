@@ -40,9 +40,19 @@ export const PRACTITIONER_STANDALONE_OBSERVATION_CAP = 200;
  */
 export const PRACTITIONER_EPISODE_TIMELINE_LOAD_CHUNK = 5;
 
-/** One patient's episode rows as visible to practitioner read paths (Supabase-generated shape). */
-export type PractitionerPatientEpisodeRow =
-  Database['public']['Tables']['episodes']['Row'];
+/**
+ * PostgREST `select` string for practitioner patient §8 episode history. Matches fields rendered on
+ * the patient detail page only (`id`, type, label, start/end); omits free-text PHI such as `note`
+ * and `additional_notes` from the browser payload.
+ */
+export const PRACTITIONER_PATIENT_EPISODE_LIST_SELECT =
+  'id, episode_type, episode_label, started_at, ended_at' as const;
+
+/** Episode row fields exposed to practitioner observation read paths (narrowed from full `episodes`). */
+export type PractitionerPatientEpisodeRow = Pick<
+  Database['public']['Tables']['episodes']['Row'],
+  'id' | 'episode_type' | 'episode_label' | 'started_at' | 'ended_at'
+>;
 
 /** One episode card: merged timeline plus per-stream omission flags (see {@link EPISODE_TIMELINE_SOURCE_LIMIT}). */
 export type PractitionerPatientEpisodeObservationBlock = {
@@ -206,7 +216,7 @@ async function loadEpisodesRecentFirst(
   try {
     const { data, error } = await client
       .from('episodes')
-      .select('*')
+      .select(PRACTITIONER_PATIENT_EPISODE_LIST_SELECT)
       .eq('user_id', patientUserId)
       .order('started_at', { ascending: false })
       .order('id', { ascending: false })
@@ -312,6 +322,10 @@ export async function assertActivePractitionerGrantForPatient(
  * via list helpers (PostgREST `LIMIT`, no extra migrations), in waves of
  * {@link PRACTITIONER_EPISODE_TIMELINE_LOAD_CHUNK} episodes so concurrent requests stay bounded.
  * {@link PractitionerPatientEpisodeObservationBlock} reports when a stream still has older rows beyond that cap.
+ *
+ * Episode list metadata uses {@link PRACTITIONER_PATIENT_EPISODE_LIST_SELECT} only (detail UI fields),
+ * not `select('*')`, so free-text episode columns such as `note` / `additional_notes` are not returned
+ * in this read path.
  *
  * @param client - Browser Supabase client (practitioner session; RLS applies).
  * @param patientUserId - Patient auth user id (same UUID as `/patients/[patientId]`).

@@ -14,6 +14,7 @@ import {
   loadPractitionerPatientObservationReadModel,
   PRACTITIONER_EPISODE_TIMELINE_LOAD_CHUNK,
   PRACTITIONER_PATIENT_EPISODE_HISTORY_CAP,
+  PRACTITIONER_PATIENT_EPISODE_LIST_SELECT,
   PRACTITIONER_STANDALONE_OBSERVATION_CAP,
   type PractitionerPatientEpisodeRow,
 } from './practitioner-patient-observation-read.js';
@@ -43,22 +44,14 @@ const PATIENT_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 
 function episodeFixture(
   id: string,
-  userId: string,
+  _userId: string,
 ): PractitionerPatientEpisodeRow {
   return {
     id,
-    user_id: userId,
-    additional_notes: null,
-    created_at: '2026-01-01T00:00:00.000Z',
     ended_at: null,
     episode_label: null,
     episode_type: 'ABS',
-    health_marker_preset_id: null,
-    note: null,
-    post_marker_step_completed_at: null,
     started_at: '2026-01-01T10:00:00.000Z',
-    symptom_preset_id: null,
-    updated_at: '2026-01-01T10:00:00.000Z',
   };
 }
 
@@ -374,7 +367,9 @@ describe('loadPractitionerPatientObservationReadModel', () => {
     );
 
     expect(result.ok).toBe(true);
-    expect(episodesChain.select).toHaveBeenCalledWith('*');
+    expect(episodesChain.select).toHaveBeenCalledWith(
+      PRACTITIONER_PATIENT_EPISODE_LIST_SELECT,
+    );
     expect(episodesChain.eq).toHaveBeenCalledWith('user_id', PATIENT_ID);
     expect(orderCalls).toEqual([
       { column: 'started_at', ascending: false },

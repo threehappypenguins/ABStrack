@@ -163,6 +163,7 @@ export {
   loadPractitionerPatientObservationReadModel,
   PRACTITIONER_EPISODE_TIMELINE_LOAD_CHUNK,
   PRACTITIONER_PATIENT_EPISODE_HISTORY_CAP,
+  PRACTITIONER_PATIENT_EPISODE_LIST_SELECT,
   PRACTITIONER_STANDALONE_OBSERVATION_CAP,
 } from './lib/practitioner-patient-observation-read.js';
 export {

@@ -6,8 +6,9 @@ type PatientDetailPageProps = {
 };
 
 /**
- * Per-patient practitioner view: read-only PHI timelines (PRD §8). Parent layout enforces MFA before
- * this renders.
+ * Per-patient practitioner view: read-only PHI timelines (PRD §8). The parent `patients` layout mounts
+ * `PractitionerPatientRoutesGate`, which enforces patient-data access rules (verified TOTP and AAL2 for
+ * password sign-in accounts; magic-link-only accounts may pass without MFA).
  *
  * @param props - Dynamic route params.
  * @returns Patient detail client tree.

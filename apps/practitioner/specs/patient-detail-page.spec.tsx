@@ -35,18 +35,10 @@ jest.mock('@abstrack/supabase', () => {
 function episodeRow(): PractitionerPatientEpisodeRow {
   return {
     id: 'eeeeeeee-bbbb-cccc-dddd-aaaaaaaaaaaa',
-    user_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
-    additional_notes: null,
-    created_at: '2026-04-01T10:00:00.000Z',
     ended_at: null,
     episode_label: null,
     episode_type: 'ABS',
-    health_marker_preset_id: null,
-    note: null,
-    post_marker_step_completed_at: null,
     started_at: '2026-04-01T10:00:00.000Z',
-    symptom_preset_id: null,
-    updated_at: '2026-04-01T10:00:00.000Z',
   };
 }
 

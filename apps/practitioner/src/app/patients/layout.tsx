@@ -2,7 +2,8 @@ import type { ReactNode } from 'react';
 import { PractitionerPatientRoutesGate } from '@/components/practitioner-patient-routes-gate';
 
 /**
- * Patient-data routes require verified TOTP enrollment and an AAL2 session before rendering.
+ * Patient-data routes: wraps children in `PractitionerPatientRoutesGate` (patient-data MFA rules for
+ * password sign-in; magic-link-only accounts are not required to complete MFA).
  *
  * @param props - Nested segment content.
  * @returns Gate-wrapped subtree.
