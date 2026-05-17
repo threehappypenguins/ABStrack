@@ -90,7 +90,7 @@ describe('getUserChartManifest', () => {
     }
   });
 
-  it('omits text/photo/video symptom series from RPC results', async () => {
+  it('returns RPC rows unchanged (non-chartable symptom exclusion is enforced in SQL)', async () => {
     const rows: UserChartManifestSeries[] = [
       {
         series_id: 'symptom::fatigue',
@@ -103,6 +103,17 @@ describe('getUserChartManifest', () => {
         first_observed_at: '2026-01-01T00:00:00.000Z',
         last_observed_at: '2026-03-01T00:00:00.000Z',
       },
+      {
+        series_id: 'symptom::journal note',
+        series_type: 'symptom',
+        label: 'Journal note',
+        response_type: 'text',
+        is_blood_pressure: false,
+        unit: null,
+        observation_count: 1,
+        first_observed_at: '2026-02-01T00:00:00.000Z',
+        last_observed_at: '2026-02-01T00:00:00.000Z',
+      },
     ];
 
     const result = await getUserChartManifest(manifestClient(rows), USER_ID);
@@ -112,14 +123,6 @@ describe('getUserChartManifest', () => {
       return;
     }
 
-    const seriesIds = result.data.map((s) => s.series_id);
-    expect(seriesIds).not.toContain('symptom::journal note');
-    expect(seriesIds).not.toContain('symptom::wound photo');
-    expect(seriesIds).not.toContain('symptom::gait video');
-    expect(
-      result.data.every(
-        (s) => s.series_type !== 'symptom' || !s.is_blood_pressure,
-      ),
-    ).toBe(true);
+    expect(result.data).toEqual(rows);
   });
 });

@@ -35,7 +35,7 @@ AS $$
     SELECT
       'health_marker::' || hmr.series_key AS series_id,
       'health_marker'::text AS series_type,
-      hmr.label,
+      min(hmr.label) AS label,
       CASE
         WHEN bool_or(hmr.is_numeric_observation) THEN 'numeric'
         ELSE 'text'
@@ -46,7 +46,7 @@ AS $$
       min(hmr.recorded_at) AS first_observed_at,
       max(hmr.recorded_at) AS last_observed_at
     FROM health_marker_rows hmr
-    GROUP BY hmr.series_key, hmr.label
+    GROUP BY hmr.series_key
   ),
   symptom_rows AS (
     SELECT
@@ -67,7 +67,7 @@ AS $$
     SELECT
       'symptom::' || sr.series_key AS series_id,
       'symptom'::text AS series_type,
-      sr.label,
+      min(sr.label) AS label,
       max(sr.chart_response_type) AS response_type,
       false AS is_blood_pressure,
       NULL::text AS unit,
@@ -76,7 +76,7 @@ AS $$
       max(sr.created_at) AS last_observed_at
     FROM symptom_rows sr
     WHERE sr.chart_response_type <> 'text'
-    GROUP BY sr.series_key, sr.label
+    GROUP BY sr.series_key
   )
   SELECT
     m.series_id,
