@@ -758,12 +758,12 @@ describe('PractitionerPatientDetailPage', () => {
     const standaloneTimeline = Array.from(
       { length: LARGE_STANDALONE_TIMELINE_ROWS },
       (_, i) => ({
-      kind: 'symptom' as const,
-      sortAt: `2026-04-01T12:${String(i).padStart(2, '0')}:00.000Z`,
-      id: `stand-${i}`,
-      label: `StandaloneRow-${i}`,
-      detail: 'Note',
-    }),
+        kind: 'symptom' as const,
+        sortAt: `2026-04-01T12:${String(i).padStart(2, '0')}:00.000Z`,
+        id: `stand-${i}`,
+        label: `StandaloneRow-${i}`,
+        detail: 'Note',
+      }),
     );
 
     loadPractitionerPatientObservationReadModel.mockResolvedValue({
@@ -811,12 +811,12 @@ describe('PractitionerPatientDetailPage', () => {
     const largeTimeline = Array.from(
       { length: LARGE_STANDALONE_TIMELINE_ROWS },
       (_, i) => ({
-      kind: 'symptom' as const,
-      sortAt: `2026-04-01T13:${String(i).padStart(2, '0')}:00.000Z`,
-      id: `b-stand-${i}`,
-      label: `PatientB-${i}`,
-      detail: 'Note',
-    }),
+        kind: 'symptom' as const,
+        sortAt: `2026-04-01T13:${String(i).padStart(2, '0')}:00.000Z`,
+        id: `b-stand-${i}`,
+        label: `PatientB-${i}`,
+        detail: 'Note',
+      }),
     );
 
     loadPractitionerPatientObservationReadModel.mockImplementation(
@@ -874,9 +874,7 @@ describe('PractitionerPatientDetailPage', () => {
     expect(screen.queryByText(`PatientB-${largeLastIndex}`)).toBeNull();
 
     clickDetailsSummary('Observation list');
-    expect(
-      await screen.findByText(`PatientB-${largeLastIndex}`),
-    ).toBeTruthy();
+    expect(await screen.findByText(`PatientB-${largeLastIndex}`)).toBeTruthy();
   });
 
   it('resets standalone lazy-mount when patientUserId changes from a large list to a small one', async () => {
@@ -887,12 +885,12 @@ describe('PractitionerPatientDetailPage', () => {
     const largeTimeline = Array.from(
       { length: LARGE_STANDALONE_TIMELINE_ROWS },
       (_, i) => ({
-      kind: 'symptom' as const,
-      sortAt: `2026-04-01T12:${String(i).padStart(2, '0')}:00.000Z`,
-      id: `a-stand-${i}`,
-      label: `PatientA-${i}`,
-      detail: 'Note',
-    }),
+        kind: 'symptom' as const,
+        sortAt: `2026-04-01T12:${String(i).padStart(2, '0')}:00.000Z`,
+        id: `a-stand-${i}`,
+        label: `PatientA-${i}`,
+        detail: 'Note',
+      }),
     );
 
     const smallTimeline = Array.from({ length: 5 }, (_, i) => ({
@@ -946,9 +944,7 @@ describe('PractitionerPatientDetailPage', () => {
     await screen.findByText('Alex');
     expect(screen.queryByText(`PatientA-${largeLastIndex}`)).toBeNull();
     clickDetailsSummary('Observation list');
-    expect(
-      await screen.findByText(`PatientA-${largeLastIndex}`),
-    ).toBeTruthy();
+    expect(await screen.findByText(`PatientA-${largeLastIndex}`)).toBeTruthy();
 
     rerender(
       <LiveAnnouncerProvider>

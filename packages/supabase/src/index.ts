@@ -183,7 +183,6 @@ export {
   deletePractitionerObservationNote,
   listPractitionerObservationNotesForPatient,
   PRACTITIONER_OBSERVATION_NOTE_BODY_MAX_LENGTH,
-  PRACTITIONER_OBSERVATION_NOTE_DELETE_FAILED_MESSAGE,
   updatePractitionerObservationNote,
   validatePractitionerObservationNoteBody,
 } from './lib/practitioner-observation-notes-data.js';

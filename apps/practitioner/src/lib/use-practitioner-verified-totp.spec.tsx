@@ -29,9 +29,7 @@ describe('usePractitionerVerifiedTotpCount', () => {
       },
     );
 
-    const listFactors = jest.fn(() =>
-      Promise.resolve(listFactorsResult(0)),
-    );
+    const listFactors = jest.fn(() => Promise.resolve(listFactorsResult(0)));
 
     mockedGetClient.mockReturnValue({
       auth: { mfa: { listFactors } },

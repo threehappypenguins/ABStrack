@@ -1,6 +1,6 @@
-import { PresetDataError, toPresetDataError } from './preset-data-error.js';
+import { PresetDataError } from './preset-data-error.js';
 import type { PresetDataResult } from './preset-data.js';
-import { wrap } from './preset-data.js';
+import { wrap, wrapDeleteExpectOne } from './preset-data.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
 
 /** Matches `practitioner_observation_notes.body` CHECK (`char_length(body) <= 16000`). */
@@ -183,13 +183,10 @@ export async function updatePractitionerObservationNote(
   });
 }
 
-/** Shown when DELETE matches zero rows (RLS deny, missing row, or delete policy not applied yet). */
-export const PRACTITIONER_OBSERVATION_NOTE_DELETE_FAILED_MESSAGE =
-  'Unable to delete this observation note. You may not have permission to delete it, or it was already removed.';
-
 /**
  * Deletes a practitioner observation note (own rows only per RLS).
  * Requires `practitioner_observation_notes_delete` policy (migration `20260520120000_practitioner_observation_notes_delete.sql`).
+ * When no row matches (missing id or RLS hides it), returns `not_found` like other preset deletes.
  *
  * @param client - Browser Supabase client.
  * @param noteId - Note primary key.
@@ -198,30 +195,13 @@ export async function deletePractitionerObservationNote(
   client: AbstrackSupabaseClient,
   noteId: string,
 ): Promise<PresetDataResult<void>> {
-  try {
-    const { data, error } = await client
+  return wrapDeleteExpectOne(async () => {
+    const r = await client
       .from('practitioner_observation_notes')
       .delete()
       .eq('id', noteId)
-      .select('id');
-
-    if (error) {
-      return { ok: false, error: toPresetDataError(error) };
-    }
-
-    const deleted = (data ?? []) as { id: string }[];
-    if (deleted.length === 0) {
-      return {
-        ok: false,
-        error: new PresetDataError(
-          'permission_denied',
-          PRACTITIONER_OBSERVATION_NOTE_DELETE_FAILED_MESSAGE,
-        ),
-      };
-    }
-
-    return { ok: true, data: undefined };
-  } catch (caught) {
-    return { ok: false, error: toPresetDataError(caught) };
-  }
+      .select('id')
+      .single();
+    return { data: r.data, error: r.error };
+  });
 }

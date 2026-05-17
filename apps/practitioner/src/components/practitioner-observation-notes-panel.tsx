@@ -291,6 +291,8 @@ export function PractitionerObservationNotesPanel({
                 ? formatNoteTimestamp(note.updatedAt)
                 : null;
             const isEditing = editingNoteId === note.id;
+            const editFieldId = `${formId}-edit-${note.id}`;
+            const editErrorId = `${formId}-edit-error-${note.id}`;
 
             return (
               <li
@@ -337,24 +339,23 @@ export function PractitionerObservationNotesPanel({
                     }}
                     aria-label="Edit observation note"
                   >
-                    <label
-                      htmlFor={`${formId}-edit-${note.id}`}
-                      className="sr-only"
-                    >
+                    <label htmlFor={editFieldId} className="sr-only">
                       Observation note text
                     </label>
                     <textarea
-                      id={`${formId}-edit-${note.id}`}
+                      id={editFieldId}
                       value={editBody}
                       onChange={(ev) => setEditBody(ev.target.value)}
                       rows={4}
                       maxLength={PRACTITIONER_OBSERVATION_NOTE_BODY_MAX_LENGTH}
                       disabled={editSubmitting}
+                      aria-describedby={editError ? editErrorId : undefined}
+                      aria-invalid={editError ? 'true' : undefined}
                       className="min-h-[7rem] w-full rounded-md border border-app-border bg-app-surface px-3 py-2 text-sm text-app-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
                     />
                     {editError ? (
                       <p
-                        id={`${formId}-edit-error-${note.id}`}
+                        id={editErrorId}
                         className="mt-2 text-sm text-app-ink"
                         role="alert"
                       >

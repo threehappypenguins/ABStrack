@@ -145,10 +145,11 @@ describe('updatePractitionerObservationNote', () => {
 
 describe('deletePractitionerObservationNote', () => {
   it('deletes note by id when a row is returned', async () => {
-    const select = vi.fn(async () => ({
-      data: [{ id: 'note-1' }],
+    const single = vi.fn(async () => ({
+      data: { id: 'note-1' },
       error: null,
     }));
+    const select = vi.fn(() => ({ single }));
     const eq = vi.fn(() => ({ select }));
     const del = vi.fn(() => ({ eq }));
     const client = {
@@ -161,8 +162,15 @@ describe('deletePractitionerObservationNote', () => {
     expect(eq).toHaveBeenCalledWith('id', 'note-1');
   });
 
-  it('returns permission_denied when delete matches zero rows', async () => {
-    const select = vi.fn(async () => ({ data: [], error: null }));
+  it('returns not_found when delete matches zero rows', async () => {
+    const single = vi.fn(async () => ({
+      data: null,
+      error: {
+        code: 'PGRST116',
+        message: 'JSON object requested, multiple (or no) rows returned',
+      },
+    }));
+    const select = vi.fn(() => ({ single }));
     const eq = vi.fn(() => ({ select }));
     const del = vi.fn(() => ({ eq }));
     const client = {
@@ -173,7 +181,7 @@ describe('deletePractitionerObservationNote', () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error.code).toBe('permission_denied');
+      expect(result.error.code).toBe('not_found');
     }
   });
 });
