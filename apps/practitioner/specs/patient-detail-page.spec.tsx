@@ -575,6 +575,80 @@ describe('PractitionerPatientDetailPage', () => {
     expect(await screen.findByText('Bob Jones')).toBeTruthy();
   });
 
+  it('clears observation notes when navigating before the next patient notes fetch completes', async () => {
+    const patientA = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+    const patientB = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+
+    const noteA = {
+      id: 'note-a',
+      patientUserId: patientA,
+      episodeId: null,
+      practitionerUserId: PRACTITIONER_USER_ID,
+      body: 'Alice-only observation note',
+      createdAt: '2026-05-01T10:00:00.000Z',
+      updatedAt: '2026-05-01T10:00:00.000Z',
+    };
+
+    let resolveNotesB!: (value: { ok: true; data: (typeof noteA)[] }) => void;
+    const slowNotesB = new Promise<{
+      ok: true;
+      data: (typeof noteA)[];
+    }>((resolve) => {
+      resolveNotesB = resolve;
+    });
+
+    loadPractitionerPatientObservationReadModel.mockImplementation(
+      async (_client, uid: string) => ({
+        ok: true,
+        data: {
+          patientUserId: uid,
+          patientDisplayName: uid === patientA ? 'Alice Alpha' : 'Bob Jones',
+          moreEpisodesOmitted: false,
+          standaloneHealthMarkersTruncated: false,
+          standaloneFoodDiaryTruncated: false,
+          standaloneTimeline: [],
+          episodesWithTimelines: [],
+        },
+      }),
+    );
+
+    listPractitionerObservationNotesForPatient.mockImplementation(
+      async (_client, uid: string) => {
+        if (uid === patientA) {
+          return { ok: true, data: [noteA] };
+        }
+        if (uid === patientB) {
+          return slowNotesB;
+        }
+        throw new Error(`unexpected patient ${uid}`);
+      },
+    );
+
+    const { rerender } = render(
+      <LiveAnnouncerProvider>
+        <PractitionerPatientDetailPage patientUserId={patientA} />
+      </LiveAnnouncerProvider>,
+    );
+
+    expect(await screen.findByText('Alice-only observation note')).toBeTruthy();
+
+    rerender(
+      <LiveAnnouncerProvider>
+        <PractitionerPatientDetailPage patientUserId={patientB} />
+      </LiveAnnouncerProvider>,
+    );
+
+    expect(await screen.findByText('Bob Jones')).toBeTruthy();
+    expect(screen.queryByText('Alice-only observation note')).toBeNull();
+
+    resolveNotesB({ ok: true, data: [] });
+    await waitFor(() => {
+      expect(
+        screen.getByText('No patient-level observation notes yet.'),
+      ).toBeTruthy();
+    });
+  });
+
   it('when the first patient error is still pending, navigation supersedes it so a late failure cannot surface on the new route', async () => {
     const patientA = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
     const patientB = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';

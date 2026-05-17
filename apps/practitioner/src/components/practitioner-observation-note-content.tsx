@@ -3,8 +3,18 @@
 import { useState } from 'react';
 import { IconChevronDown } from './IconChevronDown';
 
-/** Collapsed preview uses `line-clamp-3` (~three lines). */
-const OBSERVATION_NOTE_PREVIEW_LINE_COUNT = 3;
+/** Tailwind `line-clamp-*` classes keyed by preview line count (static for the compiler). */
+const OBSERVATION_NOTE_PREVIEW_LINE_CLAMP_CLASSES = {
+  1: 'line-clamp-1',
+  2: 'line-clamp-2',
+  3: 'line-clamp-3',
+  4: 'line-clamp-4',
+  5: 'line-clamp-5',
+  6: 'line-clamp-6',
+} as const;
+
+/** Collapsed preview line count; must match a key in {@link OBSERVATION_NOTE_PREVIEW_LINE_CLAMP_CLASSES}. */
+const OBSERVATION_NOTE_PREVIEW_LINE_COUNT: keyof typeof OBSERVATION_NOTE_PREVIEW_LINE_CLAMP_CLASSES = 3;
 
 /** Character count above which a note shows expand/collapse (aligned with timeline detail clamp). */
 const OBSERVATION_NOTE_EXPAND_CHAR_THRESHOLD = 160;
@@ -54,7 +64,9 @@ export function PractitionerObservationNoteContent({
         </p>
       ) : (
         <div className="relative">
-          <p className="whitespace-pre-wrap break-words text-sm text-app-ink/80 line-clamp-3">
+          <p
+            className={`whitespace-pre-wrap break-words text-sm text-app-ink/80 ${OBSERVATION_NOTE_PREVIEW_LINE_CLAMP_CLASSES[OBSERVATION_NOTE_PREVIEW_LINE_COUNT]}`}
+          >
             {body}
           </p>
           <div

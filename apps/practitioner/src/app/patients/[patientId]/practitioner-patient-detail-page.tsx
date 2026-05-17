@@ -529,6 +529,8 @@ function StandaloneObservationTruncationNotice({
  * (including error payloads and announcements: each `load` compares the route ref to its captured id).
  * While `loadState` may still hold the previous patient until `load` runs, **ready/error UI is gated**
  * on `patientUserId` so the current route never renders another patient’s PHI or errors.
+ * `observationNotes` is cleared when each load starts so notes from the prior patient cannot appear
+ * under the next patient’s header while the read model and notes requests are in flight.
  *
  * @param props - Patient user id from the route (trimmed once for loads, staleness checks, and UI).
  * @returns Patient detail UI with loading, error, and empty states.
@@ -560,6 +562,7 @@ export function PractitionerPatientDetailPage({
   const load = useCallback(async () => {
     const requestToken = ++loadRequestTokenRef.current;
     setLoadState({ kind: 'loading' });
+    setObservationNotes([]);
     const result = await loadPractitionerPatientObservationReadModel(
       supabase,
       patientUserId,
