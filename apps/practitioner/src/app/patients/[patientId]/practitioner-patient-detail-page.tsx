@@ -3,18 +3,27 @@
 import {
   EPISODE_TIMELINE_SOURCE_LIMIT,
   formatPractitionerPatientDirectoryLabel,
+  listPractitionerObservationNotesForPatient,
   loadPractitionerPatientObservationReadModel,
   PRACTITIONER_PATIENT_EPISODE_HISTORY_CAP,
   PRACTITIONER_PATIENT_OBSERVATION_GRANT_DENIED_MESSAGE,
   PRACTITIONER_STANDALONE_OBSERVATION_CAP,
   type AbstrackSupabaseClient,
   type EpisodeTimelineItem,
+  type PractitionerObservationNoteRow,
   type PractitionerPatientEpisodeRow,
   type PractitionerPatientObservationReadModel,
 } from '@abstrack/supabase';
 import { getSupabaseBrowserClient } from '@abstrack/supabase/browser';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
+import { DisclosureChevron } from '../../../components/DisclosureChevron';
+import { PractitionerObservationNotesPanel } from '../../../components/practitioner-observation-notes-panel';
+import {
+  PRACTITIONER_DETAILS_SUMMARY_BODY_CLASS,
+  PRACTITIONER_DETAILS_SUMMARY_CLASS,
+} from '../../../components/practitioner-details-summary-classes';
 import { PractitionerSymptomMediaViewer } from '../../../components/practitioner-symptom-media-viewer';
+import { useAuth } from '../../../lib/auth-provider';
 import Link from 'next/link';
 import {
   useCallback,
@@ -107,29 +116,27 @@ function PractitionerTimelineObservationDetail({
     );
   }
 
+  const [noteOpen, setNoteOpen] = useState(false);
+
   return (
-    <details className="group mt-0.5">
+    <details open={noteOpen} className="group mt-0.5">
       <summary
-        className="min-h-11 cursor-pointer list-none rounded-md py-2 text-left transition-colors hover:bg-app-muted/10 [&::-webkit-details-marker]:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+        className={`${PRACTITIONER_DETAILS_SUMMARY_CLASS} rounded-md py-2`}
         onClick={(e) => {
           e.preventDefault();
-          const root = e.currentTarget.parentElement;
-          if (!root || root.tagName !== 'DETAILS') {
-            return;
-          }
-          const detailsEl = root as HTMLDetailsElement;
-          detailsEl.open = !detailsEl.open;
+          setNoteOpen((prev) => !prev);
         }}
       >
-        <span className="block break-words whitespace-pre-wrap text-app-muted group-open:hidden line-clamp-3">
-          {detail}
+        <span className={PRACTITIONER_DETAILS_SUMMARY_BODY_CLASS}>
+          <span className="block break-words whitespace-pre-wrap text-app-muted group-open:hidden line-clamp-3">
+            {detail}
+          </span>
+          <span className="sr-only group-open:hidden">Show full note</span>
+          <span className="sr-only hidden group-open:inline">
+            Collapse full note
+          </span>
         </span>
-        <span className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-app-primary underline underline-offset-4 group-open:hidden">
-          Show full note
-        </span>
-        <span className="mt-2 hidden min-h-11 items-center text-sm font-semibold text-app-primary underline underline-offset-4 group-open:inline-flex">
-          Collapse full note
-        </span>
+        <DisclosureChevron />
       </summary>
       <div className="mt-2 border-l-2 border-app-border pl-3">
         <p className="break-words whitespace-pre-wrap text-app-muted">
@@ -271,6 +278,10 @@ function PractitionerEpisodeTimelineCard({
   moreFoodDiaryOmitted,
   regionId,
   supabase,
+  patientUserId,
+  practitionerUserId,
+  observationNotes,
+  onObservationNotesChange,
 }: {
   episode: PractitionerPatientEpisodeRow;
   timeline: EpisodeTimelineItem[];
@@ -279,10 +290,14 @@ function PractitionerEpisodeTimelineCard({
   moreFoodDiaryOmitted: boolean;
   regionId: string;
   supabase: AbstrackSupabaseClient;
+  patientUserId: string;
+  practitionerUserId: string;
+  observationNotes: PractitionerObservationNoteRow[];
+  onObservationNotesChange: (notes: PractitionerObservationNoteRow[]) => void;
 }) {
   const hasObservations = timeline.length > 0;
+  const [episodeOpen, setEpisodeOpen] = useState(false);
   const [listMounted, setListMounted] = useState(false);
-  const [expanded, setExpanded] = useState(false);
 
   const anyStreamTruncated =
     moreSymptomsOmitted || moreHealthMarkersOmitted || moreFoodDiaryOmitted;
@@ -294,49 +309,46 @@ function PractitionerEpisodeTimelineCard({
 
   return (
     <details
-      className="w-full rounded-xl border border-app-border bg-app-surface p-5 text-left shadow-soft"
+      open={episodeOpen}
+      className="group w-full rounded-xl border border-app-border bg-app-surface p-5 text-left shadow-soft"
       aria-labelledby={`${regionId}-heading`}
     >
       <summary
-        className="flex w-full cursor-pointer list-none flex-col items-start gap-1 text-left transition-colors hover:bg-app-muted/5 [&::-webkit-details-marker]:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+        className={PRACTITIONER_DETAILS_SUMMARY_CLASS}
         onClick={(e) => {
           e.preventDefault();
-          const root = e.currentTarget.parentElement;
-          if (!root || root.tagName !== 'DETAILS') {
-            return;
-          }
-          const detailsEl = root as HTMLDetailsElement;
-          const nextOpen = !detailsEl.open;
-          detailsEl.open = nextOpen;
-          setExpanded(nextOpen);
-          if (nextOpen) {
-            setListMounted(true);
-          }
+          setEpisodeOpen((prev) => {
+            const next = !prev;
+            if (next) {
+              setListMounted(true);
+            }
+            return next;
+          });
         }}
       >
-        <span
-          id={`${regionId}-heading`}
-          className="text-base font-semibold leading-snug text-app-ink"
-        >
-          {episodeSummaryHeading(episode)}
-        </span>
-        {episode.episode_label?.trim() ? (
-          <span className="text-sm font-medium text-app-muted">
-            {episode.episode_label.trim()}
+        <span className={PRACTITIONER_DETAILS_SUMMARY_BODY_CLASS}>
+          <span
+            id={`${regionId}-heading`}
+            className="text-base font-semibold leading-snug text-app-ink"
+          >
+            {episodeSummaryHeading(episode)}
           </span>
-        ) : null}
-        <span className="block text-sm text-app-muted">
-          {observationSummary}
-        </span>
-        {anyStreamTruncated ? (
-          <span className="block text-xs text-app-muted">
-            Loaded streams may omit older rows (cap{' '}
-            {EPISODE_TIMELINE_SOURCE_LIMIT} per type).
+          {episode.episode_label?.trim() ? (
+            <span className="text-sm font-medium text-app-muted">
+              {episode.episode_label.trim()}
+            </span>
+          ) : null}
+          <span className="block text-sm text-app-muted">
+            {observationSummary}
           </span>
-        ) : null}
-        <span className="mt-1 inline-flex min-h-11 items-center text-sm font-semibold text-app-primary underline underline-offset-4">
-          {expanded ? 'Hide episode timeline' : 'Show episode timeline'}
+          {anyStreamTruncated ? (
+            <span className="block text-xs text-app-muted">
+              Loaded streams may omit older rows (cap{' '}
+              {EPISODE_TIMELINE_SOURCE_LIMIT} per type).
+            </span>
+          ) : null}
         </span>
+        <DisclosureChevron />
       </summary>
 
       <div className="mt-6 w-full border-t border-app-border pt-6">
@@ -361,10 +373,24 @@ function PractitionerEpisodeTimelineCard({
           )
         ) : (
           <p className="sr-only">
-            Expand “Show episode timeline” to load observations for this
-            episode.
+            Expand this episode to load observations and practitioner notes.
           </p>
         )}
+        {listMounted && practitionerUserId ? (
+          <PractitionerObservationNotesPanel
+            supabase={supabase}
+            patientUserId={patientUserId}
+            practitionerUserId={practitionerUserId}
+            episodeId={episode.id}
+            notes={observationNotes}
+            onNotesChange={onObservationNotesChange}
+            headingId={`${regionId}-notes-heading`}
+            heading="Practitioner observation notes"
+            description="Clinical notes for this episode. Patients can read notes you save; only you can edit your own."
+            emptyListMessage="No observation notes for this episode yet."
+            composeSubmitLabel="Save episode note"
+          />
+        ) : null}
       </div>
     </details>
   );
@@ -392,8 +418,8 @@ function PractitionerStandaloneTimelineSection({
   ariaLabelledBy: string;
 }) {
   const n = standaloneTimeline.length;
+  const [standaloneOpen, setStandaloneOpen] = useState(false);
   const [listMounted, setListMounted] = useState(false);
-  const [expanded, setExpanded] = useState(false);
 
   const observationSummary =
     n === 0
@@ -402,41 +428,38 @@ function PractitionerStandaloneTimelineSection({
 
   return (
     <details
-      className="w-full rounded-xl border border-app-border bg-app-surface p-5 text-left shadow-soft"
+      open={standaloneOpen}
+      className="group w-full rounded-xl border border-app-border bg-app-surface p-5 text-left shadow-soft"
       aria-labelledby={ariaLabelledBy}
     >
       <summary
-        className="flex w-full cursor-pointer list-none flex-col items-start gap-1 text-left transition-colors hover:bg-app-muted/5 [&::-webkit-details-marker]:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+        className={PRACTITIONER_DETAILS_SUMMARY_CLASS}
         onClick={(e) => {
           e.preventDefault();
-          const root = e.currentTarget.parentElement;
-          if (!root || root.tagName !== 'DETAILS') {
-            return;
-          }
-          const detailsEl = root as HTMLDetailsElement;
-          const nextOpen = !detailsEl.open;
-          detailsEl.open = nextOpen;
-          setExpanded(nextOpen);
-          if (nextOpen) {
-            setListMounted(true);
-          }
+          setStandaloneOpen((prev) => {
+            const next = !prev;
+            if (next) {
+              setListMounted(true);
+            }
+            return next;
+          });
         }}
       >
-        <span className="text-base font-semibold text-app-ink">
-          Observation list
-        </span>
-        <span className="mt-1 block text-sm text-app-muted">
-          {observationSummary}
-        </span>
-        {markersTruncated || foodTruncated ? (
-          <span className="mt-1 block text-xs text-app-muted">
-            Loaded standalone streams may omit older rows (cap{' '}
-            {PRACTITIONER_STANDALONE_OBSERVATION_CAP} per type).
+        <span className={PRACTITIONER_DETAILS_SUMMARY_BODY_CLASS}>
+          <span className="text-base font-semibold text-app-ink">
+            Observation list
           </span>
-        ) : null}
-        <span className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-app-primary underline underline-offset-4">
-          {expanded ? 'Hide standalone entries' : 'Show standalone entries'}
+          <span className="mt-1 block text-sm text-app-muted">
+            {observationSummary}
+          </span>
+          {markersTruncated || foodTruncated ? (
+            <span className="mt-1 block text-xs text-app-muted">
+              Loaded standalone streams may omit older rows (cap{' '}
+              {PRACTITIONER_STANDALONE_OBSERVATION_CAP} per type).
+            </span>
+          ) : null}
         </span>
+        <DisclosureChevron />
       </summary>
 
       <div className="mt-6 w-full border-t border-app-border pt-6">
@@ -452,8 +475,7 @@ function PractitionerStandaloneTimelineSection({
           />
         ) : (
           <p className="sr-only">
-            Expand “Show standalone entries” to load the standalone observation
-            list.
+            Expand the observation list to load standalone entries.
           </p>
         )}
       </div>
@@ -499,8 +521,8 @@ function StandaloneObservationTruncationNotice({
 }
 
 /**
- * Per-patient practitioner read-only view: time-ordered episode-bound observations (symptoms, health
- * markers, episode-tied food) plus standalone markers and food diary (PRD §8; no writes to PHI).
+ * Per-patient practitioner view: read-only patient-logged timelines plus practitioner observation
+ * notes on the patient record and on episodes (PRD §8; no writes to patient-owned PHI rows).
  *
  * Overlapping async loads (navigating between patients, rapid retries) are ignored once superseded
  * so an older response cannot replace state while the route targets a different `patientUserId`
@@ -516,6 +538,8 @@ export function PractitionerPatientDetailPage({
 }: PractitionerPatientDetailPageProps) {
   const patientUserId = patientUserIdFromRoute.trim();
   const { announce } = useAnnounce();
+  const { session } = useAuth();
+  const practitionerUserId = session?.user?.id ?? '';
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const pageId = useId();
   const episodeRegionPrefix = `${pageId}-episode`;
@@ -529,6 +553,9 @@ export function PractitionerPatientDetailPage({
   const [loadState, setLoadState] = useState<PatientDetailLoadState>({
     kind: 'loading',
   });
+  const [observationNotes, setObservationNotes] = useState<
+    PractitionerObservationNoteRow[]
+  >([]);
 
   const load = useCallback(async () => {
     const requestToken = ++loadRequestTokenRef.current;
@@ -565,6 +592,23 @@ export function PractitionerPatientDetailPage({
     }
 
     setLoadState({ kind: 'ready', model: result.data });
+
+    const notesResult = await listPractitionerObservationNotesForPatient(
+      supabase,
+      patientUserId,
+    );
+    if (
+      requestToken === loadRequestTokenRef.current &&
+      patientUserIdRef.current === patientUserId
+    ) {
+      if (notesResult.ok) {
+        setObservationNotes(notesResult.data);
+      } else {
+        setObservationNotes([]);
+        announce(notesResult.error.message, { politeness: 'assertive' });
+      }
+    }
+
     const epCount = result.data.episodesWithTimelines.length;
     const standCount = result.data.standaloneTimeline.length;
     announce(
@@ -630,10 +674,25 @@ export function PractitionerPatientDetailPage({
         <h1 className="text-2xl font-semibold text-app-ink">{title}</h1>
         <p className="mt-2 font-mono text-xs text-app-muted">{patientUserId}</p>
         <p className="mt-3 text-sm text-app-muted">
-          Read-only timeline: episode symptoms, health markers, and food logged
-          during episodes, then standalone markers and food outside episodes.
+          Patient-logged timeline (read-only) plus practitioner observation
+          notes you can add or edit on this record and on individual episodes.
         </p>
       </header>
+
+      {model && practitionerUserId ? (
+        <PractitionerObservationNotesPanel
+          supabase={supabase}
+          patientUserId={patientUserId}
+          practitionerUserId={practitionerUserId}
+          notes={observationNotes}
+          onNotesChange={setObservationNotes}
+          headingId={`${pageId}-patient-notes-heading`}
+          heading="Patient record observation notes"
+          description="Notes about this patient that are not tied to a specific episode. Patients can read notes you save."
+          emptyListMessage="No patient-level observation notes yet."
+          composeSubmitLabel="Save patient note"
+        />
+      ) : null}
 
       {isLoading ? (
         <p
@@ -728,6 +787,10 @@ export function PractitionerPatientDetailPage({
                       moreFoodDiaryOmitted={moreFoodDiaryOmitted}
                       regionId={regionId}
                       supabase={supabase}
+                      patientUserId={patientUserId}
+                      practitionerUserId={practitionerUserId}
+                      observationNotes={observationNotes}
+                      onObservationNotesChange={setObservationNotes}
                     />
                   </section>
                 );

@@ -29,10 +29,9 @@ describe('usePractitionerVerifiedTotpCount', () => {
       },
     );
 
-    const listFactors = jest
-      .fn()
-      .mockResolvedValueOnce(listFactorsResult(0))
-      .mockImplementationOnce(() => refreshPromise);
+    const listFactors = jest.fn(() =>
+      Promise.resolve(listFactorsResult(0)),
+    );
 
     mockedGetClient.mockReturnValue({
       auth: { mfa: { listFactors } },
@@ -49,6 +48,8 @@ describe('usePractitionerVerifiedTotpCount', () => {
     });
     expect(result.current.verifiedTotpCount).toBe(0);
 
+    listFactors.mockImplementationOnce(() => refreshPromise);
+
     await act(async () => {
       const p = result.current.refresh();
       rerender({ enabled: false });
@@ -56,6 +57,9 @@ describe('usePractitionerVerifiedTotpCount', () => {
       await p;
     });
 
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
     expect(result.current.verifiedTotpCount).toBe(0);
     expect(result.current.error).toBeNull();
   });
