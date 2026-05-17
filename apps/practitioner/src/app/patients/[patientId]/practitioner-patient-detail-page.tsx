@@ -101,6 +101,7 @@ function PractitionerTimelineObservationDetail({
   detail: string;
   detailFull?: string;
 }) {
+  const [noteOpen, setNoteOpen] = useState(false);
   const fullText = detailFull ?? detail;
   const trimmedPreview = detail.trim();
   const needsExpand =
@@ -115,8 +116,6 @@ function PractitionerTimelineObservationDetail({
       </span>
     );
   }
-
-  const [noteOpen, setNoteOpen] = useState(false);
 
   return (
     <details open={noteOpen} className="group mt-0.5">
