@@ -190,3 +190,8 @@ export type {
   FoodDiaryCreateCorePayload,
   ValidateFoodDiaryCreateCoreResult,
 } from './lib/food-diary-data.js';
+export type {
+  ChartManifestResponseType,
+  UserChartManifestSeries,
+} from './lib/chart-manifest-data.js';
+export { getUserChartManifest } from './lib/chart-manifest-data.js';
