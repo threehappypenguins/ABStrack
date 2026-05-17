@@ -845,6 +845,10 @@ describe('HealthMarkerPromptScreen', () => {
     await waitFor(() => {
       expect(screen.getByText('Food diary')).toBeTruthy();
     });
+    await waitFor(() => {
+      const skip = screen.getByLabelText('Skip food diary entry');
+      expect(skip.props.accessibilityState?.disabled).not.toBe(true);
+    });
     fireEvent.press(screen.getByLabelText('Skip food diary entry'));
     await waitFor(() => {
       expect(screen.getByText('Episode details')).toBeTruthy();
@@ -852,13 +856,11 @@ describe('HealthMarkerPromptScreen', () => {
 
     fireEvent.press(screen.getByLabelText('Save episode details'));
 
-    await waitFor(() => {
-      expect(
-        screen.getByText(
-          'Could not save episode details. This episode may be missing, already ended, or no longer available.',
-        ),
-      ).toBeTruthy();
-    });
+    expect(
+      await screen.findByText(
+        'Could not save episode details. This episode may be missing, already ended, or no longer available.',
+      ),
+    ).toBeTruthy();
     expect(screen.getByText('Episode details')).toBeTruthy();
   });
 });

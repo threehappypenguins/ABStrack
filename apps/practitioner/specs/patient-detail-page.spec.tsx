@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -16,28 +17,50 @@ import { LiveAnnouncerProvider } from '@abstrack/ui/a11y-web';
 import { PractitionerPatientDetailPage } from '../src/app/patients/[patientId]/practitioner-patient-detail-page';
 
 /**
- * Fire a click on the `<summary>` that contains the control label so `<details>` toggles reliably in jsdom.
+ * Fire a click on the `<summary>` that contains the given label so `<details>` toggles in jsdom.
  *
- * @param label - Text shown inside the disclosure summary.
- * @param index - Which occurrence when multiple disclosures reuse the same label.
+ * @param label - Visible summary text or regex (e.g. episode heading or “Add observation note”).
+ * @param index - Which occurrence when multiple disclosures match.
  */
-function clickDetailsToggle(label: string, index = 0): void {
-  const node = screen.getAllByText(label)[index];
+function clickDetailsSummary(label: string | RegExp, index = 0): void {
+  const nodes = screen.getAllByText(label);
+  const node = nodes[index];
   if (!node) {
     throw new Error(
-      `Missing disclosure label "${label}" at index ${String(index)}`,
+      `Missing disclosure label ${String(label)} at index ${String(index)}`,
     );
   }
   const summary = node.closest('summary');
   if (!summary) {
-    throw new Error(`Expected <summary> wrapping "${label}"`);
+    throw new Error(`Expected <summary> wrapping ${String(label)}`);
   }
-  fireEvent.click(summary);
+  act(() => {
+    fireEvent.click(summary);
+  });
 }
 
+/** Row count large enough to exercise lazy-mount without heavy DOM under parallel CI. */
+const LARGE_STANDALONE_TIMELINE_ROWS = 12;
+
 const loadPractitionerPatientObservationReadModel = jest.fn();
+const listPractitionerObservationNotesForPatient = jest.fn();
+const createPractitionerObservationNote = jest.fn();
+const deletePractitionerObservationNote = jest.fn();
 const listEpisodeMediaForEpisode = jest.fn();
 const createEpisodeMediaSignedDisplayUrl = jest.fn();
+
+const PRACTITIONER_USER_ID = '11111111-1111-1111-1111-111111111111';
+
+jest.mock('../src/lib/auth-provider', () => ({
+  useAuth: () => ({
+    session: { user: { id: PRACTITIONER_USER_ID } },
+    loading: false,
+    profile: undefined,
+    profileError: null,
+    accessTokenClaims: null,
+    gate: { kind: 'practitioner' as const },
+  }),
+}));
 
 jest.mock('@abstrack/supabase/browser', () => ({
   getSupabaseBrowserClient: jest.fn(() => ({})),
@@ -52,6 +75,12 @@ jest.mock('@abstrack/supabase', () => {
     ...actual,
     loadPractitionerPatientObservationReadModel: (...args: unknown[]) =>
       loadPractitionerPatientObservationReadModel(...args),
+    listPractitionerObservationNotesForPatient: (...args: unknown[]) =>
+      listPractitionerObservationNotesForPatient(...args),
+    createPractitionerObservationNote: (...args: unknown[]) =>
+      createPractitionerObservationNote(...args),
+    deletePractitionerObservationNote: (...args: unknown[]) =>
+      deletePractitionerObservationNote(...args),
     listEpisodeMediaForEpisode: (...args: unknown[]) =>
       listEpisodeMediaForEpisode(...args),
     createEpisodeMediaSignedDisplayUrl: (...args: unknown[]) =>
@@ -69,9 +98,32 @@ function episodeRow(): PractitionerPatientEpisodeRow {
   };
 }
 
+/** jsdom does not implement `<dialog>.showModal()`; polyfill for ConfirmDialog tests. */
+function ensureDialogElementPolyfill(): void {
+  HTMLDialogElement.prototype.showModal =
+    HTMLDialogElement.prototype.showModal ||
+    function showModal(this: HTMLDialogElement) {
+      this.open = true;
+    };
+  HTMLDialogElement.prototype.close =
+    HTMLDialogElement.prototype.close ||
+    function close(this: HTMLDialogElement) {
+      this.open = false;
+      this.dispatchEvent(new Event('close'));
+    };
+}
+
 describe('PractitionerPatientDetailPage', () => {
   beforeEach(() => {
+    ensureDialogElementPolyfill();
     loadPractitionerPatientObservationReadModel.mockReset();
+    listPractitionerObservationNotesForPatient.mockReset();
+    listPractitionerObservationNotesForPatient.mockResolvedValue({
+      ok: true,
+      data: [],
+    });
+    createPractitionerObservationNote.mockReset();
+    deletePractitionerObservationNote.mockReset();
     listEpisodeMediaForEpisode.mockReset();
     createEpisodeMediaSignedDisplayUrl.mockReset();
   });
@@ -120,6 +172,198 @@ describe('PractitionerPatientDetailPage', () => {
     const inlineAlert = tryAgain.closest('[role="alert"]');
     expect(inlineAlert).toBeTruthy();
     expect(inlineAlert?.textContent).toContain('two-factor');
+  });
+
+  it('shows patient-level observation notes and saves a new note', async () => {
+    const patientId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+
+    loadPractitionerPatientObservationReadModel.mockResolvedValue({
+      ok: true,
+      data: {
+        patientUserId: patientId,
+        patientDisplayName: 'Alex Kim',
+        moreEpisodesOmitted: false,
+        standaloneHealthMarkersTruncated: false,
+        standaloneFoodDiaryTruncated: false,
+        standaloneTimeline: [],
+        episodesWithTimelines: [],
+      },
+    });
+
+    listPractitionerObservationNotesForPatient.mockResolvedValue({
+      ok: true,
+      data: [],
+    });
+
+    createPractitionerObservationNote.mockResolvedValue({
+      ok: true,
+      data: {
+        id: 'note-1',
+        patientUserId: patientId,
+        episodeId: null,
+        practitionerUserId: PRACTITIONER_USER_ID,
+        body: 'Follow up in two weeks.',
+        createdAt: '2026-05-10T12:00:00.000Z',
+        updatedAt: '2026-05-10T12:00:00.000Z',
+      },
+    });
+
+    render(
+      <LiveAnnouncerProvider>
+        <PractitionerPatientDetailPage patientUserId={patientId} />
+      </LiveAnnouncerProvider>,
+    );
+
+    expect(
+      await screen.findByRole('heading', {
+        name: /patient record observation notes/i,
+      }),
+    ).toBeTruthy();
+
+    fireEvent.click(
+      screen.getByRole('button', { name: /^add observation note$/i }),
+    );
+
+    const noteField = screen.getByLabelText('Note', { selector: 'textarea' });
+    fireEvent.change(noteField, {
+      target: { value: 'Follow up in two weeks.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /save patient note/i }));
+
+    await waitFor(() =>
+      expect(createPractitionerObservationNote).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          patientUserId: patientId,
+          practitionerUserId: PRACTITIONER_USER_ID,
+          episodeId: null,
+          body: 'Follow up in two weeks.',
+        }),
+      ),
+    );
+
+    expect(await screen.findByText('Follow up in two weeks.')).toBeTruthy();
+  });
+
+  it('confirms before discarding a non-empty observation note draft on cancel', async () => {
+    const patientId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+
+    loadPractitionerPatientObservationReadModel.mockResolvedValue({
+      ok: true,
+      data: {
+        patientUserId: patientId,
+        patientDisplayName: 'Alex Kim',
+        moreEpisodesOmitted: false,
+        standaloneHealthMarkersTruncated: false,
+        standaloneFoodDiaryTruncated: false,
+        standaloneTimeline: [],
+        episodesWithTimelines: [],
+      },
+    });
+
+    listPractitionerObservationNotesForPatient.mockResolvedValue({
+      ok: true,
+      data: [],
+    });
+
+    render(
+      <LiveAnnouncerProvider>
+        <PractitionerPatientDetailPage patientUserId={patientId} />
+      </LiveAnnouncerProvider>,
+    );
+
+    await screen.findByRole('heading', {
+      name: /patient record observation notes/i,
+    });
+
+    fireEvent.click(
+      screen.getByRole('button', { name: /^add observation note$/i }),
+    );
+    fireEvent.change(screen.getByLabelText('Note', { selector: 'textarea' }), {
+      target: { value: 'Draft text not saved yet' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^cancel$/i }));
+
+    expect(
+      await screen.findByRole('heading', { name: /discard this note/i }),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /discard draft/i }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: /^add observation note$/i }),
+      ).toBeTruthy(),
+    );
+    expect(
+      screen.queryByLabelText('Note', { selector: 'textarea' }),
+    ).toBeNull();
+  });
+
+  it('confirms before deleting an observation note', async () => {
+    const patientId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+
+    loadPractitionerPatientObservationReadModel.mockResolvedValue({
+      ok: true,
+      data: {
+        patientUserId: patientId,
+        patientDisplayName: 'Alex Kim',
+        moreEpisodesOmitted: false,
+        standaloneHealthMarkersTruncated: false,
+        standaloneFoodDiaryTruncated: false,
+        standaloneTimeline: [],
+        episodesWithTimelines: [],
+      },
+    });
+
+    listPractitionerObservationNotesForPatient.mockResolvedValue({
+      ok: true,
+      data: [
+        {
+          id: 'note-del',
+          patientUserId: patientId,
+          episodeId: null,
+          practitionerUserId: PRACTITIONER_USER_ID,
+          body: 'Remove me',
+          createdAt: '2026-05-10T12:00:00.000Z',
+          updatedAt: '2026-05-10T12:00:00.000Z',
+        },
+      ],
+    });
+
+    deletePractitionerObservationNote.mockResolvedValue({
+      ok: true,
+      data: undefined,
+    });
+
+    render(
+      <LiveAnnouncerProvider>
+        <PractitionerPatientDetailPage patientUserId={patientId} />
+      </LiveAnnouncerProvider>,
+    );
+
+    expect(await screen.findByText('Remove me')).toBeTruthy();
+
+    fireEvent.click(
+      screen.getByRole('button', { name: /delete observation note/i }),
+    );
+
+    expect(
+      await screen.findByRole('heading', {
+        name: /delete this observation note/i,
+      }),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /^delete note$/i }));
+
+    await waitFor(() =>
+      expect(deletePractitionerObservationNote).toHaveBeenCalledWith(
+        expect.anything(),
+        'note-del',
+      ),
+    );
+
+    await waitFor(() => expect(screen.queryByText('Remove me')).toBeNull());
   });
 
   it('loads successfully when the route id has surrounding whitespace', async () => {
@@ -299,7 +543,7 @@ describe('PractitionerPatientDetailPage', () => {
     );
 
     expect(await screen.findByText('Alice Alpha')).toBeTruthy();
-    clickDetailsToggle('Show episode timeline');
+    clickDetailsSummary(/ABS episode/);
     expect(screen.getByText('OnlyOnPatientAliceTimeline')).toBeTruthy();
 
     rerender(
@@ -329,6 +573,84 @@ describe('PractitionerPatientDetailPage', () => {
     });
 
     expect(await screen.findByText('Bob Jones')).toBeTruthy();
+  });
+
+  it('clears observation notes when navigating before the next patient notes fetch completes', async () => {
+    const patientA = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+    const patientB = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+
+    const noteA = {
+      id: 'note-a',
+      patientUserId: patientA,
+      episodeId: null,
+      practitionerUserId: PRACTITIONER_USER_ID,
+      body: 'Alice-only observation note',
+      createdAt: '2026-05-01T10:00:00.000Z',
+      updatedAt: '2026-05-01T10:00:00.000Z',
+    };
+
+    let resolveNotesB!: (value: { ok: true; data: (typeof noteA)[] }) => void;
+    const slowNotesB = new Promise<{
+      ok: true;
+      data: (typeof noteA)[];
+    }>((resolve) => {
+      resolveNotesB = resolve;
+    });
+
+    loadPractitionerPatientObservationReadModel.mockImplementation(
+      async (_client, uid: string) => ({
+        ok: true,
+        data: {
+          patientUserId: uid,
+          patientDisplayName: uid === patientA ? 'Alice Alpha' : 'Bob Jones',
+          moreEpisodesOmitted: false,
+          standaloneHealthMarkersTruncated: false,
+          standaloneFoodDiaryTruncated: false,
+          standaloneTimeline: [],
+          episodesWithTimelines: [],
+        },
+      }),
+    );
+
+    listPractitionerObservationNotesForPatient.mockImplementation(
+      async (_client, uid: string) => {
+        if (uid === patientA) {
+          return { ok: true, data: [noteA] };
+        }
+        if (uid === patientB) {
+          return slowNotesB;
+        }
+        throw new Error(`unexpected patient ${uid}`);
+      },
+    );
+
+    const { rerender } = render(
+      <LiveAnnouncerProvider>
+        <PractitionerPatientDetailPage patientUserId={patientA} />
+      </LiveAnnouncerProvider>,
+    );
+
+    expect(await screen.findByText('Alice-only observation note')).toBeTruthy();
+
+    rerender(
+      <LiveAnnouncerProvider>
+        <PractitionerPatientDetailPage patientUserId={patientB} />
+      </LiveAnnouncerProvider>,
+    );
+
+    expect(await screen.findByText('Bob Jones')).toBeTruthy();
+    expect(screen.queryByText('Alice-only observation note')).toBeNull();
+    expect(screen.getByText('Loading observation notes…')).toBeTruthy();
+    expect(
+      screen.queryByText('No patient-level observation notes yet.'),
+    ).toBeNull();
+
+    resolveNotesB({ ok: true, data: [] });
+    await waitFor(() => {
+      expect(
+        screen.getByText('No patient-level observation notes yet.'),
+      ).toBeTruthy();
+    });
   });
 
   it('when the first patient error is still pending, navigation supersedes it so a late failure cannot surface on the new route', async () => {
@@ -445,7 +767,7 @@ describe('PractitionerPatientDetailPage', () => {
     );
 
     expect(await screen.findByText('Alex Kim')).toBeTruthy();
-    clickDetailsToggle('Show episode timeline');
+    clickDetailsSummary(/ABS episode/);
     expect(screen.getByText('Nausea')).toBeTruthy();
     expect(screen.getByText('Yes')).toBeTruthy();
   });
@@ -503,20 +825,24 @@ describe('PractitionerPatientDetailPage', () => {
     await screen.findByText('Alex Kim');
     expect(screen.queryByText('LaterEpisodeSymptom')).toBeNull();
 
-    clickDetailsToggle('Show episode timeline', 1);
+    clickDetailsSummary(/ABS episode/, 1);
 
     expect(await screen.findByText('LaterEpisodeSymptom')).toBeTruthy();
     expect(screen.getByText('Yes')).toBeTruthy();
   });
 
   it('lazy-mounts large standalone timelines until the section expands', async () => {
-    const standaloneTimeline = Array.from({ length: 41 }, (_, i) => ({
-      kind: 'symptom' as const,
-      sortAt: `2026-04-01T12:${String(i).padStart(2, '0')}:00.000Z`,
-      id: `stand-${i}`,
-      label: `StandaloneRow-${i}`,
-      detail: 'Note',
-    }));
+    const lastRowIndex = LARGE_STANDALONE_TIMELINE_ROWS - 1;
+    const standaloneTimeline = Array.from(
+      { length: LARGE_STANDALONE_TIMELINE_ROWS },
+      (_, i) => ({
+        kind: 'symptom' as const,
+        sortAt: `2026-04-01T12:${String(i).padStart(2, '0')}:00.000Z`,
+        id: `stand-${i}`,
+        label: `StandaloneRow-${i}`,
+        detail: 'Note',
+      }),
+    );
 
     loadPractitionerPatientObservationReadModel.mockResolvedValue({
       ok: true,
@@ -538,11 +864,13 @@ describe('PractitionerPatientDetailPage', () => {
     );
 
     await screen.findByText('Alex Kim');
-    expect(screen.queryByText('StandaloneRow-40')).toBeNull();
+    expect(screen.queryByText(`StandaloneRow-${lastRowIndex}`)).toBeNull();
 
-    clickDetailsToggle('Show standalone entries');
+    clickDetailsSummary('Observation list');
 
-    expect(await screen.findByText('StandaloneRow-40')).toBeTruthy();
+    expect(
+      await screen.findByText(`StandaloneRow-${lastRowIndex}`),
+    ).toBeTruthy();
   });
 
   it('resets standalone lazy-mount when patientUserId changes from a small list to a large one', async () => {
@@ -557,13 +885,17 @@ describe('PractitionerPatientDetailPage', () => {
       detail: 'Note',
     }));
 
-    const largeTimeline = Array.from({ length: 41 }, (_, i) => ({
-      kind: 'symptom' as const,
-      sortAt: `2026-04-01T13:${String(i).padStart(2, '0')}:00.000Z`,
-      id: `b-stand-${i}`,
-      label: `PatientB-${i}`,
-      detail: 'Note',
-    }));
+    const largeLastIndex = LARGE_STANDALONE_TIMELINE_ROWS - 1;
+    const largeTimeline = Array.from(
+      { length: LARGE_STANDALONE_TIMELINE_ROWS },
+      (_, i) => ({
+        kind: 'symptom' as const,
+        sortAt: `2026-04-01T13:${String(i).padStart(2, '0')}:00.000Z`,
+        id: `b-stand-${i}`,
+        label: `PatientB-${i}`,
+        detail: 'Note',
+      }),
+    );
 
     loadPractitionerPatientObservationReadModel.mockImplementation(
       async (_client, uid: string) => {
@@ -607,7 +939,7 @@ describe('PractitionerPatientDetailPage', () => {
 
     await screen.findByText('Alex');
     expect(screen.queryByText('PatientA-4')).toBeNull();
-    clickDetailsToggle('Show standalone entries');
+    clickDetailsSummary('Observation list');
     expect(screen.getByText('PatientA-4')).toBeTruthy();
 
     rerender(
@@ -617,23 +949,27 @@ describe('PractitionerPatientDetailPage', () => {
     );
 
     await screen.findByText('Bob');
-    expect(screen.queryByText('PatientB-40')).toBeNull();
+    expect(screen.queryByText(`PatientB-${largeLastIndex}`)).toBeNull();
 
-    clickDetailsToggle('Show standalone entries');
-    expect(await screen.findByText('PatientB-40')).toBeTruthy();
+    clickDetailsSummary('Observation list');
+    expect(await screen.findByText(`PatientB-${largeLastIndex}`)).toBeTruthy();
   });
 
   it('resets standalone lazy-mount when patientUserId changes from a large list to a small one', async () => {
     const patientA = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
     const patientB = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 
-    const largeTimeline = Array.from({ length: 41 }, (_, i) => ({
-      kind: 'symptom' as const,
-      sortAt: `2026-04-01T12:${String(i).padStart(2, '0')}:00.000Z`,
-      id: `a-stand-${i}`,
-      label: `PatientA-${i}`,
-      detail: 'Note',
-    }));
+    const largeLastIndex = LARGE_STANDALONE_TIMELINE_ROWS - 1;
+    const largeTimeline = Array.from(
+      { length: LARGE_STANDALONE_TIMELINE_ROWS },
+      (_, i) => ({
+        kind: 'symptom' as const,
+        sortAt: `2026-04-01T12:${String(i).padStart(2, '0')}:00.000Z`,
+        id: `a-stand-${i}`,
+        label: `PatientA-${i}`,
+        detail: 'Note',
+      }),
+    );
 
     const smallTimeline = Array.from({ length: 5 }, (_, i) => ({
       kind: 'symptom' as const,
@@ -684,9 +1020,9 @@ describe('PractitionerPatientDetailPage', () => {
     );
 
     await screen.findByText('Alex');
-    expect(screen.queryByText('PatientA-40')).toBeNull();
-    clickDetailsToggle('Show standalone entries');
-    expect(await screen.findByText('PatientA-40')).toBeTruthy();
+    expect(screen.queryByText(`PatientA-${largeLastIndex}`)).toBeNull();
+    clickDetailsSummary('Observation list');
+    expect(await screen.findByText(`PatientA-${largeLastIndex}`)).toBeTruthy();
 
     rerender(
       <LiveAnnouncerProvider>
@@ -696,7 +1032,7 @@ describe('PractitionerPatientDetailPage', () => {
 
     await screen.findByText('Bob');
     expect(screen.queryByText('PatientB-4')).toBeNull();
-    clickDetailsToggle('Show standalone entries');
+    clickDetailsSummary('Observation list');
     expect(screen.getByText('PatientB-4')).toBeTruthy();
   });
 
@@ -764,7 +1100,7 @@ describe('PractitionerPatientDetailPage', () => {
     );
 
     await screen.findByText('Alex Kim');
-    clickDetailsToggle('Show episode timeline');
+    clickDetailsSummary(/ABS episode/);
 
     const viewPhoto = await screen.findByRole('button', {
       name: /view photo/i,
@@ -870,7 +1206,7 @@ describe('PractitionerPatientDetailPage', () => {
     );
 
     await screen.findByText('Alex Kim');
-    clickDetailsToggle('Show episode timeline');
+    clickDetailsSummary(/ABS episode/);
 
     fireEvent.click(await screen.findByRole('button', { name: /view video/i }));
 
@@ -946,18 +1282,6 @@ describe('PractitionerPatientDetailPage', () => {
       errorMessage: null,
     });
 
-    HTMLDialogElement.prototype.showModal =
-      HTMLDialogElement.prototype.showModal ||
-      function showModal(this: HTMLDialogElement) {
-        this.open = true;
-      };
-    HTMLDialogElement.prototype.close =
-      HTMLDialogElement.prototype.close ||
-      function close(this: HTMLDialogElement) {
-        this.open = false;
-        this.dispatchEvent(new Event('close'));
-      };
-
     render(
       <LiveAnnouncerProvider>
         <PractitionerPatientDetailPage patientUserId="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" />
@@ -965,7 +1289,7 @@ describe('PractitionerPatientDetailPage', () => {
     );
 
     await screen.findByText('Alex Kim');
-    clickDetailsToggle('Show episode timeline');
+    clickDetailsSummary(/ABS episode/);
     fireEvent.click(await screen.findByRole('button', { name: /view photo/i }));
 
     const openFullSize = await screen.findByRole('button', {
@@ -1036,7 +1360,7 @@ describe('PractitionerPatientDetailPage', () => {
     );
 
     await screen.findByText('Alex Kim');
-    clickDetailsToggle('Show episode timeline');
+    clickDetailsSummary(/ABS episode/);
     expect(
       (await screen.findAllByText(longDetail, { hidden: true })).length,
     ).toBeGreaterThanOrEqual(1);
@@ -1047,7 +1371,9 @@ describe('PractitionerPatientDetailPage', () => {
     expect(detailsEl).toBeTruthy();
     expect(detailsEl!.hasAttribute('open')).toBe(false);
 
-    expect(within(row as HTMLElement).getByText('Show full note')).toBeTruthy();
+    expect(
+      within(row as HTMLElement).getByText('Show full note', { hidden: true }),
+    ).toBeTruthy();
 
     const summaryEl = detailsEl!.querySelector('summary');
     expect(summaryEl).toBeTruthy();
@@ -1055,7 +1381,9 @@ describe('PractitionerPatientDetailPage', () => {
 
     expect(detailsEl!.hasAttribute('open')).toBe(true);
     expect(
-      within(row as HTMLElement).getByText('Collapse full note'),
+      within(row as HTMLElement).getByText('Collapse full note', {
+        hidden: true,
+      }),
     ).toBeTruthy();
   });
 });

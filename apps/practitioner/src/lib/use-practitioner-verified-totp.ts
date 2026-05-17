@@ -109,6 +109,9 @@ export function usePractitionerVerifiedTotpCount(
       setPending(false);
     } finally {
       skipNextEffectFetchRef.current = false;
+      if (!enabledRef.current && isMountedRef.current) {
+        setPending(false);
+      }
     }
   }, [enabled, loadFactors]);
 

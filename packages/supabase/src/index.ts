@@ -177,6 +177,15 @@ export {
   updateFoodDiaryEntry,
   validateAndNormalizeFoodDiaryCreateCore,
 } from './lib/food-diary-data.js';
+export type { PractitionerObservationNoteRow } from './lib/practitioner-observation-notes-data.js';
+export {
+  createPractitionerObservationNote,
+  deletePractitionerObservationNote,
+  listPractitionerObservationNotesForPatient,
+  PRACTITIONER_OBSERVATION_NOTE_BODY_MAX_LENGTH,
+  updatePractitionerObservationNote,
+  validatePractitionerObservationNoteBody,
+} from './lib/practitioner-observation-notes-data.js';
 export type {
   FoodDiaryCreateCorePayload,
   ValidateFoodDiaryCreateCoreResult,

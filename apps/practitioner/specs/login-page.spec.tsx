@@ -295,6 +295,9 @@ describe('LoginPage MFA state machine', () => {
     await submitCredentials();
 
     await waitFor(() => {
+      expect(mockedTryRestore).toHaveBeenCalledWith(expect.anything(), USER_ID);
+    });
+    await waitFor(() => {
       expect(getVisibleFormError().textContent).toContain(
         'Your sign-in session ended during the saved device check',
       );

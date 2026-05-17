@@ -149,8 +149,8 @@ importers:
         specifier: ~54.0.7
         version: 54.0.10(@babel/core@7.29.0)(@babel/runtime@7.27.6)(expo@54.0.34)(react-refresh@0.14.2)
       baseline-browser-mapping:
-        specifier: ^2.10.10
-        version: 2.10.10
+        specifier: ^2.10.30
+        version: 2.10.30
       eslint:
         specifier: ^9.8.0
         version: 9.39.4(jiti@2.4.2)
@@ -7075,10 +7075,10 @@ packages:
         integrity: sha512-AKpaYlHn8t4SVbOHCy+b5+KKgvR4vrsD8vbvrbiQJps7fKDTkjkDry6ji0rUJjC0kzbNePLwzxq8iypo41qeWA==,
       }
 
-  baseline-browser-mapping@2.10.10:
+  baseline-browser-mapping@2.10.30:
     resolution:
       {
-        integrity: sha512-sUoJ3IMxx4AyRqO4MLeHlnGDkyXRoUG0/AI9fjK+vS72ekpV0yWVY7O0BVjmBcRtkNcsAO2QDZ4tdKKGoI6YaQ==,
+        integrity: sha512-xjOFN16Ha1+Rz4nFYKqHU/LSB+gx/Vi3yQLX7r7sAW+Wa+8hhF2h4pvqTrTMc8+WcDBEunnUurr46Jvv0jk3Vg==,
       }
     engines: { node: '>=6.0.0' }
     hasBin: true
@@ -22603,7 +22603,7 @@ snapshots:
 
   base64-js@1.5.1: {}
 
-  baseline-browser-mapping@2.10.10: {}
+  baseline-browser-mapping@2.10.30: {}
 
   basic-auth@2.0.1:
     dependencies:
@@ -22699,7 +22699,7 @@ snapshots:
 
   browserslist@4.28.1:
     dependencies:
-      baseline-browser-mapping: 2.10.10
+      baseline-browser-mapping: 2.10.30
       caniuse-lite: 1.0.30001777
       electron-to-chromium: 1.5.307
       node-releases: 2.0.36

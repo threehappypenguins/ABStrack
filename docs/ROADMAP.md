@@ -163,26 +163,26 @@
 
 ---
 
-## Week 8: May 4-10 -- Practitioner App and Caretaker Features
+## Week 8: May 4-10 -- Practitioner App and Caretaker Features (**complete**)
 
 **Goal:** Build the practitioner web app and caretaker account system using **grant tables + RLS** (no DEK sharing or asymmetric key exchange).
 
 **Tasks:**
 
-- [ ] Caretaker account:
+- [x] Caretaker account:
   - Patient creates caretaker from settings (active `caretaker_access` grant)
   - Caretaker logs in with own credentials; access enforced by RLS on linked patient data—**no** wrapping or sharing a patient data encryption key ([PRD](PRD.md))
   - Caretaker sees same home screen and can log episodes on patient's behalf
-- [ ] Practitioner invitation flow:
+- [x] Practitioner invitation flow:
   - Patient enters practitioner email → invitation sent
   - Practitioner creates account with **mandatory** TOTP enrollment before accessing patient data
   - **No** X25519 or patient-DEK-to-practitioner-public-key flow; authorization is the `practitioner_access` grant + MFA + RLS
-- [ ] Practitioner app ([apps/practitioner](../apps/practitioner)):
+- [x] Practitioner app ([apps/practitioner](../apps/practitioner)):
   - Dashboard: list of patients who have granted access
   - Patient detail view: episode history, symptom logs, health markers, food diary
   - Media viewer: signed URL → download → display (same confidentiality model as user app)
   - Observation notes on episodes and patient records
-- [ ] Access revocation: delete or revoke `practitioner_access` / `caretaker_access` row (stops future reads; does not erase already-seen data)
+- [x] Access revocation: delete or revoke `practitioner_access` / `caretaker_access` row (stops future reads; does not erase already-seen data)
 
 ---
 
