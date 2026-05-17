@@ -41,7 +41,10 @@ AS $$
         ELSE 'text'
       END AS response_type,
       bool_or(hmr.row_is_blood_pressure) AS is_blood_pressure,
-      max(hmr.custom_unit) AS unit,
+      CASE
+        WHEN count(DISTINCT hmr.custom_unit) FILTER (WHERE hmr.custom_unit IS NOT NULL) > 1 THEN NULL
+        ELSE max(hmr.custom_unit)
+      END AS unit,
       count(*)::bigint AS observation_count,
       min(hmr.recorded_at) AS first_observed_at,
       max(hmr.recorded_at) AS last_observed_at
@@ -65,10 +68,10 @@ AS $$
   ),
   symptom_series AS (
     SELECT
-      'symptom::' || sr.series_key AS series_id,
+      'symptom::' || sr.series_key || '::' || sr.chart_response_type AS series_id,
       'symptom'::text AS series_type,
       min(sr.label) AS label,
-      max(sr.chart_response_type) AS response_type,
+      sr.chart_response_type AS response_type,
       false AS is_blood_pressure,
       NULL::text AS unit,
       count(*)::bigint AS observation_count,
@@ -76,7 +79,7 @@ AS $$
       max(sr.created_at) AS last_observed_at
     FROM symptom_rows sr
     WHERE sr.chart_response_type <> 'text'
-    GROUP BY sr.series_key
+    GROUP BY sr.series_key, sr.chart_response_type
   )
   SELECT
     m.series_id,

@@ -1,3 +1,4 @@
+import type { Uuid } from '@abstrack/types';
 import { toPresetDataError } from './preset-data-error.js';
 import type { PresetDataResult } from './preset-data.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
@@ -34,7 +35,7 @@ type UserChartManifestSeriesRow = UserChartManifestSeries;
  */
 export async function getUserChartManifest(
   client: AbstrackSupabaseClient,
-  userId: string,
+  userId: Uuid,
 ): Promise<PresetDataResult<UserChartManifestSeries[]>> {
   try {
     const { data, error } = await client.rpc('get_user_chart_manifest', {

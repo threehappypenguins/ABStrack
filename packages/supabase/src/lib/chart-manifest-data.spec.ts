@@ -1,3 +1,4 @@
+import type { Uuid } from '@abstrack/types';
 import { describe, expect, it, vi } from 'vitest';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
 import {
@@ -5,7 +6,7 @@ import {
   type UserChartManifestSeries,
 } from './chart-manifest-data.js';
 
-const USER_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+const USER_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' as Uuid;
 
 function manifestClient(rows: UserChartManifestSeries[]) {
   const rpc = vi.fn(async () => ({ data: rows, error: null }));
@@ -50,7 +51,7 @@ describe('getUserChartManifest', () => {
         last_observed_at: '2026-01-10T00:00:00.000Z',
       },
       {
-        series_id: 'symptom::headache',
+        series_id: 'symptom::headache::severity',
         series_type: 'symptom',
         label: 'Headache',
         response_type: 'severity',
@@ -93,7 +94,7 @@ describe('getUserChartManifest', () => {
   it('returns RPC rows unchanged (non-chartable symptom exclusion is enforced in SQL)', async () => {
     const rows: UserChartManifestSeries[] = [
       {
-        series_id: 'symptom::fatigue',
+        series_id: 'symptom::fatigue::boolean',
         series_type: 'symptom',
         label: 'Fatigue',
         response_type: 'boolean',
