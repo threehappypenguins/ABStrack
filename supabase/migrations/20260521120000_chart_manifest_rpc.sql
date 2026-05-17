@@ -21,10 +21,13 @@ AS $$
     SELECT
       CASE
         WHEN hm.marker_kind = 'custom' THEN
-          lower(hm.marker_kind) || '::' || lower(coalesce(hm.custom_name, ''))
+          lower(hm.marker_kind) || '::' || lower(nullif(trim(hm.custom_name), ''))
         ELSE lower(hm.marker_kind)
       END AS series_key,
-      coalesce(hm.custom_name, hm.marker_kind) AS label,
+      CASE
+        WHEN hm.marker_kind = 'custom' THEN nullif(trim(hm.custom_name), '')
+        ELSE coalesce(hm.custom_name, hm.marker_kind)
+      END AS label,
       (
         hm.value_numeric IS NOT NULL
         OR hm.systolic_numeric IS NOT NULL
@@ -35,6 +38,10 @@ AS $$
       hm.recorded_at
     FROM public.health_markers hm
     WHERE hm.user_id = p_user_id
+      AND (
+        hm.marker_kind <> 'custom'
+        OR nullif(trim(hm.custom_name), '') IS NOT NULL
+      )
   ),
   health_marker_series AS (
     SELECT
