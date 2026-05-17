@@ -22,6 +22,14 @@ function closeDialogIfOpen(el: HTMLDialogElement | null): void {
   }
 }
 
+/** User-facing copy when {@link ConfirmDialogProps.onConfirm} throws or rejects. */
+function confirmActionErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message;
+  }
+  return 'Something went wrong. Please try again.';
+}
+
 export type ConfirmDialogProps = {
   /** When true, the native dialog is shown modally. */
   open: boolean;
@@ -42,6 +50,11 @@ export type ConfirmDialogProps = {
    * (e.g. the action failed and the user should retry or cancel).
    */
   onConfirm: () => void | false | Promise<void | false>;
+  /**
+   * Optional hook when {@link onConfirm} throws or rejects. The dialog stays open, busy state
+   * is cleared, and a generic error line is shown unless the parent renders its own via `children`.
+   */
+  onConfirmError?: (error: unknown) => void;
   /**
    * Called whenever the native `<dialog>` fires `close` — after a successful confirm
    * (once `onConfirm` resolves), Cancel, Escape, backdrop click, or when the parent
@@ -66,17 +79,20 @@ export function ConfirmDialog({
   cancelLabel = 'Cancel',
   confirmBusyLabel = 'Please wait…',
   onConfirm,
+  onConfirmError,
   onClose,
 }: ConfirmDialogProps) {
   const ref = useRef<HTMLDialogElement>(null);
   const confirmInFlightRef = useRef(false);
   const titleId = useId();
   const [confirming, setConfirming] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) {
       confirmInFlightRef.current = false;
       setConfirming(false);
+      setConfirmError(null);
     }
   }, [open]);
 
@@ -124,6 +140,11 @@ export function ConfirmDialog({
           <p className="text-sm text-app-muted">{description}</p>
         ) : null}
         {children}
+        {confirmError ? (
+          <p className="text-sm text-app-ink" role="alert">
+            {confirmError}
+          </p>
+        ) : null}
         <div className="flex flex-wrap justify-end gap-3">
           <button
             type="button"
@@ -146,12 +167,16 @@ export function ConfirmDialog({
                 }
                 confirmInFlightRef.current = true;
                 setConfirming(true);
+                setConfirmError(null);
                 try {
                   const result = await Promise.resolve(onConfirm());
                   if (result === false) {
                     return;
                   }
                   closeDialogIfOpen(ref.current);
+                } catch (error) {
+                  setConfirmError(confirmActionErrorMessage(error));
+                  onConfirmError?.(error);
                 } finally {
                   confirmInFlightRef.current = false;
                   setConfirming(false);
