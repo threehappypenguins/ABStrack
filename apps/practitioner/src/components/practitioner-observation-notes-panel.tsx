@@ -40,6 +40,10 @@ type PractitionerObservationNotesPanelProps = {
   description: string;
   emptyListMessage: string;
   composeSubmitLabel: string;
+  /** When true, list/empty UI is hidden and a loading status is shown instead. */
+  notesLoading?: boolean;
+  /** When set (and not loading), shown instead of the empty list message. */
+  notesLoadError?: string | null;
 };
 
 /**
@@ -58,6 +62,8 @@ export function PractitionerObservationNotesPanel({
   description,
   emptyListMessage,
   composeSubmitLabel,
+  notesLoading = false,
+  notesLoadError = null,
 }: PractitionerObservationNotesPanelProps) {
   const { announce } = useAnnounce();
   const formId = useId();
@@ -200,11 +206,12 @@ export function PractitionerObservationNotesPanel({
         {!composeOpen ? (
           <button
             type="button"
+            disabled={notesLoading}
             onClick={() => {
               setComposeError(null);
               setComposeOpen(true);
             }}
-            className="inline-flex min-h-11 items-center justify-center rounded-md border border-app-border bg-app-surface px-4 py-2 text-sm font-semibold text-app-primary shadow-soft transition hover:bg-app-muted/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+            className="inline-flex min-h-11 items-center justify-center rounded-md border border-app-border bg-app-surface px-4 py-2 text-sm font-semibold text-app-primary shadow-soft transition hover:bg-app-muted/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-60"
           >
             Add observation note
           </button>
@@ -273,7 +280,20 @@ export function PractitionerObservationNotesPanel({
         )}
       </div>
 
-      {scopedNotes.length === 0 ? (
+      {notesLoading ? (
+        <p
+          className="mt-4 text-sm text-app-muted"
+          role="status"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          Loading observation notes…
+        </p>
+      ) : notesLoadError ? (
+        <p className="mt-4 text-sm text-app-ink" role="alert">
+          {notesLoadError}
+        </p>
+      ) : scopedNotes.length === 0 ? (
         <p className="mt-4 text-sm text-app-muted" role="status">
           {emptyListMessage}
         </p>

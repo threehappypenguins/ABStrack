@@ -281,6 +281,8 @@ function PractitionerEpisodeTimelineCard({
   practitionerUserId,
   observationNotes,
   onObservationNotesChange,
+  observationNotesLoading,
+  observationNotesLoadError,
 }: {
   episode: PractitionerPatientEpisodeRow;
   timeline: EpisodeTimelineItem[];
@@ -293,6 +295,8 @@ function PractitionerEpisodeTimelineCard({
   practitionerUserId: string;
   observationNotes: PractitionerObservationNoteRow[];
   onObservationNotesChange: (notes: PractitionerObservationNoteRow[]) => void;
+  observationNotesLoading: boolean;
+  observationNotesLoadError: string | null;
 }) {
   const hasObservations = timeline.length > 0;
   const [episodeOpen, setEpisodeOpen] = useState(false);
@@ -383,6 +387,8 @@ function PractitionerEpisodeTimelineCard({
             episodeId={episode.id}
             notes={observationNotes}
             onNotesChange={onObservationNotesChange}
+            notesLoading={observationNotesLoading}
+            notesLoadError={observationNotesLoadError}
             headingId={`${regionId}-notes-heading`}
             heading="Practitioner observation notes"
             description="Clinical notes for this episode. Patients can read notes you save; only you can edit your own."
@@ -530,6 +536,8 @@ function StandaloneObservationTruncationNotice({
  * on `patientUserId` so the current route never renders another patient’s PHI or errors.
  * `observationNotes` is cleared when each load starts so notes from the prior patient cannot appear
  * under the next patient’s header while the read model and notes requests are in flight.
+ * `observationNotesLoading` keeps the notes panel from showing the empty-state message until
+ * `listPractitionerObservationNotesForPatient` finishes.
  *
  * @param props - Patient user id from the route (trimmed once for loads, staleness checks, and UI).
  * @returns Patient detail UI with loading, error, and empty states.
@@ -557,11 +565,17 @@ export function PractitionerPatientDetailPage({
   const [observationNotes, setObservationNotes] = useState<
     PractitionerObservationNoteRow[]
   >([]);
+  const [observationNotesLoading, setObservationNotesLoading] = useState(true);
+  const [observationNotesLoadError, setObservationNotesLoadError] = useState<
+    string | null
+  >(null);
 
   const load = useCallback(async () => {
     const requestToken = ++loadRequestTokenRef.current;
     setLoadState({ kind: 'loading' });
     setObservationNotes([]);
+    setObservationNotesLoading(true);
+    setObservationNotesLoadError(null);
     const result = await loadPractitionerPatientObservationReadModel(
       supabase,
       patientUserId,
@@ -585,6 +599,7 @@ export function PractitionerPatientDetailPage({
           ? 'Patient access requires two-factor sign-in for this session. Sign out, sign in again, and complete MFA when prompted.'
           : result.error.message;
       setLoadState({ kind: 'error', patientUserId, message });
+      setObservationNotesLoading(false);
       announce(message, { politeness: 'assertive' });
       return;
     }
@@ -603,10 +618,13 @@ export function PractitionerPatientDetailPage({
       requestToken === loadRequestTokenRef.current &&
       patientUserIdRef.current === patientUserId
     ) {
+      setObservationNotesLoading(false);
       if (notesResult.ok) {
         setObservationNotes(notesResult.data);
+        setObservationNotesLoadError(null);
       } else {
         setObservationNotes([]);
+        setObservationNotesLoadError(notesResult.error.message);
         announce(notesResult.error.message, { politeness: 'assertive' });
       }
     }
@@ -688,6 +706,8 @@ export function PractitionerPatientDetailPage({
           practitionerUserId={practitionerUserId}
           notes={observationNotes}
           onNotesChange={setObservationNotes}
+          notesLoading={observationNotesLoading}
+          notesLoadError={observationNotesLoadError}
           headingId={`${pageId}-patient-notes-heading`}
           heading="Patient record observation notes"
           description="Notes about this patient that are not tied to a specific episode. Patients can read notes you save."
@@ -793,6 +813,8 @@ export function PractitionerPatientDetailPage({
                       practitionerUserId={practitionerUserId}
                       observationNotes={observationNotes}
                       onObservationNotesChange={setObservationNotes}
+                      observationNotesLoading={observationNotesLoading}
+                      observationNotesLoadError={observationNotesLoadError}
                     />
                   </section>
                 );

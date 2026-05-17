@@ -640,6 +640,10 @@ describe('PractitionerPatientDetailPage', () => {
 
     expect(await screen.findByText('Bob Jones')).toBeTruthy();
     expect(screen.queryByText('Alice-only observation note')).toBeNull();
+    expect(screen.getByText('Loading observation notes…')).toBeTruthy();
+    expect(
+      screen.queryByText('No patient-level observation notes yet.'),
+    ).toBeNull();
 
     resolveNotesB({ ok: true, data: [] });
     await waitFor(() => {
@@ -1277,18 +1281,6 @@ describe('PractitionerPatientDetailPage', () => {
       signedUrl: 'https://example.test/signed-photo',
       errorMessage: null,
     });
-
-    HTMLDialogElement.prototype.showModal =
-      HTMLDialogElement.prototype.showModal ||
-      function showModal(this: HTMLDialogElement) {
-        this.open = true;
-      };
-    HTMLDialogElement.prototype.close =
-      HTMLDialogElement.prototype.close ||
-      function close(this: HTMLDialogElement) {
-        this.open = false;
-        this.dispatchEvent(new Event('close'));
-      };
 
     render(
       <LiveAnnouncerProvider>
