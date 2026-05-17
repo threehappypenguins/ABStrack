@@ -51,7 +51,7 @@ describe('getUserChartManifest', () => {
         last_observed_at: '2026-01-10T00:00:00.000Z',
       },
       {
-        series_id: 'symptom::headache',
+        series_id: 'symptom::headache::severity',
         series_type: 'symptom',
         label: 'Headache',
         response_type: 'severity',
@@ -94,7 +94,7 @@ describe('getUserChartManifest', () => {
   it('returns chartable RPC rows unchanged', async () => {
     const rows: UserChartManifestSeries[] = [
       {
-        series_id: 'symptom::fatigue',
+        series_id: 'symptom::fatigue::boolean',
         series_type: 'symptom',
         label: 'Fatigue',
         response_type: 'boolean',

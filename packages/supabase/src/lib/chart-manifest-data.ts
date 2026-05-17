@@ -15,7 +15,7 @@ export type UserChartManifestSeries = {
   series_id: string;
   series_type: 'health_marker' | 'symptom';
   label: string;
-  response_type: ChartManifestResponseType | null;
+  response_type: ChartManifestResponseType;
   is_blood_pressure: boolean;
   unit: string | null;
   observation_count: number;

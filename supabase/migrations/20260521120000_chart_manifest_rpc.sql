@@ -19,7 +19,11 @@ SET search_path = pg_catalog, public
 AS $$
   WITH health_marker_rows AS (
     SELECT
-      lower(coalesce(hm.custom_name, hm.marker_kind)) AS series_key,
+      CASE
+        WHEN hm.marker_kind = 'custom' THEN
+          lower(hm.marker_kind) || '::' || lower(coalesce(hm.custom_name, ''))
+        ELSE lower(hm.marker_kind)
+      END AS series_key,
       coalesce(hm.custom_name, hm.marker_kind) AS label,
       (
         hm.value_numeric IS NOT NULL
@@ -69,13 +73,10 @@ AS $$
   ),
   symptom_series AS (
     SELECT
-      'symptom::' || sr.series_key AS series_id,
+      'symptom::' || sr.series_key || '::' || sr.chart_response_type AS series_id,
       'symptom'::text AS series_type,
       min(sr.label) AS label,
-      CASE
-        WHEN count(DISTINCT sr.chart_response_type) > 1 THEN NULL
-        ELSE max(sr.chart_response_type)
-      END AS response_type,
+      sr.chart_response_type AS response_type,
       false AS is_blood_pressure,
       NULL::text AS unit,
       count(*)::bigint AS observation_count,
@@ -83,7 +84,7 @@ AS $$
       max(sr.created_at) AS last_observed_at
     FROM symptom_rows sr
     WHERE sr.chart_response_type <> 'text'
-    GROUP BY sr.series_key
+    GROUP BY sr.series_key, sr.chart_response_type
   )
   SELECT
     m.series_id,
