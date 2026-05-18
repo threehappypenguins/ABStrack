@@ -65,8 +65,8 @@ AS $$
   ),
   symptom_rows AS (
     SELECT
-      lower(es.symptom_name) AS series_key,
-      es.symptom_name AS label,
+      lower(nullif(trim(es.symptom_name), '')) AS series_key,
+      nullif(trim(es.symptom_name), '') AS label,
       CASE es.response_type
         WHEN 'yes_no' THEN 'boolean'
         WHEN 'severity_scale' THEN 'severity'
@@ -77,6 +77,7 @@ AS $$
       es.created_at
     FROM public.episode_symptoms es
     WHERE es.user_id = p_user_id
+      AND nullif(trim(es.symptom_name), '') IS NOT NULL
   ),
   symptom_series AS (
     SELECT
