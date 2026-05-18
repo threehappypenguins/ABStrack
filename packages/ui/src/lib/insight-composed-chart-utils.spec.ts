@@ -6,6 +6,7 @@ import {
   chartSeriesBpBandKey,
   chartSeriesDiastolicAvgKey,
   chartSeriesSystolicAvgKey,
+  chartSeriesValueAvgKey,
   enrichInsightChartDataForBloodPressure,
   flattenChartSeriesRows,
   formatInsightChartBucketLabel,
@@ -103,6 +104,31 @@ describe('wouldExceedDistinctNonBpValueUnitLimit', () => {
     ];
     const next = series({ seriesId: 'hr', chartType: 'line', unit: 'bpm' });
     expect(wouldExceedDistinctNonBpValueUnitLimit(current, next)).toBe(true);
+  });
+});
+
+describe('chart series data keys', () => {
+  it('uses encoded flat keys so Recharts does not treat series IDs as object paths', () => {
+    const seriesId = 'health_marker::custom::hdl.ldl';
+    const key = chartSeriesValueAvgKey(seriesId);
+    const flat = flattenChartSeriesRows([
+      {
+        bucketStart: '2026-01-01T00:00:00.000Z',
+        series: {
+          [seriesId]: {
+            value_avg: 1.2,
+            systolic_avg: null,
+            diastolic_avg: null,
+            event_count: null,
+          },
+        },
+      },
+    ])[0];
+
+    expect(key).not.toContain('.');
+    expect(key.startsWith('ics_')).toBe(true);
+    expect(flat[key]).toBe(1.2);
+    expect(flat[`${seriesId}__value_avg`]).toBeUndefined();
   });
 });
 

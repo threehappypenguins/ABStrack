@@ -5,29 +5,64 @@ import type {
   InsightChartBucket,
 } from './InsightComposedChart.types.js';
 
+/** Metric suffix encoded into a flat Recharts row property. */
+type InsightChartSeriesField =
+  | 'value_avg'
+  | 'systolic_avg'
+  | 'diastolic_avg'
+  | 'event_count'
+  | 'bp_band';
+
+/**
+ * Encodes a manifest `series_id` for use in flat object keys.
+ * Recharts treats string `dataKey` values as object paths, so IDs containing `.`
+ * or `[]` (e.g. custom marker names) must not appear literally in keys.
+ *
+ * @param seriesId - Manifest series id from `get_user_chart_manifest`.
+ * @returns Base64url-safe token with no path-reserved characters.
+ */
+export function encodeInsightChartSeriesId(seriesId: string): string {
+  const bytes = new TextEncoder().encode(seriesId);
+  let binary = '';
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+}
+
+function insightChartSeriesFieldKey(
+  seriesId: string,
+  field: InsightChartSeriesField,
+): string {
+  return `ics_${encodeInsightChartSeriesId(seriesId)}__${field}`;
+}
+
 /** Recharts `dataKey` for a series average value. */
 export function chartSeriesValueAvgKey(seriesId: string): string {
-  return `${seriesId}__value_avg`;
+  return insightChartSeriesFieldKey(seriesId, 'value_avg');
 }
 
 /** Recharts `dataKey` for systolic average (blood pressure band). */
 export function chartSeriesSystolicAvgKey(seriesId: string): string {
-  return `${seriesId}__systolic_avg`;
+  return insightChartSeriesFieldKey(seriesId, 'systolic_avg');
 }
 
 /** Recharts `dataKey` for diastolic average (blood pressure band). */
 export function chartSeriesDiastolicAvgKey(seriesId: string): string {
-  return `${seriesId}__diastolic_avg`;
+  return insightChartSeriesFieldKey(seriesId, 'diastolic_avg');
 }
 
 /** Recharts field for boolean event counts per bucket. */
 export function chartSeriesEventCountKey(seriesId: string): string {
-  return `${seriesId}__event_count`;
+  return insightChartSeriesFieldKey(seriesId, 'event_count');
 }
 
 /** Recharts range `dataKey` for blood pressure band fill (`[diastolic, systolic]`). */
 export function chartSeriesBpBandKey(seriesId: string): string {
-  return `${seriesId}__bp_band`;
+  return insightChartSeriesFieldKey(seriesId, 'bp_band');
 }
 
 /** One flattened row passed to Recharts `ComposedChart`. */
