@@ -11,7 +11,7 @@ export type ChartManifestResponseType =
   | 'text';
 
 /** One chartable series row from `get_user_chart_manifest`. */
-export type UserChartManifestSeries = {
+export interface UserChartManifestSeries {
   series_id: string;
   series_type: 'health_marker' | 'symptom';
   label: string;
@@ -21,17 +21,15 @@ export type UserChartManifestSeries = {
   observation_count: number;
   first_observed_at: string;
   last_observed_at: string;
-};
-
-type UserChartManifestSeriesRow = UserChartManifestSeries;
+}
 
 /**
- * Loads chartable series metadata for a patient (or the signed-in user) via Postgres RPC.
+ * Loads chartable series metadata for a patient via `get_user_chart_manifest`.
  * Uses `SECURITY INVOKER` so existing RLS on `health_markers` and `episode_symptoms` applies.
  *
- * @param client - Supabase client with the caller JWT (patient, caretaker, or practitioner).
- * @param userId - Subject user id (`p_user_id`); practitioners pass the patient id.
- * @returns Manifest rows ordered by `series_type`, then `label`.
+ * @param client - Supabase client with the caller JWT.
+ * @param userId - Subject user id (`p_user_id`).
+ * @returns Manifest rows from Postgres on success (`data` is unchanged RPC output).
  */
 export async function getUserChartManifest(
   client: AbstrackSupabaseClient,
@@ -48,7 +46,7 @@ export async function getUserChartManifest(
 
     return {
       ok: true,
-      data: (data ?? []) as UserChartManifestSeriesRow[],
+      data: (data ?? []) as UserChartManifestSeries[],
     };
   } catch (cause) {
     return { ok: false, error: toPresetDataError(cause) };
