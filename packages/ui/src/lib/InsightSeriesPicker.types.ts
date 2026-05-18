@@ -54,4 +54,6 @@ export interface InsightSeriesPickerProps {
   manifest: ChartManifestRow[];
   value: SelectedSeries[];
   onChange: (series: SelectedSeries[]) => void;
+  /** Stronger borders and text for high-contrast presentation. */
+  highContrast?: boolean;
 }

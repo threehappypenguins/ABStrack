@@ -1,6 +1,20 @@
 'use client';
 
-import { useEffect, useId, useMemo, useState, type CSSProperties } from 'react';
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type SelectHTMLAttributes,
+  type ButtonHTMLAttributes,
+} from 'react';
+import { useFocusRing } from './hooks/useFocusRing.js';
+import {
+  defaultPalette,
+  highContrastPalette,
+  type UiPalette,
+} from './styles/theme.js';
 import {
   canAddAnotherSeries,
   chartTypeChoiceLabel,
@@ -26,72 +40,148 @@ export type {
   SelectedSeries,
 } from './InsightSeriesPicker.types.js';
 
-const fieldStyles: CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 6,
-};
+function insightSeriesPickerStyles(palette: UiPalette) {
+  const field: CSSProperties = {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 6,
+  };
 
-const labelStyles: CSSProperties = {
-  fontSize: 16,
-  fontWeight: 600,
-};
+  const label: CSSProperties = {
+    fontSize: 16,
+    fontWeight: 600,
+    color: palette.text,
+  };
 
-const selectStyles: CSSProperties = {
-  minHeight: 44,
-  fontSize: 16,
-  padding: '8px 12px',
-  borderRadius: 8,
-  border: '1px solid #d4d4d4',
-};
+  const select: CSSProperties = {
+    minHeight: 44,
+    fontSize: 16,
+    padding: '8px 12px',
+    borderRadius: 8,
+    border: `1px solid ${palette.border}`,
+    backgroundColor: palette.surface,
+    color: palette.text,
+  };
 
-const slotStyles: CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 12,
-  padding: 12,
-  border: '1px solid #d4d4d4',
-  borderRadius: 8,
-};
+  const slot: CSSProperties = {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 12,
+    padding: 12,
+    border: `1px solid ${palette.border}`,
+    borderRadius: 8,
+    backgroundColor: palette.surface,
+  };
 
-const rootStyles: CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 16,
-};
+  const root: CSSProperties = {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 16,
+    color: palette.text,
+  };
 
-const addButtonStyles: CSSProperties = {
-  alignSelf: 'flex-start',
-  minHeight: 44,
-  minWidth: 44,
-  padding: '8px 16px',
-  fontSize: 16,
-  borderRadius: 8,
-  border: '1px solid #d4d4d4',
-  background: '#ffffff',
-  cursor: 'pointer',
-};
+  const secondaryButton: CSSProperties = {
+    alignSelf: 'flex-start',
+    minHeight: 44,
+    minWidth: 44,
+    padding: '8px 16px',
+    fontSize: 16,
+    borderRadius: 8,
+    border: `1px solid ${palette.border}`,
+    backgroundColor: palette.surface,
+    color: palette.text,
+    cursor: 'pointer',
+  };
 
-const removeButtonStyles: CSSProperties = {
-  alignSelf: 'flex-start',
-  minHeight: 44,
-  minWidth: 44,
-  padding: '8px 16px',
-  fontSize: 16,
-  borderRadius: 8,
-  border: '1px solid #d4d4d4',
-  background: '#ffffff',
-  cursor: 'pointer',
-};
+  const colorSwatch = (color: string): CSSProperties => ({
+    width: 16,
+    height: 16,
+    borderRadius: 4,
+    backgroundColor: color,
+    border: `1px solid ${palette.mutedText}`,
+    flexShrink: 0,
+  });
 
-const colorSwatchStyles = (color: string): CSSProperties => ({
-  width: 16,
-  height: 16,
-  borderRadius: 4,
-  backgroundColor: color,
-  border: '1px solid #525252',
-  flexShrink: 0,
-});
+  const focusRing = (focused: boolean): CSSProperties =>
+    focused
+      ? {
+          outline: '2px solid',
+          outlineColor: palette.focusRing,
+          outlineOffset: 2,
+        }
+      : {};
+
+  return {
+    field,
+    label,
+    select,
+    slot,
+    root,
+    secondaryButton,
+    colorSwatch,
+    focusRing,
+  };
+}
+
+function PickerSelect({
+  palette,
+  style,
+  onFocus,
+  onBlur,
+  ...rest
+}: SelectHTMLAttributes<HTMLSelectElement> & { palette: UiPalette }) {
+  const { focused, onFocus: onFocusRing, onBlur: onBlurRing } = useFocusRing();
+  const styles = insightSeriesPickerStyles(palette);
+
+  return (
+    <select
+      {...rest}
+      style={{
+        ...styles.select,
+        ...style,
+        ...styles.focusRing(focused),
+      }}
+      onFocus={(event) => {
+        onFocusRing(event as never);
+        onFocus?.(event);
+      }}
+      onBlur={(event) => {
+        onBlurRing(event as never);
+        onBlur?.(event);
+      }}
+    />
+  );
+}
+
+function PickerButton({
+  palette,
+  style,
+  onFocus,
+  onBlur,
+  ...rest
+}: ButtonHTMLAttributes<HTMLButtonElement> & { palette: UiPalette }) {
+  const { focused, onFocus: onFocusRing, onBlur: onBlurRing } = useFocusRing();
+  const styles = insightSeriesPickerStyles(palette);
+
+  return (
+    <button
+      {...rest}
+      style={{
+        ...styles.secondaryButton,
+        ...style,
+        ...styles.focusRing(focused),
+      }}
+      onFocus={(event) => {
+        onFocusRing(event as never);
+        onFocus?.(event);
+      }}
+      onBlur={(event) => {
+        onBlurRing(event as never);
+        onBlur?.(event);
+      }}
+    />
+  );
+}
 
 function findManifestRow(
   manifest: ChartableManifestRow[],
@@ -143,7 +233,11 @@ export function InsightSeriesPicker({
   manifest,
   value,
   onChange,
+  highContrast = false,
 }: InsightSeriesPickerProps) {
+  const palette = highContrast ? highContrastPalette : defaultPalette;
+  const styles = useMemo(() => insightSeriesPickerStyles(palette), [palette]);
+
   const seriesValue = useMemo(() => clampSeriesValue(value), [value]);
   const chartableManifest = useMemo(
     () => filterChartableManifestRows(manifest),
@@ -234,9 +328,9 @@ export function InsightSeriesPicker({
   };
 
   return (
-    <div style={rootStyles}>
+    <div style={styles.root}>
       <fieldset style={{ border: 'none', margin: 0, padding: 0 }}>
-        <legend style={{ ...labelStyles, marginBottom: 8 }}>
+        <legend style={{ ...styles.label, marginBottom: 8 }}>
           Chart series
         </legend>
 
@@ -257,7 +351,7 @@ export function InsightSeriesPicker({
           return (
             <div
               key={slotIndex}
-              style={{ ...slotStyles, marginBottom: 12 }}
+              style={{ ...styles.slot, marginBottom: 12 }}
               role="group"
               aria-labelledby={`${baseId}-slot-${slotIndex}-legend`}
             >
@@ -274,7 +368,7 @@ export function InsightSeriesPicker({
                 {selected ? (
                   <>
                     <span
-                      style={colorSwatchStyles(selected.color)}
+                      style={styles.colorSwatch(selected.color)}
                       aria-hidden
                     />
                     <span>
@@ -286,13 +380,13 @@ export function InsightSeriesPicker({
                 )}
               </div>
 
-              <div style={fieldStyles}>
-                <label htmlFor={seriesSelectId} style={labelStyles}>
+              <div style={styles.field}>
+                <label htmlFor={seriesSelectId} style={styles.label}>
                   {`Data series ${slotIndex + 1}`}
                 </label>
-                <select
+                <PickerSelect
+                  palette={palette}
                   id={seriesSelectId}
-                  style={selectStyles}
                   value={selected?.seriesId ?? ''}
                   onChange={(event) =>
                     handleSeriesChange(slotIndex, event.target.value)
@@ -305,17 +399,17 @@ export function InsightSeriesPicker({
                       {option.unit ? ` (${option.unit})` : ''}
                     </option>
                   ))}
-                </select>
+                </PickerSelect>
               </div>
 
               {!chartTypeHidden && row ? (
-                <div style={fieldStyles}>
-                  <label htmlFor={chartTypeSelectId} style={labelStyles}>
+                <div style={styles.field}>
+                  <label htmlFor={chartTypeSelectId} style={styles.label}>
                     {`Chart type for series ${slotIndex + 1}`}
                   </label>
-                  <select
+                  <PickerSelect
+                    palette={palette}
                     id={chartTypeSelectId}
-                    style={selectStyles}
                     value={selected?.chartType ?? ''}
                     onChange={(event) =>
                       handleChartTypeChange(
@@ -329,30 +423,30 @@ export function InsightSeriesPicker({
                         {chartTypeChoiceLabel(choice)}
                       </option>
                     ))}
-                  </select>
+                  </PickerSelect>
                 </div>
               ) : null}
 
-              <button
+              <PickerButton
                 type="button"
-                style={removeButtonStyles}
+                palette={palette}
                 onClick={() => handleRemove(slotIndex)}
               >
                 {seriesSlotActionLabel(slotIndex)}
-              </button>
+              </PickerButton>
             </div>
           );
         })}
       </fieldset>
 
       {showAddAnother ? (
-        <button
+        <PickerButton
           type="button"
-          style={addButtonStyles}
+          palette={palette}
           onClick={handleAddAnother}
         >
           Add another series
-        </button>
+        </PickerButton>
       ) : null}
     </div>
   );
