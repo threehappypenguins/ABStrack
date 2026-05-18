@@ -3,7 +3,11 @@ import { useState, type ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LiveAnnouncerProvider } from './a11y/LiveAnnouncer.js';
 import { InsightDateRangePicker } from './InsightDateRangePicker.js';
-import type { InsightDateRange } from './insight-date-range-picker-utils.js';
+import {
+  inclusiveCalendarDaySpan,
+  INSIGHT_DATE_RANGE_MAX_DAYS,
+  type InsightDateRange,
+} from './insight-date-range-picker-utils.js';
 
 const ANCHOR = new Date(2026, 4, 18, 12, 0, 0);
 
@@ -108,6 +112,43 @@ describe('InsightDateRangePicker', () => {
       to: localDate(2026, 4, 8),
     });
     expect(calendar).toBeInTheDocument();
+  });
+
+  it('calls onChange with a normalized range when value exceeds the max span', () => {
+    const onChangeSpy = vi.fn();
+    renderWithAnnouncer(
+      <InsightDateRangePicker
+        value={{
+          from: localDate(2020, 0, 1),
+          to: localDate(2026, 4, 18),
+        }}
+        onChange={onChangeSpy}
+      />,
+    );
+
+    expect(onChangeSpy).toHaveBeenCalled();
+    const normalized = onChangeSpy.mock.calls[0]?.[0] as InsightDateRange;
+    expect(inclusiveCalendarDaySpan(normalized.from, normalized.to)).toBe(
+      INSIGHT_DATE_RANGE_MAX_DAYS,
+    );
+  });
+
+  it('calls onChange when the controlled end date is in the future', () => {
+    const onChangeSpy = vi.fn();
+    renderWithAnnouncer(
+      <InsightDateRangePicker
+        value={{
+          from: localDate(2026, 4, 1),
+          to: localDate(2026, 5, 1),
+        }}
+        onChange={onChangeSpy}
+      />,
+    );
+
+    expect(onChangeSpy).toHaveBeenCalledWith({
+      from: localDate(2026, 4, 1),
+      to: localDate(2026, 4, 18),
+    });
   });
 
   it('does not announce the initial controlled value on mount', () => {

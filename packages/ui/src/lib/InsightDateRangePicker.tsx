@@ -1,6 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { DayPicker, type DateRange } from 'react-day-picker';
 import { useAnnounce } from './a11y/LiveAnnouncer.js';
 import { useFocusRing } from './hooks/useFocusRing.js';
@@ -22,6 +29,15 @@ export type {
 
 function insightDateRangeAnnouncementKey(range: InsightDateRange): string {
   return `${range.from.getTime()}-${range.to.getTime()}`;
+}
+
+function insightDateRangesEqual(
+  a: InsightDateRange,
+  b: InsightDateRange,
+): boolean {
+  return (
+    insightDateRangeAnnouncementKey(a) === insightDateRangeAnnouncementKey(b)
+  );
 }
 
 /** Props for {@link InsightDateRangePicker}. */
@@ -107,14 +123,24 @@ export function InsightDateRangePicker({
   const baseId = useId().replace(/:/g, '');
   const lastAnnouncedKey = useRef('');
   const skipValueAnnounceOnMount = useRef(true);
-  const [month, setMonth] = useState(() => value.to);
+  const normalizedValue = useMemo(
+    () => normalizeInsightDateRange(value),
+    [value.from, value.to],
+  );
+  const [month, setMonth] = useState(() => normalizedValue.to);
   const [calendarDraft, setCalendarDraft] = useState<DateRange | undefined>();
 
   useEffect(() => {
-    setMonth(value.to);
+    if (!insightDateRangesEqual(normalizedValue, value)) {
+      onChange(normalizedValue);
+    }
+  }, [normalizedValue, value, onChange]);
+
+  useEffect(() => {
+    setMonth(normalizedValue.to);
     setCalendarDraft(undefined);
 
-    const key = insightDateRangeAnnouncementKey(value);
+    const key = insightDateRangeAnnouncementKey(normalizedValue);
     if (skipValueAnnounceOnMount.current) {
       skipValueAnnounceOnMount.current = false;
       lastAnnouncedKey.current = key;
@@ -123,9 +149,9 @@ export function InsightDateRangePicker({
 
     if (key !== lastAnnouncedKey.current) {
       lastAnnouncedKey.current = key;
-      announce(formatInsightDateRangeAnnouncement(value));
+      announce(formatInsightDateRangeAnnouncement(normalizedValue));
     }
-  }, [announce, value.from, value.to]);
+  }, [announce, normalizedValue.from, normalizedValue.to]);
 
   const commitRange = useCallback(
     (next: InsightDateRange) => {
@@ -159,8 +185,8 @@ export function InsightDateRangePicker({
   };
 
   const selected: DateRange = calendarDraft ?? {
-    from: value.from,
-    to: value.to,
+    from: normalizedValue.from,
+    to: normalizedValue.to,
   };
 
   return (
