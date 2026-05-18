@@ -17,18 +17,44 @@ RETURNS TABLE (
   diastolic_avg numeric,
   event_count bigint
 )
-LANGUAGE sql
+LANGUAGE plpgsql
 SECURITY INVOKER
 STABLE
 SET search_path = pg_catalog, public
 AS $$
+DECLARE
+  series_count int;
+BEGIN
+  IF p_bucket NOT IN ('day', 'week', 'month') THEN
+    RAISE EXCEPTION 'get_chart_series: p_bucket must be day, week, or month'
+      USING ERRCODE = '22023';
+  END IF;
+
+  IF jsonb_typeof(p_series) IS DISTINCT FROM 'array' THEN
+    RAISE EXCEPTION 'get_chart_series: p_series must be a JSON array'
+      USING ERRCODE = '22023';
+  END IF;
+
+  series_count := jsonb_array_length(p_series);
+
+  IF series_count < 1 OR series_count > 3 THEN
+    RAISE EXCEPTION 'get_chart_series: p_series must contain 1 to 3 series'
+      USING ERRCODE = '22023';
+  END IF;
+
+  IF p_from > p_to THEN
+    RAISE EXCEPTION 'get_chart_series: p_from must be less than or equal to p_to'
+      USING ERRCODE = '22023';
+  END IF;
+
+  RETURN QUERY
   WITH series_defs AS (
     SELECT
       elem->>'series_id' AS series_id,
       elem->>'series_type' AS series_type,
       elem->>'response_type' AS response_type,
       COALESCE((elem->>'is_blood_pressure')::boolean, false) AS is_blood_pressure
-    FROM jsonb_array_elements(COALESCE(p_series, '[]'::jsonb)) AS elem
+    FROM jsonb_array_elements(p_series) AS elem
   ),
   health_marker_defs AS (
     SELECT
@@ -135,6 +161,7 @@ AS $$
       AND es.created_at <= p_to
       AND lower(nullif(trim(es.symptom_name), '')) = sd.symptom_series_key
       AND es.response_type = 'severity_scale'
+      AND es.response_severity IS NOT NULL
     WHERE sd.response_type = 'severity'
     GROUP BY sd.series_id, date_trunc(p_bucket, es.created_at)
   )
@@ -146,10 +173,11 @@ AS $$
   UNION ALL
   SELECT * FROM symptom_severity_buckets
   ORDER BY 1, 2;
+END;
 $$;
 
 COMMENT ON FUNCTION public.get_chart_series (uuid, jsonb, timestamptz, timestamptz, text) IS
-'Returns pre-bucketed chart series for p_user_id and selected manifest series (health markers and symptoms). SECURITY INVOKER: RLS on health_markers and episode_symptoms applies.';
+'Returns pre-bucketed chart series for p_user_id and selected manifest series (health markers and symptoms). Validates p_bucket (day|week|month), p_series length (1–3), and p_from <= p_to. SECURITY INVOKER: RLS on health_markers and episode_symptoms applies.';
 
 REVOKE ALL ON FUNCTION public.get_chart_series (uuid, jsonb, timestamptz, timestamptz, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_chart_series (uuid, jsonb, timestamptz, timestamptz, text) TO authenticated;
