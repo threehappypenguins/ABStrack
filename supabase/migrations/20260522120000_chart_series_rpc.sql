@@ -89,6 +89,11 @@ BEGIN
         USING ERRCODE = '22023';
     END IF;
 
+    IF sid <> lower(sid) THEN
+      RAISE EXCEPTION 'get_chart_series: series_id must be lowercase (manifest format) %', sid
+        USING ERRCODE = '22023';
+    END IF;
+
     IF sid = ANY (seen_series_ids) THEN
       RAISE EXCEPTION 'get_chart_series: duplicate series_id %', sid
         USING ERRCODE = '22023';
@@ -165,7 +170,7 @@ BEGIN
       sd.series_id,
       sd.response_type,
       sd.is_blood_pressure,
-      regexp_replace(sd.series_id, '^health_marker::', '') AS marker_series_key
+      lower(regexp_replace(sd.series_id, '^health_marker::', '')) AS marker_series_key
     FROM series_defs sd
     WHERE sd.series_type = 'health_marker'
   ),
@@ -173,7 +178,7 @@ BEGIN
     SELECT
       sd.series_id,
       sd.response_type,
-      split_part(regexp_replace(sd.series_id, '^symptom::', ''), '::', 1) AS symptom_series_key
+      (regexp_match(sd.series_id, '^symptom::(.+)::(boolean|severity)$'))[1] AS symptom_series_key
     FROM series_defs sd
     WHERE sd.series_type = 'symptom'
   ),
@@ -287,3 +292,9 @@ COMMENT ON FUNCTION public.get_chart_series (uuid, jsonb, timestamptz, timestamp
 
 REVOKE ALL ON FUNCTION public.get_chart_series (uuid, jsonb, timestamptz, timestamptz, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_chart_series (uuid, jsonb, timestamptz, timestamptz, text) TO authenticated;
+
+-- Range scans for chart RPCs (and manifest) filter by user_id and created_at.
+CREATE INDEX IF NOT EXISTS episode_symptoms_user_created_at_idx ON public.episode_symptoms (user_id, created_at DESC);
+
+COMMENT ON INDEX public.episode_symptoms_user_created_at_idx IS
+'Supports per-user symptom history range queries (e.g. get_chart_series, get_user_chart_manifest).';
