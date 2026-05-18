@@ -109,11 +109,11 @@ export function TextArea({
         placeholderTextColor={rest.placeholderTextColor ?? palette.mutedText}
         textAlignVertical="top"
         onFocus={(e) => {
-          onFocus(e);
+          onFocus();
           onFocusProp?.(e);
         }}
         onBlur={(e) => {
-          onBlur(e);
+          onBlur();
           onBlurProp?.(e);
         }}
         style={[

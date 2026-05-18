@@ -482,6 +482,40 @@ describe('InsightSeriesPicker', () => {
     ).toBe(false);
   });
 
+  it('calls onChange on mount when the controlled value exceeds three series', () => {
+    const onChange = vi.fn();
+    const seriesAt = (row: ChartableManifestRow, slotIndex: number) => {
+      const series = createSelectedSeriesFromManifestRow(row, slotIndex);
+      if (!series) {
+        throw new Error(`Expected chartable fixture for ${row.series_id}`);
+      }
+      return series;
+    };
+    const oversizedValue: SelectedSeries[] = [
+      seriesAt(glucoseRow, 0),
+      seriesAt(severityRow, 1),
+      seriesAt(booleanRow, 2),
+      { ...seriesAt(glucoseRow, 0), seriesId: 'orphan-4', label: 'Orphan' },
+    ];
+
+    render(
+      <InsightSeriesPicker
+        manifest={manifest}
+        value={oversizedValue}
+        onChange={onChange}
+      />,
+    );
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const clamped = onChange.mock.calls[0]?.[0] as SelectedSeries[];
+    expect(clamped).toHaveLength(3);
+    expect(clamped.map((series) => series.seriesId)).toEqual([
+      glucoseRow.series_id,
+      severityRow.series_id,
+      booleanRow.series_id,
+    ]);
+  });
+
   it('clamps onChange to three series when chart type changes with an oversized value', () => {
     const onChange = vi.fn();
     const seriesAt = (row: ChartableManifestRow, slotIndex: number) => {

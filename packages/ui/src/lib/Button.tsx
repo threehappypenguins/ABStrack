@@ -180,11 +180,11 @@ export function Button({
       disabled={disabled}
       onPress={onPress}
       onFocus={(e) => {
-        onFocus(e);
+        onFocus();
         onFocusProp?.(e);
       }}
       onBlur={(e) => {
-        onBlur(e);
+        onBlur();
         onBlurProp?.(e);
       }}
       style={(state) => {

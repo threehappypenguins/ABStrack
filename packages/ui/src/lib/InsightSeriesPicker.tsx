@@ -142,11 +142,11 @@ function PickerSelect({
         ...styles.focusRing(focused),
       }}
       onFocus={(event) => {
-        onFocusRing(event as never);
+        onFocusRing();
         onFocus?.(event);
       }}
       onBlur={(event) => {
-        onBlurRing(event as never);
+        onBlurRing();
         onBlur?.(event);
       }}
     />
@@ -172,11 +172,11 @@ function PickerButton({
         ...styles.focusRing(focused),
       }}
       onFocus={(event) => {
-        onFocusRing(event as never);
+        onFocusRing();
         onFocus?.(event);
       }}
       onBlur={(event) => {
-        onBlurRing(event as never);
+        onBlurRing();
         onBlur?.(event);
       }}
     />
@@ -243,6 +243,13 @@ export function InsightSeriesPicker({
     () => filterChartableManifestRows(manifest),
     [manifest],
   );
+
+  useEffect(() => {
+    if (value.length > MAX_SERIES_SLOTS) {
+      onChange(clampSeriesValue(value));
+    }
+  }, [value, onChange]);
+
   const baseId = useId().replace(/:/g, '');
   const [revealedSlotCount, setRevealedSlotCount] = useState(() =>
     Math.min(MAX_SERIES_SLOTS, Math.max(1, seriesValue.length)),
