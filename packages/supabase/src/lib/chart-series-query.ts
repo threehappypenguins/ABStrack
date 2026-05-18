@@ -1,5 +1,7 @@
 import type { Uuid } from '@abstrack/types';
 import type { Json } from './database.types.js';
+import { toPresetDataError } from './preset-data-error.js';
+import type { PresetDataResult } from './preset-data.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
 
 /** Time bucket granularity for `get_chart_series`. */
@@ -46,23 +48,30 @@ export interface GetChartSeriesParams {
  *
  * @param client - Supabase client with the caller JWT.
  * @param params - RPC arguments (`p_user_id`, `p_series`, `p_from`, `p_to`, `p_bucket`).
- * @returns Bucketed rows from Postgres, unchanged.
+ * @returns Bucketed rows from Postgres on success (`data` is unchanged RPC output).
  */
 export async function getChartSeries(
   client: AbstrackSupabaseClient,
   params: GetChartSeriesParams,
-): Promise<ChartSeriesBucketRow[]> {
-  const { data, error } = await client.rpc('get_chart_series', {
-    p_user_id: params.p_user_id,
-    p_series: params.p_series as unknown as Json,
-    p_from: params.p_from,
-    p_to: params.p_to,
-    p_bucket: params.p_bucket,
-  });
+): Promise<PresetDataResult<ChartSeriesBucketRow[]>> {
+  try {
+    const { data, error } = await client.rpc('get_chart_series', {
+      p_user_id: params.p_user_id,
+      p_series: params.p_series as unknown as Json,
+      p_from: params.p_from,
+      p_to: params.p_to,
+      p_bucket: params.p_bucket,
+    });
 
-  if (error) {
-    throw error;
+    if (error) {
+      return { ok: false, error: toPresetDataError(error) };
+    }
+
+    return {
+      ok: true,
+      data: (data ?? []) as ChartSeriesBucketRow[],
+    };
+  } catch (cause) {
+    return { ok: false, error: toPresetDataError(cause) };
   }
-
-  return (data ?? []) as ChartSeriesBucketRow[];
 }

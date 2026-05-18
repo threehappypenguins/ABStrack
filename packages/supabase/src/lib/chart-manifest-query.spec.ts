@@ -1,5 +1,6 @@
 import type { Uuid } from '@abstrack/types';
 import { describe, expect, it, vi } from 'vitest';
+import { PresetDataError } from './preset-data-error.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
 import {
   getUserChartManifest,
@@ -43,6 +44,31 @@ describe('getUserChartManifest', () => {
 
     const result = await getUserChartManifest(manifestClient(rows), USER_ID);
 
-    expect(result).toEqual(rows);
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.data).toEqual(rows);
+  });
+
+  it('returns ok: false when rpc returns an error', async () => {
+    const rpc = vi.fn(async () => ({
+      data: null,
+      error: {
+        message: 'permission denied for function get_user_chart_manifest',
+      },
+    }));
+    const client = { rpc } as unknown as AbstrackSupabaseClient;
+
+    const result = await getUserChartManifest(client, USER_ID);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+
+    expect(result.error).toBeInstanceOf(PresetDataError);
+    expect(result.error.code).toBe('permission_denied');
   });
 });

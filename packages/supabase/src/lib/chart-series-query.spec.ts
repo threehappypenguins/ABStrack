@@ -1,5 +1,6 @@
 import type { Uuid } from '@abstrack/types';
 import { describe, expect, it, vi } from 'vitest';
+import { PresetDataError } from './preset-data-error.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
 import {
   getChartSeries,
@@ -61,6 +62,29 @@ describe('getChartSeries', () => {
 
     const result = await getChartSeries(chartSeriesClient(rows), PARAMS);
 
-    expect(result).toEqual(rows);
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.data).toEqual(rows);
+  });
+
+  it('returns ok: false when rpc returns an error', async () => {
+    const rpc = vi.fn(async () => ({
+      data: null,
+      error: { message: 'permission denied for function get_chart_series' },
+    }));
+    const client = { rpc } as unknown as AbstrackSupabaseClient;
+
+    const result = await getChartSeries(client, PARAMS);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+
+    expect(result.error).toBeInstanceOf(PresetDataError);
+    expect(result.error.code).toBe('permission_denied');
   });
 });
