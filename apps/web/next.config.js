@@ -14,6 +14,7 @@ const nextConfig = {
   transpilePackages: [
     '@abstrack/ui',
     '@abstrack/types',
+    '@abstrack/supabase',
     'react-native',
     'react-native-web',
   ],
@@ -26,6 +27,10 @@ const nextConfig = {
       '@abstrack/types': path.join(
         __dirname,
         '../../packages/types/src/index.ts',
+      ),
+      '@abstrack/supabase': path.join(
+        __dirname,
+        '../../packages/supabase/src/index.ts',
       ),
     };
     return config;

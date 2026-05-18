@@ -3,13 +3,19 @@
 import {
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
+  type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { useTheme } from './ThemeProvider';
 import { IconCheck, IconComputer, IconMoon, IconSun } from './ThemeIcons';
 import type { ThemePreference } from '@/lib/theme-storage';
+
+/** Above app chrome, charts, and Recharts tooltip layers. */
+const THEME_MENU_POPOVER_Z_INDEX = 5000;
 
 const OPTIONS: {
   value: ThemePreference;
@@ -38,15 +44,35 @@ const OPTIONS: {
 ];
 
 /**
+ * Positions the theme radiogroup popover under the trigger using viewport coordinates.
+ *
+ * @param trigger - Theme menu disclosure button.
+ * @returns Fixed-position style for the portaled popover.
+ */
+function getThemeMenuPanelStyle(trigger: HTMLButtonElement): CSSProperties {
+  const rect = trigger.getBoundingClientRect();
+  return {
+    position: 'fixed',
+    top: rect.bottom + 8,
+    right: Math.max(8, window.innerWidth - rect.right),
+    zIndex: THEME_MENU_POPOVER_Z_INDEX,
+  };
+}
+
+/**
  * Theme preference control: disclosure button plus a popup implemented as a radiogroup.
+ * The popover is portaled to `document.body` so sticky header stacking does not cover it.
  *
  * @returns Theme picker UI.
  */
 export function ThemeMenu() {
   const { preference, setPreference } = useTheme();
   const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
+  const [panelStyle, setPanelStyle] = useState<CSSProperties>({
+    visibility: 'hidden',
+  });
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const wasOpenRef = useRef(false);
   const groupId = useId();
@@ -57,6 +83,29 @@ export function ThemeMenu() {
       : preference === 'dark'
         ? IconMoon
         : IconComputer;
+
+  useLayoutEffect(() => {
+    if (!open) {
+      return;
+    }
+    const updatePosition = () => {
+      const trigger = triggerRef.current;
+      if (!trigger) {
+        return;
+      }
+      setPanelStyle({
+        ...getThemeMenuPanelStyle(trigger),
+        visibility: 'visible',
+      });
+    };
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) {
@@ -86,10 +135,14 @@ export function ThemeMenu() {
       return;
     }
     const onPointerDown = (e: MouseEvent | TouchEvent) => {
-      const el = rootRef.current;
-      if (el && !el.contains(e.target as Node)) {
-        setOpen(false);
+      const target = e.target as Node;
+      if (
+        triggerRef.current?.contains(target) ||
+        panelRef.current?.contains(target)
+      ) {
+        return;
       }
+      setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -139,8 +192,61 @@ export function ThemeMenu() {
     }
   };
 
+  const panel = open ? (
+    <div
+      ref={panelRef}
+      id={groupId}
+      role="radiogroup"
+      aria-label="Theme"
+      style={panelStyle}
+      className="min-w-[13.5rem] rounded-xl border border-app-border bg-app-surface py-1 shadow-soft ring-1 ring-[color:var(--app-ring-slate)]"
+      onKeyDown={handleRadiogroupKeyDown}
+    >
+      {OPTIONS.map(({ value, label, description, Icon }, index) => {
+        const selected = preference === value;
+        return (
+          <button
+            key={value}
+            type="button"
+            ref={(el) => {
+              itemRefs.current[index] = el;
+            }}
+            role="radio"
+            aria-checked={selected}
+            tabIndex={selected ? 0 : -1}
+            className="flex w-full items-start gap-3 px-3 py-2.5 text-left transition hover:bg-[var(--app-nav-hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-app-ring"
+            onClick={() => {
+              setPreference(value);
+              setOpen(false);
+            }}
+          >
+            <Icon
+              className="mt-0.5 h-5 w-5 shrink-0 text-app-muted"
+              aria-hidden
+            />
+            <span className="grow">
+              <span className="block text-sm font-medium text-app-ink">
+                {label}
+              </span>
+              <span className="mt-0.5 block text-xs text-app-muted">
+                {description}
+              </span>
+            </span>
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center text-app-primary">
+              {selected ? (
+                <IconCheck className="h-4 w-4" aria-hidden />
+              ) : (
+                <span className="h-4 w-4" aria-hidden />
+              )}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  ) : null;
+
   return (
-    <div ref={rootRef} className="relative">
+    <>
       <button
         ref={triggerRef}
         type="button"
@@ -155,56 +261,9 @@ export function ThemeMenu() {
         <TriggerIcon className="h-5 w-5" aria-hidden />
       </button>
 
-      {open ? (
-        <div
-          id={groupId}
-          role="radiogroup"
-          aria-label="Theme"
-          className="absolute right-0 z-[300] mt-2 min-w-[13.5rem] rounded-xl border border-app-border bg-app-surface py-1 shadow-soft ring-1 ring-[color:var(--app-ring-slate)]"
-          onKeyDown={handleRadiogroupKeyDown}
-        >
-          {OPTIONS.map(({ value, label, description, Icon }, index) => {
-            const selected = preference === value;
-            return (
-              <button
-                key={value}
-                type="button"
-                ref={(el) => {
-                  itemRefs.current[index] = el;
-                }}
-                role="radio"
-                aria-checked={selected}
-                tabIndex={selected ? 0 : -1}
-                className="flex w-full items-start gap-3 px-3 py-2.5 text-left transition hover:bg-[var(--app-nav-hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-app-ring"
-                onClick={() => {
-                  setPreference(value);
-                  setOpen(false);
-                }}
-              >
-                <Icon
-                  className="mt-0.5 h-5 w-5 shrink-0 text-app-muted"
-                  aria-hidden
-                />
-                <span className="grow">
-                  <span className="block text-sm font-medium text-app-ink">
-                    {label}
-                  </span>
-                  <span className="mt-0.5 block text-xs text-app-muted">
-                    {description}
-                  </span>
-                </span>
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center text-app-primary">
-                  {selected ? (
-                    <IconCheck className="h-4 w-4" aria-hidden />
-                  ) : (
-                    <span className="h-4 w-4" aria-hidden />
-                  )}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
-    </div>
+      {typeof document !== 'undefined' && panel
+        ? createPortal(panel, document.body)
+        : null}
+    </>
   );
 }

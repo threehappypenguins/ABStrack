@@ -54,6 +54,16 @@
     --app-shadow-header: 0 1px 0 rgba(0, 0, 0, 0.35);
   }
 
+  /* react-day-picker: map accent colors to semantic app tokens (light + html.dark). */
+  .rdp-root {
+    --rdp-accent-color: rgb(var(--app-primary) / 1);
+    --rdp-accent-background-color: rgb(var(--app-primary-soft) / 1);
+    --rdp-range_middle-color: rgb(var(--app-ink) / 1);
+    --rdp-range_start-color: rgb(var(--app-surface) / 1);
+    --rdp-range_end-color: rgb(var(--app-surface) / 1);
+    color: rgb(var(--app-ink) / 1);
+  }
+
   body {
     color: rgb(var(--app-ink) / 1);
     background-color: rgb(var(--app-bg) / 1);

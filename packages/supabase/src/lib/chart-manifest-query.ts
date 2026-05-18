@@ -1,4 +1,4 @@
-import type { Uuid } from '@abstrack/types';
+import { chartManifestSeriesDisplayLabel, type Uuid } from '@abstrack/types';
 import { toPresetDataError } from './preset-data-error.js';
 import type { PresetDataResult } from './preset-data.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
@@ -29,7 +29,7 @@ export interface UserChartManifestSeries {
  *
  * @param client - Supabase client with the caller JWT.
  * @param userId - Subject user id (`p_user_id`).
- * @returns Manifest rows from Postgres on success (`data` is unchanged RPC output).
+ * @returns Manifest rows with preset health-marker labels aligned to {@link PRESET_HEALTH_MARKER_KIND_LABELS}.
  */
 export async function getUserChartManifest(
   client: AbstrackSupabaseClient,
@@ -44,9 +44,18 @@ export async function getUserChartManifest(
       return { ok: false, error: toPresetDataError(error) };
     }
 
+    const rows = (data ?? []) as UserChartManifestSeries[];
+
     return {
       ok: true,
-      data: (data ?? []) as UserChartManifestSeries[],
+      data: rows.map((row) => ({
+        ...row,
+        label: chartManifestSeriesDisplayLabel(
+          row.series_type,
+          row.series_id,
+          row.label,
+        ),
+      })),
     };
   } catch (cause) {
     return { ok: false, error: toPresetDataError(cause) };

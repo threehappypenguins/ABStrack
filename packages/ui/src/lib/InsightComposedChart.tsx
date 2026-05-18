@@ -237,8 +237,14 @@ export function InsightComposedChart({
   );
   const summaryId = `${useId().replace(/:/g, '')}-summary`;
 
+  const chartTooltipStyle = {
+    backgroundColor: 'rgb(var(--app-surface) / 1)',
+    borderColor: 'rgb(var(--app-border) / 1)',
+    color: 'rgb(var(--app-ink) / 1)',
+  } as const;
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 text-app-ink">
       <figure
         aria-busy={loading ? true : undefined}
         aria-labelledby={summaryId}
@@ -327,6 +333,9 @@ export function InsightComposedChart({
                 ) : null}
                 <Tooltip
                   labelFormatter={(label) => bucketTickFormatter(String(label))}
+                  contentStyle={chartTooltipStyle}
+                  labelStyle={{ color: 'rgb(var(--app-ink) / 1)' }}
+                  itemStyle={{ color: 'rgb(var(--app-ink) / 1)' }}
                 />
                 {series.map((item) => {
                   if (item.chartType === 'bp_band') {

@@ -27,8 +27,19 @@ describe('getUserChartManifest', () => {
     });
   });
 
-  it('returns RPC rows unchanged', async () => {
+  it('maps preset health marker labels to product copy', async () => {
     const rows: UserChartManifestSeries[] = [
+      {
+        series_id: 'health_marker::bac',
+        series_type: 'health_marker',
+        label: 'bac',
+        response_type: 'numeric',
+        is_blood_pressure: false,
+        unit: null,
+        observation_count: 2,
+        first_observed_at: '2026-01-01T00:00:00.000Z',
+        last_observed_at: '2026-03-01T00:00:00.000Z',
+      },
       {
         series_id: 'symptom::fatigue::boolean',
         series_type: 'symptom',
@@ -49,7 +60,8 @@ describe('getUserChartManifest', () => {
       return;
     }
 
-    expect(result.data).toEqual(rows);
+    expect(result.data[0]?.label).toBe('BAC');
+    expect(result.data[1]?.label).toBe('Fatigue');
   });
 
   it('returns ok: false when rpc returns an error', async () => {

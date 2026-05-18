@@ -23,6 +23,7 @@ export {
   type InsightDateRangePickerProps,
   type InsightDateRangePresetId,
 } from './lib/InsightDateRangePicker.js';
+export { getInsightDateRangePreset } from './lib/insight-date-range-picker-utils.js';
 export {
   InsightComposedChart,
   type ChartSeriesBucketMetrics,

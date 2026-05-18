@@ -1,0 +1,259 @@
+import '@testing-library/jest-dom';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
+import type { ReactNode } from 'react';
+import { LiveAnnouncerProvider } from '@abstrack/ui/a11y-web';
+import type { ChartManifestRow, SelectedSeries } from '@abstrack/ui';
+import { getChartSeries, getUserChartManifest } from '@abstrack/supabase';
+import { InsightsClient } from './InsightsClient';
+
+const PHI_SUBJECT_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+
+const bacManifestRow: ChartManifestRow = {
+  series_id: 'health_marker::bac',
+  series_type: 'health_marker',
+  label: 'BAC',
+  response_type: 'numeric',
+  is_blood_pressure: false,
+  unit: '%',
+  observation_count: 3,
+  first_observed_at: '2026-01-01T00:00:00.000Z',
+  last_observed_at: '2026-02-01T00:00:00.000Z',
+};
+
+const announceMock = jest.fn();
+
+jest.mock('../../../lib/patient/use-web-phi-subject-user-context', () => ({
+  useWebPhiSubjectUserContext: () => ({
+    authUserId: PHI_SUBJECT_ID,
+    phiSubjectUserId: PHI_SUBJECT_ID,
+    profileAppRole: 'patient',
+    loading: false,
+    errorMessage: null,
+    refresh: jest.fn(),
+  }),
+}));
+
+jest.mock('@abstrack/ui/a11y-web', () => ({
+  ...jest.requireActual('@abstrack/ui/a11y-web'),
+  useAnnounce: () => ({ announce: announceMock }),
+}));
+
+jest.mock('../../../lib/supabase/browser-client', () => ({
+  createBrowserClient: () => ({}),
+}));
+
+jest.mock('@abstrack/supabase', () => ({
+  getUserChartManifest: jest.fn(),
+  getChartSeries: jest.fn(),
+}));
+
+jest.mock('@abstrack/ui', () => {
+  const { getInsightDateRangePreset } = jest.requireActual(
+    '../../../../../../packages/ui/src/lib/insight-date-range-picker-utils',
+  );
+  const { pivotChartSeriesBucketRows } = jest.requireActual(
+    '../../../../../../packages/ui/src/lib/insight-composed-chart-utils',
+  );
+  return {
+    getInsightDateRangePreset,
+    pivotChartSeriesBucketRows,
+    Button: ({
+      children,
+      onPress,
+      accessibilityLabel,
+    }: {
+      children: ReactNode;
+      onPress?: () => void;
+      accessibilityLabel?: string;
+    }) => (
+      <button type="button" aria-label={accessibilityLabel} onClick={onPress}>
+        {children}
+      </button>
+    ),
+    InsightSeriesPicker: ({
+      manifest,
+      value,
+      onChange,
+    }: {
+      manifest: ChartManifestRow[];
+      value: unknown[];
+      onChange: (next: unknown[]) => void;
+    }) => (
+      <div>
+        {manifest.map((row) => (
+          <span
+            key={row.series_id}
+            data-testid={`manifest-label-${row.series_id}`}
+          >
+            {row.label}
+          </span>
+        ))}
+        <button
+          type="button"
+          onClick={() => {
+            const row = manifest[0];
+            if (!row) {
+              return;
+            }
+            const selected: SelectedSeries = {
+              seriesId: row.series_id,
+              seriesType: row.series_type,
+              responseType: row.response_type as 'numeric',
+              isBloodPressure: row.is_blood_pressure,
+              label: row.label,
+              unit: row.unit,
+              chartType: 'line',
+              color: '#1d4ed8',
+            };
+            onChange([selected]);
+          }}
+        >
+          Select first series
+        </button>
+        <span data-testid="selected-count">{value.length}</span>
+      </div>
+    ),
+    InsightDateRangePicker: () => <div data-testid="date-range-picker" />,
+    InsightComposedChart: ({
+      summary,
+      loading,
+    }: {
+      summary: string;
+      loading: boolean;
+    }) => (
+      <div data-testid="composed-chart">
+        <p>{summary}</p>
+        {loading ? <p role="status">Chart loading</p> : null}
+      </div>
+    ),
+  };
+});
+
+const getUserChartManifestMock = getUserChartManifest as jest.MockedFunction<
+  typeof getUserChartManifest
+>;
+const getChartSeriesMock = getChartSeries as jest.MockedFunction<
+  typeof getChartSeries
+>;
+
+function renderInsights() {
+  return render(
+    <LiveAnnouncerProvider>
+      <InsightsClient />
+    </LiveAnnouncerProvider>,
+  );
+}
+
+describe('InsightsClient', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    getUserChartManifestMock.mockResolvedValue({
+      ok: true,
+      data: [bacManifestRow],
+    });
+    getChartSeriesMock.mockResolvedValue({
+      ok: true,
+      data: [
+        {
+          series_id: bacManifestRow.series_id,
+          bucket_start: '2026-01-15T00:00:00.000Z',
+          value_avg: 0.02,
+          value_min: 0.02,
+          value_max: 0.02,
+          systolic_avg: null,
+          diastolic_avg: null,
+          event_count: null,
+        },
+      ],
+    });
+  });
+
+  it('shows the empty state when the manifest is empty', async () => {
+    getUserChartManifestMock.mockResolvedValue({ ok: true, data: [] });
+
+    renderInsights();
+
+    expect(
+      await screen.findByText(
+        'No data to chart yet. Log some episodes or health markers to get started.',
+      ),
+    ).toBeInTheDocument();
+    expect(getChartSeriesMock).not.toHaveBeenCalled();
+  });
+
+  it('does not call getChartSeries until a series is selected', async () => {
+    renderInsights();
+
+    await screen.findByTestId('date-range-picker');
+    expect(getChartSeriesMock).not.toHaveBeenCalled();
+  });
+
+  it('maps raw RPC health marker labels to preset display names', async () => {
+    getUserChartManifestMock.mockResolvedValue({
+      ok: true,
+      data: [
+        {
+          ...bacManifestRow,
+          label: 'bac',
+        },
+        {
+          series_id: 'health_marker::blood_glucose',
+          series_type: 'health_marker',
+          label: 'blood_glucose',
+          response_type: 'numeric',
+          is_blood_pressure: false,
+          unit: 'mg/dL',
+          observation_count: 1,
+          first_observed_at: '2026-01-01T00:00:00.000Z',
+          last_observed_at: '2026-02-01T00:00:00.000Z',
+        },
+      ],
+    });
+
+    renderInsights();
+
+    expect(
+      await screen.findByTestId('manifest-label-health_marker::bac'),
+    ).toHaveTextContent('BAC');
+    expect(
+      screen.getByTestId('manifest-label-health_marker::blood_glucose'),
+    ).toHaveTextContent('Glucose');
+  });
+
+  it('updates chart bucket when the bucket selector changes', async () => {
+    renderInsights();
+
+    await screen.findByRole('button', { name: 'Select first series' });
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Select first series' }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(getChartSeriesMock).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ p_bucket: 'day' }),
+      );
+    });
+
+    getChartSeriesMock.mockClear();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Week' }));
+    });
+
+    await waitFor(() => {
+      expect(getChartSeriesMock).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ p_bucket: 'week' }),
+      );
+    });
+  });
+});
