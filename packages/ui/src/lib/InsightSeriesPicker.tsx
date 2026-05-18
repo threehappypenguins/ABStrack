@@ -9,6 +9,8 @@ import {
   filterChartableManifestRows,
   getChartTypeChoicesForManifestRow,
   isChartTypeSelectorHidden,
+  MAX_SERIES_SLOTS,
+  mergeSeriesSelectionAtSlot,
 } from './insight-series-picker-utils.js';
 import type {
   ChartableManifestRow,
@@ -23,8 +25,6 @@ export type {
   InsightSeriesPickerProps,
   SelectedSeries,
 } from './InsightSeriesPicker.types.js';
-
-const MAX_SERIES_SLOTS = 3;
 
 const fieldStyles: CSSProperties = {
   display: 'flex',
@@ -114,6 +114,11 @@ function seriesSlotActionLabel(slotIndex: number): string {
   return `Remove series ${slotIndex + 1}`;
 }
 
+/** Enforces the chart builder maximum of three selected series. */
+function clampSeriesValue(value: SelectedSeries[]): SelectedSeries[] {
+  return value.slice(0, MAX_SERIES_SLOTS);
+}
+
 function optionsForSlot(
   manifest: ChartableManifestRow[],
   value: SelectedSeries[],
@@ -139,29 +144,35 @@ export function InsightSeriesPicker({
   value,
   onChange,
 }: InsightSeriesPickerProps) {
+  const seriesValue = useMemo(() => clampSeriesValue(value), [value]);
   const chartableManifest = useMemo(
     () => filterChartableManifestRows(manifest),
     [manifest],
   );
   const baseId = useId().replace(/:/g, '');
   const [revealedSlotCount, setRevealedSlotCount] = useState(() =>
-    Math.min(MAX_SERIES_SLOTS, Math.max(1, value.length)),
+    Math.min(MAX_SERIES_SLOTS, Math.max(1, seriesValue.length)),
   );
 
   useEffect(() => {
     setRevealedSlotCount((current) => {
       const nextUnfilledCap =
-        value.length === 0 ? 1 : Math.min(MAX_SERIES_SLOTS, value.length + 1);
-      const minForFilled = Math.max(1, value.length);
+        seriesValue.length === 0
+          ? 1
+          : Math.min(MAX_SERIES_SLOTS, seriesValue.length + 1);
+      const minForFilled = Math.max(1, seriesValue.length);
       return Math.min(
         MAX_SERIES_SLOTS,
         Math.max(minForFilled, Math.min(current, nextUnfilledCap)),
       );
     });
-  }, [value.length]);
+  }, [seriesValue.length]);
 
-  const visibleSlotCount = computeVisibleSlotCount(value, revealedSlotCount);
-  const showAddAnother = canAddAnotherSeries(value, visibleSlotCount);
+  const visibleSlotCount = computeVisibleSlotCount(
+    seriesValue,
+    revealedSlotCount,
+  );
+  const showAddAnother = canAddAnotherSeries(seriesValue, visibleSlotCount);
 
   const handleAddAnother = () => {
     setRevealedSlotCount((current) => Math.min(MAX_SERIES_SLOTS, current + 1));
@@ -169,7 +180,7 @@ export function InsightSeriesPicker({
 
   const handleSeriesChange = (slotIndex: number, seriesId: string) => {
     if (!seriesId) {
-      onChange(value.slice(0, slotIndex));
+      onChange(clampSeriesValue(seriesValue.slice(0, slotIndex)));
       setRevealedSlotCount(1);
       return;
     }
@@ -184,16 +195,18 @@ export function InsightSeriesPicker({
       return;
     }
 
-    const next = value.slice(0, slotIndex);
-    next[slotIndex] = selected;
-    onChange(next.slice(0, MAX_SERIES_SLOTS));
+    onChange(
+      clampSeriesValue(
+        mergeSeriesSelectionAtSlot(seriesValue, slotIndex, selected),
+      ),
+    );
   };
 
   const handleChartTypeChange = (
     slotIndex: number,
     chartType: ChartTypeChoice,
   ) => {
-    const current = value[slotIndex];
+    const current = seriesValue[slotIndex];
     if (!current) {
       return;
     }
@@ -210,13 +223,13 @@ export function InsightSeriesPicker({
       return;
     }
 
-    const next = [...value];
+    const next = seriesValue.slice();
     next[slotIndex] = selected;
-    onChange(next);
+    onChange(clampSeriesValue(next));
   };
 
   const handleRemove = (slotIndex: number) => {
-    onChange(value.slice(0, slotIndex));
+    onChange(clampSeriesValue(seriesValue.slice(0, slotIndex)));
     setRevealedSlotCount(Math.max(1, slotIndex));
   };
 
@@ -228,7 +241,7 @@ export function InsightSeriesPicker({
         </legend>
 
         {Array.from({ length: visibleSlotCount }, (_, slotIndex) => {
-          const selected = value[slotIndex];
+          const selected = seriesValue[slotIndex];
           const row = selected
             ? findManifestRow(chartableManifest, selected.seriesId)
             : undefined;
@@ -236,7 +249,7 @@ export function InsightSeriesPicker({
           const chartTypeSelectId = `${baseId}-chart-type-${slotIndex}`;
           const slotOptions = optionsForSlot(
             chartableManifest,
-            value,
+            seriesValue,
             slotIndex,
           );
           const chartTypeHidden = row ? isChartTypeSelectorHidden(row) : true;

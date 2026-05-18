@@ -5,6 +5,9 @@ import type {
   SelectedSeries,
 } from './InsightSeriesPicker.types.js';
 
+/** Maximum number of series the chart builder allows. */
+export const MAX_SERIES_SLOTS = 3;
+
 /**
  * Whether a manifest row can be selected in the chart builder.
  *
@@ -29,12 +32,12 @@ export function filterChartableManifestRows(
   return manifest.filter(isChartableManifestRow);
 }
 
-/** Fixed accessible colors for series slots 1–3 (not user-configurable). */
+/** Fixed accessible colors per slot (length must match {@link MAX_SERIES_SLOTS}). */
 export const INSIGHT_SERIES_SLOT_COLORS = [
   '#1d4ed8',
   '#b45309',
   '#047857',
-] as const;
+] as const satisfies readonly [string, string, string];
 
 const CHART_TYPE_LABELS: Record<ChartTypeChoice, string> = {
   line: 'Line',
@@ -135,20 +138,54 @@ export function createSelectedSeriesFromManifestRow(
 }
 
 /**
+ * Applies a series selection at `slotIndex`, keeping later slots when still valid and
+ * distinct; drops tail entries that duplicate an earlier `seriesId`.
+ *
+ * @param value - Current selected series (already clamped to {@link MAX_SERIES_SLOTS}).
+ * @param slotIndex - Slot being updated.
+ * @param selected - New selection for that slot.
+ * @returns Updated series list (not re-clamped; caller should clamp if needed).
+ */
+export function mergeSeriesSelectionAtSlot(
+  value: SelectedSeries[],
+  slotIndex: number,
+  selected: SelectedSeries,
+): SelectedSeries[] {
+  const next = value.slice();
+  next[slotIndex] = selected;
+
+  const usedIds = new Set(
+    next.slice(0, slotIndex + 1).map((series) => series.seriesId),
+  );
+  const merged = next.slice(0, slotIndex + 1);
+
+  for (let i = slotIndex + 1; i < next.length; i++) {
+    const tail = next[i];
+    if (tail && !usedIds.has(tail.seriesId)) {
+      merged.push(tail);
+      usedIds.add(tail.seriesId);
+    }
+  }
+
+  return merged;
+}
+
+/**
  * Computes how many series slots should be visible for the current value and reveal count.
  *
- * @param value - Currently selected series (up to 3).
- * @param revealedSlotCount - Slots revealed via “Add another series” (1–3).
- * @returns Visible slot count between 1 and 3.
+ * @param value - Currently selected series (up to {@link MAX_SERIES_SLOTS}).
+ * @param revealedSlotCount - Slots revealed via “Add another series”.
+ * @returns Visible slot count between 1 and {@link MAX_SERIES_SLOTS}.
  */
 export function computeVisibleSlotCount(
   value: SelectedSeries[],
   revealedSlotCount: number,
 ): number {
   const filledCount = value.length;
-  const nextUnfilledCap = filledCount === 0 ? 1 : Math.min(3, filledCount + 1);
+  const nextUnfilledCap =
+    filledCount === 0 ? 1 : Math.min(MAX_SERIES_SLOTS, filledCount + 1);
   return Math.min(
-    3,
+    MAX_SERIES_SLOTS,
     Math.max(filledCount, Math.min(revealedSlotCount, nextUnfilledCap), 1),
   );
 }
@@ -164,7 +201,7 @@ export function canAddAnotherSeries(
   value: SelectedSeries[],
   visibleSlotCount: number,
 ): boolean {
-  if (visibleSlotCount >= 3) {
+  if (visibleSlotCount >= MAX_SERIES_SLOTS) {
     return false;
   }
   const lastVisibleIndex = visibleSlotCount - 1;

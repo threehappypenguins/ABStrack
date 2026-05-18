@@ -7,6 +7,8 @@ import {
   getChartTypeChoicesForManifestRow,
   isChartableManifestRow,
   isChartTypeSelectorHidden,
+  MAX_SERIES_SLOTS,
+  mergeSeriesSelectionAtSlot,
 } from './insight-series-picker-utils.js';
 import type {
   ChartableManifestRow,
@@ -39,6 +41,28 @@ const bpRow: ChartableManifestRow = {
   series_id: 'bp-1',
   label: 'Blood pressure',
   is_blood_pressure: true,
+};
+
+const glucoseRow: ChartableManifestRow = {
+  ...numericRow,
+  series_id: 'glucose-1',
+  label: 'Blood glucose',
+};
+
+const severityRow: ChartableManifestRow = {
+  ...numericRow,
+  series_id: 'symptom-1',
+  series_type: 'symptom',
+  label: 'Brain fog',
+  response_type: 'severity',
+};
+
+const booleanRow: ChartableManifestRow = {
+  ...numericRow,
+  series_id: 'symptom-2',
+  series_type: 'symptom',
+  label: 'Vomiting',
+  response_type: 'boolean',
 };
 
 /** Test helper: chartable fixtures must produce a selected series. */
@@ -110,12 +134,43 @@ describe('insight-series-picker-utils', () => {
 
   it('caps visible slots when value is cleared but revealed count stayed high', () => {
     expect(computeVisibleSlotCount([], 2)).toBe(1);
-    expect(computeVisibleSlotCount([], 3)).toBe(1);
+    expect(computeVisibleSlotCount([], MAX_SERIES_SLOTS)).toBe(1);
+  });
+
+  it('preserves distinct later slots when an earlier slot changes', () => {
+    const first = selectedFromRow(glucoseRow, 0);
+    const second = selectedFromRow(severityRow, 1);
+    const third = selectedFromRow(booleanRow, 2);
+
+    const merged = mergeSeriesSelectionAtSlot(
+      [first, second, third],
+      0,
+      selectedFromRow(bpRow, 0),
+    );
+
+    expect(merged).toHaveLength(3);
+    expect(merged[0]?.seriesId).toBe(bpRow.series_id);
+    expect(merged[1]?.seriesId).toBe(severityRow.series_id);
+    expect(merged[2]?.seriesId).toBe(booleanRow.series_id);
+  });
+
+  it('drops tail slots that duplicate an earlier selection after a change', () => {
+    const first = selectedFromRow(glucoseRow, 0);
+    const second = selectedFromRow(severityRow, 1);
+
+    const merged = mergeSeriesSelectionAtSlot(
+      [first, second],
+      0,
+      selectedFromRow(severityRow, 0),
+    );
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.seriesId).toBe(severityRow.series_id);
   });
 
   it('reports when another series can be added', () => {
     expect(canAddAnotherSeries([], 1)).toBe(false);
     expect(canAddAnotherSeries([selectedFromRow(numericRow)], 1)).toBe(true);
-    expect(canAddAnotherSeries([], 3)).toBe(false);
+    expect(canAddAnotherSeries([], MAX_SERIES_SLOTS)).toBe(false);
   });
 });

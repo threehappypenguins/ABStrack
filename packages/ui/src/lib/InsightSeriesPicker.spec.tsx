@@ -2,9 +2,13 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { useState } from 'react';
 import {
   InsightSeriesPicker,
-  type ChartManifestRow,
   type SelectedSeries,
 } from './InsightSeriesPicker.js';
+import type {
+  ChartableManifestRow,
+  ChartManifestRow,
+} from './InsightSeriesPicker.types.js';
+import { createSelectedSeriesFromManifestRow } from './insight-series-picker-utils.js';
 
 const baseManifestFields = {
   observation_count: 5,
@@ -22,7 +26,7 @@ const bloodPressureRow: ChartManifestRow = {
   ...baseManifestFields,
 };
 
-const glucoseRow: ChartManifestRow = {
+const glucoseRow: ChartableManifestRow = {
   series_id: 'glucose-1',
   series_type: 'health_marker',
   label: 'Blood glucose',
@@ -32,7 +36,7 @@ const glucoseRow: ChartManifestRow = {
   ...baseManifestFields,
 };
 
-const severityRow: ChartManifestRow = {
+const severityRow: ChartableManifestRow = {
   series_id: 'symptom-1',
   series_type: 'symptom',
   label: 'Brain fog',
@@ -42,7 +46,7 @@ const severityRow: ChartManifestRow = {
   ...baseManifestFields,
 };
 
-const booleanRow: ChartManifestRow = {
+const booleanRow: ChartableManifestRow = {
   series_id: 'symptom-2',
   series_type: 'symptom',
   label: 'Vomiting',
@@ -72,22 +76,28 @@ const manifest = [
 
 function ControlledPicker({
   initial = [] as SelectedSeries[],
+  onChangeSpy,
 }: {
   initial?: SelectedSeries[];
+  onChangeSpy?: (series: SelectedSeries[]) => void;
 }) {
   const [value, setValue] = useState(initial);
   return (
     <InsightSeriesPicker
       manifest={manifest}
       value={value}
-      onChange={setValue}
+      onChange={(next) => {
+        onChangeSpy?.(next);
+        setValue(next);
+      }}
     />
   );
 }
 
 describe('InsightSeriesPicker', () => {
   it('auto-selects bp_band and hides the chart-type dropdown for blood pressure', () => {
-    render(<ControlledPicker />);
+    const onChangeSpy = vi.fn();
+    render(<ControlledPicker onChangeSpy={onChangeSpy} />);
 
     fireEvent.change(
       screen.getByLabelText('Data series 1', { selector: 'select' }),
@@ -99,6 +109,12 @@ describe('InsightSeriesPicker', () => {
     expect(
       screen.getByLabelText('Chart type for series 1', { selector: 'select' }),
     ).toBeInTheDocument();
+    expect(onChangeSpy).toHaveBeenLastCalledWith([
+      expect.objectContaining({
+        seriesId: glucoseRow.series_id,
+        chartType: 'line',
+      }),
+    ]);
 
     fireEvent.change(
       screen.getByLabelText('Data series 1', { selector: 'select' }),
@@ -113,6 +129,13 @@ describe('InsightSeriesPicker', () => {
         selector: 'select',
       }),
     ).not.toBeInTheDocument();
+    expect(onChangeSpy).toHaveBeenLastCalledWith([
+      expect.objectContaining({
+        seriesId: bloodPressureRow.series_id,
+        chartType: 'bp_band',
+        isBloodPressure: true,
+      }),
+    ]);
   });
 
   it('hides extra slots when the parent clears value externally', () => {
@@ -209,7 +232,8 @@ describe('InsightSeriesPicker', () => {
   });
 
   it('auto-selects event and hides chart-type for boolean series', () => {
-    render(<ControlledPicker />);
+    const onChangeSpy = vi.fn();
+    render(<ControlledPicker onChangeSpy={onChangeSpy} />);
 
     fireEvent.change(
       screen.getByLabelText('Data series 1', { selector: 'select' }),
@@ -223,6 +247,13 @@ describe('InsightSeriesPicker', () => {
         selector: 'select',
       }),
     ).not.toBeInTheDocument();
+    expect(onChangeSpy).toHaveBeenLastCalledWith([
+      expect.objectContaining({
+        seriesId: booleanRow.series_id,
+        chartType: 'event',
+        responseType: 'boolean',
+      }),
+    ]);
   });
 
   it('clears slot 1 on remove but keeps the slot visible', () => {
@@ -243,6 +274,37 @@ describe('InsightSeriesPicker', () => {
     expect(
       screen.getByLabelText('Data series 1', { selector: 'select' }),
     ).toHaveValue('');
+  });
+
+  it('preserves later slots when an earlier slot series changes', () => {
+    const onChangeSpy = vi.fn();
+    render(<ControlledPicker onChangeSpy={onChangeSpy} />);
+
+    fireEvent.change(
+      screen.getByLabelText('Data series 1', { selector: 'select' }),
+      { target: { value: glucoseRow.series_id } },
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Add another series' }));
+    fireEvent.change(
+      screen.getByLabelText('Data series 2', { selector: 'select' }),
+      { target: { value: severityRow.series_id } },
+    );
+
+    fireEvent.change(
+      screen.getByLabelText('Data series 1', { selector: 'select' }),
+      { target: { value: bloodPressureRow.series_id } },
+    );
+
+    expect(onChangeSpy).toHaveBeenLastCalledWith([
+      expect.objectContaining({
+        seriesId: bloodPressureRow.series_id,
+        chartType: 'bp_band',
+      }),
+      expect.objectContaining({ seriesId: severityRow.series_id }),
+    ]);
+    expect(
+      screen.getByLabelText('Data series 2', { selector: 'select' }),
+    ).toHaveValue(severityRow.series_id);
   });
 
   it('removes later slots when an earlier slot is cleared', () => {
@@ -324,6 +386,46 @@ describe('InsightSeriesPicker', () => {
     expect(
       options.some((option) => option.textContent?.includes('Daily notes')),
     ).toBe(false);
+  });
+
+  it('clamps onChange to three series when chart type changes with an oversized value', () => {
+    const onChange = vi.fn();
+    const seriesAt = (row: ChartableManifestRow, slotIndex: number) => {
+      const series = createSelectedSeriesFromManifestRow(row, slotIndex);
+      if (!series) {
+        throw new Error(`Expected chartable fixture for ${row.series_id}`);
+      }
+      return series;
+    };
+    const oversizedValue: SelectedSeries[] = [
+      seriesAt(glucoseRow, 0),
+      seriesAt(severityRow, 1),
+      seriesAt(booleanRow, 2),
+      { ...seriesAt(glucoseRow, 0), seriesId: 'orphan-4', label: 'Orphan' },
+    ];
+
+    render(
+      <InsightSeriesPicker
+        manifest={manifest}
+        value={oversizedValue}
+        onChange={onChange}
+      />,
+    );
+
+    fireEvent.change(
+      screen.getByLabelText('Chart type for series 1', { selector: 'select' }),
+      { target: { value: 'bar' } },
+    );
+
+    const lastCall = onChange.mock.calls.at(-1)?.[0] as SelectedSeries[];
+    expect(lastCall).toHaveLength(3);
+    expect(lastCall[0]).toMatchObject({
+      seriesId: glucoseRow.series_id,
+      chartType: 'bar',
+    });
+    expect(lastCall.some((series) => series.seriesId === 'orphan-4')).toBe(
+      false,
+    );
   });
 
   it('assigns palette colors by slot index', () => {
