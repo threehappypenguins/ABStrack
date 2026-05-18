@@ -193,11 +193,12 @@ export type {
 export type {
   ChartManifestResponseType,
   UserChartManifestSeries,
-} from './lib/chart-manifest-data.js';
-export { getUserChartManifest } from './lib/chart-manifest-data.js';
+} from './lib/chart-manifest-query.js';
+export { getUserChartManifest } from './lib/chart-manifest-query.js';
 export type {
   ChartSeriesBucket,
   ChartSeriesBucketRow,
   ChartSeriesSelection,
-} from './lib/chart-series-data.js';
-export { getChartSeries } from './lib/chart-series-data.js';
+  GetChartSeriesParams,
+} from './lib/chart-series-query.js';
+export { getChartSeries } from './lib/chart-series-query.js';
