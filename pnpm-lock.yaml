@@ -499,6 +499,9 @@ importers:
       react-day-picker:
         specifier: ^10.0.1
         version: 10.0.1(@types/react@19.1.17)(react@19.1.0)
+      recharts:
+        specifier: ^3.8.1
+        version: 3.8.1(@types/react@19.1.17)(react-dom@19.1.0(react@19.1.0))(react-is@19.2.4)(react@19.1.0)(redux@5.0.1)
       tslib:
         specifier: ^2.3.0
         version: 2.8.1

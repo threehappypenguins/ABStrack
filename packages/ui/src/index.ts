@@ -23,3 +23,14 @@ export {
   type InsightDateRangePickerProps,
   type InsightDateRangePresetId,
 } from './lib/InsightDateRangePicker.js';
+export {
+  InsightComposedChart,
+  type ChartSeriesBucketMetrics,
+  type ChartSeriesRow,
+  type InsightChartBucket,
+  type InsightComposedChartProps,
+} from './lib/InsightComposedChart.js';
+export {
+  pivotChartSeriesBucketRows,
+  type ChartSeriesBucketRowInput,
+} from './lib/insight-composed-chart-utils.js';
