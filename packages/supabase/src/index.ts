@@ -195,3 +195,9 @@ export type {
   UserChartManifestSeries,
 } from './lib/chart-manifest-data.js';
 export { getUserChartManifest } from './lib/chart-manifest-data.js';
+export type {
+  ChartSeriesBucket,
+  ChartSeriesBucketRow,
+  ChartSeriesSelection,
+} from './lib/chart-series-data.js';
+export { getChartSeries } from './lib/chart-series-data.js';
