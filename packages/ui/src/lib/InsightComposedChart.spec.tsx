@@ -304,6 +304,9 @@ describe('InsightComposedChart', () => {
       /at most 2 different measurement units/i,
     );
     expect(screen.queryByTestId('composed-chart')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/no data for this range/i),
+    ).not.toBeInTheDocument();
   });
 
   it('shows a patient timezone note when showPatientTimeZoneNote is true', () => {

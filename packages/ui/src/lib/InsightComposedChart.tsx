@@ -354,7 +354,7 @@ export function InsightComposedChart({
           </div>
         )}
 
-        {!loading && chartData.length === 0 ? (
+        {!loading && !unsupportedMessage && chartData.length === 0 ? (
           <p className="mt-2 text-sm text-app-muted">No data for this range.</p>
         ) : null}
       </figure>
