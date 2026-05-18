@@ -722,6 +722,7 @@ export type Database = {
           p_bucket: string
           p_from: string
           p_series: Json
+          p_timezone: string
           p_to: string
           p_user_id: string
         }
