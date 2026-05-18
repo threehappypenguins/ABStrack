@@ -161,7 +161,6 @@ BEGIN
       AND es.created_at <= p_to
       AND lower(nullif(trim(es.symptom_name), '')) = sd.symptom_series_key
       AND es.response_type = 'severity_scale'
-      AND es.response_severity IS NOT NULL
     WHERE sd.response_type = 'severity'
     GROUP BY sd.series_id, date_trunc(p_bucket, es.created_at)
   )
@@ -177,7 +176,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION public.get_chart_series (uuid, jsonb, timestamptz, timestamptz, text) IS
-'Returns pre-bucketed chart series for p_user_id and selected manifest series (health markers and symptoms). Validates p_bucket (day|week|month), p_series length (1–3), and p_from <= p_to. SECURITY INVOKER: RLS on health_markers and episode_symptoms applies.';
+'Returns pre-bucketed chart series for p_user_id and selected manifest series (health markers and symptoms). Validates p_bucket (day|week|month), p_series length (1–3), and p_from <= p_to. Severity series: value_avg/min/max ignore NULL response_severity; event_count is total severity_scale rows in the bucket (symptom logging frequency per PRD §9). SECURITY INVOKER: RLS on health_markers and episode_symptoms applies.';
 
 REVOKE ALL ON FUNCTION public.get_chart_series (uuid, jsonb, timestamptz, timestamptz, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_chart_series (uuid, jsonb, timestamptz, timestamptz, text) TO authenticated;

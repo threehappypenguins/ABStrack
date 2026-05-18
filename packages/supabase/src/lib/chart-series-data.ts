@@ -15,7 +15,13 @@ export type ChartSeriesSelection = {
   is_blood_pressure: boolean;
 };
 
-/** One pre-bucketed row from `get_chart_series`. */
+/**
+ * One pre-bucketed row from `get_chart_series`.
+ *
+ * For severity symptoms, `value_*` aggregates rated observations only (NULL severities
+ * excluded by SQL aggregates); `event_count` is total `severity_scale` rows in the bucket
+ * (logging frequency), including rows without a rating.
+ */
 export type ChartSeriesBucketRow = {
   series_id: string;
   bucket_start: string;

@@ -167,4 +167,48 @@ describe('getChartSeries', () => {
     expect(bucket.systolic_avg).toBeNull();
     expect(bucket.diastolic_avg).toBeNull();
   });
+
+  it('returns severity buckets with value_avg/min/max, event_count, and null blood pressure columns', async () => {
+    const rows: ChartSeriesBucketRow[] = [
+      {
+        series_id: 'symptom::headache::severity',
+        bucket_start: '2026-01-15T00:00:00.000Z',
+        value_avg: 3,
+        value_min: 2,
+        value_max: 4,
+        systolic_avg: null,
+        diastolic_avg: null,
+        event_count: 5,
+      },
+    ];
+
+    const result = await getChartSeries(
+      chartSeriesClient(rows),
+      USER_ID,
+      [
+        {
+          series_id: 'symptom::headache::severity',
+          series_type: 'symptom',
+          response_type: 'severity',
+          is_blood_pressure: false,
+        },
+      ],
+      FROM,
+      TO,
+      'week',
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    const bucket = result.data[0];
+    expect(bucket.value_avg).toBe(3);
+    expect(bucket.value_min).toBe(2);
+    expect(bucket.value_max).toBe(4);
+    expect(bucket.event_count).toBe(5);
+    expect(bucket.systolic_avg).toBeNull();
+    expect(bucket.diastolic_avg).toBeNull();
+  });
 });
