@@ -24,6 +24,14 @@ SET search_path = pg_catalog, public
 AS $$
 DECLARE
   series_count int;
+  elem jsonb;
+  sid text;
+  stype text;
+  rtype text;
+  is_bp boolean;
+  seen_series_ids text[] := ARRAY[]::text[];
+  symptom_match text[];
+  hm_suffix text;
 BEGIN
   IF p_bucket NOT IN ('day', 'week', 'month') THEN
     RAISE EXCEPTION 'get_chart_series: p_bucket must be day, week, or month'
@@ -46,6 +54,102 @@ BEGIN
     RAISE EXCEPTION 'get_chart_series: p_from must be less than or equal to p_to'
       USING ERRCODE = '22023';
   END IF;
+
+  FOR elem IN
+    SELECT value
+    FROM jsonb_array_elements(p_series)
+  LOOP
+    IF jsonb_typeof(elem) <> 'object' THEN
+      RAISE EXCEPTION 'get_chart_series: each p_series element must be a JSON object'
+        USING ERRCODE = '22023';
+    END IF;
+
+    IF NOT (
+      elem ? 'series_id'
+      AND elem ? 'series_type'
+      AND elem ? 'response_type'
+      AND elem ? 'is_blood_pressure'
+    ) THEN
+      RAISE EXCEPTION 'get_chart_series: each p_series element must include series_id, series_type, response_type, and is_blood_pressure'
+        USING ERRCODE = '22023';
+    END IF;
+
+    IF jsonb_typeof(elem -> 'is_blood_pressure') <> 'boolean' THEN
+      RAISE EXCEPTION 'get_chart_series: is_blood_pressure must be a JSON boolean'
+        USING ERRCODE = '22023';
+    END IF;
+
+    sid := nullif(trim(elem ->> 'series_id'), '');
+    stype := nullif(trim(elem ->> 'series_type'), '');
+    rtype := nullif(trim(elem ->> 'response_type'), '');
+    is_bp := (elem ->> 'is_blood_pressure')::boolean;
+
+    IF sid IS NULL OR stype IS NULL OR rtype IS NULL THEN
+      RAISE EXCEPTION 'get_chart_series: series_id, series_type, and response_type must be non-empty strings'
+        USING ERRCODE = '22023';
+    END IF;
+
+    IF sid = ANY (seen_series_ids) THEN
+      RAISE EXCEPTION 'get_chart_series: duplicate series_id %', sid
+        USING ERRCODE = '22023';
+    END IF;
+
+    seen_series_ids := array_append(seen_series_ids, sid);
+
+    IF stype = 'health_marker' THEN
+      IF rtype <> 'numeric' THEN
+        RAISE EXCEPTION 'get_chart_series: health_marker series % requires response_type numeric', sid
+          USING ERRCODE = '22023';
+      END IF;
+
+      IF sid NOT LIKE 'health_marker::%' OR length(sid) <= length('health_marker::') THEN
+        RAISE EXCEPTION 'get_chart_series: invalid health_marker series_id %', sid
+          USING ERRCODE = '22023';
+      END IF;
+
+      hm_suffix := substring(sid FROM length('health_marker::') + 1);
+
+      IF is_bp AND hm_suffix <> 'blood_pressure' THEN
+        RAISE EXCEPTION 'get_chart_series: is_blood_pressure true requires series_id health_marker::blood_pressure'
+          USING ERRCODE = '22023';
+      END IF;
+
+      IF NOT is_bp AND hm_suffix = 'blood_pressure' THEN
+        RAISE EXCEPTION 'get_chart_series: health_marker::blood_pressure requires is_blood_pressure true'
+          USING ERRCODE = '22023';
+      END IF;
+    ELSIF stype = 'symptom' THEN
+      IF rtype NOT IN ('boolean', 'severity') THEN
+        RAISE EXCEPTION 'get_chart_series: symptom series % requires response_type boolean or severity', sid
+          USING ERRCODE = '22023';
+      END IF;
+
+      IF is_bp THEN
+        RAISE EXCEPTION 'get_chart_series: symptom series must have is_blood_pressure false'
+          USING ERRCODE = '22023';
+      END IF;
+
+      symptom_match := regexp_match(sid, '^symptom::(.+)::(boolean|severity)$');
+
+      IF symptom_match IS NULL THEN
+        RAISE EXCEPTION 'get_chart_series: invalid symptom series_id % (expected symptom::<name>::boolean|severity)', sid
+          USING ERRCODE = '22023';
+      END IF;
+
+      IF symptom_match[2] <> rtype THEN
+        RAISE EXCEPTION 'get_chart_series: series_id suffix must match response_type for %', sid
+          USING ERRCODE = '22023';
+      END IF;
+
+      IF nullif(trim(symptom_match[1]), '') IS NULL THEN
+        RAISE EXCEPTION 'get_chart_series: symptom series_id must include a non-empty symptom name'
+          USING ERRCODE = '22023';
+      END IF;
+    ELSE
+      RAISE EXCEPTION 'get_chart_series: unsupported series_type %', stype
+        USING ERRCODE = '22023';
+    END IF;
+  END LOOP;
 
   RETURN QUERY
   WITH series_defs AS (
@@ -75,24 +179,32 @@ BEGIN
   ),
   health_marker_match AS (
     SELECT
-      hm.*,
-      CASE
-        WHEN hm.marker_kind = 'custom' THEN
-          lower(hm.marker_kind) || '::' || lower(nullif(trim(hm.custom_name), ''))
-        ELSE lower(hm.marker_kind)
-      END AS row_series_key
-    FROM public.health_markers hm
-    WHERE hm.user_id = p_user_id
+      hmd.series_id,
+      hmd.is_blood_pressure,
+      hm.recorded_at,
+      hm.value_numeric,
+      hm.systolic_numeric,
+      hm.diastolic_numeric
+    FROM health_marker_defs hmd
+    INNER JOIN public.health_markers hm
+      ON hm.user_id = p_user_id
       AND hm.recorded_at >= p_from
       AND hm.recorded_at <= p_to
       AND (
         hm.marker_kind <> 'custom'
         OR nullif(trim(hm.custom_name), '') IS NOT NULL
       )
+      AND (
+        CASE
+          WHEN hm.marker_kind = 'custom' THEN
+            lower(hm.marker_kind) || '::' || lower(nullif(trim(hm.custom_name), ''))
+          ELSE lower(hm.marker_kind)
+        END
+      ) = hmd.marker_series_key
   ),
   blood_pressure_buckets AS (
     SELECT
-      hmd.series_id,
+      hmm.series_id,
       date_trunc(p_bucket, hmm.recorded_at) AS bucket_start,
       NULL::numeric AS value_avg,
       NULL::numeric AS value_min,
@@ -100,15 +212,13 @@ BEGIN
       avg(hmm.systolic_numeric) AS systolic_avg,
       avg(hmm.diastolic_numeric) AS diastolic_avg,
       NULL::bigint AS event_count
-    FROM health_marker_defs hmd
-    INNER JOIN health_marker_match hmm
-      ON hmm.row_series_key = hmd.marker_series_key
-    WHERE hmd.is_blood_pressure
-    GROUP BY hmd.series_id, date_trunc(p_bucket, hmm.recorded_at)
+    FROM health_marker_match hmm
+    WHERE hmm.is_blood_pressure
+    GROUP BY hmm.series_id, date_trunc(p_bucket, hmm.recorded_at)
   ),
   numeric_health_marker_buckets AS (
     SELECT
-      hmd.series_id,
+      hmm.series_id,
       date_trunc(p_bucket, hmm.recorded_at) AS bucket_start,
       avg(hmm.value_numeric) AS value_avg,
       min(hmm.value_numeric) AS value_min,
@@ -116,13 +226,10 @@ BEGIN
       NULL::numeric AS systolic_avg,
       NULL::numeric AS diastolic_avg,
       NULL::bigint AS event_count
-    FROM health_marker_defs hmd
-    INNER JOIN health_marker_match hmm
-      ON hmm.row_series_key = hmd.marker_series_key
-    WHERE NOT hmd.is_blood_pressure
-      AND hmd.response_type = 'numeric'
+    FROM health_marker_match hmm
+    WHERE NOT hmm.is_blood_pressure
       AND hmm.value_numeric IS NOT NULL
-    GROUP BY hmd.series_id, date_trunc(p_bucket, hmm.recorded_at)
+    GROUP BY hmm.series_id, date_trunc(p_bucket, hmm.recorded_at)
   ),
   symptom_boolean_buckets AS (
     SELECT
@@ -176,7 +283,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION public.get_chart_series (uuid, jsonb, timestamptz, timestamptz, text) IS
-'Returns pre-bucketed chart series for p_user_id and selected manifest series (health markers and symptoms). Validates p_bucket (day|week|month), p_series length (1–3), and p_from <= p_to. Severity series: value_avg/min/max ignore NULL response_severity; event_count is total severity_scale rows in the bucket (symptom logging frequency per PRD §9). SECURITY INVOKER: RLS on health_markers and episode_symptoms applies.';
+'Returns pre-bucketed chart series for p_user_id and selected manifest series (health markers and symptoms). Validates p_bucket (day|week|month), p_series shape (1–3 unique manifest-aligned series objects), and p_from <= p_to. Severity series: value_avg/min/max ignore NULL response_severity; event_count is total severity_scale rows in the bucket (symptom logging frequency per PRD §9). SECURITY INVOKER: RLS on health_markers and episode_symptoms applies.';
 
 REVOKE ALL ON FUNCTION public.get_chart_series (uuid, jsonb, timestamptz, timestamptz, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_chart_series (uuid, jsonb, timestamptz, timestamptz, text) TO authenticated;
