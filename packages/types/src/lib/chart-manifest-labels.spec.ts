@@ -17,8 +17,32 @@ describe('chartManifestHealthMarkerDisplayLabel', () => {
     ).toBe('Glucose');
   });
 
-  it('maps when rpcLabel is the raw marker_kind even if series_id is unexpected', () => {
-    expect(chartManifestHealthMarkerDisplayLabel('bac', 'bac')).toBe('BAC');
+  it('keeps custom marker labels when the custom name matches a preset key', () => {
+    expect(
+      chartManifestHealthMarkerDisplayLabel(
+        'health_marker::custom::bac',
+        'bac',
+      ),
+    ).toBe('bac');
+  });
+
+  it('does not map preset labels from rpcLabel alone when series_id is not a preset key', () => {
+    expect(chartManifestHealthMarkerDisplayLabel('bac', 'bac')).toBe('bac');
+  });
+
+  it('does not treat inherited property names as preset keys', () => {
+    expect(
+      chartManifestHealthMarkerDisplayLabel(
+        'health_marker::toString',
+        'toString',
+      ),
+    ).toBe('toString');
+    expect(
+      chartManifestHealthMarkerDisplayLabel(
+        'health_marker::constructor',
+        'constructor',
+      ),
+    ).toBe('constructor');
   });
 
   it('keeps custom and unknown RPC labels', () => {

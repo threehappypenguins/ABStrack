@@ -17,8 +17,10 @@ import {
 import {
   InsightComposedChart,
   InsightDateRangePicker,
+  filterChartableManifestRows,
   InsightSeriesPicker,
   pivotChartSeriesBucketRows,
+  reconcileSelectedSeriesWithManifest,
   type ChartManifestRow,
   type InsightChartBucket,
   type InsightDateRange,
@@ -76,14 +78,16 @@ export function InsightsClient() {
     errorMessage: phiScopeError,
   } = useWebPhiSubjectUserContext();
 
-  const patientTimeZone = useMemo(
+  /** Viewer browser zone for RPC bucketing and labels until patient IANA timezone is stored on profile. */
+  const chartTimeZone = useMemo(
     () => Intl.DateTimeFormat().resolvedOptions().timeZone,
     [],
   );
-  const showPatientTimeZoneNote =
+  const viewingAnotherPhiSubject =
     phiSubjectUserId != null &&
     authUserId != null &&
     phiSubjectUserId !== authUserId;
+  const showPatientTimeZoneNote = viewingAnotherPhiSubject;
 
   const [manifestLoading, setManifestLoading] = useState(true);
   const [manifest, setManifest] = useState<ChartManifestRow[]>([]);
@@ -103,9 +107,40 @@ export function InsightsClient() {
 
   const manifestLoadGenRef = useRef(0);
   const chartLoadGenRef = useRef(0);
+  const phiSubjectUserIdRef = useRef(phiSubjectUserId);
+  phiSubjectUserIdRef.current = phiSubjectUserId;
+  /** PHI subject that owns the current picker selection (null after scope reset). */
+  const selectionOwnerUserIdRef = useRef<string | null>(null);
+
+  /** Drops in-flight manifest/chart loads when PHI scope changes or unmounts. */
+  const invalidateInsightsLoads = useCallback(() => {
+    manifestLoadGenRef.current += 1;
+    chartLoadGenRef.current += 1;
+  }, []);
+
+  const resetInsightsPatientState = useCallback(() => {
+    selectionOwnerUserIdRef.current = null;
+    setSeries([]);
+    setChartLoading(false);
+    setChartRows([]);
+    setChartError(null);
+  }, []);
+
+  const handleSeriesChange = useCallback(
+    (next: SelectedSeries[]) => {
+      selectionOwnerUserIdRef.current = phiSubjectUserId;
+      setSeries(next);
+    },
+    [phiSubjectUserId],
+  );
+
+  const chartableManifest = useMemo(
+    () => filterChartableManifestRows(manifest),
+    [manifest],
+  );
 
   const manifestIsEmpty =
-    !manifestLoading && !manifestError && manifest.length === 0;
+    !manifestLoading && !manifestError && chartableManifest.length === 0;
 
   const chartSummary = useMemo(
     () =>
@@ -121,15 +156,19 @@ export function InsightsClient() {
     if (phiSubjectUserId == null) {
       return;
     }
+    const requestedUserId = phiSubjectUserId;
     const generation = ++manifestLoadGenRef.current;
     setManifestLoading(true);
     setManifestError(null);
     announce('Loading chart options.', { politeness: 'polite' });
 
     const supabase = createBrowserClient();
-    const result = await getUserChartManifest(supabase, phiSubjectUserId);
+    const result = await getUserChartManifest(supabase, requestedUserId);
 
-    if (generation !== manifestLoadGenRef.current) {
+    if (
+      generation !== manifestLoadGenRef.current ||
+      requestedUserId !== phiSubjectUserIdRef.current
+    ) {
       return;
     }
 
@@ -144,27 +183,46 @@ export function InsightsClient() {
       return;
     }
 
-    setManifest(manifestToChartRows(result.data));
+    const chartManifest = manifestToChartRows(result.data);
+    setManifest(chartManifest);
+    setSeries((current) =>
+      reconcileSelectedSeriesWithManifest(chartManifest, current),
+    );
     announce('Chart options loaded.', { politeness: 'polite' });
   }, [announce, phiSubjectUserId]);
 
   useEffect(() => {
+    invalidateInsightsLoads();
+    resetInsightsPatientState();
+
     if (phiScopeLoading) {
+      setManifestLoading(true);
+      setManifest([]);
+      setManifestError(null);
       return;
     }
     if (phiSubjectUserId == null) {
       setManifestLoading(false);
       setManifest([]);
+      setManifestError(null);
       return;
     }
     void loadManifest();
-  }, [loadManifest, phiScopeLoading, phiSubjectUserId]);
+  }, [
+    invalidateInsightsLoads,
+    loadManifest,
+    phiScopeLoading,
+    phiSubjectUserId,
+    resetInsightsPatientState,
+  ]);
 
   const loadChartSeries = useCallback(async () => {
     if (phiSubjectUserId == null || series.length === 0) {
       return;
     }
 
+    const requestedUserId = phiSubjectUserId;
+    const requestedSeries = selectedSeriesToChartSeriesSelection(series);
     const generation = ++chartLoadGenRef.current;
     setChartLoading(true);
     setChartError(null);
@@ -173,15 +231,18 @@ export function InsightsClient() {
     const { p_from, p_to } = insightDateRangeToRpcBounds(dateRange);
     const supabase = createBrowserClient();
     const result = await getChartSeries(supabase, {
-      p_user_id: phiSubjectUserId,
-      p_series: selectedSeriesToChartSeriesSelection(series),
+      p_user_id: requestedUserId,
+      p_series: requestedSeries,
       p_from,
       p_to,
       p_bucket: bucket,
-      p_timezone: patientTimeZone,
+      p_timezone: chartTimeZone,
     });
 
-    if (generation !== chartLoadGenRef.current) {
+    if (
+      generation !== chartLoadGenRef.current ||
+      requestedUserId !== phiSubjectUserIdRef.current
+    ) {
       return;
     }
 
@@ -198,10 +259,25 @@ export function InsightsClient() {
 
     setChartRows(pivotChartSeriesBucketRows(result.data));
     announce('Chart data loaded.', { politeness: 'polite' });
-  }, [announce, bucket, dateRange, patientTimeZone, phiSubjectUserId, series]);
+  }, [announce, bucket, chartTimeZone, dateRange, phiSubjectUserId, series]);
 
   useEffect(() => {
-    if (phiScopeLoading || series.length === 0) {
+    const selectionOwnedByCurrentSubject =
+      selectionOwnerUserIdRef.current === phiSubjectUserId;
+    const selectionMatchesManifest =
+      series.length > 0 &&
+      series.every((item) =>
+        manifest.some((row) => row.series_id === item.seriesId),
+      );
+
+    if (
+      manifestLoading ||
+      phiScopeLoading ||
+      phiSubjectUserId == null ||
+      series.length === 0 ||
+      !selectionOwnedByCurrentSubject ||
+      !selectionMatchesManifest
+    ) {
       chartLoadGenRef.current += 1;
       setChartLoading(false);
       setChartRows([]);
@@ -209,7 +285,14 @@ export function InsightsClient() {
       return;
     }
     void loadChartSeries();
-  }, [loadChartSeries, phiScopeLoading, series]);
+  }, [
+    loadChartSeries,
+    manifest,
+    manifestLoading,
+    phiScopeLoading,
+    phiSubjectUserId,
+    series,
+  ]);
 
   const showChartSection = series.length > 0;
 
@@ -248,7 +331,7 @@ export function InsightsClient() {
         </p>
       ) : null}
 
-      {!manifestLoading && !manifestError && manifest.length > 0 ? (
+      {!manifestLoading && !manifestError && chartableManifest.length > 0 ? (
         <section aria-labelledby={filtersHeadingId} className="space-y-6">
           <h2 id={filtersHeadingId} className="sr-only">
             Chart filters
@@ -267,7 +350,7 @@ export function InsightsClient() {
             <InsightSeriesPicker
               manifest={manifest}
               value={series}
-              onChange={setSeries}
+              onChange={handleSeriesChange}
             />
             <InsightDateRangePicker value={dateRange} onChange={setDateRange} />
           </div>
@@ -327,8 +410,9 @@ export function InsightsClient() {
                 bucket={bucket}
                 loading={chartLoading}
                 summary={chartSummary}
-                patientTimeZone={patientTimeZone}
+                patientTimeZone={chartTimeZone}
                 showPatientTimeZoneNote={showPatientTimeZoneNote}
+                patientTimeZoneNoteUsesPatientLocal={false}
               />
             </section>
           ) : null}

@@ -9,6 +9,7 @@ import {
   isChartTypeSelectorHidden,
   MAX_SERIES_SLOTS,
   mergeSeriesSelectionAtSlot,
+  reconcileSelectedSeriesWithManifest,
 } from './insight-series-picker-utils.js';
 import type {
   ChartableManifestRow,
@@ -172,5 +173,16 @@ describe('insight-series-picker-utils', () => {
     expect(canAddAnotherSeries([], 1)).toBe(false);
     expect(canAddAnotherSeries([selectedFromRow(numericRow)], 1)).toBe(true);
     expect(canAddAnotherSeries([], MAX_SERIES_SLOTS)).toBe(false);
+  });
+
+  it('reconcileSelectedSeriesWithManifest drops rows missing from the manifest', () => {
+    const selected = [
+      selectedFromRow(numericRow, 0),
+      selectedFromRow(severityRow, 1),
+    ];
+
+    expect(reconcileSelectedSeriesWithManifest([numericRow], selected)).toEqual(
+      [expect.objectContaining({ seriesId: numericRow.series_id })],
+    );
   });
 });

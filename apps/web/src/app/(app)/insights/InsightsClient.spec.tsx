@@ -12,7 +12,17 @@ import type { ChartManifestRow, SelectedSeries } from '@abstrack/ui';
 import { getChartSeries, getUserChartManifest } from '@abstrack/supabase';
 import { InsightsClient } from './InsightsClient';
 
-const PHI_SUBJECT_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+const PHI_SUBJECT_A = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+const PHI_SUBJECT_B = 'bbbbbbbb-bbbb-cccc-dddd-ffffffffffff';
+
+const phiContext = {
+  authUserId: PHI_SUBJECT_A,
+  phiSubjectUserId: PHI_SUBJECT_A as string | null,
+  profileAppRole: 'patient' as const,
+  loading: false,
+  errorMessage: null as string | null,
+  refresh: jest.fn(),
+};
 
 const bacManifestRow: ChartManifestRow = {
   series_id: 'health_marker::bac',
@@ -29,14 +39,7 @@ const bacManifestRow: ChartManifestRow = {
 const announceMock = jest.fn();
 
 jest.mock('../../../lib/patient/use-web-phi-subject-user-context', () => ({
-  useWebPhiSubjectUserContext: () => ({
-    authUserId: PHI_SUBJECT_ID,
-    phiSubjectUserId: PHI_SUBJECT_ID,
-    profileAppRole: 'patient',
-    loading: false,
-    errorMessage: null,
-    refresh: jest.fn(),
-  }),
+  useWebPhiSubjectUserContext: () => phiContext,
 }));
 
 jest.mock('@abstrack/ui/a11y-web', () => ({
@@ -54,15 +57,21 @@ jest.mock('@abstrack/supabase', () => ({
 }));
 
 jest.mock('@abstrack/ui', () => {
+  // Six `../` from `apps/web/src/app/(app)/insights` to the repo root, then `packages/ui`.
+  const uiLib = '../../../../../../packages/ui/src/lib';
   const { getInsightDateRangePreset } = jest.requireActual(
-    '../../../../../../packages/ui/src/lib/insight-date-range-picker-utils',
+    `${uiLib}/insight-date-range-picker-utils`,
   );
   const { pivotChartSeriesBucketRows } = jest.requireActual(
-    '../../../../../../packages/ui/src/lib/insight-composed-chart-utils',
+    `${uiLib}/insight-composed-chart-utils`,
   );
+  const { filterChartableManifestRows, reconcileSelectedSeriesWithManifest } =
+    jest.requireActual(`${uiLib}/insight-series-picker-utils`);
   return {
     getInsightDateRangePreset,
     pivotChartSeriesBucketRows,
+    filterChartableManifestRows,
+    reconcileSelectedSeriesWithManifest,
     Button: ({
       children,
       onPress,
@@ -153,6 +162,10 @@ function renderInsights() {
 describe('InsightsClient', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    phiContext.authUserId = PHI_SUBJECT_A;
+    phiContext.phiSubjectUserId = PHI_SUBJECT_A;
+    phiContext.loading = false;
+    phiContext.errorMessage = null;
     getUserChartManifestMock.mockResolvedValue({
       ok: true,
       data: [bacManifestRow],
@@ -187,11 +200,84 @@ describe('InsightsClient', () => {
     expect(getChartSeriesMock).not.toHaveBeenCalled();
   });
 
+  it('shows the empty state when the manifest has only non-chartable rows', async () => {
+    getUserChartManifestMock.mockResolvedValue({
+      ok: true,
+      data: [
+        {
+          series_id: 'symptom::journal::text',
+          series_type: 'symptom',
+          label: 'Journal',
+          response_type: 'text',
+          is_blood_pressure: false,
+          unit: null,
+          observation_count: 2,
+          first_observed_at: '2026-01-01T00:00:00.000Z',
+          last_observed_at: '2026-02-01T00:00:00.000Z',
+        },
+      ],
+    });
+
+    renderInsights();
+
+    expect(
+      await screen.findByText(
+        'No data to chart yet. Log some episodes or health markers to get started.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('date-range-picker')).not.toBeInTheDocument();
+    expect(getChartSeriesMock).not.toHaveBeenCalled();
+  });
+
   it('does not call getChartSeries until a series is selected', async () => {
     renderInsights();
 
     await screen.findByTestId('date-range-picker');
     expect(getChartSeriesMock).not.toHaveBeenCalled();
+  });
+
+  it('discards stale manifest when PHI subject changes before RPC completes', async () => {
+    let resolveManifest:
+      | ((value: Awaited<ReturnType<typeof getUserChartManifest>>) => void)
+      | undefined;
+    getUserChartManifestMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveManifest = resolve;
+        }),
+    );
+
+    const view = renderInsights();
+
+    expect(
+      await screen.findByText('Loading chart options…'),
+    ).toBeInTheDocument();
+
+    phiContext.phiSubjectUserId = PHI_SUBJECT_B;
+    phiContext.loading = true;
+    view.rerender(
+      <LiveAnnouncerProvider>
+        <InsightsClient />
+      </LiveAnnouncerProvider>,
+    );
+
+    await act(async () => {
+      resolveManifest?.({
+        ok: true,
+        data: [
+          {
+            ...bacManifestRow,
+            label: 'bac',
+          },
+        ],
+      });
+      await Promise.resolve();
+    });
+
+    expect(
+      screen.queryByTestId('manifest-label-health_marker::bac'),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Chart options loaded.')).not.toBeInTheDocument();
   });
 
   it('maps raw RPC health marker labels to preset display names', async () => {
@@ -224,6 +310,40 @@ describe('InsightsClient', () => {
     expect(
       screen.getByTestId('manifest-label-health_marker::blood_glucose'),
     ).toHaveTextContent('Glucose');
+  });
+
+  it('clears series selection and skips chart fetch after PHI subject switch', async () => {
+    const view = renderInsights();
+
+    await screen.findByRole('button', { name: 'Select first series' });
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Select first series' }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(getChartSeriesMock).toHaveBeenCalled();
+    });
+    getChartSeriesMock.mockClear();
+
+    phiContext.phiSubjectUserId = PHI_SUBJECT_B;
+    phiContext.loading = false;
+    getUserChartManifestMock.mockResolvedValue({ ok: true, data: [] });
+
+    view.rerender(
+      <LiveAnnouncerProvider>
+        <InsightsClient />
+      </LiveAnnouncerProvider>,
+    );
+
+    expect(
+      await screen.findByText(
+        'No data to chart yet. Log some episodes or health markers to get started.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('composed-chart')).not.toBeInTheDocument();
+    expect(getChartSeriesMock).not.toHaveBeenCalled();
   });
 
   it('updates chart bucket when the bucket selector changes', async () => {

@@ -322,6 +322,6 @@ describe('InsightComposedChart', () => {
       />,
     );
 
-    expect(screen.getByText(/patient's local timezone/i)).toBeInTheDocument();
+    expect(screen.getByText(/your browser timezone/i)).toBeInTheDocument();
   });
 });

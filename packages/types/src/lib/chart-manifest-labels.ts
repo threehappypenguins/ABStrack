@@ -13,12 +13,15 @@ const HEALTH_MARKER_SERIES_PREFIX = 'health_marker::';
  * to {@link PRESET_HEALTH_MARKER_KIND_LABELS} (same copy as the health-marker preset UI).
  *
  * @param seriesId - Manifest `series_id` (e.g. `health_marker::bac`).
+ * Preset kinds use `health_marker::<kind>`; custom markers use `health_marker::custom::<name>`
+ * and must keep the RPC label (even when the custom name matches a preset key string).
+ *
  * @param rpcLabel - `label` returned by the RPC.
  * @returns Display label for chart pickers and summaries.
  */
 function presetHealthMarkerLabelForKey(markerKey: string): string | undefined {
   if (
-    markerKey in PRESET_HEALTH_MARKER_KIND_LABELS &&
+    Object.hasOwn(PRESET_HEALTH_MARKER_KIND_LABELS, markerKey) &&
     markerKey !== 'custom' &&
     !markerKey.includes('::')
   ) {
@@ -40,11 +43,6 @@ export function chartManifestHealthMarkerDisplayLabel(
     if (fromSeriesId) {
       return fromSeriesId;
     }
-  }
-
-  const fromRpcLabel = presetHealthMarkerLabelForKey(rpcLabel);
-  if (fromRpcLabel) {
-    return fromRpcLabel;
   }
 
   return rpcLabel;

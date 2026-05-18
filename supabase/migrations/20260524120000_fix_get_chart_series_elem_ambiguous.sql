@@ -52,7 +52,7 @@ BEGIN
       USING ERRCODE = '22023';
   END IF;
 
-  IF p_bucket NOT IN ('day', 'week', 'month') THEN
+  IF p_bucket IS NULL OR p_bucket NOT IN ('day', 'week', 'month') THEN
     RAISE EXCEPTION 'get_chart_series: p_bucket must be day, week, or month'
       USING ERRCODE = '22023';
   END IF;
@@ -66,6 +66,11 @@ BEGIN
 
   IF series_count < 1 OR series_count > 3 THEN
     RAISE EXCEPTION 'get_chart_series: p_series must contain 1 to 3 series'
+      USING ERRCODE = '22023';
+  END IF;
+
+  IF p_from IS NULL OR p_to IS NULL THEN
+    RAISE EXCEPTION 'get_chart_series: p_from and p_to must be non-null timestamps'
       USING ERRCODE = '22023';
   END IF;
 
@@ -126,7 +131,8 @@ BEGIN
           USING ERRCODE = '22023';
       END IF;
 
-      IF sid NOT LIKE 'health_marker::%' OR length(sid) <= length('health_marker::') THEN
+      IF NOT starts_with(sid, 'health_marker::')
+        OR length(sid) <= length('health_marker::') THEN
         RAISE EXCEPTION 'get_chart_series: invalid health_marker series_id %', sid
           USING ERRCODE = '22023';
       END IF;
