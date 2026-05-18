@@ -37,6 +37,19 @@ export interface InsightComposedChartProps {
   loading: boolean;
   /** Plain-English summary of the chart for screen readers — required. */
   summary: string;
+  /**
+   * IANA timezone for bucket axis and table labels (e.g. `America/Chicago`).
+   * Use the **patient's** timezone so day/week/month boundaries match how they
+   * experience dates; pass the viewer device zone only when the patient is viewing
+   * their own chart.
+   */
+  patientTimeZone: string;
+  /**
+   * When true, shows that period labels use the patient's local timezone.
+   * Enable for practitioner views; omit or set false when the patient views their own chart.
+   * @defaultValue false
+   */
+  showPatientTimeZoneNote?: boolean;
 }
 
 export type { ChartTypeChoice, SelectedSeries };

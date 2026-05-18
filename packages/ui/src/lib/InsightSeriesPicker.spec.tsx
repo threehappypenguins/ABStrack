@@ -36,6 +36,26 @@ const glucoseRow: ChartableManifestRow = {
   ...baseManifestFields,
 };
 
+const bacRow: ChartableManifestRow = {
+  series_id: 'bac-1',
+  series_type: 'health_marker',
+  label: 'BAC',
+  response_type: 'numeric',
+  is_blood_pressure: false,
+  unit: '%',
+  ...baseManifestFields,
+};
+
+const heartRateRow: ChartableManifestRow = {
+  series_id: 'hr-1',
+  series_type: 'health_marker',
+  label: 'Heart rate',
+  response_type: 'numeric',
+  is_blood_pressure: false,
+  unit: 'bpm',
+  ...baseManifestFields,
+};
+
 const severityRow: ChartableManifestRow = {
   series_id: 'symptom-1',
   series_type: 'symptom',
@@ -68,7 +88,9 @@ const textNotesRow: ChartManifestRow = {
 
 const manifest = [
   bloodPressureRow,
+  bacRow,
   glucoseRow,
+  heartRateRow,
   severityRow,
   booleanRow,
   textNotesRow,
@@ -136,6 +158,36 @@ describe('InsightSeriesPicker', () => {
         isBloodPressure: true,
       }),
     ]);
+  });
+
+  it('omits series that would introduce a third distinct value unit from later slots', () => {
+    render(
+      <ControlledPicker
+        initial={[
+          createSelectedSeriesFromManifestRow(bacRow, 0)!,
+          createSelectedSeriesFromManifestRow(glucoseRow, 1)!,
+        ]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add another series' }));
+
+    const slotThree = screen.getByLabelText('Data series 3', {
+      selector: 'select',
+    });
+
+    expect(
+      within(slotThree).queryByRole('option', { name: 'Heart rate' }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(slotThree).queryByRole('option', { name: 'Brain fog' }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(slotThree).getByRole('option', { name: 'Vomiting' }),
+    ).toBeInTheDocument();
+    expect(
+      within(slotThree).getByRole('option', { name: /Blood pressure/i }),
+    ).toBeInTheDocument();
   });
 
   it('hides extra slots when the parent clears value externally', () => {

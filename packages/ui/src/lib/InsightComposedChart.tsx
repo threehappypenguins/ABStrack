@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useMemo, type ReactNode } from 'react';
+import { Fragment, useId, useMemo, type ReactNode } from 'react';
 import {
   Area,
   Bar,
@@ -17,11 +17,13 @@ import {
 import {
   assignInsightChartYAxes,
   buildInsightChartTableColumns,
+  getInsightChartUnsupportedMessage,
   chartSeriesDiastolicAvgKey,
   chartSeriesSystolicAvgKey,
   chartSeriesValueAvgKey,
   flattenChartSeriesRows,
   formatInsightChartBucketLabel,
+  formatInsightChartPatientTimeZoneNote,
   formatInsightChartTableCell,
   readInsightChartTableMetric,
   type InsightValueYAxisId,
@@ -43,6 +45,7 @@ const CHART_HEIGHT_PX = 320;
 
 function yAxisLabelForUnit(
   series: SelectedSeries[],
+  yAxisAssignments: Map<string, InsightValueYAxisId | null>,
   axisId: InsightValueYAxisId,
 ): string | undefined {
   if (axisId === 'bp') {
@@ -54,8 +57,7 @@ function yAxisLabelForUnit(
     if (item.chartType === 'event' || item.chartType === 'bp_band') {
       return false;
     }
-    const assigned = assignInsightChartYAxes(series).get(item.seriesId);
-    return assigned === axisId;
+    return yAxisAssignments.get(item.seriesId) === axisId;
   });
 
   if (!match) {
@@ -205,6 +207,8 @@ export function InsightComposedChart({
   bucket,
   loading,
   summary,
+  patientTimeZone,
+  showPatientTimeZoneNote = false,
 }: InsightComposedChartProps) {
   const chartData = useMemo(() => flattenChartSeriesRows(data), [data]);
   const yAxisAssignments = useMemo(
@@ -215,31 +219,46 @@ export function InsightComposedChart({
     () => buildInsightChartTableColumns(series),
     [series],
   );
+  const unsupportedMessage = useMemo(
+    () => getInsightChartUnsupportedMessage(series),
+    [series],
+  );
 
   const usesLeftAxis = [...yAxisAssignments.values()].includes('left');
   const usesRightAxis = [...yAxisAssignments.values()].includes('right');
   const usesBpAxis = [...yAxisAssignments.values()].includes('bp');
 
-  const bucketTickFormatter = (value: string) =>
-    formatInsightChartBucketLabel(value, bucket);
+  const bucketTickFormatter = useMemo(
+    () => (value: string) =>
+      formatInsightChartBucketLabel(value, bucket, patientTimeZone),
+    [bucket, patientTimeZone],
+  );
+  const summaryId = `${useId().replace(/:/g, '')}-summary`;
 
   return (
     <div className="space-y-3">
       <figure
         aria-busy={loading ? true : undefined}
-        aria-labelledby="insight-chart-summary"
+        aria-labelledby={summaryId}
         className="rounded-xl border border-app-border bg-app-surface p-4"
       >
-        <figcaption
-          id="insight-chart-summary"
-          className="mb-3 text-sm text-app-ink"
-        >
+        <figcaption id={summaryId} className="mb-3 text-sm text-app-ink">
           {summary}
         </figcaption>
+
+        {showPatientTimeZoneNote ? (
+          <p className="mb-3 text-xs text-app-muted">
+            {formatInsightChartPatientTimeZoneNote(patientTimeZone)}
+          </p>
+        ) : null}
 
         {loading ? (
           <p className="text-sm text-app-muted" role="status">
             Loading chart…
+          </p>
+        ) : unsupportedMessage ? (
+          <p className="text-sm text-app-muted" role="alert">
+            {unsupportedMessage}
           </p>
         ) : (
           <div
@@ -266,7 +285,11 @@ export function InsightComposedChart({
                     orientation="left"
                     tick={{ fill: 'currentColor', fontSize: 12 }}
                     label={{
-                      value: yAxisLabelForUnit(series, 'left'),
+                      value: yAxisLabelForUnit(
+                        series,
+                        yAxisAssignments,
+                        'left',
+                      ),
                       angle: -90,
                       position: 'insideLeft',
                     }}
@@ -278,7 +301,11 @@ export function InsightComposedChart({
                     orientation="right"
                     tick={{ fill: 'currentColor', fontSize: 12 }}
                     label={{
-                      value: yAxisLabelForUnit(series, 'right'),
+                      value: yAxisLabelForUnit(
+                        series,
+                        yAxisAssignments,
+                        'right',
+                      ),
                       angle: 90,
                       position: 'insideRight',
                     }}
@@ -290,7 +317,7 @@ export function InsightComposedChart({
                     orientation="left"
                     tick={{ fill: 'currentColor', fontSize: 12 }}
                     label={{
-                      value: yAxisLabelForUnit(series, 'bp'),
+                      value: yAxisLabelForUnit(series, yAxisAssignments, 'bp'),
                       angle: -90,
                       position: 'insideLeft',
                     }}
@@ -346,7 +373,11 @@ export function InsightComposedChart({
           {data.map((row) => (
             <tr key={row.bucketStart}>
               <th scope="row">
-                {formatInsightChartBucketLabel(row.bucketStart, bucket)}
+                {formatInsightChartBucketLabel(
+                  row.bucketStart,
+                  bucket,
+                  patientTimeZone,
+                )}
               </th>
               {tableColumns.map((column) => {
                 const selected = series.find(

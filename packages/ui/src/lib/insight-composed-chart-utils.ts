@@ -44,6 +44,103 @@ export function insightChartUnitKey(series: SelectedSeries): string {
 export type InsightValueYAxisId = 'left' | 'right' | 'bp';
 
 /**
+ * Maximum distinct measurement units for non–blood-pressure value series.
+ * The chart exposes one left and one right numeric/severity axis (BP uses `bp`).
+ */
+export const MAX_DISTINCT_NON_BP_VALUE_UNITS = 2;
+
+/**
+ * Whether a selected series consumes a value Y-axis unit slot (not BP or event markers).
+ *
+ * @param series - Selected series metadata.
+ */
+export function countsTowardInsightChartValueUnitLimit(
+  series: Pick<
+    SelectedSeries,
+    'chartType' | 'unit' | 'responseType' | 'isBloodPressure'
+  >,
+): boolean {
+  return series.chartType !== 'event' && series.chartType !== 'bp_band';
+}
+
+/**
+ * Distinct non–blood-pressure value unit keys already present in the selection.
+ *
+ * @param series - Selected series (in slot order).
+ * @param excludeSlotIndex - Optional slot to omit (e.g. the slot being edited).
+ */
+export function getDistinctNonBpValueUnitKeys(
+  series: SelectedSeries[],
+  excludeSlotIndex?: number,
+): string[] {
+  const keys: string[] = [];
+  for (const [index, item] of series.entries()) {
+    if (excludeSlotIndex !== undefined && index === excludeSlotIndex) {
+      continue;
+    }
+    if (!countsTowardInsightChartValueUnitLimit(item)) {
+      continue;
+    }
+    const unitKey = insightChartUnitKey(item);
+    if (!keys.includes(unitKey)) {
+      keys.push(unitKey);
+    }
+  }
+  return keys;
+}
+
+/**
+ * Whether adding `candidate` would exceed {@link MAX_DISTINCT_NON_BP_VALUE_UNITS}.
+ *
+ * @param current - Current selection.
+ * @param candidate - Proposed series for a slot.
+ * @param excludeSlotIndex - Slot being replaced (if any).
+ */
+export function wouldExceedDistinctNonBpValueUnitLimit(
+  current: SelectedSeries[],
+  candidate: SelectedSeries,
+  excludeSlotIndex?: number,
+): boolean {
+  if (!countsTowardInsightChartValueUnitLimit(candidate)) {
+    return false;
+  }
+  const existing = getDistinctNonBpValueUnitKeys(current, excludeSlotIndex);
+  const candidateKey = insightChartUnitKey(candidate);
+  if (existing.includes(candidateKey)) {
+    return false;
+  }
+  return existing.length >= MAX_DISTINCT_NON_BP_VALUE_UNITS;
+}
+
+/**
+ * @param series - Selected series for the chart.
+ * @returns `true` when every value series fits on the supported Y-axes.
+ */
+export function isInsightChartSeriesSupported(
+  series: SelectedSeries[],
+): boolean {
+  return (
+    getDistinctNonBpValueUnitKeys(series).length <=
+    MAX_DISTINCT_NON_BP_VALUE_UNITS
+  );
+}
+
+/**
+ * User-facing explanation when the selection exceeds supported Y-axis units.
+ *
+ * @param series - Selected series for the chart.
+ * @returns Message when unsupported; otherwise `undefined`.
+ */
+export function getInsightChartUnsupportedMessage(
+  series: SelectedSeries[],
+): string | undefined {
+  if (isInsightChartSeriesSupported(series)) {
+    return undefined;
+  }
+  return `This chart supports at most ${MAX_DISTINCT_NON_BP_VALUE_UNITS} different measurement units at once (blood pressure uses its own axis). Remove a series or choose series that share units.`;
+}
+
+/**
  * Maps each series to its Y-axis id (`null` for event markers with no axis).
  *
  * @param series - Selected series in chart order.
@@ -53,19 +150,7 @@ export function assignInsightChartYAxes(
   series: SelectedSeries[],
 ): Map<string, InsightValueYAxisId | null> {
   const assignments = new Map<string, InsightValueYAxisId | null>();
-  const valueSeries = series.filter((item) => item.chartType !== 'event');
-  const nonBpValue = valueSeries.filter((item) => item.chartType !== 'bp_band');
-
-  const unitOrder: string[] = [];
-  for (const item of nonBpValue) {
-    const unitKey = insightChartUnitKey(item);
-    if (!unitOrder.includes(unitKey)) {
-      unitOrder.push(unitKey);
-    }
-  }
-
-  const primaryUnit = unitOrder[0];
-  const secondaryUnit = unitOrder[1];
+  const unitOrder = getDistinctNonBpValueUnitKeys(series);
 
   for (const item of series) {
     if (item.chartType === 'event') {
@@ -77,11 +162,17 @@ export function assignInsightChartYAxes(
       continue;
     }
 
-    const unitKey = insightChartUnitKey(item);
-    assignments.set(item.seriesId, unitKey === primaryUnit ? 'left' : 'right');
+    const unitIndex = unitOrder.indexOf(insightChartUnitKey(item));
+    if (unitIndex < 0 || unitIndex >= MAX_DISTINCT_NON_BP_VALUE_UNITS) {
+      assignments.set(item.seriesId, null);
+    } else if (unitIndex === 0) {
+      assignments.set(item.seriesId, 'left');
+    } else {
+      assignments.set(item.seriesId, 'right');
+    }
   }
 
-  if (secondaryUnit === undefined) {
+  if (unitOrder.length <= 1) {
     for (const [seriesId, axisId] of assignments) {
       if (axisId === 'right') {
         assignments.set(seriesId, 'left');
@@ -118,29 +209,86 @@ export function flattenChartSeriesRows(
 }
 
 /**
- * @param bucketStart - ISO bucket timestamp.
+ * @param timeZone - IANA timezone identifier.
+ * @returns `true` when `Intl` accepts the zone.
+ */
+export function isValidIanaTimeZone(timeZone: string): boolean {
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolves a patient timezone for chart labels, falling back to UTC when invalid.
+ *
+ * @param patientTimeZone - Preferred IANA timezone.
+ * @returns Valid IANA timezone id.
+ */
+export function resolveInsightChartTimeZone(patientTimeZone: string): string {
+  return isValidIanaTimeZone(patientTimeZone) ? patientTimeZone : 'UTC';
+}
+
+/**
+ * @param patientTimeZone - IANA timezone id.
+ * @returns Display name for the timezone (e.g. `Eastern Standard Time`).
+ */
+export function formatIanaTimeZoneForDisplay(patientTimeZone: string): string {
+  const zone = resolveInsightChartTimeZone(patientTimeZone);
+  const parts = new Intl.DateTimeFormat(undefined, {
+    timeZone: zone,
+    timeZoneName: 'long',
+  }).formatToParts(new Date());
+  return parts.find((part) => part.type === 'timeZoneName')?.value ?? zone;
+}
+
+/**
+ * Caption explaining that chart period labels use the patient's timezone.
+ *
+ * @param patientTimeZone - IANA timezone id.
+ * @returns Practitioner-facing note text.
+ */
+export function formatInsightChartPatientTimeZoneNote(
+  patientTimeZone: string,
+): string {
+  const label = formatIanaTimeZoneForDisplay(patientTimeZone);
+  return `Period labels use the patient's local timezone (${label}).`;
+}
+
+/**
+ * @param bucketStart - ISO `bucket_start` from `get_chart_series`.
  * @param bucket - Bucket granularity.
+ * @param patientTimeZone - IANA timezone for label formatting (patient-local).
  * @returns Human-readable bucket label for axes and table headers.
  */
 export function formatInsightChartBucketLabel(
   bucketStart: string,
   bucket: InsightChartBucket,
+  patientTimeZone: string,
 ): string {
   const date = new Date(bucketStart);
   if (Number.isNaN(date.getTime())) {
     return bucketStart;
   }
+
+  const timeZone = resolveInsightChartTimeZone(patientTimeZone);
+
   if (bucket === 'month') {
-    return date.toLocaleDateString(undefined, {
+    return new Intl.DateTimeFormat(undefined, {
+      timeZone,
       month: 'short',
       year: 'numeric',
-    });
+    }).format(date);
   }
-  return date.toLocaleDateString(undefined, {
+
+  return new Intl.DateTimeFormat(undefined, {
+    timeZone,
     month: 'short',
     day: 'numeric',
     year: bucket === 'week' ? 'numeric' : undefined,
-  });
+  }).format(date);
 }
 
 /**

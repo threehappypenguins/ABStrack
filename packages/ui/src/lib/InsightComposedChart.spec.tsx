@@ -128,6 +128,7 @@ describe('InsightComposedChart', () => {
         bucket="month"
         loading={false}
         summary="Blood pressure trend."
+        patientTimeZone="UTC"
       />,
     );
 
@@ -187,6 +188,7 @@ describe('InsightComposedChart', () => {
         bucket="month"
         loading={false}
         summary="Nausea events."
+        patientTimeZone="UTC"
       />,
     );
 
@@ -218,6 +220,7 @@ describe('InsightComposedChart', () => {
         bucket="day"
         loading={false}
         summary="Blood pressure table."
+        patientTimeZone="UTC"
       />,
     );
 
@@ -262,6 +265,7 @@ describe('InsightComposedChart', () => {
           bucket="week"
           loading={false}
           summary={`${chartType} chart.`}
+          patientTimeZone="UTC"
         />,
       );
 
@@ -272,4 +276,46 @@ describe('InsightComposedChart', () => {
       expect(rendered).toHaveLength(1);
     },
   );
+
+  it('shows an alert instead of the chart when three distinct value units are selected', () => {
+    render(
+      <InsightComposedChart
+        series={[
+          baseSeries({ seriesId: 'bac', chartType: 'line', unit: '%' }),
+          baseSeries({
+            seriesId: 'glucose',
+            chartType: 'line',
+            unit: 'mmol/L',
+          }),
+          baseSeries({ seriesId: 'hr', chartType: 'line', unit: 'bpm' }),
+        ]}
+        data={[]}
+        bucket="day"
+        loading={false}
+        summary="Unsupported combination."
+        patientTimeZone="UTC"
+      />,
+    );
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      /at most 2 different measurement units/i,
+    );
+    expect(screen.queryByTestId('composed-chart')).not.toBeInTheDocument();
+  });
+
+  it('shows a patient timezone note when showPatientTimeZoneNote is true', () => {
+    render(
+      <InsightComposedChart
+        series={[baseSeries({ seriesId: 'bac', chartType: 'line', unit: '%' })]}
+        data={[]}
+        bucket="day"
+        loading={false}
+        summary="BAC trend."
+        patientTimeZone="America/Chicago"
+        showPatientTimeZoneNote
+      />,
+    );
+
+    expect(screen.getByText(/patient's local timezone/i)).toBeInTheDocument();
+  });
 });

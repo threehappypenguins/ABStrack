@@ -3,7 +3,12 @@ import type { SelectedSeries } from './InsightSeriesPicker.types.js';
 import {
   assignInsightChartYAxes,
   buildInsightChartTableColumns,
+  formatInsightChartBucketLabel,
+  formatInsightChartPatientTimeZoneNote,
+  getInsightChartUnsupportedMessage,
+  isInsightChartSeriesSupported,
   pivotChartSeriesBucketRows,
+  wouldExceedDistinctNonBpValueUnitLimit,
 } from './insight-composed-chart-utils.js';
 
 function series(
@@ -47,6 +52,20 @@ describe('assignInsightChartYAxes', () => {
     expect(axes.get('glucose')).toBe('right');
   });
 
+  it('assigns null to a third distinct non-BP value unit instead of sharing the right axis', () => {
+    const manifest = [
+      series({ seriesId: 'bac', chartType: 'line', unit: '%' }),
+      series({ seriesId: 'glucose', chartType: 'line', unit: 'mmol/L' }),
+      series({ seriesId: 'hr', chartType: 'line', unit: 'bpm' }),
+    ];
+    const axes = assignInsightChartYAxes(manifest);
+    expect(axes.get('bac')).toBe('left');
+    expect(axes.get('glucose')).toBe('right');
+    expect(axes.get('hr')).toBe(null);
+    expect(isInsightChartSeriesSupported(manifest)).toBe(false);
+    expect(getInsightChartUnsupportedMessage(manifest)).toBeTruthy();
+  });
+
   it('returns null for event series', () => {
     const manifest = [
       series({
@@ -59,6 +78,57 @@ describe('assignInsightChartYAxes', () => {
     expect(
       assignInsightChartYAxes(manifest).get('symptom::nausea::boolean'),
     ).toBe(null);
+  });
+});
+
+describe('wouldExceedDistinctNonBpValueUnitLimit', () => {
+  it('allows a third series when it reuses an existing unit', () => {
+    const current = [
+      series({ seriesId: 'bac', chartType: 'line', unit: '%' }),
+      series({ seriesId: 'glucose', chartType: 'line', unit: 'mmol/L' }),
+    ];
+    const next = series({ seriesId: 'bac-2', chartType: 'bar', unit: '%' });
+    expect(wouldExceedDistinctNonBpValueUnitLimit(current, next)).toBe(false);
+  });
+
+  it('blocks a third distinct unit', () => {
+    const current = [
+      series({ seriesId: 'bac', chartType: 'line', unit: '%' }),
+      series({ seriesId: 'glucose', chartType: 'line', unit: 'mmol/L' }),
+    ];
+    const next = series({ seriesId: 'hr', chartType: 'line', unit: 'bpm' });
+    expect(wouldExceedDistinctNonBpValueUnitLimit(current, next)).toBe(true);
+  });
+});
+
+describe('formatInsightChartBucketLabel', () => {
+  const midnightUtc = '2026-01-01T00:00:00.000Z';
+
+  it('formats using the patient timezone instead of the viewer device zone', () => {
+    const inUtc = formatInsightChartBucketLabel(midnightUtc, 'day', 'UTC');
+    const inNewYork = formatInsightChartBucketLabel(
+      midnightUtc,
+      'day',
+      'America/New_York',
+    );
+
+    expect(inUtc).toContain('Jan');
+    expect(inUtc).toContain('1');
+    expect(inNewYork).toContain('Dec');
+    expect(inNewYork).toContain('31');
+  });
+
+  it('includes the year for week buckets', () => {
+    const label = formatInsightChartBucketLabel(midnightUtc, 'week', 'UTC');
+    expect(label).toContain('2026');
+  });
+});
+
+describe('formatInsightChartPatientTimeZoneNote', () => {
+  it('mentions the patient local timezone', () => {
+    expect(formatInsightChartPatientTimeZoneNote('America/New_York')).toMatch(
+      /patient's local timezone/i,
+    );
   });
 });
 
