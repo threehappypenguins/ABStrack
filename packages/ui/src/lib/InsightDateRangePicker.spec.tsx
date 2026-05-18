@@ -110,6 +110,46 @@ describe('InsightDateRangePicker', () => {
     expect(calendar).toBeInTheDocument();
   });
 
+  it('does not announce the initial controlled value on mount', () => {
+    renderWithAnnouncer(
+      <InsightDateRangePicker
+        value={{
+          from: localDate(2026, 0, 1),
+          to: localDate(2026, 0, 7),
+        }}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText(/Date range selected:/)).not.toBeInTheDocument();
+  });
+
+  it('announces when the parent updates the controlled value', () => {
+    const { rerender } = renderWithAnnouncer(
+      <InsightDateRangePicker
+        value={{
+          from: localDate(2026, 0, 1),
+          to: localDate(2026, 0, 7),
+        }}
+        onChange={vi.fn()}
+      />,
+    );
+
+    rerender(
+      <LiveAnnouncerProvider>
+        <InsightDateRangePicker
+          value={{
+            from: localDate(2026, 3, 19),
+            to: localDate(2026, 4, 18),
+          }}
+          onChange={vi.fn()}
+        />
+      </LiveAnnouncerProvider>,
+    );
+
+    expect(screen.getByText(/Date range selected:/)).toBeInTheDocument();
+  });
+
   it('announces again after a parent value change even when re-selecting a prior range', () => {
     const lastSevenDays = {
       from: localDate(2026, 4, 12),

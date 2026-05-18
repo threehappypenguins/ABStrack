@@ -106,14 +106,26 @@ export function InsightDateRangePicker({
   const { announce } = useAnnounce();
   const baseId = useId().replace(/:/g, '');
   const lastAnnouncedKey = useRef('');
+  const skipValueAnnounceOnMount = useRef(true);
   const [month, setMonth] = useState(() => value.to);
   const [calendarDraft, setCalendarDraft] = useState<DateRange | undefined>();
 
   useEffect(() => {
     setMonth(value.to);
     setCalendarDraft(undefined);
-    lastAnnouncedKey.current = insightDateRangeAnnouncementKey(value);
-  }, [value.from, value.to]);
+
+    const key = insightDateRangeAnnouncementKey(value);
+    if (skipValueAnnounceOnMount.current) {
+      skipValueAnnounceOnMount.current = false;
+      lastAnnouncedKey.current = key;
+      return;
+    }
+
+    if (key !== lastAnnouncedKey.current) {
+      lastAnnouncedKey.current = key;
+      announce(formatInsightDateRangeAnnouncement(value));
+    }
+  }, [announce, value.from, value.to]);
 
   const commitRange = useCallback(
     (next: InsightDateRange) => {
