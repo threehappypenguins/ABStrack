@@ -15,7 +15,14 @@ import {
   type InsightDateRangePresetId,
 } from './insight-date-range-picker-utils.js';
 
-export type { InsightDateRangePresetId } from './insight-date-range-picker-utils.js';
+export type {
+  InsightDateRange,
+  InsightDateRangePresetId,
+} from './insight-date-range-picker-utils.js';
+
+function insightDateRangeAnnouncementKey(range: InsightDateRange): string {
+  return `${range.from.getTime()}-${range.to.getTime()}`;
+}
 
 /** Props for {@link InsightDateRangePicker}. */
 export interface InsightDateRangePickerProps {
@@ -105,6 +112,7 @@ export function InsightDateRangePicker({
   useEffect(() => {
     setMonth(value.to);
     setCalendarDraft(undefined);
+    lastAnnouncedKey.current = insightDateRangeAnnouncementKey(value);
   }, [value.from, value.to]);
 
   const commitRange = useCallback(
@@ -113,7 +121,7 @@ export function InsightDateRangePicker({
       setCalendarDraft(undefined);
       setMonth(normalized.to);
       onChange(normalized);
-      const key = `${normalized.from.getTime()}-${normalized.to.getTime()}`;
+      const key = insightDateRangeAnnouncementKey(normalized);
       if (key !== lastAnnouncedKey.current) {
         lastAnnouncedKey.current = key;
         announce(formatInsightDateRangeAnnouncement(normalized));

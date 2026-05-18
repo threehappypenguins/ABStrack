@@ -110,6 +110,41 @@ describe('InsightDateRangePicker', () => {
     expect(calendar).toBeInTheDocument();
   });
 
+  it('announces again after a parent value change even when re-selecting a prior range', () => {
+    const lastSevenDays = {
+      from: localDate(2026, 4, 12),
+      to: localDate(2026, 4, 18),
+    };
+    const lastThirtyDays = {
+      from: localDate(2026, 3, 19),
+      to: localDate(2026, 4, 18),
+    };
+    const onChangeSpy = vi.fn();
+
+    const { rerender } = renderWithAnnouncer(
+      <InsightDateRangePicker
+        value={{
+          from: localDate(2026, 0, 1),
+          to: localDate(2026, 0, 7),
+        }}
+        onChange={onChangeSpy}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Last 7 days' }));
+    expect(screen.getByText(/Date range selected:/)).toBeInTheDocument();
+
+    rerender(
+      <LiveAnnouncerProvider>
+        <InsightDateRangePicker value={lastThirtyDays} onChange={onChangeSpy} />
+      </LiveAnnouncerProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Last 7 days' }));
+    expect(onChangeSpy).toHaveBeenLastCalledWith(lastSevenDays);
+    expect(screen.getByText(/Date range selected:/)).toBeInTheDocument();
+  });
+
   it('announces the selected range to screen readers when a preset changes', () => {
     renderWithAnnouncer(
       <ControlledPicker

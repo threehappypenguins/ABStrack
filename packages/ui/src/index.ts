@@ -19,6 +19,7 @@ export {
 } from './lib/InsightSeriesPicker.js';
 export {
   InsightDateRangePicker,
+  type InsightDateRange,
   type InsightDateRangePickerProps,
   type InsightDateRangePresetId,
 } from './lib/InsightDateRangePicker.js';
