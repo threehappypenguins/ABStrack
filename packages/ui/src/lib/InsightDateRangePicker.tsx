@@ -2,7 +2,6 @@
 
 import { useCallback, useId, useRef } from 'react';
 import { DayPicker, type DateRange } from 'react-day-picker';
-import 'react-day-picker/style.css';
 import { useAnnounce } from './a11y/LiveAnnouncer.js';
 import { useFocusRing } from './hooks/useFocusRing.js';
 import {
@@ -86,6 +85,9 @@ function PresetButton({
 /**
  * Accessible date range picker for the insight chart builder (web only).
  * Preset shortcuts, `react-day-picker` range calendar, 2-year max span, no future dates.
+ *
+ * Consuming Next.js apps must import `react-day-picker/style.css` from their global CSS
+ * entry (see `apps/web` and `apps/practitioner` `global.css`).
  *
  * @param props - Controlled range value and change handler.
  * @returns Preset toolbar and range calendar.

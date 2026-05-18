@@ -47,7 +47,7 @@ describe('insight-date-range-picker-utils presets', () => {
   it('computes Last 90 days as 90 inclusive calendar days ending today', () => {
     const range = getInsightDateRangePreset('last_90_days');
     expect(range).toEqual({
-      from: localDate(2026, 1, 17),
+      from: localDate(2026, 1, 18),
       to: localDate(2026, 4, 18),
     });
     expect(inclusiveCalendarDaySpan(range.from, range.to)).toBe(90);
@@ -59,6 +59,24 @@ describe('insight-date-range-picker-utils presets', () => {
       from: localDate(2025, 4, 18),
       to: localDate(2026, 4, 18),
     });
+  });
+});
+
+describe('inclusiveCalendarDaySpan', () => {
+  it('counts by civil date ordinals, not elapsed ms / 24h (DST-safe)', () => {
+    const from = localDate(2026, 1, 18);
+    const to = localDate(2026, 4, 18);
+    const startMs = startOfCalendarDay(from).getTime();
+    const endMs = startOfCalendarDay(to).getTime();
+    const msBasedSpan = Math.max(
+      1,
+      Math.floor((endMs - startMs) / 86_400_000) + 1,
+    );
+
+    expect(inclusiveCalendarDaySpan(from, to)).toBe(90);
+    expect(inclusiveCalendarDaySpan(from, to)).toBeGreaterThanOrEqual(
+      msBasedSpan,
+    );
   });
 });
 

@@ -34,17 +34,36 @@ export function startOfCalendarDay(date: Date): Date {
 }
 
 /**
+ * Ordinal index for a local calendar day. Uses {@link Date.UTC} on the local
+ * year/month/date so counting is by civil date, not elapsed local milliseconds
+ * (which can be 23h or 25h across DST).
+ *
+ * @param date - Input instant.
+ * @returns UTC day number for the local civil date.
+ */
+export function localCalendarDayOrdinal(date: Date): number {
+  const day = startOfCalendarDay(date);
+  return Math.floor(
+    Date.UTC(day.getFullYear(), day.getMonth(), day.getDate()) / 86_400_000,
+  );
+}
+
+/**
  * Returns inclusive calendar-day count between two dates (minimum 1).
+ * Difference is taken on {@link localCalendarDayOrdinal} values, not wall-clock ms.
  *
  * @param from - Range start (calendar day).
  * @param to - Range end (calendar day).
  * @returns Number of days in the closed interval.
  */
 export function inclusiveCalendarDaySpan(from: Date, to: Date): number {
-  const start = startOfCalendarDay(from).getTime();
-  const end = startOfCalendarDay(to).getTime();
-  const msPerDay = 24 * 60 * 60 * 1000;
-  return Math.max(1, Math.floor((end - start) / msPerDay) + 1);
+  const startOrdinal = localCalendarDayOrdinal(from);
+  const endOrdinal = localCalendarDayOrdinal(to);
+  const [earlier, later] =
+    startOrdinal <= endOrdinal
+      ? [startOrdinal, endOrdinal]
+      : [endOrdinal, startOrdinal];
+  return Math.max(1, later - earlier + 1);
 }
 
 /**

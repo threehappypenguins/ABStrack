@@ -2,6 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
+/* InsightDateRangePicker (`@abstrack/ui`) — base DayPicker layout; app Tailwind overrides classNames. */
+@import 'react-day-picker/style.css';
+
 /* Semantic colors: toggled via `html.dark` (Tailwind `darkMode: 'class'`).
  * RGB channel tokens (space-separated) pair with Tailwind `rgb(var(--app-*) / <alpha-value>)`
  * so opacity modifiers (e.g. `border-app-border/90`) resolve correctly. */

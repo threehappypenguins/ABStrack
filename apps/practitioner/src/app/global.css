@@ -2,6 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
+/* InsightDateRangePicker (`@abstrack/ui`) — base DayPicker layout; app Tailwind overrides classNames. */
+@import 'react-day-picker/style.css';
+
 @layer base {
   :root {
     --app-bg: 244 247 251;
