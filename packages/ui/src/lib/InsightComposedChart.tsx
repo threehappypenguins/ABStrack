@@ -17,6 +17,8 @@ import {
 import {
   assignInsightChartYAxes,
   buildInsightChartTableColumns,
+  chartSeriesBpBandKey,
+  enrichInsightChartDataForBloodPressure,
   getInsightChartUnsupportedMessage,
   chartSeriesDiastolicAvgKey,
   chartSeriesSystolicAvgKey,
@@ -113,30 +115,23 @@ function renderValueSeries(
   }
 }
 
-function renderBloodPressureBand(
-  item: SelectedSeries,
-  chartData: Record<string, string | number | null>[],
-): ReactNode {
+function renderBloodPressureBand(item: SelectedSeries): ReactNode {
   const systolicKey = chartSeriesSystolicAvgKey(item.seriesId);
   const diastolicKey = chartSeriesDiastolicAvgKey(item.seriesId);
-  const baseLine = chartData.map((row) => ({
-    x: row.bucketStart as string,
-    y: row[diastolicKey] as number | null,
-  }));
+  const bandKey = chartSeriesBpBandKey(item.seriesId);
 
   return (
     <>
       <Area
         key={`${item.seriesId}-area`}
         type="monotone"
-        dataKey={systolicKey}
+        dataKey={bandKey}
         yAxisId="bp"
         stroke="none"
         fill={item.color}
         fillOpacity={0.2}
         dot={false}
         activeDot={false}
-        baseLine={baseLine as never}
         isAnimationActive={false}
         connectNulls
       />
@@ -210,7 +205,14 @@ export function InsightComposedChart({
   patientTimeZone,
   showPatientTimeZoneNote = false,
 }: InsightComposedChartProps) {
-  const chartData = useMemo(() => flattenChartSeriesRows(data), [data]);
+  const chartData = useMemo(
+    () =>
+      enrichInsightChartDataForBloodPressure(
+        flattenChartSeriesRows(data),
+        series,
+      ),
+    [data, series],
+  );
   const yAxisAssignments = useMemo(
     () => assignInsightChartYAxes(series),
     [series],
@@ -330,7 +332,7 @@ export function InsightComposedChart({
                   if (item.chartType === 'bp_band') {
                     return (
                       <Fragment key={item.seriesId}>
-                        {renderBloodPressureBand(item, chartData)}
+                        {renderBloodPressureBand(item)}
                       </Fragment>
                     );
                   }

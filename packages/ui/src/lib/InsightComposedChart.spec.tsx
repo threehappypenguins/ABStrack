@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChartSeriesRow } from './InsightComposedChart.types.js';
 import type { SelectedSeries } from './InsightSeriesPicker.types.js';
 import {
+  chartSeriesBpBandKey,
   chartSeriesDiastolicAvgKey,
   chartSeriesSystolicAvgKey,
   chartSeriesValueAvgKey,
@@ -149,6 +150,8 @@ describe('InsightComposedChart', () => {
       ),
     ).toBe(true);
     expect(rechartsMocks.Area).toHaveLength(1);
+    expect(rechartsMocks.Area[0]?.dataKey).toBe(chartSeriesBpBandKey(seriesId));
+    expect(rechartsMocks.Area[0]?.baseLine).toBeUndefined();
   });
 
   it('renders ReferenceLine only for buckets where event_count is greater than zero', () => {

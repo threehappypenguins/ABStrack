@@ -25,6 +25,17 @@ export function chartSeriesEventCountKey(seriesId: string): string {
   return `${seriesId}__event_count`;
 }
 
+/** Recharts range `dataKey` for blood pressure band fill (`[diastolic, systolic]`). */
+export function chartSeriesBpBandKey(seriesId: string): string {
+  return `${seriesId}__bp_band`;
+}
+
+/** One flattened row passed to Recharts `ComposedChart`. */
+export type InsightChartDataRow = Record<
+  string,
+  string | number | null | ReadonlyArray<number | null>
+>;
+
 /**
  * Unit key used to group numeric/severity series on shared Y-axes.
  *
@@ -191,9 +202,9 @@ export function assignInsightChartYAxes(
  */
 export function flattenChartSeriesRows(
   rows: ChartSeriesRow[],
-): Record<string, string | number | null>[] {
+): InsightChartDataRow[] {
   return rows.map((row) => {
-    const flat: Record<string, string | number | null> = {
+    const flat: InsightChartDataRow = {
       bucketStart: row.bucketStart,
     };
 
@@ -205,6 +216,35 @@ export function flattenChartSeriesRows(
     }
 
     return flat;
+  });
+}
+
+/**
+ * Adds Recharts range-area tuples `[diastolic, systolic]` for each `bp_band` series.
+ *
+ * @param chartData - Output of {@link flattenChartSeriesRows}.
+ * @param series - Selected series manifest.
+ * @returns Rows enriched with {@link chartSeriesBpBandKey} when both BP values exist.
+ */
+export function enrichInsightChartDataForBloodPressure(
+  chartData: InsightChartDataRow[],
+  series: SelectedSeries[],
+): InsightChartDataRow[] {
+  const bpSeries = series.filter((item) => item.chartType === 'bp_band');
+  if (bpSeries.length === 0) {
+    return chartData;
+  }
+
+  return chartData.map((row) => {
+    const enriched: InsightChartDataRow = { ...row };
+    for (const item of bpSeries) {
+      const systolic = row[chartSeriesSystolicAvgKey(item.seriesId)];
+      const diastolic = row[chartSeriesDiastolicAvgKey(item.seriesId)];
+      if (typeof systolic === 'number' && typeof diastolic === 'number') {
+        enriched[chartSeriesBpBandKey(item.seriesId)] = [diastolic, systolic];
+      }
+    }
+    return enriched;
   });
 }
 
@@ -258,9 +298,9 @@ export function formatInsightChartPatientTimeZoneNote(
 }
 
 /**
- * @param bucketStart - ISO `bucket_start` from `get_chart_series`.
+ * @param bucketStart - ISO `bucket_start` from `get_chart_series` (bucketed in `patientTimeZone`).
  * @param bucket - Bucket granularity.
- * @param patientTimeZone - IANA timezone for label formatting (patient-local).
+ * @param patientTimeZone - IANA timezone used for RPC bucketing and label formatting.
  * @returns Human-readable bucket label for axes and table headers.
  */
 export function formatInsightChartBucketLabel(

@@ -39,9 +39,9 @@ export interface InsightComposedChartProps {
   summary: string;
   /**
    * IANA timezone for bucket axis and table labels (e.g. `America/Chicago`).
-   * Use the **patient's** timezone so day/week/month boundaries match how they
-   * experience dates; pass the viewer device zone only when the patient is viewing
-   * their own chart.
+   * Must be the same value as `p_timezone` on {@link getChartSeries} so server
+   * `bucket_start` values and labels stay aligned. Use the **patient's** timezone;
+   * pass the device zone only when the patient views their own chart.
    */
   patientTimeZone: string;
   /**

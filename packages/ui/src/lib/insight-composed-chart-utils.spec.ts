@@ -3,6 +3,11 @@ import type { SelectedSeries } from './InsightSeriesPicker.types.js';
 import {
   assignInsightChartYAxes,
   buildInsightChartTableColumns,
+  chartSeriesBpBandKey,
+  chartSeriesDiastolicAvgKey,
+  chartSeriesSystolicAvgKey,
+  enrichInsightChartDataForBloodPressure,
+  flattenChartSeriesRows,
   formatInsightChartBucketLabel,
   formatInsightChartPatientTimeZoneNote,
   getInsightChartUnsupportedMessage,
@@ -101,25 +106,58 @@ describe('wouldExceedDistinctNonBpValueUnitLimit', () => {
   });
 });
 
-describe('formatInsightChartBucketLabel', () => {
-  const midnightUtc = '2026-01-01T00:00:00.000Z';
+describe('enrichInsightChartDataForBloodPressure', () => {
+  it('adds [diastolic, systolic] range tuples for bp_band series', () => {
+    const seriesId = 'health_marker::blood_pressure';
+    const chartData = enrichInsightChartDataForBloodPressure(
+      flattenChartSeriesRows([
+        {
+          bucketStart: '2026-01-01T00:00:00.000Z',
+          series: {
+            [seriesId]: {
+              value_avg: null,
+              systolic_avg: 130,
+              diastolic_avg: 85,
+              event_count: null,
+            },
+          },
+        },
+      ]),
+      [
+        series({
+          seriesId,
+          chartType: 'bp_band',
+          isBloodPressure: true,
+        }),
+      ],
+    );
 
-  it('formats using the patient timezone instead of the viewer device zone', () => {
-    const inUtc = formatInsightChartBucketLabel(midnightUtc, 'day', 'UTC');
-    const inNewYork = formatInsightChartBucketLabel(
-      midnightUtc,
+    expect(chartData[0]?.[chartSeriesBpBandKey(seriesId)]).toEqual([85, 130]);
+    expect(chartData[0]?.[chartSeriesSystolicAvgKey(seriesId)]).toBe(130);
+    expect(chartData[0]?.[chartSeriesDiastolicAvgKey(seriesId)]).toBe(85);
+  });
+});
+
+describe('formatInsightChartBucketLabel', () => {
+  it('formats patient-local bucket_start in the same timezone as get_chart_series', () => {
+    const patientLocalMidnight = '2026-01-01T05:00:00.000Z';
+    const label = formatInsightChartBucketLabel(
+      patientLocalMidnight,
       'day',
       'America/New_York',
     );
 
-    expect(inUtc).toContain('Jan');
-    expect(inUtc).toContain('1');
-    expect(inNewYork).toContain('Dec');
-    expect(inNewYork).toContain('31');
+    expect(label).toContain('Jan');
+    expect(label).toContain('1');
+    expect(label).not.toMatch(/Dec/i);
   });
 
   it('includes the year for week buckets', () => {
-    const label = formatInsightChartBucketLabel(midnightUtc, 'week', 'UTC');
+    const label = formatInsightChartBucketLabel(
+      '2026-01-01T00:00:00.000Z',
+      'week',
+      'UTC',
+    );
     expect(label).toContain('2026');
   });
 });
