@@ -64,6 +64,23 @@ describe('InsightDateRangePicker', () => {
     });
   });
 
+  it('navigates the calendar to the range end month when a preset is selected', () => {
+    renderWithAnnouncer(
+      <ControlledPicker
+        initial={{
+          from: localDate(2026, 0, 1),
+          to: localDate(2026, 0, 7),
+        }}
+      />,
+    );
+
+    expect(screen.getByText('January 2026')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Last 7 days' }));
+
+    expect(screen.getByText('May 2026')).toBeInTheDocument();
+  });
+
   it('announces the selected range to screen readers when a preset changes', () => {
     renderWithAnnouncer(
       <ControlledPicker

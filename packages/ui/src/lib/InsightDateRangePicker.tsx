@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useId, useRef } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { DayPicker, type DateRange } from 'react-day-picker';
 import { useAnnounce } from './a11y/LiveAnnouncer.js';
 import { useFocusRing } from './hooks/useFocusRing.js';
@@ -99,10 +99,16 @@ export function InsightDateRangePicker({
   const { announce } = useAnnounce();
   const baseId = useId().replace(/:/g, '');
   const lastAnnouncedKey = useRef('');
+  const [month, setMonth] = useState(() => value.to);
+
+  useEffect(() => {
+    setMonth(value.to);
+  }, [value.from, value.to]);
 
   const commitRange = useCallback(
     (next: InsightDateRange) => {
       const normalized = normalizeInsightDateRange(next);
+      setMonth(normalized.to);
       onChange(normalized);
       const key = `${normalized.from.getTime()}-${normalized.to.getTime()}`;
       if (key !== lastAnnouncedKey.current) {
@@ -162,7 +168,8 @@ export function InsightDateRangePicker({
         onSelect={handleCalendarSelect}
         disabled={getInsightDateRangeDisabledMatchers()}
         max={INSIGHT_DATE_RANGE_MAX_NIGHTS}
-        defaultMonth={value.to}
+        month={month}
+        onMonthChange={setMonth}
         classNames={dayPickerClassNames}
         aria-label="Chart date range calendar"
       />
