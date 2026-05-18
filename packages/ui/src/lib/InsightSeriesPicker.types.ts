@@ -42,7 +42,7 @@ export interface SelectedSeries {
   responseType: ChartableResponseType;
   isBloodPressure: boolean;
   label: string;
-  unit?: string | null;
+  unit: string | null;
   chartType: ChartTypeChoice;
   /** Assigned automatically from {@link INSIGHT_SERIES_SLOT_COLORS}; not user-configurable. */
   color: string;

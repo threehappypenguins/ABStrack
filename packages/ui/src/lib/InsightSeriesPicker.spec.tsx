@@ -335,6 +335,100 @@ describe('InsightSeriesPicker', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('reveals slot 3 with one Add after clearing it via the empty series option', () => {
+    const onChangeSpy = vi.fn();
+    render(<ControlledPicker onChangeSpy={onChangeSpy} />);
+
+    fireEvent.change(
+      screen.getByLabelText('Data series 1', { selector: 'select' }),
+      { target: { value: glucoseRow.series_id } },
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Add another series' }));
+    fireEvent.change(
+      screen.getByLabelText('Data series 2', { selector: 'select' }),
+      { target: { value: severityRow.series_id } },
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Add another series' }));
+    fireEvent.change(
+      screen.getByLabelText('Data series 3', { selector: 'select' }),
+      { target: { value: booleanRow.series_id } },
+    );
+
+    fireEvent.change(
+      screen.getByLabelText('Data series 3', { selector: 'select' }),
+      {
+        target: { value: '' },
+      },
+    );
+
+    expect(
+      screen.getAllByLabelText(/Data series \d/, { selector: 'select' }),
+    ).toHaveLength(2);
+    expect(onChangeSpy).toHaveBeenLastCalledWith([
+      expect.objectContaining({ seriesId: glucoseRow.series_id }),
+      expect.objectContaining({ seriesId: severityRow.series_id }),
+    ]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add another series' }));
+
+    expect(
+      screen.getAllByLabelText(/Data series \d/, { selector: 'select' }),
+    ).toHaveLength(3);
+    expect(
+      screen.getByLabelText('Data series 3', { selector: 'select' }),
+    ).toHaveValue('');
+
+    fireEvent.change(
+      screen.getByLabelText('Data series 3', { selector: 'select' }),
+      {
+        target: { value: booleanRow.series_id },
+      },
+    );
+
+    expect(onChangeSpy).toHaveBeenLastCalledWith([
+      expect.objectContaining({ seriesId: glucoseRow.series_id }),
+      expect.objectContaining({ seriesId: severityRow.series_id }),
+      expect.objectContaining({
+        seriesId: booleanRow.series_id,
+        chartType: 'event',
+      }),
+    ]);
+  });
+
+  it('reveals slot 3 with one Add after removing it via Remove series 3', () => {
+    render(<ControlledPicker />);
+
+    fireEvent.change(
+      screen.getByLabelText('Data series 1', { selector: 'select' }),
+      { target: { value: glucoseRow.series_id } },
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Add another series' }));
+    fireEvent.change(
+      screen.getByLabelText('Data series 2', { selector: 'select' }),
+      { target: { value: severityRow.series_id } },
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Add another series' }));
+    fireEvent.change(
+      screen.getByLabelText('Data series 3', { selector: 'select' }),
+      { target: { value: booleanRow.series_id } },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove series 3' }));
+
+    expect(
+      screen.getAllByLabelText(/Data series \d/, { selector: 'select' }),
+    ).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add another series' }));
+
+    expect(
+      screen.getAllByLabelText(/Data series \d/, { selector: 'select' }),
+    ).toHaveLength(3);
+    expect(
+      screen.getByLabelText('Data series 3', { selector: 'select' }),
+    ).toHaveValue('');
+  });
+
   it('enforces a maximum of three series', () => {
     render(<ControlledPicker />);
 

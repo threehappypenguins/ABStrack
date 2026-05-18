@@ -181,7 +181,7 @@ export function InsightSeriesPicker({
   const handleSeriesChange = (slotIndex: number, seriesId: string) => {
     if (!seriesId) {
       onChange(clampSeriesValue(seriesValue.slice(0, slotIndex)));
-      setRevealedSlotCount(1);
+      setRevealedSlotCount(Math.max(1, slotIndex));
       return;
     }
 
