@@ -81,6 +81,35 @@ describe('InsightDateRangePicker', () => {
     expect(screen.getByText('May 2026')).toBeInTheDocument();
   });
 
+  it('commits a new range after a partial calendar selection followed by an end day', () => {
+    const onChangeSpy = vi.fn();
+    renderWithAnnouncer(
+      <ControlledPicker
+        initial={{
+          from: localDate(2026, 4, 12),
+          to: localDate(2026, 4, 18),
+        }}
+        onChangeSpy={onChangeSpy}
+      />,
+    );
+
+    const calendar = screen.getByRole('grid', { name: 'May 2026' });
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Tuesday, May 5th, 2026' }),
+    );
+    expect(onChangeSpy).not.toHaveBeenCalled();
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Friday, May 8th, 2026' }),
+    );
+    expect(onChangeSpy).toHaveBeenCalledTimes(1);
+    expect(onChangeSpy).toHaveBeenCalledWith({
+      from: localDate(2026, 4, 5),
+      to: localDate(2026, 4, 8),
+    });
+    expect(calendar).toBeInTheDocument();
+  });
+
   it('announces the selected range to screen readers when a preset changes', () => {
     renderWithAnnouncer(
       <ControlledPicker

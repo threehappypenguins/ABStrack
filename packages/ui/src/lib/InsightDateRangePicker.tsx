@@ -90,7 +90,7 @@ function PresetButton({
  * entry (see `apps/web` and `apps/practitioner` `global.css`).
  *
  * @param props - Controlled range value and change handler.
- * @returns Preset toolbar and range calendar.
+ * @returns Preset button group and range calendar.
  */
 export function InsightDateRangePicker({
   value,
@@ -100,14 +100,17 @@ export function InsightDateRangePicker({
   const baseId = useId().replace(/:/g, '');
   const lastAnnouncedKey = useRef('');
   const [month, setMonth] = useState(() => value.to);
+  const [calendarDraft, setCalendarDraft] = useState<DateRange | undefined>();
 
   useEffect(() => {
     setMonth(value.to);
+    setCalendarDraft(undefined);
   }, [value.from, value.to]);
 
   const commitRange = useCallback(
     (next: InsightDateRange) => {
       const normalized = normalizeInsightDateRange(next);
+      setCalendarDraft(undefined);
       setMonth(normalized.to);
       onChange(normalized);
       const key = `${normalized.from.getTime()}-${normalized.to.getTime()}`;
@@ -124,13 +127,18 @@ export function InsightDateRangePicker({
   };
 
   const handleCalendarSelect = (range: DateRange | undefined) => {
-    if (!range?.from || !range.to) {
+    if (!range?.from) {
+      setCalendarDraft(undefined);
+      return;
+    }
+    if (!range.to) {
+      setCalendarDraft(range);
       return;
     }
     commitRange({ from: range.from, to: range.to });
   };
 
-  const selected: DateRange = {
+  const selected: DateRange = calendarDraft ?? {
     from: value.from,
     to: value.to,
   };
@@ -150,7 +158,7 @@ export function InsightDateRangePicker({
 
       <div
         className="flex flex-wrap gap-2"
-        role="toolbar"
+        role="group"
         aria-label="Date range presets"
       >
         {INSIGHT_DATE_RANGE_PRESETS.map((preset) => (
@@ -166,6 +174,7 @@ export function InsightDateRangePicker({
         mode="range"
         selected={selected}
         onSelect={handleCalendarSelect}
+        resetOnSelect
         disabled={getInsightDateRangeDisabledMatchers()}
         max={INSIGHT_DATE_RANGE_MAX_NIGHTS}
         month={month}
