@@ -496,6 +496,9 @@ importers:
 
   packages/ui:
     dependencies:
+      react-day-picker:
+        specifier: ^10.0.1
+        version: 10.0.1(@types/react@19.1.17)(react@19.1.0)
       tslib:
         specifier: ^2.3.0
         version: 2.8.1
