@@ -145,9 +145,12 @@ export function computeVisibleSlotCount(
   value: SelectedSeries[],
   revealedSlotCount: number,
 ): number {
-  const fromValue =
-    value.length === 0 ? 1 : Math.min(3, Math.max(1, value.length));
-  return Math.min(3, Math.max(1, revealedSlotCount, fromValue));
+  const filledCount = value.length;
+  const nextUnfilledCap = filledCount === 0 ? 1 : Math.min(3, filledCount + 1);
+  return Math.min(
+    3,
+    Math.max(filledCount, Math.min(revealedSlotCount, nextUnfilledCap), 1),
+  );
 }
 
 /**

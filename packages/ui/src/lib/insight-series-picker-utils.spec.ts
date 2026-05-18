@@ -108,6 +108,11 @@ describe('insight-series-picker-utils', () => {
     ).toBe(2);
   });
 
+  it('caps visible slots when value is cleared but revealed count stayed high', () => {
+    expect(computeVisibleSlotCount([], 2)).toBe(1);
+    expect(computeVisibleSlotCount([], 3)).toBe(1);
+  });
+
   it('reports when another series can be added', () => {
     expect(canAddAnotherSeries([], 1)).toBe(false);
     expect(canAddAnotherSeries([selectedFromRow(numericRow)], 1)).toBe(true);

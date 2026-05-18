@@ -12,11 +12,6 @@ export * from './lib/hooks/index.js';
 export * from './lib/styles/theme.js';
 export {
   InsightSeriesPicker,
-  filterChartableManifestRows,
-  isChartableManifestRow,
-  type ChartableManifestRow,
-  type ChartableResponseType,
-  type ChartManifestResponseType,
   type ChartManifestRow,
   type ChartTypeChoice,
   type InsightSeriesPickerProps,

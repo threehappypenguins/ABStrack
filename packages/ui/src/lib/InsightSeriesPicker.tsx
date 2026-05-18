@@ -18,27 +18,11 @@ import type {
 } from './InsightSeriesPicker.types.js';
 
 export type {
-  ChartableManifestRow,
-  ChartableResponseType,
-  ChartManifestResponseType,
   ChartManifestRow,
   ChartTypeChoice,
   InsightSeriesPickerProps,
   SelectedSeries,
 } from './InsightSeriesPicker.types.js';
-
-export {
-  INSIGHT_SERIES_SLOT_COLORS,
-  canAddAnotherSeries,
-  chartTypeChoiceLabel,
-  computeVisibleSlotCount,
-  createSelectedSeriesFromManifestRow,
-  defaultChartTypeForManifestRow,
-  filterChartableManifestRows,
-  getChartTypeChoicesForManifestRow,
-  isChartableManifestRow,
-  isChartTypeSelectorHidden,
-} from './insight-series-picker-utils.js';
 
 const MAX_SERIES_SLOTS = 3;
 
@@ -165,9 +149,15 @@ export function InsightSeriesPicker({
   );
 
   useEffect(() => {
-    setRevealedSlotCount((current) =>
-      Math.max(current, Math.min(MAX_SERIES_SLOTS, Math.max(1, value.length))),
-    );
+    setRevealedSlotCount((current) => {
+      const nextUnfilledCap =
+        value.length === 0 ? 1 : Math.min(MAX_SERIES_SLOTS, value.length + 1);
+      const minForFilled = Math.max(1, value.length);
+      return Math.min(
+        MAX_SERIES_SLOTS,
+        Math.max(minForFilled, Math.min(current, nextUnfilledCap)),
+      );
+    });
   }, [value.length]);
 
   const visibleSlotCount = computeVisibleSlotCount(value, revealedSlotCount);

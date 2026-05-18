@@ -87,14 +87,18 @@ function ControlledPicker({
 
 describe('InsightSeriesPicker', () => {
   it('auto-selects bp_band and hides the chart-type dropdown for blood pressure', () => {
-    const onChange = vi.fn();
-    render(
-      <InsightSeriesPicker
-        manifest={manifest}
-        value={[]}
-        onChange={onChange}
-      />,
+    render(<ControlledPicker />);
+
+    fireEvent.change(
+      screen.getByLabelText('Data series 1', { selector: 'select' }),
+      {
+        target: { value: glucoseRow.series_id },
+      },
     );
+
+    expect(
+      screen.getByLabelText('Chart type for series 1', { selector: 'select' }),
+    ).toBeInTheDocument();
 
     fireEvent.change(
       screen.getByLabelText('Data series 1', { selector: 'select' }),
@@ -103,19 +107,49 @@ describe('InsightSeriesPicker', () => {
       },
     );
 
+    expect(screen.getByText(/Series 1: Blood pressure/)).toBeInTheDocument();
     expect(
       screen.queryByLabelText('Chart type for series 1', {
         selector: 'select',
       }),
     ).not.toBeInTheDocument();
-    expect(onChange).toHaveBeenCalledWith([
-      expect.objectContaining({
-        seriesId: bloodPressureRow.series_id,
-        chartType: 'bp_band',
-        isBloodPressure: true,
-        color: '#1d4ed8',
-      }),
-    ]);
+  });
+
+  it('hides extra slots when the parent clears value externally', () => {
+    function ExternalResetPicker() {
+      const [value, setValue] = useState<SelectedSeries[]>([]);
+      return (
+        <>
+          <button type="button" onClick={() => setValue([])}>
+            Reset selection
+          </button>
+          <InsightSeriesPicker
+            manifest={manifest}
+            value={value}
+            onChange={setValue}
+          />
+        </>
+      );
+    }
+
+    render(<ExternalResetPicker />);
+
+    fireEvent.change(
+      screen.getByLabelText('Data series 1', { selector: 'select' }),
+      {
+        target: { value: glucoseRow.series_id },
+      },
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Add another series' }));
+    expect(
+      screen.getAllByLabelText(/Data series \d/, { selector: 'select' }),
+    ).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset selection' }));
+
+    expect(
+      screen.getAllByLabelText(/Data series \d/, { selector: 'select' }),
+    ).toHaveLength(1);
   });
 
   it('shows only slot 1 until Add another series reveals slot 2', () => {

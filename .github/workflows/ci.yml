@@ -50,10 +50,10 @@ jobs:
       # Prepend any command with "nx record --" to record its logs to Nx Cloud
       # - run: pnpm exec nx record -- echo Hello World
       - name: Packages (lint, typecheck)
-        run: pnpm exec nx run-many -t lint typecheck --projects "packages/*"
+        run: pnpm exec nx run-many -t lint typecheck -p @abstrack/types,@abstrack/ui,@abstrack/supabase,@abstrack/powersync
 
       - name: Packages (test)
-        run: pnpm exec nx run-many -t test --projects "packages/*" --exclude=@abstrack/supabase
+        run: pnpm exec nx run-many -t test -p @abstrack/types,@abstrack/ui,@abstrack/powersync --exclude=@abstrack/supabase
 
       # Secret only for preset RLS integration tests; not visible to other actions/steps.
       - name: Packages (test @abstrack/supabase)
