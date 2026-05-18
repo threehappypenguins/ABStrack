@@ -27,7 +27,7 @@ describe('useFocusRing', () => {
       );
     });
     act(() => {
-      result.current.onFocus({} as never);
+      result.current.onFocus();
     });
 
     expect(result.current.focused).toBe(true);
@@ -42,7 +42,7 @@ describe('useFocusRing', () => {
       );
     });
     act(() => {
-      result.current.onFocus({} as never);
+      result.current.onFocus();
     });
 
     expect(result.current.focused).toBe(false);
@@ -57,12 +57,12 @@ describe('useFocusRing', () => {
       );
     });
     act(() => {
-      result.current.onFocus({} as never);
+      result.current.onFocus();
     });
     expect(result.current.focused).toBe(true);
 
     act(() => {
-      result.current.onBlur({} as never);
+      result.current.onBlur();
     });
     expect(result.current.focused).toBe(false);
   });

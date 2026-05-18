@@ -49,18 +49,23 @@ jobs:
 
       # Prepend any command with "nx record --" to record its logs to Nx Cloud
       # - run: pnpm exec nx record -- echo Hello World
-      - name: Lint and typecheck
-        run: pnpm exec nx run-many -t lint typecheck
+      - name: Packages (lint, typecheck)
+        run: pnpm exec nx run-many -t lint typecheck -p @abstrack/types,@abstrack/ui,@abstrack/supabase,@abstrack/powersync
 
-      # Tests for all projects except @abstrack/supabase — keeps SUPABASE_SECRET_KEY out of this step.
-      - name: Test (excluding @abstrack/supabase)
-        run: pnpm exec nx run-many -t test --exclude=@abstrack/supabase
+      - name: Packages (test)
+        run: pnpm exec nx run-many -t test -p @abstrack/types,@abstrack/ui,@abstrack/powersync --exclude=@abstrack/supabase
 
       # Secret only for preset RLS integration tests; not visible to other actions/steps.
-      - name: Test @abstrack/supabase
+      - name: Packages (test @abstrack/supabase)
         env:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: pnpm exec nx test @abstrack/supabase
+
+      - name: Apps (lint, typecheck)
+        run: pnpm exec nx run-many -t lint typecheck --exclude=@abstrack/types,@abstrack/ui,@abstrack/supabase,@abstrack/powersync
+
+      - name: Apps (test)
+        run: pnpm exec nx run-many -t test --exclude=@abstrack/supabase,@abstrack/types,@abstrack/ui,@abstrack/powersync
       - run: pnpm exec nx run-many -t build --exclude=@abstrack/mobile
 
       - name: Install Playwright (Chromium — @a11y tests run on Chromium only)

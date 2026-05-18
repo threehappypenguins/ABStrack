@@ -101,11 +101,11 @@ export function Input({
           : {})}
         placeholderTextColor={rest.placeholderTextColor ?? palette.mutedText}
         onFocus={(e) => {
-          onFocus(e);
+          onFocus();
           onFocusProp?.(e);
         }}
         onBlur={(e) => {
-          onBlur(e);
+          onBlur();
           onBlurProp?.(e);
         }}
         style={[

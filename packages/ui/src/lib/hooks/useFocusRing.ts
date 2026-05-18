@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Platform } from 'react-native';
-import type { NativeSyntheticEvent, TargetedEvent } from 'react-native';
 
 /**
  * True after a likely keyboard-navigation key until the next primary-pointer
@@ -78,11 +77,12 @@ function attachFocusVisibleModalityListeners(): () => void {
  * On native, focus ring state stays false (callers typically gate styles with `Platform.OS === 'web'`).
  *
  * @returns `focused` flag plus `onFocus` / `onBlur` handlers to spread onto a focusable view.
+ * Handlers take no arguments so they are safe to compose with web DOM and React Native focus events.
  */
 export function useFocusRing(): {
   focused: boolean;
-  onFocus: (e: NativeSyntheticEvent<TargetedEvent>) => void;
-  onBlur: (e: NativeSyntheticEvent<TargetedEvent>) => void;
+  onFocus: () => void;
+  onBlur: () => void;
 } {
   const [focused, setFocused] = useState(false);
 

@@ -10,3 +10,10 @@ export { Dialog as Modal } from './lib/Dialog.js';
 export * from './lib/NavigationShell.js';
 export * from './lib/hooks/index.js';
 export * from './lib/styles/theme.js';
+export {
+  InsightSeriesPicker,
+  type ChartManifestRow,
+  type ChartTypeChoice,
+  type InsightSeriesPickerProps,
+  type SelectedSeries,
+} from './lib/InsightSeriesPicker.js';
