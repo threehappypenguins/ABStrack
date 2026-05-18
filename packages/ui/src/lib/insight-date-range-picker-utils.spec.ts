@@ -5,6 +5,7 @@ import {
   getInsightDateRangePreset,
   inclusiveCalendarDaySpan,
   INSIGHT_DATE_RANGE_MAX_DAYS,
+  INSIGHT_DATE_RANGE_MAX_NIGHTS,
   isInsightDateRangeDayDisabled,
   normalizeInsightDateRange,
   startOfCalendarDay,
@@ -101,6 +102,12 @@ describe('inclusiveCalendarDaySpan', () => {
     expect(inclusiveCalendarDaySpan(from, to)).toBeGreaterThanOrEqual(
       msBasedSpan,
     );
+  });
+});
+
+describe('INSIGHT_DATE_RANGE_MAX_NIGHTS', () => {
+  it('is one less than the inclusive day cap for react-day-picker range max', () => {
+    expect(INSIGHT_DATE_RANGE_MAX_NIGHTS).toBe(INSIGHT_DATE_RANGE_MAX_DAYS - 1);
   });
 });
 

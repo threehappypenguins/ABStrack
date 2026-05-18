@@ -1,6 +1,12 @@
 /** Maximum inclusive span for a chart date range (2 × 365 calendar days). */
 export const INSIGHT_DATE_RANGE_MAX_DAYS = 730;
 
+/**
+ * Maximum nights between range endpoints for `react-day-picker` `mode="range"` `max`
+ * (picker counts nights; {@link INSIGHT_DATE_RANGE_MAX_DAYS} counts inclusive days).
+ */
+export const INSIGHT_DATE_RANGE_MAX_NIGHTS = INSIGHT_DATE_RANGE_MAX_DAYS - 1;
+
 export type InsightDateRange = {
   from: Date;
   to: Date;

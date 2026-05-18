@@ -8,7 +8,7 @@ import {
   formatInsightDateRangeAnnouncement,
   getInsightDateRangeDisabledMatchers,
   getInsightDateRangePreset,
-  INSIGHT_DATE_RANGE_MAX_DAYS,
+  INSIGHT_DATE_RANGE_MAX_NIGHTS,
   INSIGHT_DATE_RANGE_PRESETS,
   normalizeInsightDateRange,
   type InsightDateRange,
@@ -161,7 +161,7 @@ export function InsightDateRangePicker({
         selected={selected}
         onSelect={handleCalendarSelect}
         disabled={getInsightDateRangeDisabledMatchers()}
-        max={INSIGHT_DATE_RANGE_MAX_DAYS}
+        max={INSIGHT_DATE_RANGE_MAX_NIGHTS}
         defaultMonth={value.to}
         classNames={dayPickerClassNames}
         aria-label="Chart date range calendar"
