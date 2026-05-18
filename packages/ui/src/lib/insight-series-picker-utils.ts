@@ -1,8 +1,33 @@
 import type {
+  ChartableManifestRow,
   ChartManifestRow,
   ChartTypeChoice,
   SelectedSeries,
 } from './InsightSeriesPicker.types.js';
+
+/**
+ * Whether a manifest row can be selected in the chart builder.
+ *
+ * @param row - Row from `get_user_chart_manifest`.
+ * @returns `true` when the row has at least one allowed chart type.
+ */
+export function isChartableManifestRow(
+  row: ChartManifestRow,
+): row is ChartableManifestRow {
+  return getChartTypeChoicesForManifestRow(row).length > 0;
+}
+
+/**
+ * Returns only manifest rows the chart builder can plot.
+ *
+ * @param manifest - Full RPC manifest (may include unsupported `response_type` values).
+ * @returns Rows with at least one allowed chart type.
+ */
+export function filterChartableManifestRows(
+  manifest: ChartManifestRow[],
+): ChartableManifestRow[] {
+  return manifest.filter(isChartableManifestRow);
+}
 
 /** Fixed accessible colors for series slots 1–3 (not user-configurable). */
 export const INSIGHT_SERIES_SLOT_COLORS = [
@@ -38,6 +63,8 @@ export function getChartTypeChoicesForManifestRow(
       return ['line', 'bar'];
     case 'boolean':
       return ['event'];
+    case 'text':
+      return [];
     default:
       return [];
   }
@@ -49,7 +76,7 @@ export function getChartTypeChoicesForManifestRow(
  * @param row - Manifest row describing the series.
  * @returns `true` when only one chart type applies.
  */
-export function isChartTypeSelectorHidden(row: ChartManifestRow): boolean {
+export function isChartTypeSelectorHidden(row: ChartableManifestRow): boolean {
   return getChartTypeChoicesForManifestRow(row).length <= 1;
 }
 
@@ -57,19 +84,12 @@ export function isChartTypeSelectorHidden(row: ChartManifestRow): boolean {
  * Default chart type for a manifest row (first allowed choice).
  *
  * @param row - Manifest row describing the series.
- * @returns Default chart type.
+ * @returns Default chart type, or `undefined` when the row has no chart types.
  */
 export function defaultChartTypeForManifestRow(
   row: ChartManifestRow,
-): ChartTypeChoice {
-  const choices = getChartTypeChoicesForManifestRow(row);
-  const first = choices[0];
-  if (!first) {
-    throw new Error(
-      `No chart type available for series ${row.series_id} (${row.response_type})`,
-    );
-  }
-  return first;
+): ChartTypeChoice | undefined {
+  return getChartTypeChoicesForManifestRow(row)[0];
 }
 
 /**
@@ -88,19 +108,17 @@ export function chartTypeChoiceLabel(chartType: ChartTypeChoice): string {
  * @param row - Manifest row for the series.
  * @param slotIndex - Zero-based slot index (0–2).
  * @param chartType - Optional chart type; defaults to the row's allowed default.
- * @returns Selected series state for the chart builder.
+ * @returns Selected series state, or `undefined` when the row has no valid chart type.
  */
 export function createSelectedSeriesFromManifestRow(
-  row: ChartManifestRow,
+  row: ChartableManifestRow,
   slotIndex: number,
   chartType?: ChartTypeChoice,
-): SelectedSeries {
-  const resolvedChartType = chartType ?? defaultChartTypeForManifestRow(row);
+): SelectedSeries | undefined {
   const allowed = getChartTypeChoicesForManifestRow(row);
-  if (!allowed.includes(resolvedChartType)) {
-    throw new Error(
-      `Chart type ${resolvedChartType} is not allowed for series ${row.series_id}`,
-    );
+  const resolvedChartType = chartType ?? allowed[0];
+  if (!resolvedChartType || !allowed.includes(resolvedChartType)) {
+    return undefined;
   }
 
   return {

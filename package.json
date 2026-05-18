@@ -29,6 +29,7 @@
     "supabase:test": "nx test @abstrack/supabase",
     "supabase:typecheck": "nx run @abstrack/supabase:typecheck",
     "supabase:validate": "nx run-many -t lint test typecheck -p @abstrack/supabase",
+    "packages:validate": "nx run-many -t lint test typecheck --projects \"packages/*\"",
     "lint": "nx run-many -t lint",
     "test": "nx run-many -t test",
     "build": "nx run-many -t build -p web,practitioner && pnpm mobile:typecheck && pnpm supabase:typecheck",

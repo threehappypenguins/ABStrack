@@ -38,6 +38,7 @@ const severityRow: ChartManifestRow = {
   label: 'Brain fog',
   response_type: 'severity',
   is_blood_pressure: false,
+  unit: null,
   ...baseManifestFields,
 };
 
@@ -47,10 +48,27 @@ const booleanRow: ChartManifestRow = {
   label: 'Vomiting',
   response_type: 'boolean',
   is_blood_pressure: false,
+  unit: null,
   ...baseManifestFields,
 };
 
-const manifest = [bloodPressureRow, glucoseRow, severityRow, booleanRow];
+const textNotesRow: ChartManifestRow = {
+  series_id: 'health_marker::custom::notes',
+  series_type: 'health_marker',
+  label: 'Daily notes',
+  response_type: 'text',
+  is_blood_pressure: false,
+  unit: null,
+  ...baseManifestFields,
+};
+
+const manifest = [
+  bloodPressureRow,
+  glucoseRow,
+  severityRow,
+  booleanRow,
+  textNotesRow,
+];
 
 function ControlledPicker({
   initial = [] as SelectedSeries[],
@@ -183,7 +201,7 @@ describe('InsightSeriesPicker', () => {
       },
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Remove series 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear series 1' }));
 
     expect(
       screen.getAllByLabelText(/Data series \d/, { selector: 'select' }),
@@ -211,7 +229,7 @@ describe('InsightSeriesPicker', () => {
       },
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Remove series 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear series 1' }));
 
     expect(
       screen.getAllByLabelText(/Data series \d/, { selector: 'select' }),
@@ -257,6 +275,21 @@ describe('InsightSeriesPicker', () => {
     expect(
       screen.getAllByLabelText(/Data series \d/, { selector: 'select' }),
     ).toHaveLength(3);
+  });
+
+  it('omits non-chartable text manifest rows from the series selector', () => {
+    render(<ControlledPicker />);
+
+    const options = within(
+      screen.getByLabelText('Data series 1', { selector: 'select' }),
+    ).getAllByRole('option');
+
+    expect(options.map((option) => option.textContent)).not.toContain(
+      'Daily notes',
+    );
+    expect(
+      options.some((option) => option.textContent?.includes('Daily notes')),
+    ).toBe(false);
   });
 
   it('assigns palette colors by slot index', () => {

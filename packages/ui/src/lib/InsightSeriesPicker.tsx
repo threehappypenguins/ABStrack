@@ -1,22 +1,26 @@
 'use client';
 
-import { useEffect, useId, useState, type CSSProperties } from 'react';
+import { useEffect, useId, useMemo, useState, type CSSProperties } from 'react';
 import {
   canAddAnotherSeries,
   chartTypeChoiceLabel,
   computeVisibleSlotCount,
   createSelectedSeriesFromManifestRow,
+  filterChartableManifestRows,
   getChartTypeChoicesForManifestRow,
   isChartTypeSelectorHidden,
 } from './insight-series-picker-utils.js';
 import type {
-  ChartManifestRow,
+  ChartableManifestRow,
   ChartTypeChoice,
   InsightSeriesPickerProps,
   SelectedSeries,
 } from './InsightSeriesPicker.types.js';
 
 export type {
+  ChartableManifestRow,
+  ChartableResponseType,
+  ChartManifestResponseType,
   ChartManifestRow,
   ChartTypeChoice,
   InsightSeriesPickerProps,
@@ -30,7 +34,9 @@ export {
   computeVisibleSlotCount,
   createSelectedSeriesFromManifestRow,
   defaultChartTypeForManifestRow,
+  filterChartableManifestRows,
   getChartTypeChoicesForManifestRow,
+  isChartableManifestRow,
   isChartTypeSelectorHidden,
 } from './insight-series-picker-utils.js';
 
@@ -104,17 +110,31 @@ const colorSwatchStyles = (color: string): CSSProperties => ({
 });
 
 function findManifestRow(
-  manifest: ChartManifestRow[],
+  manifest: ChartableManifestRow[],
   seriesId: string,
-): ChartManifestRow | undefined {
+): ChartableManifestRow | undefined {
   return manifest.find((row) => row.series_id === seriesId);
 }
 
+/**
+ * Accessible label for the slot remove/clear control.
+ * Slot 1 clears in place; slots 2–3 remove the slot from view.
+ *
+ * @param slotIndex - Zero-based slot index (0–2).
+ * @returns Button text matching the action.
+ */
+function seriesSlotActionLabel(slotIndex: number): string {
+  if (slotIndex === 0) {
+    return 'Clear series 1';
+  }
+  return `Remove series ${slotIndex + 1}`;
+}
+
 function optionsForSlot(
-  manifest: ChartManifestRow[],
+  manifest: ChartableManifestRow[],
   value: SelectedSeries[],
   slotIndex: number,
-): ChartManifestRow[] {
+): ChartableManifestRow[] {
   const selectedElsewhere = new Set(
     value
       .filter((_, index) => index !== slotIndex)
@@ -135,6 +155,10 @@ export function InsightSeriesPicker({
   value,
   onChange,
 }: InsightSeriesPickerProps) {
+  const chartableManifest = useMemo(
+    () => filterChartableManifestRows(manifest),
+    [manifest],
+  );
   const baseId = useId().replace(/:/g, '');
   const [revealedSlotCount, setRevealedSlotCount] = useState(() =>
     Math.min(MAX_SERIES_SLOTS, Math.max(1, value.length)),
@@ -160,13 +184,18 @@ export function InsightSeriesPicker({
       return;
     }
 
-    const row = findManifestRow(manifest, seriesId);
+    const row = findManifestRow(chartableManifest, seriesId);
     if (!row) {
       return;
     }
 
+    const selected = createSelectedSeriesFromManifestRow(row, slotIndex);
+    if (!selected) {
+      return;
+    }
+
     const next = value.slice(0, slotIndex);
-    next[slotIndex] = createSelectedSeriesFromManifestRow(row, slotIndex);
+    next[slotIndex] = selected;
     onChange(next.slice(0, MAX_SERIES_SLOTS));
   };
 
@@ -178,16 +207,21 @@ export function InsightSeriesPicker({
     if (!current) {
       return;
     }
-    const row = findManifestRow(manifest, current.seriesId);
+    const row = findManifestRow(chartableManifest, current.seriesId);
     if (!row) {
       return;
     }
-    const next = [...value];
-    next[slotIndex] = createSelectedSeriesFromManifestRow(
+    const selected = createSelectedSeriesFromManifestRow(
       row,
       slotIndex,
       chartType,
     );
+    if (!selected) {
+      return;
+    }
+
+    const next = [...value];
+    next[slotIndex] = selected;
     onChange(next);
   };
 
@@ -206,11 +240,15 @@ export function InsightSeriesPicker({
         {Array.from({ length: visibleSlotCount }, (_, slotIndex) => {
           const selected = value[slotIndex];
           const row = selected
-            ? findManifestRow(manifest, selected.seriesId)
+            ? findManifestRow(chartableManifest, selected.seriesId)
             : undefined;
           const seriesSelectId = `${baseId}-series-${slotIndex}`;
           const chartTypeSelectId = `${baseId}-chart-type-${slotIndex}`;
-          const slotOptions = optionsForSlot(manifest, value, slotIndex);
+          const slotOptions = optionsForSlot(
+            chartableManifest,
+            value,
+            slotIndex,
+          );
           const chartTypeHidden = row ? isChartTypeSelectorHidden(row) : true;
 
           return (
@@ -297,9 +335,7 @@ export function InsightSeriesPicker({
                 style={removeButtonStyles}
                 onClick={() => handleRemove(slotIndex)}
               >
-                {selected
-                  ? `Remove series ${slotIndex + 1}`
-                  : `Clear series ${slotIndex + 1}`}
+                {seriesSlotActionLabel(slotIndex)}
               </button>
             </div>
           );

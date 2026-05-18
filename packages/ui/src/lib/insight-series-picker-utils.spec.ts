@@ -2,33 +2,89 @@ import {
   canAddAnotherSeries,
   computeVisibleSlotCount,
   createSelectedSeriesFromManifestRow,
+  defaultChartTypeForManifestRow,
+  filterChartableManifestRows,
   getChartTypeChoicesForManifestRow,
+  isChartableManifestRow,
   isChartTypeSelectorHidden,
 } from './insight-series-picker-utils.js';
 import type {
+  ChartableManifestRow,
+  ChartManifestResponseType,
   ChartManifestRow,
   SelectedSeries,
 } from './InsightSeriesPicker.types.js';
 
-const numericRow: ChartManifestRow = {
+const numericRow: ChartableManifestRow = {
   series_id: 'n-1',
   series_type: 'health_marker',
   label: 'Weight',
   response_type: 'numeric',
   is_blood_pressure: false,
+  unit: null,
   observation_count: 1,
   first_observed_at: '2026-01-01',
   last_observed_at: '2026-01-02',
 };
 
-const bpRow: ChartManifestRow = {
+const textRow: ChartManifestRow = {
+  ...numericRow,
+  series_id: 'notes-1',
+  label: 'Free-text notes',
+  response_type: 'text',
+};
+
+const bpRow: ChartableManifestRow = {
   ...numericRow,
   series_id: 'bp-1',
   label: 'Blood pressure',
   is_blood_pressure: true,
 };
 
+/** Test helper: chartable fixtures must produce a selected series. */
+function selectedFromRow(
+  row: ChartableManifestRow,
+  slotIndex = 0,
+): SelectedSeries {
+  const series = createSelectedSeriesFromManifestRow(row, slotIndex);
+  if (!series) {
+    throw new Error(
+      `Expected chartable fixture ${row.series_id} to map to a series`,
+    );
+  }
+  return series;
+}
+
 describe('insight-series-picker-utils', () => {
+  it('identifies chartable manifest rows and filters out text', () => {
+    expect(isChartableManifestRow(numericRow)).toBe(true);
+    expect(isChartableManifestRow(textRow)).toBe(false);
+    expect(filterChartableManifestRows([numericRow, textRow])).toEqual([
+      numericRow,
+    ]);
+  });
+
+  it('treats unknown response_type values as non-chartable without throwing', () => {
+    const futureRow: ChartManifestRow = {
+      ...numericRow,
+      series_id: 'future-1',
+      response_type: 'likert' as ChartManifestResponseType,
+    };
+
+    expect(getChartTypeChoicesForManifestRow(futureRow)).toEqual([]);
+    expect(isChartableManifestRow(futureRow)).toBe(false);
+    expect(defaultChartTypeForManifestRow(futureRow)).toBeUndefined();
+    expect(
+      filterChartableManifestRows([numericRow, futureRow, textRow]),
+    ).toEqual([numericRow]);
+  });
+
+  it('returns undefined from createSelectedSeriesFromManifestRow when chart type cannot be resolved', () => {
+    expect(
+      createSelectedSeriesFromManifestRow(numericRow, 0, 'bp_band'),
+    ).toBeUndefined();
+  });
+
   it('returns chart-type choices per manifest row', () => {
     expect(getChartTypeChoicesForManifestRow(bpRow)).toEqual(['bp_band']);
     expect(getChartTypeChoicesForManifestRow(numericRow)).toEqual([
@@ -54,12 +110,7 @@ describe('insight-series-picker-utils', () => {
 
   it('reports when another series can be added', () => {
     expect(canAddAnotherSeries([], 1)).toBe(false);
-    expect(
-      canAddAnotherSeries(
-        [createSelectedSeriesFromManifestRow(numericRow, 0)],
-        1,
-      ),
-    ).toBe(true);
+    expect(canAddAnotherSeries([selectedFromRow(numericRow)], 1)).toBe(true);
     expect(canAddAnotherSeries([], 3)).toBe(false);
   });
 });
