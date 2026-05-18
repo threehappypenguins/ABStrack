@@ -717,6 +717,20 @@ export type Database = {
         Args: { p_object_name: string }
         Returns: string
       }
+      get_user_chart_manifest: {
+        Args: { p_user_id: string }
+        Returns: {
+          first_observed_at: string
+          is_blood_pressure: boolean
+          label: string
+          last_observed_at: string
+          observation_count: number
+          response_type: string
+          series_id: string
+          series_type: string
+          unit: string
+        }[]
+      }
       list_practitioner_auth_emails_for_patient_grants: {
         Args: { p_patient_user_id: string; p_practitioner_user_ids: string[] }
         Returns: {
