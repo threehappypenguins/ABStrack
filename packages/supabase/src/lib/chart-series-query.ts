@@ -40,6 +40,11 @@ export interface GetChartSeriesParams {
   p_from: string;
   p_to: string;
   p_bucket: ChartSeriesBucket;
+  /**
+   * IANA timezone for bucket boundaries (e.g. `America/Chicago`).
+   * Must match `patientTimeZone` on `InsightComposedChart` (`@abstrack/ui`).
+   */
+  p_timezone: string;
 }
 
 /**
@@ -47,7 +52,7 @@ export interface GetChartSeriesParams {
  * Uses `SECURITY INVOKER` so existing RLS on `health_markers` and `episode_symptoms` applies.
  *
  * @param client - Supabase client with the caller JWT.
- * @param params - RPC arguments (`p_user_id`, `p_series`, `p_from`, `p_to`, `p_bucket`).
+ * @param params - RPC arguments (`p_user_id`, `p_series`, `p_from`, `p_to`, `p_bucket`, `p_timezone`).
  * @returns Bucketed rows from Postgres on success (`data` is unchanged RPC output).
  */
 export async function getChartSeries(
@@ -61,6 +66,7 @@ export async function getChartSeries(
       p_from: params.p_from,
       p_to: params.p_to,
       p_bucket: params.p_bucket,
+      p_timezone: params.p_timezone,
     });
 
     if (error) {

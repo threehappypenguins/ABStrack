@@ -25,6 +25,7 @@ import {
   isChartTypeSelectorHidden,
   MAX_SERIES_SLOTS,
   mergeSeriesSelectionAtSlot,
+  wouldManifestRowExceedDistinctNonBpValueUnitLimit,
 } from './insight-series-picker-utils.js';
 import type {
   ChartableManifestRow,
@@ -219,7 +220,16 @@ function optionsForSlot(
       .filter((_, index) => index !== slotIndex)
       .map((series) => series.seriesId),
   );
-  return manifest.filter((row) => !selectedElsewhere.has(row.series_id));
+  return manifest.filter((row) => {
+    if (selectedElsewhere.has(row.series_id)) {
+      return false;
+    }
+    return !wouldManifestRowExceedDistinctNonBpValueUnitLimit(
+      value,
+      row,
+      slotIndex,
+    );
+  });
 }
 
 /**
@@ -292,7 +302,14 @@ export function InsightSeriesPicker({
     }
 
     const selected = createSelectedSeriesFromManifestRow(row, slotIndex);
-    if (!selected) {
+    if (
+      !selected ||
+      wouldManifestRowExceedDistinctNonBpValueUnitLimit(
+        seriesValue,
+        row,
+        slotIndex,
+      )
+    ) {
       return;
     }
 

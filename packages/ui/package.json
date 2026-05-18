@@ -33,6 +33,7 @@
   },
   "dependencies": {
     "react-day-picker": "^10.0.1",
+    "recharts": "^3.8.1",
     "tslib": "^2.3.0"
   },
   "devDependencies": {

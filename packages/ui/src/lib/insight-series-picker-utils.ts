@@ -1,3 +1,4 @@
+import { wouldExceedDistinctNonBpValueUnitLimit } from './insight-composed-chart-utils.js';
 import type {
   ChartableManifestRow,
   ChartManifestRow,
@@ -206,4 +207,23 @@ export function canAddAnotherSeries(
   }
   const lastVisibleIndex = visibleSlotCount - 1;
   return value[lastVisibleIndex] !== undefined;
+}
+
+/**
+ * Whether selecting `row` in `slotIndex` would exceed supported chart Y-axis units.
+ *
+ * @param value - Current selected series.
+ * @param row - Manifest row under consideration.
+ * @param slotIndex - Slot being filled or updated.
+ */
+export function wouldManifestRowExceedDistinctNonBpValueUnitLimit(
+  value: SelectedSeries[],
+  row: ChartableManifestRow,
+  slotIndex: number,
+): boolean {
+  const candidate = createSelectedSeriesFromManifestRow(row, slotIndex);
+  if (!candidate) {
+    return true;
+  }
+  return wouldExceedDistinctNonBpValueUnitLimit(value, candidate, slotIndex);
 }

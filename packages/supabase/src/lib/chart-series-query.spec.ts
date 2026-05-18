@@ -28,6 +28,7 @@ const PARAMS: GetChartSeriesParams = {
   p_from: FROM,
   p_to: TO,
   p_bucket: 'week',
+  p_timezone: 'America/New_York',
 };
 
 function chartSeriesClient(rows: ChartSeriesBucketRow[]) {
@@ -38,7 +39,7 @@ function chartSeriesClient(rows: ChartSeriesBucketRow[]) {
 }
 
 describe('getChartSeries', () => {
-  it('calls get_chart_series RPC with user, series, range, and bucket', async () => {
+  it('calls get_chart_series RPC with user, series, range, bucket, and timezone', async () => {
     const client = chartSeriesClient([]);
 
     await getChartSeries(client, PARAMS);
