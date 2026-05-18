@@ -8,6 +8,7 @@ import {
   isInsightDateRangeDayDisabled,
   normalizeInsightDateRange,
   startOfCalendarDay,
+  subtractCalendarMonths,
 } from './insight-date-range-picker-utils.js';
 
 const ANCHOR = new Date(2026, 4, 18, 15, 30, 0); // 2026-05-18 local
@@ -59,6 +60,29 @@ describe('insight-date-range-picker-utils presets', () => {
       from: localDate(2025, 4, 18),
       to: localDate(2026, 4, 18),
     });
+  });
+
+  it('clamps Last 12 months on a leap day anchor to the prior month end', () => {
+    vi.setSystemTime(new Date(2028, 1, 29, 12, 0, 0));
+    const range = getInsightDateRangePreset('last_12_months');
+    expect(range).toEqual({
+      from: localDate(2027, 1, 28),
+      to: localDate(2028, 1, 29),
+    });
+  });
+});
+
+describe('subtractCalendarMonths', () => {
+  it('clamps Feb 29 to Feb 28 when the target year is not a leap year', () => {
+    expect(subtractCalendarMonths(localDate(2028, 1, 29), 12)).toEqual(
+      localDate(2027, 1, 28),
+    );
+  });
+
+  it('clamps Jan 31 to the last day of the prior month', () => {
+    expect(subtractCalendarMonths(localDate(2026, 0, 31), 1)).toEqual(
+      localDate(2025, 11, 31),
+    );
   });
 });
 

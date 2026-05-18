@@ -81,15 +81,25 @@ export function addCalendarDays(date: Date, days: number): Date {
 
 /**
  * Subtracts whole calendar months from a date (local), returning start-of-day.
+ * When the anchor day does not exist in the target month (e.g. Feb 29 → Feb 28),
+ * clamps to the last day of that month instead of overflowing (e.g. into March 1).
  *
  * @param date - Anchor day.
  * @param months - Months to subtract.
- * @returns Start-of-day result (month-end overflow handled by the `Date` object).
+ * @returns Start-of-day result in the target month.
  */
 export function subtractCalendarMonths(date: Date, months: number): Date {
-  const result = startOfCalendarDay(date);
-  result.setMonth(result.getMonth() - months);
-  return startOfCalendarDay(result);
+  const anchor = startOfCalendarDay(date);
+  const day = anchor.getDate();
+  const targetMonthStart = new Date(
+    anchor.getFullYear(),
+    anchor.getMonth() - months,
+    1,
+  );
+  const year = targetMonthStart.getFullYear();
+  const month = targetMonthStart.getMonth();
+  const lastDayOfMonth = new Date(year, month + 1, 0).getDate();
+  return new Date(year, month, Math.min(day, lastDayOfMonth));
 }
 
 /**
