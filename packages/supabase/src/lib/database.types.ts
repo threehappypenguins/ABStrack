@@ -717,6 +717,25 @@ export type Database = {
         Args: { p_object_name: string }
         Returns: string
       }
+      get_chart_series: {
+        Args: {
+          p_bucket: string
+          p_from: string
+          p_series: Json
+          p_to: string
+          p_user_id: string
+        }
+        Returns: {
+          bucket_start: string
+          diastolic_avg: number
+          event_count: number
+          series_id: string
+          systolic_avg: number
+          value_avg: number
+          value_max: number
+          value_min: number
+        }[]
+      }
       get_user_chart_manifest: {
         Args: { p_user_id: string }
         Returns: {
