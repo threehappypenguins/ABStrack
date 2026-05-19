@@ -1,7 +1,5 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Uuid } from '@abstrack/types';
 import type { Json } from './database.types.js';
-import type { ChartSnapshotsRpcDatabase } from './chart-snapshots-rpc-database.js';
 import type { ChartSeriesBucket } from './chart-series-query.js';
 import { PresetDataError, toPresetDataError } from './preset-data-error.js';
 import type { PresetDataResult } from './preset-data.js';
@@ -18,12 +16,6 @@ function normalizeChartSnapshotPractitionerNote(
   }
   const trimmed = note.trim();
   return trimmed.length === 0 ? null : trimmed;
-}
-
-function chartSnapshotsRpcClient(
-  client: AbstrackSupabaseClient,
-): SupabaseClient<ChartSnapshotsRpcDatabase> {
-  return client as SupabaseClient<ChartSnapshotsRpcDatabase>;
 }
 
 /**
@@ -82,17 +74,14 @@ export async function shareChartSnapshot(
   }
 
   try {
-    const { data, error } = await chartSnapshotsRpcClient(client).rpc(
-      'share_chart_snapshot',
-      {
-        p_patient_user_id: params.patientUserId,
-        p_series_definition: params.seriesDefinition as unknown as Json,
-        p_date_from: params.dateFrom,
-        p_date_to: params.dateTo,
-        p_bucket: params.bucket,
-        p_practitioner_note: practitionerNote,
-      },
-    );
+    const { data, error } = await client.rpc('share_chart_snapshot', {
+      p_patient_user_id: params.patientUserId,
+      p_series_definition: params.seriesDefinition as unknown as Json,
+      p_date_from: params.dateFrom,
+      p_date_to: params.dateTo,
+      p_bucket: params.bucket,
+      p_practitioner_note: practitionerNote ?? undefined,
+    });
 
     if (error) {
       return { ok: false, error: toPresetDataError(error) };
@@ -125,12 +114,9 @@ export async function markChartSnapshotSeen(
   snapshotId: Uuid,
 ): Promise<PresetDataResult<boolean>> {
   try {
-    const { data, error } = await chartSnapshotsRpcClient(client).rpc(
-      'mark_chart_snapshot_seen',
-      {
-        p_snapshot_id: snapshotId,
-      },
-    );
+    const { data, error } = await client.rpc('mark_chart_snapshot_seen', {
+      p_snapshot_id: snapshotId,
+    });
 
     if (error) {
       return { ok: false, error: toPresetDataError(error) };
