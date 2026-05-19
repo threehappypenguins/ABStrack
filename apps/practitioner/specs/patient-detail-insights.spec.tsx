@@ -9,6 +9,7 @@ import {
 import { LiveAnnouncerProvider } from '@abstrack/ui/a11y-web';
 import type { ChartManifestRow } from '@abstrack/ui/insights-web';
 import {
+  CHART_SNAPSHOT_PRACTITIONER_NOTE_MAX_LENGTH,
   getChartSeries,
   getUserChartManifest,
   shareChartSnapshot,
@@ -211,9 +212,14 @@ describe('PractitionerPatientDetailPage insights tab', () => {
     expect(
       await screen.findByRole('heading', { name: /share chart with patient/i }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByLabelText(/note for patient/i, { selector: 'textarea' }),
-    ).toBeInTheDocument();
+    const noteField = screen.getByLabelText(/note for patient/i, {
+      selector: 'textarea',
+    });
+    expect(noteField).toBeInTheDocument();
+    expect(noteField).toHaveAttribute(
+      'maxLength',
+      String(CHART_SNAPSHOT_PRACTITIONER_NOTE_MAX_LENGTH),
+    );
   });
 
   it('calls shareChartSnapshot with chart payload on confirm', async () => {

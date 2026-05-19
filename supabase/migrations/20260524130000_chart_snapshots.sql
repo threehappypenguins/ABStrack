@@ -51,19 +51,53 @@ CREATE POLICY chart_snapshots_insert ON public.chart_snapshots
     AND public.user_has_practitioner_access (patient_user_id)
   );
 
-CREATE POLICY chart_snapshots_update_patient_seen ON public.chart_snapshots
-  FOR UPDATE
-  TO authenticated
-  USING (
-    patient_user_id = (SELECT auth.uid ())
-    AND seen_by_patient_at IS NULL
-  )
-  WITH CHECK (
-    patient_user_id = (SELECT auth.uid ())
-    AND seen_by_patient_at IS NOT NULL
-  );
+-- Append-only at privilege + trigger layer: patients mark seen via mark_chart_snapshot_seen only.
+REVOKE ALL ON public.chart_snapshots
+FROM PUBLIC;
 
-COMMENT ON POLICY chart_snapshots_update_patient_seen ON public.chart_snapshots IS 'Patient may set seen_by_patient_at once on their own unseen snapshots (mark_chart_snapshot_seen). Practitioners have no UPDATE policy; rows are otherwise append-only.';
+REVOKE ALL ON public.chart_snapshots
+FROM anon;
+
+REVOKE ALL ON public.chart_snapshots
+FROM authenticated;
+
+GRANT
+  SELECT,
+  INSERT ON public.chart_snapshots TO authenticated;
+
+REVOKE ALL ON public.chart_snapshots
+FROM service_role;
+
+GRANT
+  SELECT,
+  INSERT ON public.chart_snapshots TO service_role;
+
+CREATE OR REPLACE FUNCTION public.chart_snapshots_append_only_guard ()
+  RETURNS TRIGGER
+  LANGUAGE plpgsql
+  AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'chart_snapshots is append-only';
+  END IF;
+
+  IF TG_OP = 'UPDATE'
+    AND (to_jsonb(OLD) - 'seen_by_patient_at') = (to_jsonb(NEW) - 'seen_by_patient_at')
+    AND OLD.seen_by_patient_at IS NULL
+    AND NEW.seen_by_patient_at IS NOT NULL THEN
+    RETURN NEW;
+  END IF;
+
+  RAISE EXCEPTION 'chart_snapshots is append-only except seen_by_patient_at';
+END;
+$$;
+
+COMMENT ON FUNCTION public.chart_snapshots_append_only_guard () IS 'Blocks UPDATE/DELETE except a one-time NULL→timestamp change on seen_by_patient_at; non-seen columns compared via jsonb minus that key.';
+
+CREATE TRIGGER chart_snapshots_append_only
+  BEFORE UPDATE OR DELETE ON public.chart_snapshots
+  FOR EACH ROW
+  EXECUTE FUNCTION public.chart_snapshots_append_only_guard ();
 
 -- ---------------------------------------------------------------------------
 -- RPC: share_chart_snapshot
@@ -143,12 +177,17 @@ GRANT EXECUTE ON FUNCTION public.share_chart_snapshot (uuid, jsonb, timestamptz,
 CREATE OR REPLACE FUNCTION public.mark_chart_snapshot_seen (p_snapshot_id uuid)
   RETURNS boolean
   LANGUAGE plpgsql
-  SECURITY INVOKER
+  SECURITY DEFINER
   SET search_path = pg_catalog, public
   AS $$
 DECLARE
   v_row_count integer;
 BEGIN
+  IF (SELECT auth.uid ()) IS NULL THEN
+    RAISE EXCEPTION 'permission denied'
+      USING ERRCODE = '42501';
+  END IF;
+
   UPDATE
     public.chart_snapshots
   SET
@@ -164,7 +203,7 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION public.mark_chart_snapshot_seen (uuid) IS 'Patient marks a shared chart snapshot as seen. SECURITY INVOKER; only the patient owner may update seen_by_patient_at.';
+COMMENT ON FUNCTION public.mark_chart_snapshot_seen (uuid) IS 'Patient marks a shared chart snapshot as seen. SECURITY DEFINER; authenticated has no direct UPDATE on chart_snapshots. Only seen_by_patient_at may change (append-only trigger).';
 
 REVOKE ALL ON FUNCTION public.mark_chart_snapshot_seen (uuid)
 FROM PUBLIC;

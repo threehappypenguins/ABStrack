@@ -3,9 +3,22 @@ import type { Uuid } from '@abstrack/types';
 import type { Json } from './database.types.js';
 import type { ChartSnapshotsRpcDatabase } from './chart-snapshots-rpc-database.js';
 import type { ChartSeriesBucket } from './chart-series-query.js';
-import { toPresetDataError } from './preset-data-error.js';
+import { PresetDataError, toPresetDataError } from './preset-data-error.js';
 import type { PresetDataResult } from './preset-data.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
+
+/** Matches `chart_snapshots_practitioner_note_len` (`char_length(practitioner_note) <= 16000`). */
+export const CHART_SNAPSHOT_PRACTITIONER_NOTE_MAX_LENGTH = 16_000;
+
+function normalizeChartSnapshotPractitionerNote(
+  note: string | null | undefined,
+): string | null {
+  if (note == null) {
+    return null;
+  }
+  const trimmed = note.trim();
+  return trimmed.length === 0 ? null : trimmed;
+}
 
 function chartSnapshotsRpcClient(
   client: AbstrackSupabaseClient,
@@ -52,6 +65,22 @@ export async function shareChartSnapshot(
   client: AbstrackSupabaseClient,
   params: ShareChartSnapshotParams,
 ): Promise<PresetDataResult<Uuid>> {
+  const practitionerNote = normalizeChartSnapshotPractitionerNote(
+    params.practitionerNote,
+  );
+  if (
+    practitionerNote != null &&
+    practitionerNote.length > CHART_SNAPSHOT_PRACTITIONER_NOTE_MAX_LENGTH
+  ) {
+    return {
+      ok: false,
+      error: new PresetDataError(
+        'validation_error',
+        `Notes must be ${CHART_SNAPSHOT_PRACTITIONER_NOTE_MAX_LENGTH.toLocaleString()} characters or fewer.`,
+      ),
+    };
+  }
+
   try {
     const { data, error } = await chartSnapshotsRpcClient(client).rpc(
       'share_chart_snapshot',
@@ -61,7 +90,7 @@ export async function shareChartSnapshot(
         p_date_from: params.dateFrom,
         p_date_to: params.dateTo,
         p_bucket: params.bucket,
-        p_practitioner_note: params.practitionerNote ?? null,
+        p_practitioner_note: practitionerNote,
       },
     );
 

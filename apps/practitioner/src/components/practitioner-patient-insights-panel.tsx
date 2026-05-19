@@ -10,6 +10,7 @@ import {
 } from 'react';
 import { chartManifestSeriesDisplayLabel } from '@abstrack/types';
 import {
+  CHART_SNAPSHOT_PRACTITIONER_NOTE_MAX_LENGTH,
   getChartSeries,
   getUserChartManifest,
   shareChartSnapshot,
@@ -85,6 +86,7 @@ export function PractitionerPatientInsightsPanel({
   const chartOptionsHeadingId = useId();
   const bucketGroupId = useId();
   const shareNoteFieldId = useId();
+  const shareNoteHintId = useId();
 
   const chartTimeZone = useMemo(
     () => Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -303,7 +305,7 @@ export function PractitionerPatientInsightsPanel({
       dateFrom: p_from,
       dateTo: p_to,
       bucket,
-      practitionerNote: shareNote.trim() || null,
+      practitionerNote: shareNote,
     });
 
     if (!result.ok) {
@@ -460,9 +462,18 @@ export function PractitionerPatientInsightsPanel({
           value={shareNote}
           onChange={(event) => setShareNote(event.target.value)}
           rows={4}
+          maxLength={CHART_SNAPSHOT_PRACTITIONER_NOTE_MAX_LENGTH}
+          aria-describedby={shareNoteHintId}
           className="mt-2 w-full rounded-lg border border-app-border bg-app-bg px-3 py-2 text-sm text-app-ink shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
           placeholder="Add context about what you want them to notice"
         />
+        <p id={shareNoteHintId} className="mt-1.5 text-xs text-app-muted">
+          {(
+            CHART_SNAPSHOT_PRACTITIONER_NOTE_MAX_LENGTH - shareNote.length
+          ).toLocaleString()}{' '}
+          characters remaining (max{' '}
+          {CHART_SNAPSHOT_PRACTITIONER_NOTE_MAX_LENGTH.toLocaleString()}).
+        </p>
       </ConfirmDialog>
     </div>
   );

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
 import {
+  CHART_SNAPSHOT_PRACTITIONER_NOTE_MAX_LENGTH,
   markChartSnapshotSeen,
   shareChartSnapshot,
   type ChartSnapshotSeriesDefinition,
@@ -50,8 +51,28 @@ describe('shareChartSnapshot', () => {
       p_date_from: '2026-04-01T00:00:00.000Z',
       p_date_to: '2026-05-01T00:00:00.000Z',
       p_bucket: 'day',
-      p_practitioner_note: '  Trend looks stable.  ',
+      p_practitioner_note: 'Trend looks stable.',
     });
+  });
+
+  it('rejects practitioner notes longer than the database limit', async () => {
+    const client = rpcClient(SNAPSHOT_ID);
+    const tooLong = 'x'.repeat(CHART_SNAPSHOT_PRACTITIONER_NOTE_MAX_LENGTH + 1);
+
+    const result = await shareChartSnapshot(client, {
+      patientUserId: PATIENT_ID,
+      seriesDefinition: SERIES,
+      dateFrom: '2026-04-01T00:00:00.000Z',
+      dateTo: '2026-05-01T00:00:00.000Z',
+      bucket: 'day',
+      practitionerNote: tooLong,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('validation_error');
+    }
+    expect(client.rpc).not.toHaveBeenCalled();
   });
 
   it('returns snapshot id on success', async () => {
