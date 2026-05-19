@@ -124,9 +124,12 @@ SELECT public.delete_chart_snapshots_maintenance(
 -- All rows: (NULL, NULL)
 ```
 
-If delete still fails with `chart_snapshots rows cannot be deleted`, the session is not trusted (for example Studio Table Editor as `dashboard_user`). Use **SQL Editor**, not Table Editor.
+If cleanup from an app or Studio session fails, check the exact error from `chart_snapshots_append_only_guard`:
 
-**Before the migration is on cloud:** `chart_snapshots` does not exist yet (or an older trigger blocks all deletes). Finish review on the migration file, then `db push` once before relying on the commands above.
+- **Untrusted `DELETE`:** `chart_snapshots is append-only` (hint: _Use the SQL Editor as postgres, or call delete_chart_snapshots_maintenance from a trusted session._). The session is not trusted—for example Table Editor as `dashboard_user`. Use **SQL Editor** as `postgres`, not Table Editor.
+- **Untrusted `UPDATE`:** `chart_snapshots is append-only except seen_by_patient_at` (patients may only mark seen via `mark_chart_snapshot_seen`).
+
+**Before the migration is on cloud:** `chart_snapshots` does not exist yet (or migration `20260524130000` still blocks all `DELETE` with `chart_snapshots is append-only`). Finish review on the migration file, then `db push` once before relying on the commands above.
 
 ---
 

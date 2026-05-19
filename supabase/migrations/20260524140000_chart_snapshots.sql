@@ -14,6 +14,59 @@ ALTER TABLE public.chart_snapshots
 COMMENT ON COLUMN public.chart_snapshots.chart_timezone IS 'IANA timezone used when the practitioner built the chart (matches get_chart_series p_timezone). Nullable for rows created before this column existed.';
 
 -- ---------------------------------------------------------------------------
+-- chart_timezone: table-level IANA validation (direct INSERT and RPC)
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.chart_snapshots_normalize_chart_timezone (p_chart_timezone text)
+  RETURNS text
+  LANGUAGE plpgsql
+  STABLE
+  SET search_path = pg_catalog, public
+  AS $$
+DECLARE
+  v_tz text;
+BEGIN
+  v_tz := nullif(trim(p_chart_timezone), '');
+
+  IF v_tz IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT
+      1
+    FROM
+      pg_catalog.pg_timezone_names
+    WHERE
+      name = v_tz) THEN
+    RAISE EXCEPTION 'chart_snapshots.chart_timezone: invalid IANA timezone %', v_tz
+      USING ERRCODE = '22023';
+  END IF;
+
+  RETURN v_tz;
+END;
+$$;
+
+COMMENT ON FUNCTION public.chart_snapshots_normalize_chart_timezone (text) IS 'Trims chart_snapshots.chart_timezone; null/blank → NULL; non-empty values must exist in pg_timezone_names.';
+
+CREATE OR REPLACE FUNCTION public.chart_snapshots_chart_timezone_guard ()
+  RETURNS TRIGGER
+  LANGUAGE plpgsql
+  AS $$
+BEGIN
+  NEW.chart_timezone := public.chart_snapshots_normalize_chart_timezone (NEW.chart_timezone);
+
+  RETURN NEW;
+END;
+$$;
+
+COMMENT ON FUNCTION public.chart_snapshots_chart_timezone_guard () IS 'BEFORE INSERT/UPDATE: enforce valid IANA chart_timezone on all writes (RPC and direct INSERT).';
+
+CREATE TRIGGER chart_snapshots_chart_timezone
+  BEFORE INSERT OR UPDATE ON public.chart_snapshots
+  FOR EACH ROW
+  EXECUTE FUNCTION public.chart_snapshots_chart_timezone_guard ();
+
+-- ---------------------------------------------------------------------------
 -- share_chart_snapshot: persist chart_timezone (7-arg); keep 6-arg for older clients
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.share_chart_snapshot (
@@ -23,7 +76,7 @@ CREATE OR REPLACE FUNCTION public.share_chart_snapshot (
   p_date_to timestamptz,
   p_bucket text,
   p_practitioner_note text DEFAULT NULL,
-  p_chart_timezone text DEFAULT NULL
+  p_chart_timezone text
 )
   RETURNS uuid
   LANGUAGE plpgsql
@@ -56,19 +109,7 @@ BEGIN
     RAISE EXCEPTION 'p_date_from must be before p_date_to';
   END IF;
 
-  v_tz := nullif(trim(p_chart_timezone), '');
-
-  IF v_tz IS NOT NULL
-    AND NOT EXISTS (
-      SELECT
-        1
-      FROM
-        pg_catalog.pg_timezone_names
-      WHERE
-        name = v_tz) THEN
-    RAISE EXCEPTION 'share_chart_snapshot: invalid IANA timezone %', v_tz
-      USING ERRCODE = '22023';
-  END IF;
+  v_tz := public.chart_snapshots_normalize_chart_timezone (p_chart_timezone);
 
   INSERT INTO public.chart_snapshots (
     patient_user_id,
@@ -95,7 +136,7 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION public.share_chart_snapshot (uuid, jsonb, timestamptz, timestamptz, text, text, text) IS 'Practitioner shares a chart snapshot with a linked patient. When p_chart_timezone is set, stores IANA zone so patients see the same calendar range and bucket labels as the practitioner chart; when omitted or null, chart_timezone is stored null (legacy-compatible).';
+COMMENT ON FUNCTION public.share_chart_snapshot (uuid, jsonb, timestamptz, timestamptz, text, text, text) IS 'Practitioner shares a chart snapshot with a linked patient. Requires p_chart_timezone (no default) so six- and seven-argument overloads do not collide. Non-empty IANA values are validated; null or blank stores chart_timezone null.';
 
 REVOKE ALL ON FUNCTION public.share_chart_snapshot (uuid, jsonb, timestamptz, timestamptz, text, text, text)
 FROM PUBLIC;
