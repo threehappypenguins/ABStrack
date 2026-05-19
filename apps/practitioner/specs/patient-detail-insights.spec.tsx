@@ -70,7 +70,6 @@ jest.mock('@abstrack/supabase', () => {
   };
 });
 
-
 const getUserChartManifestMock = getUserChartManifest as jest.MockedFunction<
   typeof getUserChartManifest
 >;

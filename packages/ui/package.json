@@ -26,6 +26,12 @@
       "import": "./dist/insights-web.js",
       "default": "./dist/insights-web.js"
     },
+    "./insights-web-impl": {
+      "@abstrack/source": "./src/insights-web.ts",
+      "types": "./dist/insights-web.d.ts",
+      "import": "./dist/insights-web.js",
+      "default": "./dist/insights-web.js"
+    },
     "./native": {
       "@abstrack/source": "./src/native.ts",
       "types": "./dist/native.d.ts",

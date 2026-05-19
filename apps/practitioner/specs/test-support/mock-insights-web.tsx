@@ -1,42 +1,55 @@
 /**
  * Jest stub for `@abstrack/ui/insights-web` (see practitioner `jest.config.cts` `moduleNameMapper`).
  * Avoids loading `packages/ui/dist` chart components that import `react-native` via `useFocusRing`.
+ *
+ * Real chart utils/types load via `@abstrack/ui/insights-web-impl` (unmapped) so `requireActual` does not
+ * resolve back to this file.
  */
 import type {
   ChartManifestRow,
+  ChartTypeChoice,
+  InsightSeriesPickerProps,
   SelectedSeries,
-} from '../../../../packages/ui/src/lib/InsightSeriesPicker.types.js';
-import type { InsightDateRange } from '../../../../packages/ui/src/lib/InsightDateRangePicker.js';
-
-const uiLib = '../../../../packages/ui/src/lib';
-
-const { pivotChartSeriesBucketRows } = jest.requireActual(
-  `${uiLib}/insight-composed-chart-utils`,
-) as typeof import('../../../../packages/ui/src/lib/insight-composed-chart-utils.js');
-
-const { filterChartableManifestRows, reconcileSelectedSeriesWithManifest } =
-  jest.requireActual(`${uiLib}/insight-series-picker-utils`) as typeof import('../../../../packages/ui/src/lib/insight-series-picker-utils.js');
-
-export {
-  pivotChartSeriesBucketRows,
-  filterChartableManifestRows,
-  reconcileSelectedSeriesWithManifest,
-};
-
-export type { ChartTypeChoice, SelectedSeries } from '../../../../packages/ui/src/lib/InsightSeriesPicker.types.js';
-export type {
-  InsightDateRange,
-  InsightDateRangePickerProps,
-  InsightDateRangePresetId,
-} from '../../../../packages/ui/src/lib/InsightDateRangePicker.js';
-export type {
+} from '@abstrack/ui/insights-web-impl';
+import type {
   ChartSeriesBucketMetrics,
   ChartSeriesRow,
   InsightChartBucket,
   InsightComposedChartProps,
-} from '../../../../packages/ui/src/lib/InsightComposedChart.types.js';
-export type { ChartManifestRow } from '../../../../packages/ui/src/lib/InsightSeriesPicker.types.js';
-export type { InsightSeriesPickerProps } from '../../../../packages/ui/src/lib/InsightSeriesPicker.types.js';
+} from '@abstrack/ui/insights-web-impl';
+import type {
+  InsightDateRange,
+  InsightDateRangePickerProps,
+  InsightDateRangePresetId,
+} from '@abstrack/ui/insights-web-impl';
+
+const {
+  filterChartableManifestRows,
+  pivotChartSeriesBucketRows,
+  reconcileSelectedSeriesWithManifest,
+} = jest.requireActual(
+  '@abstrack/ui/insights-web-impl',
+) as typeof import('@abstrack/ui/insights-web-impl');
+
+export {
+  filterChartableManifestRows,
+  pivotChartSeriesBucketRows,
+  reconcileSelectedSeriesWithManifest,
+};
+
+export type {
+  ChartManifestRow,
+  ChartSeriesBucketMetrics,
+  ChartSeriesRow,
+  ChartTypeChoice,
+  InsightChartBucket,
+  InsightComposedChartProps,
+  InsightDateRange,
+  InsightDateRangePickerProps,
+  InsightDateRangePresetId,
+  InsightSeriesPickerProps,
+  SelectedSeries,
+};
 
 export function InsightSeriesPicker({
   manifest,
