@@ -40,9 +40,9 @@ describe('insight-chart-params', () => {
     const fromLabel = dateFormatter.format(range.from);
     const toLabel = dateFormatter.format(range.to);
 
-    expect(
-      formatInsightChartPageSummary(['BAC readings'], range, 'day'),
-    ).toBe(`BAC readings from ${fromLabel} to ${toLabel}, daily buckets`);
+    expect(formatInsightChartPageSummary(['BAC readings'], range, 'day')).toBe(
+      `BAC readings from ${fromLabel} to ${toLabel}, daily buckets`,
+    );
   });
 
   it('maps selected series to RPC selections', () => {

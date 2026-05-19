@@ -8,8 +8,16 @@ import {
 } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { LiveAnnouncerProvider } from '@abstrack/ui/a11y-web';
-import type { ChartManifestRow, SelectedSeries } from '@abstrack/ui';
+import type {
+  ChartManifestRow,
+  InsightDateRange,
+  SelectedSeries,
+} from '@abstrack/ui';
 import { getChartSeries, getUserChartManifest } from '@abstrack/supabase';
+import {
+  getDefaultInsightDateRange,
+  insightDateRangeToRpcBounds,
+} from '../../../lib/insights/insight-chart-params';
 import { InsightsClient } from './InsightsClient';
 
 const PHI_SUBJECT_A = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
@@ -128,7 +136,25 @@ jest.mock('@abstrack/ui', () => {
         <span data-testid="selected-count">{value.length}</span>
       </div>
     ),
-    InsightDateRangePicker: () => <div data-testid="date-range-picker" />,
+    InsightDateRangePicker: ({
+      onChange,
+    }: {
+      onChange: (next: InsightDateRange) => void;
+    }) => (
+      <div data-testid="date-range-picker">
+        <button
+          type="button"
+          onClick={() =>
+            onChange({
+              from: new Date(2026, 0, 1),
+              to: new Date(2026, 0, 31),
+            })
+          }
+        >
+          Set January 2026 range
+        </button>
+      </div>
+    ),
     InsightComposedChart: ({
       summary,
       loading,
@@ -407,6 +433,54 @@ describe('InsightsClient', () => {
 
     expect(await screen.findByText('Chart RPC failed.')).toBeInTheDocument();
     expect(screen.queryByTestId('composed-chart')).not.toBeInTheDocument();
+  });
+
+  it('refetches chart series when the date range changes', async () => {
+    const updatedRange = {
+      from: new Date(2026, 0, 1),
+      to: new Date(2026, 0, 31),
+    };
+    const defaultBounds = insightDateRangeToRpcBounds(
+      getDefaultInsightDateRange(),
+    );
+    const updatedBounds = insightDateRangeToRpcBounds(updatedRange);
+
+    renderInsights();
+
+    await screen.findByRole('button', { name: 'Select first series' });
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Select first series' }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(getChartSeriesMock).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          p_from: defaultBounds.p_from,
+          p_to: defaultBounds.p_to,
+        }),
+      );
+    });
+
+    getChartSeriesMock.mockClear();
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Set January 2026 range' }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(getChartSeriesMock).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          p_from: updatedBounds.p_from,
+          p_to: updatedBounds.p_to,
+        }),
+      );
+    });
   });
 
   it('updates chart bucket when the bucket selector changes', async () => {
