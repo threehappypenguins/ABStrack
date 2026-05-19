@@ -1,0 +1,40 @@
+{
+  "name": "@abstrack/practitioner",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "sourceRoot": "apps/practitioner/src",
+  "tags": ["npm:private"],
+  "targets": {
+    "build": {
+      "options": {
+        "cwd": "apps/practitioner",
+        "tty": false,
+        "command": "next build --webpack"
+      },
+      "dependsOn": ["^build"],
+      "cache": true,
+      "inputs": [
+        "default",
+        "^production",
+        { "externalDependencies": ["next"] }
+      ],
+      "outputs": [
+        "{workspaceRoot}/apps/practitioner/.next/!(cache)/**/*",
+        "{workspaceRoot}/apps/practitioner/.next/!(cache)"
+      ],
+      "executor": "nx:run-commands",
+      "configurations": {},
+      "parallelism": true
+    },
+    "dev": {
+      "continuous": true,
+      "options": {
+        "cwd": "apps/practitioner",
+        "command": "next dev --webpack"
+      },
+      "executor": "nx:run-commands",
+      "configurations": {},
+      "parallelism": true
+    }
+  }
+}

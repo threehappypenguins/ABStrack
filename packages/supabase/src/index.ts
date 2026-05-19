@@ -202,3 +202,11 @@ export type {
   GetChartSeriesParams,
 } from './lib/chart-series-query.js';
 export { getChartSeries } from './lib/chart-series-query.js';
+export type {
+  ChartSnapshotSeriesDefinition,
+  ShareChartSnapshotParams,
+} from './lib/chart-snapshots-query.js';
+export {
+  markChartSnapshotSeen,
+  shareChartSnapshot,
+} from './lib/chart-snapshots-query.js';
