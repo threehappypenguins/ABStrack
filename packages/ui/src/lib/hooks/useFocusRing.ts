@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 
-/** Web/DOM runtimes (Next.js, jsdom); avoids importing `react-native` in shared web chart UI. */
+/** Real DOM runtimes (Next.js, jsdom); no-ops when `window` exists without event APIs. */
 function isWebRuntime(): boolean {
-  return typeof window !== 'undefined';
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.addEventListener === 'function' &&
+    typeof window.removeEventListener === 'function'
+  );
 }
 
 /**
@@ -19,7 +23,7 @@ let pointerLikeDownHandler: (() => void) | undefined;
 
 /** Subscribes to shared window modality listeners; return value removes this subscriber. */
 function attachFocusVisibleModalityListeners(): () => void {
-  if (typeof window === 'undefined') {
+  if (!isWebRuntime()) {
     return () => undefined;
   }
 
@@ -54,7 +58,7 @@ function attachFocusVisibleModalityListeners(): () => void {
   }
 
   return () => {
-    if (typeof window === 'undefined') {
+    if (!isWebRuntime()) {
       return;
     }
     modalitySubscriberCount -= 1;

@@ -1,6 +1,7 @@
 /**
  * Jest stub for `@abstrack/ui/insights-web` (see practitioner `jest.config.cts` `moduleNameMapper`).
- * Avoids loading `packages/ui/dist` chart components that import `react-native` via `useFocusRing`.
+ * Patient-detail specs only need lightweight, deterministic chart controls (e.g. “Select first series”)
+ * and avoid loading the full insights chart module graph (Recharts, composed chart layout, dist resolution).
  *
  * Real chart utils/types load via `@abstrack/ui/insights-web-impl` (unmapped) so `requireActual` does not
  * resolve back to this file.
