@@ -21,7 +21,7 @@ export interface ChartSnapshotRow {
   date_to: string;
   bucket: ChartSeriesBucket;
   practitioner_note: string | null;
-  /** IANA zone from the practitioner chart builder; null on legacy rows. */
+  /** IANA zone from the practitioner chart builder; null only if stored before timezone was required. */
   chart_timezone: string | null;
   created_at: string;
   seen_by_patient_at: string | null;

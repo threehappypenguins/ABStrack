@@ -67,16 +67,18 @@ CREATE TRIGGER chart_snapshots_chart_timezone
   EXECUTE FUNCTION public.chart_snapshots_chart_timezone_guard ();
 
 -- ---------------------------------------------------------------------------
--- share_chart_snapshot: persist chart_timezone (7-arg); keep 6-arg for older clients
+-- share_chart_snapshot: replace six-arg RPC with chart_timezone (seven-arg)
 -- ---------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS public.share_chart_snapshot (uuid, jsonb, timestamptz, timestamptz, text, text);
+
 CREATE OR REPLACE FUNCTION public.share_chart_snapshot (
   p_patient_user_id uuid,
   p_series_definition jsonb,
   p_date_from timestamptz,
   p_date_to timestamptz,
   p_bucket text,
-  p_practitioner_note text DEFAULT NULL,
-  p_chart_timezone text
+  p_chart_timezone text,
+  p_practitioner_note text DEFAULT NULL
 )
   RETURNS uuid
   LANGUAGE plpgsql
@@ -136,45 +138,12 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION public.share_chart_snapshot (uuid, jsonb, timestamptz, timestamptz, text, text, text) IS 'Practitioner shares a chart snapshot with a linked patient. Requires p_chart_timezone (no default) so six- and seven-argument overloads do not collide. Non-empty IANA values are validated; null or blank stores chart_timezone null.';
+COMMENT ON FUNCTION public.share_chart_snapshot (uuid, jsonb, timestamptz, timestamptz, text, text, text) IS 'Practitioner shares a chart snapshot with a linked patient. Args: bucket, chart_timezone (IANA, required), optional note. Replaces the six-argument function from 20260524130000.';
 
 REVOKE ALL ON FUNCTION public.share_chart_snapshot (uuid, jsonb, timestamptz, timestamptz, text, text, text)
 FROM PUBLIC;
 
 GRANT EXECUTE ON FUNCTION public.share_chart_snapshot (uuid, jsonb, timestamptz, timestamptz, text, text, text) TO authenticated;
-
--- Six-argument overload: same RPC name/signature as 20260524130000 (no p_chart_timezone).
-CREATE OR REPLACE FUNCTION public.share_chart_snapshot (
-  p_patient_user_id uuid,
-  p_series_definition jsonb,
-  p_date_from timestamptz,
-  p_date_to timestamptz,
-  p_bucket text,
-  p_practitioner_note text DEFAULT NULL
-)
-  RETURNS uuid
-  LANGUAGE plpgsql
-  SECURITY INVOKER
-  SET search_path = pg_catalog, public
-  AS $$
-BEGIN
-  RETURN public.share_chart_snapshot (
-    p_patient_user_id,
-    p_series_definition,
-    p_date_from,
-    p_date_to,
-    p_bucket,
-    p_practitioner_note,
-    NULL::text);
-END;
-$$;
-
-COMMENT ON FUNCTION public.share_chart_snapshot (uuid, jsonb, timestamptz, timestamptz, text, text) IS 'Backward-compatible overload without p_chart_timezone; delegates to the seven-argument function with chart_timezone null until clients are updated.';
-
-REVOKE ALL ON FUNCTION public.share_chart_snapshot (uuid, jsonb, timestamptz, timestamptz, text, text)
-FROM PUBLIC;
-
-GRANT EXECUTE ON FUNCTION public.share_chart_snapshot (uuid, jsonb, timestamptz, timestamptz, text, text) TO authenticated;
 
 CREATE OR REPLACE FUNCTION public.chart_snapshots_append_only_guard ()
   RETURNS TRIGGER
