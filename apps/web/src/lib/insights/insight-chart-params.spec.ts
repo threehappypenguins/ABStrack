@@ -41,7 +41,7 @@ describe('insight-chart-params', () => {
     const toLabel = dateFormatter.format(range.to);
 
     expect(formatInsightChartPageSummary(['BAC readings'], range, 'day')).toBe(
-      `BAC readings from ${fromLabel} to ${toLabel}, daily buckets`,
+      `BAC readings from ${fromLabel} to ${toLabel}, grouped by day`,
     );
   });
 

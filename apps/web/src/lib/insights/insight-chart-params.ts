@@ -60,9 +60,9 @@ export function selectedSeriesToChartSeriesSelection(
 }
 
 const BUCKET_SUMMARY_LABEL: Record<InsightChartBucket, string> = {
-  day: 'daily buckets',
-  week: 'weekly buckets',
-  month: 'monthly buckets',
+  day: 'grouped by day',
+  week: 'grouped by week',
+  month: 'grouped by month',
 };
 
 function formatSeriesLabelsForSummary(labels: string[]): string {
@@ -84,8 +84,8 @@ function formatSeriesLabelsForSummary(labels: string[]): string {
  *
  * @param labels - Human-readable series labels from the manifest.
  * @param range - Active inclusive date range.
- * @param bucket - Active time bucket granularity.
- * @returns Summary sentence (e.g. "BAC readings from April 1 to April 30, daily buckets").
+ * @param bucket - Active chart period (day, week, or month).
+ * @returns Summary sentence (e.g. "BAC readings from April 1 to April 30, grouped by day").
  */
 export function formatInsightChartPageSummary(
   labels: string[],

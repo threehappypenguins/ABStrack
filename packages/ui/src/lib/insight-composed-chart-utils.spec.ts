@@ -192,9 +192,11 @@ describe('formatInsightChartPatientTimeZoneNote', () => {
   it('describes browser timezone for proxy viewers by default', () => {
     const note = formatInsightChartPatientTimeZoneNote('America/New_York');
     expect(note).toMatch(/your browser timezone/i);
-    expect(note).toMatch(/time buckets are grouped in this timezone/i);
+    expect(note).toMatch(
+      /day, week, and month groupings use this timezone/i,
+    );
     expect(note).not.toMatch(/patient's local timezone/i);
-    expect(note).not.toMatch(/\bday and week\b/i);
+    expect(note).not.toMatch(/\bbuckets\b/i);
   });
 
   it('can state patient-local alignment when the zone is known', () => {

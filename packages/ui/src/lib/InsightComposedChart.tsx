@@ -43,6 +43,15 @@ export type {
   InsightComposedChartProps,
 } from './InsightComposedChart.types.js';
 
+const CHART_PERIOD_TABLE_CAPTION: Record<
+  InsightComposedChartProps['bucket'],
+  string
+> = {
+  day: 'day',
+  week: 'week',
+  month: 'month',
+};
+
 const CHART_HEIGHT_PX = 320;
 
 function yAxisLabelForUnit(
@@ -372,7 +381,9 @@ export function InsightComposedChart({
       </figure>
 
       <table className="sr-only">
-        <caption>Detailed chart data by {bucket}</caption>
+        <caption>
+          Detailed chart data grouped by {CHART_PERIOD_TABLE_CAPTION[bucket]}
+        </caption>
         <thead>
           <tr>
             <th scope="col">Period</th>

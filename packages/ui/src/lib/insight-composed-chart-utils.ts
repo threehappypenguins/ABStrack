@@ -335,7 +335,7 @@ export function formatInsightChartPatientTimeZoneNote(
   if (options?.patientLocal) {
     return `Period labels use the patient's local timezone (${label}).`;
   }
-  return `Period labels use your browser timezone (${label}). Time buckets are grouped in this timezone.`;
+  return `Period labels use your browser timezone (${label}). Day, week, and month groupings use this timezone.`;
 }
 
 /**

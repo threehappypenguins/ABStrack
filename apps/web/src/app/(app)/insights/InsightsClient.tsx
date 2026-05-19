@@ -388,7 +388,7 @@ export function InsightsClient() {
                 className="flex flex-wrap gap-2"
               >
                 <span id={bucketGroupId} className="sr-only">
-                  Time bucket
+                  Group chart by
                 </span>
                 {BUCKET_OPTIONS.map(({ value, label }) => {
                   const selected = bucket === value;
