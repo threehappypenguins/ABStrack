@@ -123,7 +123,8 @@ BEGIN
       USING ERRCODE = '42501';
   END IF;
 
-  IF p_bucket NOT IN ('day', 'week', 'month') THEN
+  IF p_bucket IS NULL
+    OR p_bucket NOT IN ('day', 'week', 'month') THEN
     RAISE EXCEPTION 'p_bucket must be day, week, or month';
   END IF;
 
