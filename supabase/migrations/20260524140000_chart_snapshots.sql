@@ -55,11 +55,17 @@ CREATE OR REPLACE FUNCTION public.chart_snapshots_chart_timezone_guard ()
 BEGIN
   NEW.chart_timezone := public.chart_snapshots_normalize_chart_timezone (NEW.chart_timezone);
 
+  IF TG_OP = 'INSERT'
+    AND NEW.chart_timezone IS NULL THEN
+    RAISE EXCEPTION 'chart_snapshots.chart_timezone is required on insert'
+      USING ERRCODE = '22023';
+  END IF;
+
   RETURN NEW;
 END;
 $$;
 
-COMMENT ON FUNCTION public.chart_snapshots_chart_timezone_guard () IS 'BEFORE INSERT/UPDATE: enforce valid IANA chart_timezone on all writes (RPC and direct INSERT).';
+COMMENT ON FUNCTION public.chart_snapshots_chart_timezone_guard () IS 'BEFORE INSERT/UPDATE: valid IANA when set; INSERT requires non-null chart_timezone (legacy rows may keep null on UPDATE).';
 
 CREATE TRIGGER chart_snapshots_chart_timezone
   BEFORE INSERT OR UPDATE ON public.chart_snapshots
@@ -112,6 +118,11 @@ BEGIN
   END IF;
 
   v_tz := public.chart_snapshots_normalize_chart_timezone (p_chart_timezone);
+
+  IF v_tz IS NULL THEN
+    RAISE EXCEPTION 'p_chart_timezone must be a non-empty IANA timezone name'
+      USING ERRCODE = '22023';
+  END IF;
 
   INSERT INTO public.chart_snapshots (
     patient_user_id,
