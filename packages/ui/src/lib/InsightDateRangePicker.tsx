@@ -21,11 +21,13 @@ import {
   type InsightDateRange,
   type InsightDateRangePresetId,
 } from './insight-date-range-picker-utils.js';
+import type { InsightDateRangePickerProps } from './InsightDateRangePicker.types.js';
 
 export type {
   InsightDateRange,
   InsightDateRangePresetId,
 } from './insight-date-range-picker-utils.js';
+export type { InsightDateRangePickerProps } from './InsightDateRangePicker.types.js';
 
 function insightDateRangeAnnouncementKey(range: InsightDateRange): string {
   return `${range.from.getTime()}-${range.to.getTime()}`;
@@ -38,14 +40,6 @@ function insightDateRangesEqual(
   return (
     insightDateRangeAnnouncementKey(a) === insightDateRangeAnnouncementKey(b)
   );
-}
-
-/** Props for {@link InsightDateRangePicker}. */
-export interface InsightDateRangePickerProps {
-  /** Current inclusive local-date range. */
-  value: InsightDateRange;
-  /** Called when the user picks a preset or completes a calendar range. */
-  onChange: (range: InsightDateRange) => void;
 }
 
 const dayPickerClassNames = {

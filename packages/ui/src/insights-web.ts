@@ -12,11 +12,11 @@ export {
   type InsightSeriesPickerProps,
   type SelectedSeries,
 } from './lib/InsightSeriesPicker.js';
-export {
-  InsightDateRangePicker,
-  type InsightDateRange,
-  type InsightDateRangePickerProps,
-  type InsightDateRangePresetId,
+export { InsightDateRangePicker } from './lib/InsightDateRangePicker.js';
+export type {
+  InsightDateRange,
+  InsightDateRangePickerProps,
+  InsightDateRangePresetId,
 } from './lib/InsightDateRangePicker.js';
 export { getInsightDateRangePreset } from './lib/insight-date-range-picker-utils.js';
 export {

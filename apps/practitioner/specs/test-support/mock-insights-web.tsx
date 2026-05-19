@@ -3,34 +3,29 @@
  * Patient-detail specs only need lightweight, deterministic chart controls (e.g. “Select first series”)
  * and avoid loading the full insights chart module graph (Recharts, composed chart layout, dist resolution).
  *
- * Real chart utils/types load via `@abstrack/ui/insights-web-impl` (unmapped) so `requireActual` does not
- * resolve back to this file.
+ * Pure helpers/types load via `@abstrack/ui/insights-web-utils` (no chart components at module evaluation).
  */
 import type {
   ChartManifestRow,
   ChartTypeChoice,
-  InsightSeriesPickerProps,
-  SelectedSeries,
-} from '@abstrack/ui/insights-web-impl';
-import type {
   ChartSeriesBucketMetrics,
   ChartSeriesRow,
   InsightChartBucket,
   InsightComposedChartProps,
-} from '@abstrack/ui/insights-web-impl';
-import type {
   InsightDateRange,
   InsightDateRangePickerProps,
   InsightDateRangePresetId,
-} from '@abstrack/ui/insights-web-impl';
+  InsightSeriesPickerProps,
+  SelectedSeries,
+} from '@abstrack/ui/insights-web-utils';
 
 const {
   filterChartableManifestRows,
   pivotChartSeriesBucketRows,
   reconcileSelectedSeriesWithManifest,
 } = jest.requireActual(
-  '@abstrack/ui/insights-web-impl',
-) as typeof import('@abstrack/ui/insights-web-impl');
+  '@abstrack/ui/insights-web-utils',
+) as typeof import('@abstrack/ui/insights-web-utils');
 
 export {
   filterChartableManifestRows,
