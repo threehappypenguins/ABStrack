@@ -297,6 +297,33 @@ describe('InsightsClient', () => {
     expect(screen.queryByText('Chart options loaded.')).not.toBeInTheDocument();
   });
 
+  it('does not announce or apply manifest after unmount when RPC completes late', async () => {
+    let resolveManifest:
+      | ((value: Awaited<ReturnType<typeof getUserChartManifest>>) => void)
+      | undefined;
+    getUserChartManifestMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveManifest = resolve;
+        }),
+    );
+
+    const view = renderInsights();
+
+    expect(
+      await screen.findByText('Loading chart options…'),
+    ).toBeInTheDocument();
+    announceMock.mockClear();
+    view.unmount();
+
+    await act(async () => {
+      resolveManifest?.({ ok: true, data: [bacManifestRow] });
+      await Promise.resolve();
+    });
+
+    expect(announceMock).not.toHaveBeenCalled();
+  });
+
   it('maps raw RPC health marker labels to preset display names', async () => {
     getUserChartManifestMock.mockResolvedValue({
       ok: true,

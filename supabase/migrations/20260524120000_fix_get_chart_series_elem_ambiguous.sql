@@ -336,7 +336,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION public.get_chart_series (uuid, jsonb, timestamptz, timestamptz, text, text) IS
-'Returns pre-bucketed chart series for p_user_id and selected manifest series. Buckets use date_trunc in p_timezone (IANA name, validated against pg_timezone_names) so bucket_start aligns with patient-local chart labels. Validates p_bucket (day|week|month), p_series (1–3 series), and p_from < p_to (p_to exclusive). Severity: value_* ignores NULL response_severity; event_count is total severity_scale rows per bucket. SECURITY INVOKER.';
+'Returns pre-bucketed chart series for p_user_id and selected manifest series. Buckets use date_trunc in p_timezone (IANA name, validated against pg_timezone_names) so bucket_start aligns with chart labels formatted in that same zone (caller-supplied; e.g. patient IANA from profile or viewer browser when no stored patient zone). Validates p_bucket (day|week|month), p_series (1–3 series), and p_from < p_to (p_to exclusive). Severity: value_* ignores NULL response_severity; event_count is total severity_scale rows per bucket. SECURITY INVOKER.';
 
 REVOKE ALL ON FUNCTION public.get_chart_series (uuid, jsonb, timestamptz, timestamptz, text, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_chart_series (uuid, jsonb, timestamptz, timestamptz, text, text) TO authenticated;

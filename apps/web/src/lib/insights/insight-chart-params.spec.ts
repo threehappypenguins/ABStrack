@@ -28,14 +28,21 @@ describe('insight-chart-params', () => {
     expect(new Date(p_from).getTime()).toBeLessThan(new Date(p_to).getTime());
   });
 
-  it('formats a plain-English chart summary', () => {
+  it('formats a chart summary with locale-aware date labels', () => {
     const range = {
       from: new Date(2026, 3, 1),
       to: new Date(2026, 3, 30),
     };
+    const dateFormatter = new Intl.DateTimeFormat(undefined, {
+      month: 'long',
+      day: 'numeric',
+    });
+    const fromLabel = dateFormatter.format(range.from);
+    const toLabel = dateFormatter.format(range.to);
+
     expect(
       formatInsightChartPageSummary(['BAC readings'], range, 'day'),
-    ).toMatch(/BAC readings from April 1 to April 30, daily buckets/);
+    ).toBe(`BAC readings from ${fromLabel} to ${toLabel}, daily buckets`);
   });
 
   it('maps selected series to RPC selections', () => {

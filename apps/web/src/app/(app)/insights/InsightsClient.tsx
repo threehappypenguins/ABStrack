@@ -205,15 +205,17 @@ export function InsightsClient() {
       setManifestLoading(true);
       setManifest([]);
       setManifestError(null);
-      return;
-    }
-    if (phiSubjectUserId == null) {
+    } else if (phiSubjectUserId == null) {
       setManifestLoading(false);
       setManifest([]);
       setManifestError(null);
-      return;
+    } else {
+      void loadManifest();
     }
-    void loadManifest();
+
+    return () => {
+      invalidateInsightsLoads();
+    };
   }, [
     invalidateInsightsLoads,
     loadManifest,
@@ -288,9 +290,13 @@ export function InsightsClient() {
       setChartLoading(false);
       setChartRows([]);
       setChartError(null);
-      return;
+    } else {
+      void loadChartSeries();
     }
-    void loadChartSeries();
+
+    return () => {
+      chartLoadGenRef.current += 1;
+    };
   }, [
     loadChartSeries,
     manifest,
