@@ -489,7 +489,7 @@ export function InsightsClient() {
             </p>
             <p className="mt-1 text-sm text-app-muted">
               {unseenSnapshots.length === 1
-                ? 'Tap to view the chart they selected.'
+                ? 'Tap to view the chart your practitioner selected.'
                 : `Tap to view the most recent of ${unseenSnapshots.length} shared charts.`}
             </p>
           </button>
