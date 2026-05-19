@@ -320,16 +320,22 @@ export function formatIanaTimeZoneForDisplay(patientTimeZone: string): string {
 }
 
 /**
- * Caption explaining that chart period labels use the patient's timezone.
+ * Caption for chart period timezone alignment.
  *
- * @param patientTimeZone - IANA timezone id.
- * @returns Practitioner-facing note text.
+ * @param chartTimeZone - IANA timezone used for `get_chart_series` bucketing and axis labels.
+ * @param options.patientLocal - When true, copy states patient-local alignment (only when
+ *   `chartTimeZone` is the patient's IANA zone, not the viewer's browser zone).
+ * @returns Note text for the chart figure.
  */
 export function formatInsightChartPatientTimeZoneNote(
-  patientTimeZone: string,
+  chartTimeZone: string,
+  options?: { patientLocal?: boolean },
 ): string {
-  const label = formatIanaTimeZoneForDisplay(patientTimeZone);
-  return `Period labels use the patient's local timezone (${label}).`;
+  const label = formatIanaTimeZoneForDisplay(chartTimeZone);
+  if (options?.patientLocal) {
+    return `Period labels use the patient's local timezone (${label}).`;
+  }
+  return `Period labels use your browser timezone (${label}). Day, week, and month groupings use this timezone.`;
 }
 
 /**

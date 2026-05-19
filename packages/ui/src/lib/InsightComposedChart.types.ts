@@ -39,17 +39,22 @@ export interface InsightComposedChartProps {
   summary: string;
   /**
    * IANA timezone for bucket axis and table labels (e.g. `America/Chicago`).
-   * Must be the same value as `p_timezone` on {@link getChartSeries} so server
-   * `bucket_start` values and labels stay aligned. Use the **patient's** timezone;
-   * pass the device zone only when the patient views their own chart.
+   * Must match `p_timezone` on {@link getChartSeries}. When the patient's zone is stored,
+   * pass it here; until then the viewer's browser zone is a common fallback for caretaker views.
    */
   patientTimeZone: string;
   /**
-   * When true, shows that period labels use the patient's local timezone.
-   * Enable for practitioner views; omit or set false when the patient views their own chart.
+   * When true, shows a note explaining which timezone buckets and labels use.
+   * Use for caretaker/practitioner views (`patientTimeZoneNoteUsesPatientLocal` should be
+   * false unless `patientTimeZone` is the patient's real IANA zone).
    * @defaultValue false
    */
   showPatientTimeZoneNote?: boolean;
+  /**
+   * When true with {@link showPatientTimeZoneNote}, copy claims patient-local alignment.
+   * @defaultValue false
+   */
+  patientTimeZoneNoteUsesPatientLocal?: boolean;
 }
 
 export type { ChartTypeChoice, SelectedSeries };

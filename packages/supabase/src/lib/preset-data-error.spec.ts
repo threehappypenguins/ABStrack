@@ -25,6 +25,15 @@ describe('mapSupabaseErrorToPresetDataError', () => {
     expect(mapped?.message).toMatch(/conflict/i);
   });
 
+  it('maps get_chart_series validation messages to validation_error', () => {
+    const mapped = mapSupabaseErrorToPresetDataError({
+      code: '22023',
+      message: 'get_chart_series: p_bucket must be day, week, or month',
+    });
+    expect(mapped?.code).toBe('validation_error');
+    expect(mapped?.message).toBe('p_bucket must be day, week, or month');
+  });
+
   it('maps Error instances with PostgREST-shaped fields (no PostgrestError constructor)', () => {
     const err = Object.assign(new Error('duplicate'), {
       code: '23505',

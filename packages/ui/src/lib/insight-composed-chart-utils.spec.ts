@@ -189,10 +189,20 @@ describe('formatInsightChartBucketLabel', () => {
 });
 
 describe('formatInsightChartPatientTimeZoneNote', () => {
-  it('mentions the patient local timezone', () => {
-    expect(formatInsightChartPatientTimeZoneNote('America/New_York')).toMatch(
-      /patient's local timezone/i,
-    );
+  it('describes browser timezone for proxy viewers by default', () => {
+    const note = formatInsightChartPatientTimeZoneNote('America/New_York');
+    expect(note).toMatch(/your browser timezone/i);
+    expect(note).toMatch(/day, week, and month groupings use this timezone/i);
+    expect(note).not.toMatch(/patient's local timezone/i);
+    expect(note).not.toMatch(/\bbuckets\b/i);
+  });
+
+  it('can state patient-local alignment when the zone is known', () => {
+    expect(
+      formatInsightChartPatientTimeZoneNote('America/New_York', {
+        patientLocal: true,
+      }),
+    ).toMatch(/patient's local timezone/i);
   });
 });
 

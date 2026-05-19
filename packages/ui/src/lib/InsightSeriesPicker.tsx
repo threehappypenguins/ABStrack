@@ -5,16 +5,10 @@ import {
   useId,
   useMemo,
   useState,
-  type CSSProperties,
-  type SelectHTMLAttributes,
   type ButtonHTMLAttributes,
+  type SelectHTMLAttributes,
 } from 'react';
 import { useFocusRing } from './hooks/useFocusRing.js';
-import {
-  defaultPalette,
-  highContrastPalette,
-  type UiPalette,
-} from './styles/theme.js';
 import {
   canAddAnotherSeries,
   chartTypeChoiceLabel,
@@ -41,107 +35,51 @@ export type {
   SelectedSeries,
 } from './InsightSeriesPicker.types.js';
 
-function insightSeriesPickerStyles(palette: UiPalette) {
-  const field: CSSProperties = {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 6,
-  };
+function pickerSelectClassName(highContrast: boolean): string {
+  return [
+    'min-h-11 w-full rounded-lg bg-app-surface px-3 text-base text-app-ink outline-none transition',
+    'disabled:cursor-not-allowed',
+    highContrast
+      ? 'border-2 border-app-ink font-semibold shadow-none disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-app-ink focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg'
+      : 'border border-app-border shadow-inner disabled:text-app-muted disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-app-ring',
+  ].join(' ');
+}
 
-  const label: CSSProperties = {
-    fontSize: 16,
-    fontWeight: 600,
-    color: palette.text,
-  };
+function pickerButtonClassName(highContrast: boolean): string {
+  return [
+    'inline-flex min-h-11 min-w-11 items-center justify-center self-start rounded-lg bg-app-surface px-4 text-base text-app-ink',
+    'transition hover:bg-[var(--app-nav-hover-bg)] outline-none focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg',
+    highContrast
+      ? 'border-2 border-app-ink font-bold shadow-none focus-visible:ring-2 focus-visible:ring-app-ink'
+      : 'border border-app-border font-semibold shadow-sm focus-visible:ring-2 focus-visible:ring-app-ring',
+  ].join(' ');
+}
 
-  const select: CSSProperties = {
-    minHeight: 44,
-    fontSize: 16,
-    padding: '8px 12px',
-    borderRadius: 8,
-    border: `1px solid ${palette.border}`,
-    backgroundColor: palette.surface,
-    color: palette.text,
-  };
-
-  const slot: CSSProperties = {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 12,
-    padding: 12,
-    border: `1px solid ${palette.border}`,
-    borderRadius: 8,
-    backgroundColor: palette.surface,
-  };
-
-  const root: CSSProperties = {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 16,
-    color: palette.text,
-  };
-
-  const secondaryButton: CSSProperties = {
-    alignSelf: 'flex-start',
-    minHeight: 44,
-    minWidth: 44,
-    padding: '8px 16px',
-    fontSize: 16,
-    borderRadius: 8,
-    border: `1px solid ${palette.border}`,
-    backgroundColor: palette.surface,
-    color: palette.text,
-    cursor: 'pointer',
-  };
-
-  const colorSwatch = (color: string): CSSProperties => ({
-    width: 16,
-    height: 16,
-    borderRadius: 4,
-    backgroundColor: color,
-    border: `1px solid ${palette.mutedText}`,
-    flexShrink: 0,
-  });
-
-  const focusRing = (focused: boolean): CSSProperties =>
-    focused
-      ? {
-          outline: '2px solid',
-          outlineColor: palette.focusRing,
-          outlineOffset: 2,
-        }
-      : {};
-
-  return {
-    field,
-    label,
-    select,
-    slot,
-    root,
-    secondaryButton,
-    colorSwatch,
-    focusRing,
-  };
+function pickerFocusRingClassName(highContrast: boolean): string {
+  return highContrast
+    ? 'ring-2 ring-app-ink ring-offset-2 ring-offset-app-bg'
+    : 'ring-2 ring-app-ring ring-offset-2 ring-offset-app-bg';
 }
 
 function PickerSelect({
-  palette,
-  style,
+  className,
+  highContrast = false,
   onFocus,
   onBlur,
   ...rest
-}: SelectHTMLAttributes<HTMLSelectElement> & { palette: UiPalette }) {
+}: SelectHTMLAttributes<HTMLSelectElement> & { highContrast?: boolean }) {
   const { focused, onFocus: onFocusRing, onBlur: onBlurRing } = useFocusRing();
-  const styles = insightSeriesPickerStyles(palette);
 
   return (
     <select
       {...rest}
-      style={{
-        ...styles.select,
-        ...style,
-        ...styles.focusRing(focused),
-      }}
+      className={[
+        pickerSelectClassName(highContrast),
+        focused ? pickerFocusRingClassName(highContrast) : '',
+        className,
+      ]
+        .filter(Boolean)
+        .join(' ')}
       onFocus={(event) => {
         onFocusRing();
         onFocus?.(event);
@@ -155,23 +93,24 @@ function PickerSelect({
 }
 
 function PickerButton({
-  palette,
-  style,
+  className,
+  highContrast = false,
   onFocus,
   onBlur,
   ...rest
-}: ButtonHTMLAttributes<HTMLButtonElement> & { palette: UiPalette }) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & { highContrast?: boolean }) {
   const { focused, onFocus: onFocusRing, onBlur: onBlurRing } = useFocusRing();
-  const styles = insightSeriesPickerStyles(palette);
 
   return (
     <button
       {...rest}
-      style={{
-        ...styles.secondaryButton,
-        ...style,
-        ...styles.focusRing(focused),
-      }}
+      className={[
+        pickerButtonClassName(highContrast),
+        focused ? pickerFocusRingClassName(highContrast) : '',
+        className,
+      ]
+        .filter(Boolean)
+        .join(' ')}
       onFocus={(event) => {
         onFocusRing();
         onFocus?.(event);
@@ -235,6 +174,9 @@ function optionsForSlot(
 /**
  * Series and chart-type picker for the insight chart builder (web only).
  * Supports up to three series with progressive slot disclosure.
+ * Uses semantic `app-*` tokens from the host app `global.css` (light/dark via `html.dark`).
+ * When `highContrast` is true, slots, labels, selects, buttons, and focus rings use stronger
+ * `app-ink` borders and rings for the documented high-contrast presentation.
  *
  * @param props - Manifest rows, selected series, and change handler.
  * @returns Accessible form controls for series selection.
@@ -245,9 +187,6 @@ export function InsightSeriesPicker({
   onChange,
   highContrast = false,
 }: InsightSeriesPickerProps) {
-  const palette = highContrast ? highContrastPalette : defaultPalette;
-  const styles = useMemo(() => insightSeriesPickerStyles(palette), [palette]);
-
   const seriesValue = useMemo(() => clampSeriesValue(value), [value]);
   const chartableManifest = useMemo(
     () => filterChartableManifestRows(manifest),
@@ -351,12 +290,39 @@ export function InsightSeriesPicker({
     setRevealedSlotCount(Math.max(1, slotIndex));
   };
 
+  const slotSurfaceClassName = [
+    'mb-3 flex flex-col gap-3 rounded-lg bg-app-surface p-3',
+    highContrast
+      ? 'border-2 border-app-ink shadow-none ring-2 ring-app-ink'
+      : 'border border-app-border/90 shadow-sm ring-1 ring-[color:var(--app-ring-slate)]',
+  ].join(' ');
+
+  const labelClassName = highContrast
+    ? 'text-base font-bold text-app-ink'
+    : 'text-base font-semibold text-app-ink';
+
+  const legendClassName = highContrast
+    ? 'mb-2 text-base font-bold text-app-ink'
+    : 'mb-2 text-base font-semibold text-app-ink';
+
+  const slotTitleClassName = highContrast
+    ? 'flex items-center gap-2 text-base font-bold text-app-ink'
+    : 'flex items-center gap-2 text-base font-semibold text-app-ink';
+
+  const colorSwatchClassName = highContrast
+    ? 'h-4 w-4 shrink-0 rounded border-2 border-app-ink'
+    : 'h-4 w-4 shrink-0 rounded border border-app-border';
+
   return (
-    <div style={styles.root}>
-      <fieldset style={{ border: 'none', margin: 0, padding: 0 }}>
-        <legend style={{ ...styles.label, marginBottom: 8 }}>
-          Chart series
-        </legend>
+    <div
+      className={
+        highContrast
+          ? 'flex flex-col gap-4 font-medium text-app-ink'
+          : 'flex flex-col gap-4 text-app-ink'
+      }
+    >
+      <fieldset className="m-0 border-0 p-0">
+        <legend className={legendClassName}>Chart series</legend>
 
         {Array.from({ length: visibleSlotCount }, (_, slotIndex) => {
           const selected = seriesValue[slotIndex];
@@ -375,24 +341,19 @@ export function InsightSeriesPicker({
           return (
             <div
               key={slotIndex}
-              style={{ ...styles.slot, marginBottom: 12 }}
+              className={slotSurfaceClassName}
               role="group"
               aria-labelledby={`${baseId}-slot-${slotIndex}-legend`}
             >
               <div
                 id={`${baseId}-slot-${slotIndex}-legend`}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  fontWeight: 600,
-                  fontSize: 16,
-                }}
+                className={slotTitleClassName}
               >
                 {selected ? (
                   <>
                     <span
-                      style={styles.colorSwatch(selected.color)}
+                      className={colorSwatchClassName}
+                      style={{ backgroundColor: selected.color }}
                       aria-hidden
                     />
                     <span>
@@ -404,13 +365,13 @@ export function InsightSeriesPicker({
                 )}
               </div>
 
-              <div style={styles.field}>
-                <label htmlFor={seriesSelectId} style={styles.label}>
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor={seriesSelectId} className={labelClassName}>
                   {`Data series ${slotIndex + 1}`}
                 </label>
                 <PickerSelect
-                  palette={palette}
                   id={seriesSelectId}
+                  highContrast={highContrast}
                   value={selected?.seriesId ?? ''}
                   onChange={(event) =>
                     handleSeriesChange(slotIndex, event.target.value)
@@ -427,13 +388,13 @@ export function InsightSeriesPicker({
               </div>
 
               {!chartTypeHidden && row ? (
-                <div style={styles.field}>
-                  <label htmlFor={chartTypeSelectId} style={styles.label}>
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor={chartTypeSelectId} className={labelClassName}>
                     {`Chart type for series ${slotIndex + 1}`}
                   </label>
                   <PickerSelect
-                    palette={palette}
                     id={chartTypeSelectId}
+                    highContrast={highContrast}
                     value={selected?.chartType ?? ''}
                     onChange={(event) =>
                       handleChartTypeChange(
@@ -453,7 +414,7 @@ export function InsightSeriesPicker({
 
               <PickerButton
                 type="button"
-                palette={palette}
+                highContrast={highContrast}
                 onClick={() => handleRemove(slotIndex)}
               >
                 {seriesSlotActionLabel(slotIndex)}
@@ -466,7 +427,7 @@ export function InsightSeriesPicker({
       {showAddAnother ? (
         <PickerButton
           type="button"
-          palette={palette}
+          highContrast={highContrast}
           onClick={handleAddAnother}
         >
           Add another series

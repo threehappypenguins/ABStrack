@@ -227,3 +227,41 @@ export function wouldManifestRowExceedDistinctNonBpValueUnitLimit(
   }
   return wouldExceedDistinctNonBpValueUnitLimit(value, candidate, slotIndex);
 }
+
+/**
+ * Keeps only selections that still exist in the manifest, refreshing labels and metadata.
+ *
+ * @param manifest - Latest chart manifest rows.
+ * @param selected - Current picker selection.
+ * @returns Selection reconciled to the manifest (may be shorter than `selected`).
+ */
+export function reconcileSelectedSeriesWithManifest(
+  manifest: ChartManifestRow[],
+  selected: SelectedSeries[],
+): SelectedSeries[] {
+  const chartableById = new Map(
+    filterChartableManifestRows(manifest).map((row) => [row.series_id, row]),
+  );
+
+  const reconciled: SelectedSeries[] = [];
+  for (let slotIndex = 0; slotIndex < selected.length; slotIndex++) {
+    const item = selected[slotIndex];
+    if (!item) {
+      continue;
+    }
+    const row = chartableById.get(item.seriesId);
+    if (!row) {
+      continue;
+    }
+    const refreshed = createSelectedSeriesFromManifestRow(
+      row,
+      reconciled.length,
+      item.chartType,
+    );
+    if (refreshed) {
+      reconciled.push(refreshed);
+    }
+  }
+
+  return reconciled.slice(0, MAX_SERIES_SLOTS);
+}

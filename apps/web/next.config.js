@@ -14,19 +14,28 @@ const nextConfig = {
   transpilePackages: [
     '@abstrack/ui',
     '@abstrack/types',
+    '@abstrack/supabase',
     'react-native',
     'react-native-web',
   ],
   webpack: (config) => {
+    const supabaseSrc = path.join(__dirname, '../../packages/supabase/src');
     config.resolve.alias = {
       ...config.resolve.alias,
       'react-native$': 'react-native-web',
       // Resolve to source: package `exports` default points at `dist/`, which is easy to forget to
       // rebuild and causes runtime undefined exports (e.g. new helpers not in dist yet).
-      '@abstrack/types': path.join(
+      // Use exact `$` on the root entry so subpath imports (`/browser`, `/server`, …) are not
+      // rewritten to `index.ts/<subpath>`; map subpaths explicitly to match package.json exports.
+      '@abstrack/types$': path.join(
         __dirname,
         '../../packages/types/src/index.ts',
       ),
+      '@abstrack/supabase$': path.join(supabaseSrc, 'index.ts'),
+      '@abstrack/supabase/browser': path.join(supabaseSrc, 'browser.ts'),
+      '@abstrack/supabase/server': path.join(supabaseSrc, 'server.ts'),
+      '@abstrack/supabase/native': path.join(supabaseSrc, 'native.ts'),
+      '@abstrack/supabase/admin': path.join(supabaseSrc, 'admin.ts'),
     };
     return config;
   },

@@ -37,7 +37,9 @@ export interface ChartSeriesBucketRow {
 export interface GetChartSeriesParams {
   p_user_id: Uuid;
   p_series: ChartSeriesSelection[];
+  /** Inclusive range start (local midnight of the first selected day). */
   p_from: string;
+  /** Exclusive range end (local midnight of the day after the last selected day). */
   p_to: string;
   p_bucket: ChartSeriesBucket;
   /**

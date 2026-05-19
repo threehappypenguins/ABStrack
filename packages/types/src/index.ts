@@ -9,3 +9,4 @@ export * from './lib/episode-open-pass.js';
 export * from './lib/episode-bac-suggestion.js';
 export * from './lib/types.js';
 export * from './lib/marker-draft.js';
+export * from './lib/chart-manifest-labels.js';

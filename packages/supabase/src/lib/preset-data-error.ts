@@ -139,6 +139,13 @@ export function mapSupabaseErrorToPresetDataError(
 
   const combined = `${pg.message} ${pg.details ?? ''}`;
 
+  const chartSeriesMessage = pg.message?.includes('get_chart_series:')
+    ? pg.message.replace(/^get_chart_series:\s*/u, '').trim()
+    : null;
+  if (chartSeriesMessage) {
+    return new PresetDataError('validation_error', chartSeriesMessage, error);
+  }
+
   if (
     combined.includes('abstrack_preset_reorder_count_mismatch') ||
     combined.includes('abstrack_preset_reorder_duplicate_id') ||

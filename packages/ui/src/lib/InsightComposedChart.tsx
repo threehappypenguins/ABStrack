@@ -43,6 +43,15 @@ export type {
   InsightComposedChartProps,
 } from './InsightComposedChart.types.js';
 
+const CHART_PERIOD_TABLE_CAPTION: Record<
+  InsightComposedChartProps['bucket'],
+  string
+> = {
+  day: 'day',
+  week: 'week',
+  month: 'month',
+};
+
 const CHART_HEIGHT_PX = 320;
 
 function yAxisLabelForUnit(
@@ -204,6 +213,7 @@ export function InsightComposedChart({
   summary,
   patientTimeZone,
   showPatientTimeZoneNote = false,
+  patientTimeZoneNoteUsesPatientLocal = false,
 }: InsightComposedChartProps) {
   const chartData = useMemo(
     () =>
@@ -237,8 +247,14 @@ export function InsightComposedChart({
   );
   const summaryId = `${useId().replace(/:/g, '')}-summary`;
 
+  const chartTooltipStyle = {
+    backgroundColor: 'rgb(var(--app-surface) / 1)',
+    borderColor: 'rgb(var(--app-border) / 1)',
+    color: 'rgb(var(--app-ink) / 1)',
+  } as const;
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 text-app-ink">
       <figure
         aria-busy={loading ? true : undefined}
         aria-labelledby={summaryId}
@@ -250,7 +266,9 @@ export function InsightComposedChart({
 
         {showPatientTimeZoneNote ? (
           <p className="mb-3 text-xs text-app-muted">
-            {formatInsightChartPatientTimeZoneNote(patientTimeZone)}
+            {formatInsightChartPatientTimeZoneNote(patientTimeZone, {
+              patientLocal: patientTimeZoneNoteUsesPatientLocal,
+            })}
           </p>
         ) : null}
 
@@ -327,6 +345,9 @@ export function InsightComposedChart({
                 ) : null}
                 <Tooltip
                   labelFormatter={(label) => bucketTickFormatter(String(label))}
+                  contentStyle={chartTooltipStyle}
+                  labelStyle={{ color: 'rgb(var(--app-ink) / 1)' }}
+                  itemStyle={{ color: 'rgb(var(--app-ink) / 1)' }}
                 />
                 {series.map((item) => {
                   if (item.chartType === 'bp_band') {
@@ -360,7 +381,9 @@ export function InsightComposedChart({
       </figure>
 
       <table className="sr-only">
-        <caption>Detailed chart data by {bucket}</caption>
+        <caption>
+          Detailed chart data grouped by {CHART_PERIOD_TABLE_CAPTION[bucket]}
+        </caption>
         <thead>
           <tr>
             <th scope="col">Period</th>

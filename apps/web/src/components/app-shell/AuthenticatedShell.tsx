@@ -25,6 +25,11 @@ const NAV_ITEMS: {
     match: (path) => path === '/manage' || path.startsWith('/manage/'),
   },
   {
+    href: '/insights',
+    label: 'Insights',
+    match: (path) => path === '/insights' || path.startsWith('/insights/'),
+  },
+  {
     href: '/presets/symptoms',
     label: 'Symptom presets',
     match: (path) =>
@@ -115,7 +120,7 @@ export function AuthenticatedShell({
         }}
         mainStyle={{ backgroundColor: 'transparent', flex: 1 }}
         header={
-          <header className="sticky top-0 z-40 border-b border-[var(--app-header-border)] bg-[var(--app-header-bg)] shadow-header backdrop-blur-md supports-[backdrop-filter]:bg-[var(--app-header-bg)]">
+          <header className="sticky top-0 z-50 overflow-visible border-b border-[var(--app-header-border)] bg-[var(--app-header-bg)] shadow-header backdrop-blur-md supports-[backdrop-filter]:bg-[var(--app-header-bg)]">
             <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-3.5 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:gap-8 lg:px-8">
               <Link
                 href="/dashboard"
