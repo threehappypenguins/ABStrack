@@ -110,6 +110,45 @@ export type Database = {
         }
         Relationships: []
       }
+      chart_snapshots: {
+        Row: {
+          bucket: string
+          created_at: string
+          date_from: string
+          date_to: string
+          id: string
+          patient_user_id: string
+          practitioner_note: string | null
+          practitioner_user_id: string
+          seen_by_patient_at: string | null
+          series_definition: Json
+        }
+        Insert: {
+          bucket: string
+          created_at?: string
+          date_from: string
+          date_to: string
+          id?: string
+          patient_user_id: string
+          practitioner_note?: string | null
+          practitioner_user_id: string
+          seen_by_patient_at?: string | null
+          series_definition: Json
+        }
+        Update: {
+          bucket?: string
+          created_at?: string
+          date_from?: string
+          date_to?: string
+          id?: string
+          patient_user_id?: string
+          practitioner_note?: string | null
+          practitioner_user_id?: string
+          seen_by_patient_at?: string | null
+          series_definition?: Json
+        }
+        Relationships: []
+      }
       episode_media: {
         Row: {
           created_at: string
@@ -758,6 +797,10 @@ export type Database = {
           practitioner_user_id: string
         }[]
       }
+      mark_chart_snapshot_seen: {
+        Args: { p_snapshot_id: string }
+        Returns: boolean
+      }
       profiles_trusted_session_for_app_role: { Args: never; Returns: boolean }
       reorder_preset_health_markers: {
         Args: { p_ordered_ids: string[]; p_preset_id: string }
@@ -769,6 +812,17 @@ export type Database = {
       }
       resolve_auth_user_id_by_normalized_email: {
         Args: { p_normalized: string }
+        Returns: string
+      }
+      share_chart_snapshot: {
+        Args: {
+          p_bucket: string
+          p_date_from: string
+          p_date_to: string
+          p_patient_user_id: string
+          p_practitioner_note?: string
+          p_series_definition: Json
+        }
         Returns: string
       }
       stamp_caretaker_invite_pre_send: {
