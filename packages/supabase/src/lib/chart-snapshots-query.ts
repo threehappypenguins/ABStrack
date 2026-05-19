@@ -1,5 +1,11 @@
 import type { Uuid } from '@abstrack/types';
 import type { Json } from './database.types.js';
+import {
+  asGeneratedShareChartSnapshotRpcArgs,
+  CHART_SNAPSHOT_LIST_SELECT_FOR_QUERY,
+  type ChartSnapshotsRowDb,
+  type ShareChartSnapshotRpcArgs,
+} from './chart-snapshots-db-types.js';
 import type { ChartSeriesBucket } from './chart-series-query.js';
 import { PresetDataError, toPresetDataError } from './preset-data-error.js';
 import type { PresetDataResult } from './preset-data.js';
@@ -92,7 +98,7 @@ export async function shareChartSnapshot(
   }
 
   try {
-    const { data, error } = await client.rpc('share_chart_snapshot', {
+    const rpcArgs: ShareChartSnapshotRpcArgs = {
       p_patient_user_id: params.patientUserId,
       p_series_definition: params.seriesDefinition as unknown as Json,
       p_date_from: params.dateFrom,
@@ -100,7 +106,11 @@ export async function shareChartSnapshot(
       p_bucket: params.bucket,
       p_practitioner_note: practitionerNote ?? undefined,
       p_chart_timezone: params.chartTimezone,
-    });
+    };
+    const { data, error } = await client.rpc(
+      'share_chart_snapshot',
+      asGeneratedShareChartSnapshotRpcArgs(rpcArgs),
+    );
 
     if (error) {
       return { ok: false, error: toPresetDataError(error) };
@@ -122,20 +132,24 @@ export async function shareChartSnapshot(
 }
 
 /**
- * Lists unseen chart snapshots for the signed-in patient (`seen_by_patient_at IS NULL`).
+ * Lists unseen chart snapshots for a patient (`seen_by_patient_at IS NULL`).
+ *
+ * Filters explicitly on `patient_user_id` because RLS also allows practitioners to
+ * select snapshots they created.
  *
  * @param client - Supabase client with the patient JWT.
- * @returns Newest-first unseen rows (RLS limits to `patient_user_id = auth.uid()`).
+ * @param patientUserId - Patient subject id (`chart_snapshots.patient_user_id`).
+ * @returns Newest-first unseen rows for that patient.
  */
 export async function listUnseenChartSnapshotsForPatient(
   client: AbstrackSupabaseClient,
+  patientUserId: Uuid,
 ): Promise<PresetDataResult<ChartSnapshotRow[]>> {
   try {
     const { data, error } = await client
       .from('chart_snapshots')
-      .select(
-        'id, patient_user_id, practitioner_user_id, series_definition, date_from, date_to, bucket, practitioner_note, chart_timezone, created_at, seen_by_patient_at',
-      )
+      .select(CHART_SNAPSHOT_LIST_SELECT_FOR_QUERY)
+      .eq('patient_user_id', patientUserId)
       .is('seen_by_patient_at', null)
       .order('created_at', { ascending: false });
 
@@ -143,9 +157,11 @@ export async function listUnseenChartSnapshotsForPatient(
       return { ok: false, error: toPresetDataError(error) };
     }
 
+    const rows = (data ?? []) as unknown as ChartSnapshotsRowDb[];
+
     return {
       ok: true,
-      data: (data ?? []) as unknown as ChartSnapshotRow[],
+      data: rows as unknown as ChartSnapshotRow[],
     };
   } catch (cause) {
     return { ok: false, error: toPresetDataError(cause) };

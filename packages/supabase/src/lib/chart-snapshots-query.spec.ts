@@ -62,13 +62,15 @@ function chartSnapshotsQueryClient(
 ) {
   const order = vi.fn(async () => ({ data: rows, error }));
   const is = vi.fn(() => ({ order }));
-  const select = vi.fn(() => ({ is }));
+  const eq = vi.fn(() => ({ is }));
+  const select = vi.fn(() => ({ eq }));
   const from = vi.fn(() => ({ select }));
 
   return {
     client: { from } as unknown as AbstrackSupabaseClient,
     from,
     select,
+    eq,
     is,
     order,
   };
@@ -76,14 +78,15 @@ function chartSnapshotsQueryClient(
 
 describe('listUnseenChartSnapshotsForPatient', () => {
   it('queries chart_snapshots for unseen rows newest first', async () => {
-    const { client, from, select, is, order } = chartSnapshotsQueryClient([
+    const { client, from, select, eq, is, order } = chartSnapshotsQueryClient([
       UNSEEN_SNAPSHOT_ROW,
     ]);
 
-    await listUnseenChartSnapshotsForPatient(client);
+    await listUnseenChartSnapshotsForPatient(client, PATIENT_ID);
 
     expect(from).toHaveBeenCalledWith('chart_snapshots');
     expect(select).toHaveBeenCalledWith(CHART_SNAPSHOTS_SELECT);
+    expect(eq).toHaveBeenCalledWith('patient_user_id', PATIENT_ID);
     expect(is).toHaveBeenCalledWith('seen_by_patient_at', null);
     expect(order).toHaveBeenCalledWith('created_at', { ascending: false });
   });
@@ -91,7 +94,7 @@ describe('listUnseenChartSnapshotsForPatient', () => {
   it('returns query rows on success', async () => {
     const { client } = chartSnapshotsQueryClient([UNSEEN_SNAPSHOT_ROW]);
 
-    const result = await listUnseenChartSnapshotsForPatient(client);
+    const result = await listUnseenChartSnapshotsForPatient(client, PATIENT_ID);
 
     expect(result.ok).toBe(true);
     if (!result.ok) {
@@ -104,7 +107,7 @@ describe('listUnseenChartSnapshotsForPatient', () => {
   it('returns an empty array when data is null', async () => {
     const { client } = chartSnapshotsQueryClient(null);
 
-    const result = await listUnseenChartSnapshotsForPatient(client);
+    const result = await listUnseenChartSnapshotsForPatient(client, PATIENT_ID);
 
     expect(result.ok).toBe(true);
     if (!result.ok) {
@@ -119,7 +122,7 @@ describe('listUnseenChartSnapshotsForPatient', () => {
       message: 'permission denied for table chart_snapshots',
     });
 
-    const result = await listUnseenChartSnapshotsForPatient(client);
+    const result = await listUnseenChartSnapshotsForPatient(client, PATIENT_ID);
 
     expect(result.ok).toBe(false);
     if (result.ok) {

@@ -14,10 +14,8 @@ ALTER TABLE public.chart_snapshots
 COMMENT ON COLUMN public.chart_snapshots.chart_timezone IS 'IANA timezone used when the practitioner built the chart (matches get_chart_series p_timezone). Nullable for rows created before this column existed.';
 
 -- ---------------------------------------------------------------------------
--- share_chart_snapshot: persist chart_timezone (new parameter; drop prior overload)
+-- share_chart_snapshot: persist chart_timezone (7-arg); keep 6-arg for older clients
 -- ---------------------------------------------------------------------------
-DROP FUNCTION IF EXISTS public.share_chart_snapshot (uuid, jsonb, timestamptz, timestamptz, text, text);
-
 CREATE OR REPLACE FUNCTION public.share_chart_snapshot (
   p_patient_user_id uuid,
   p_series_definition jsonb,
@@ -60,18 +58,14 @@ BEGIN
 
   v_tz := nullif(trim(p_chart_timezone), '');
 
-  IF v_tz IS NULL THEN
-    RAISE EXCEPTION 'p_chart_timezone must be a non-empty IANA timezone name'
-      USING ERRCODE = '22023';
-  END IF;
-
-  IF NOT EXISTS (
-    SELECT
-      1
-    FROM
-      pg_catalog.pg_timezone_names
-    WHERE
-      name = v_tz) THEN
+  IF v_tz IS NOT NULL
+    AND NOT EXISTS (
+      SELECT
+        1
+      FROM
+        pg_catalog.pg_timezone_names
+      WHERE
+        name = v_tz) THEN
     RAISE EXCEPTION 'share_chart_snapshot: invalid IANA timezone %', v_tz
       USING ERRCODE = '22023';
   END IF;
@@ -101,12 +95,45 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION public.share_chart_snapshot (uuid, jsonb, timestamptz, timestamptz, text, text, text) IS 'Practitioner shares a chart snapshot with a linked patient. Stores chart_timezone (IANA) so patients see the same calendar range and bucket labels as the practitioner chart.';
+COMMENT ON FUNCTION public.share_chart_snapshot (uuid, jsonb, timestamptz, timestamptz, text, text, text) IS 'Practitioner shares a chart snapshot with a linked patient. When p_chart_timezone is set, stores IANA zone so patients see the same calendar range and bucket labels as the practitioner chart; when omitted or null, chart_timezone is stored null (legacy-compatible).';
 
 REVOKE ALL ON FUNCTION public.share_chart_snapshot (uuid, jsonb, timestamptz, timestamptz, text, text, text)
 FROM PUBLIC;
 
 GRANT EXECUTE ON FUNCTION public.share_chart_snapshot (uuid, jsonb, timestamptz, timestamptz, text, text, text) TO authenticated;
+
+-- Six-argument overload: same RPC name/signature as 20260524130000 (no p_chart_timezone).
+CREATE OR REPLACE FUNCTION public.share_chart_snapshot (
+  p_patient_user_id uuid,
+  p_series_definition jsonb,
+  p_date_from timestamptz,
+  p_date_to timestamptz,
+  p_bucket text,
+  p_practitioner_note text DEFAULT NULL
+)
+  RETURNS uuid
+  LANGUAGE plpgsql
+  SECURITY INVOKER
+  SET search_path = pg_catalog, public
+  AS $$
+BEGIN
+  RETURN public.share_chart_snapshot (
+    p_patient_user_id,
+    p_series_definition,
+    p_date_from,
+    p_date_to,
+    p_bucket,
+    p_practitioner_note,
+    NULL::text);
+END;
+$$;
+
+COMMENT ON FUNCTION public.share_chart_snapshot (uuid, jsonb, timestamptz, timestamptz, text, text) IS 'Backward-compatible overload without p_chart_timezone; delegates to the seven-argument function with chart_timezone null until clients are updated.';
+
+REVOKE ALL ON FUNCTION public.share_chart_snapshot (uuid, jsonb, timestamptz, timestamptz, text, text)
+FROM PUBLIC;
+
+GRANT EXECUTE ON FUNCTION public.share_chart_snapshot (uuid, jsonb, timestamptz, timestamptz, text, text) TO authenticated;
 
 CREATE OR REPLACE FUNCTION public.chart_snapshots_append_only_guard ()
   RETURNS TRIGGER

@@ -212,14 +212,17 @@ export function InsightsClient() {
   );
 
   const loadUnseenSnapshots = useCallback(async () => {
-    if (!viewingOwnInsights) {
+    if (!viewingOwnInsights || phiSubjectUserId == null) {
       setUnseenSnapshots([]);
       return;
     }
 
     const generation = ++unseenSnapshotsLoadGenRef.current;
     const supabase = createBrowserClient();
-    const result = await listUnseenChartSnapshotsForPatient(supabase);
+    const result = await listUnseenChartSnapshotsForPatient(
+      supabase,
+      phiSubjectUserId,
+    );
 
     if (generation !== unseenSnapshotsLoadGenRef.current) {
       return;
@@ -231,7 +234,7 @@ export function InsightsClient() {
     }
 
     setUnseenSnapshots(result.data);
-  }, [viewingOwnInsights]);
+  }, [phiSubjectUserId, viewingOwnInsights]);
 
   const loadManifest = useCallback(async () => {
     if (phiSubjectUserId == null) {
