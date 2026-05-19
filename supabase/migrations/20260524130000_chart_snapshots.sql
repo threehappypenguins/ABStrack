@@ -51,6 +51,20 @@ CREATE POLICY chart_snapshots_insert ON public.chart_snapshots
     AND public.user_has_practitioner_access (patient_user_id)
   );
 
+CREATE POLICY chart_snapshots_update_patient_seen ON public.chart_snapshots
+  FOR UPDATE
+  TO authenticated
+  USING (
+    patient_user_id = (SELECT auth.uid ())
+    AND seen_by_patient_at IS NULL
+  )
+  WITH CHECK (
+    patient_user_id = (SELECT auth.uid ())
+    AND seen_by_patient_at IS NOT NULL
+  );
+
+COMMENT ON POLICY chart_snapshots_update_patient_seen ON public.chart_snapshots IS 'Patient may set seen_by_patient_at once on their own unseen snapshots (mark_chart_snapshot_seen). Practitioners have no UPDATE policy; rows are otherwise append-only.';
+
 -- ---------------------------------------------------------------------------
 -- RPC: share_chart_snapshot
 -- ---------------------------------------------------------------------------
@@ -133,7 +147,7 @@ CREATE OR REPLACE FUNCTION public.mark_chart_snapshot_seen (p_snapshot_id uuid)
   SET search_path = pg_catalog, public
   AS $$
 DECLARE
-  v_updated boolean;
+  v_row_count integer;
 BEGIN
   UPDATE
     public.chart_snapshots
@@ -144,9 +158,9 @@ BEGIN
     AND patient_user_id = (SELECT auth.uid ())
     AND seen_by_patient_at IS NULL;
 
-  GET DIAGNOSTICS v_updated = ROW_COUNT;
+  GET DIAGNOSTICS v_row_count = ROW_COUNT;
 
-  RETURN v_updated > 0;
+  RETURN v_row_count > 0;
 END;
 $$;
 

@@ -2,7 +2,7 @@ import type { Database, Json } from './database.types.js';
 
 /**
  * `share_chart_snapshot` / `mark_chart_snapshot_seen` RPC shapes until
- * `database.types.ts` is regenerated after `20260518130000_chart_snapshots.sql`.
+ * `database.types.ts` is regenerated after `20260524130000_chart_snapshots.sql`.
  */
 export type ChartSnapshotsRpcDatabase = Database & {
   public: Database['public'] & {

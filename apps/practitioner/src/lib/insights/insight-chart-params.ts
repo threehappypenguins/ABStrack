@@ -100,14 +100,10 @@ export function formatInsightChartPageSummary(
 }
 
 /**
- * Maps {@link SelectedSeries} to `chart_snapshots.series_definition` JSON elements.
+ * Maps {@link SelectedSeries} to `chart_snapshots.series_definition` JSON for `share_chart_snapshot`.
  *
  * @param series - Active chart builder selection.
  * @returns Serializable snapshot series rows.
- */
-/**
- * @param series - Active chart builder selection.
- * @returns Serializable snapshot series rows for `share_chart_snapshot`.
  */
 export function selectedSeriesToChartSnapshotDefinition(
   series: SelectedSeries[],

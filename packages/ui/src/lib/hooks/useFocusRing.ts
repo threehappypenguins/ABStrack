@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Platform } from 'react-native';
+
+/** Web/DOM runtimes (Next.js, jsdom); avoids importing `react-native` in shared web chart UI. */
+function isWebRuntime(): boolean {
+  return typeof window !== 'undefined';
+}
 
 /**
  * True after a likely keyboard-navigation key until the next primary-pointer
@@ -74,7 +78,7 @@ function attachFocusVisibleModalityListeners(): () => void {
  * Tracks whether a focus ring should be shown, using **focus-visible-style**
  * behavior on web: the ring appears when focus follows keyboard navigation
  * (Tab / arrow keys), not when focus comes from a pointer click.
- * On native, focus ring state stays false (callers typically gate styles with `Platform.OS === 'web'`).
+ * On native, focus ring state stays false (no `window` in standard RN runtimes).
  *
  * @returns `focused` flag plus `onFocus` / `onBlur` handlers to spread onto a focusable view.
  * Handlers take no arguments so they are safe to compose with web DOM and React Native focus events.
@@ -87,14 +91,14 @@ export function useFocusRing(): {
   const [focused, setFocused] = useState(false);
 
   useEffect(() => {
-    if (Platform.OS === 'web') {
+    if (isWebRuntime()) {
       return attachFocusVisibleModalityListeners();
     }
     return undefined;
   }, []);
 
   const onFocus = useCallback(() => {
-    if (Platform.OS !== 'web') {
+    if (!isWebRuntime()) {
       return;
     }
     setFocused(lastFocusFromKeyboard);
