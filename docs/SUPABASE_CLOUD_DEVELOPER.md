@@ -90,6 +90,49 @@ Supabase records **which migration versions** have been applied. **Deleting rows
 
 ---
 
+## Dev cleanup: `chart_snapshots` (cloud SQL Editor)
+
+Migration **`20260524140000_chart_snapshots.sql`** makes shares **append-only for app clients** (`authenticated` has no `DELETE`). During development you will still need to remove test shares on **Supabase Cloud**.
+
+**Use the dashboard SQL Editor** on your linked project (runs as `postgres`, a **trusted** session per `profiles_trusted_session_for_app_role()`). Table Editor may still refuse delete depending on which role Studio uses; SQL Editor is the supported cleanup path.
+
+After that migration is applied to cloud (`db push`), run one of the following in **SQL Editor**:
+
+```sql
+-- One snapshot
+DELETE FROM public.chart_snapshots
+WHERE id = '00000000-0000-0000-0000-000000000000';
+
+-- All shares for one patient
+DELETE FROM public.chart_snapshots
+WHERE patient_user_id = '00000000-0000-0000-0000-000000000000';
+
+-- All rows (throwaway dev only)
+DELETE FROM public.chart_snapshots;
+```
+
+Or use the maintenance helper from the same migration (trusted sessions only; not granted to `authenticated`):
+
+```sql
+-- Returns number of rows deleted
+SELECT public.delete_chart_snapshots_maintenance(
+  '00000000-0000-0000-0000-000000000000'::uuid,  -- p_snapshot_id (or NULL)
+  NULL::uuid                                       -- p_patient_user_id (or NULL)
+);
+
+-- All rows for a patient: (NULL, patient_user_id)
+-- All rows: (NULL, NULL)
+```
+
+If cleanup from an app or Studio session fails, check the exact error from `chart_snapshots_append_only_guard`:
+
+- **Untrusted `DELETE`:** `chart_snapshots is append-only` (hint: _Use the SQL Editor as postgres, or call delete_chart_snapshots_maintenance from a trusted session._). The session is not trusted—for example Table Editor as `dashboard_user`. Use **SQL Editor** as `postgres`, not Table Editor.
+- **Untrusted `UPDATE`:** `chart_snapshots is append-only except seen_by_patient_at` (patients may only mark seen via `mark_chart_snapshot_seen`).
+
+**Before the migration is on cloud:** `chart_snapshots` does not exist yet (or migration `20260524130000` still blocks all `DELETE` with `chart_snapshots is append-only`). Finish review on the migration file, then `db push` once before relying on the commands above.
+
+---
+
 ## If you skip local `db push` before merge
 
 Then the migration hits cloud when **CI runs `db push` on `main`** after merge. **`gen types --linked`** only works **after** that. You would need to **regenerate types and commit** in a **follow-up** commit (or PR) unless the [PR types workflow](../.github/workflows/supabase-db-types-pr.yml) already forced an updated file via its Docker-based check.
@@ -427,3 +470,4 @@ Repository secrets are documented under **[DEV_SETUP.md → PowerSync sync confi
 | PowerSync sync YAML on `main` | [`.github/workflows/powersync-sync-config.yml`](../.github/workflows/powersync-sync-config.yml)    |
 | PR types check                | [`.github/workflows/supabase-db-types-pr.yml`](../.github/workflows/supabase-db-types-pr.yml)      |
 | App env vars                  | [`packages/supabase/README.md`](../packages/supabase/README.md), [`.env.example`](../.env.example) |
+| `chart_snapshots` dev cleanup | **Dev cleanup: `chart_snapshots`** (above); migration `20260524140000_chart_snapshots.sql`         |

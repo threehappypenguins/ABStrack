@@ -214,6 +214,7 @@ export function InsightComposedChart({
   patientTimeZone,
   showPatientTimeZoneNote = false,
   patientTimeZoneNoteUsesPatientLocal = false,
+  patientTimeZoneNoteVariant,
 }: InsightComposedChartProps) {
   const chartData = useMemo(
     () =>
@@ -267,7 +268,11 @@ export function InsightComposedChart({
         {showPatientTimeZoneNote ? (
           <p className="mb-3 text-xs text-app-muted">
             {formatInsightChartPatientTimeZoneNote(patientTimeZone, {
-              patientLocal: patientTimeZoneNoteUsesPatientLocal,
+              variant:
+                patientTimeZoneNoteVariant ??
+                (patientTimeZoneNoteUsesPatientLocal
+                  ? 'patientLocal'
+                  : 'browser'),
             })}
           </p>
         ) : null}

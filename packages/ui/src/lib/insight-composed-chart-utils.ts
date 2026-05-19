@@ -319,23 +319,40 @@ export function formatIanaTimeZoneForDisplay(patientTimeZone: string): string {
   return parts.find((part) => part.type === 'timeZoneName')?.value ?? zone;
 }
 
+/** Which timezone source the chart period note should describe. */
+export type InsightChartTimeZoneNoteVariant =
+  | 'browser'
+  | 'patientLocal'
+  | 'practitionerShared';
+
 /**
  * Caption for chart period timezone alignment.
  *
  * @param chartTimeZone - IANA timezone used for `get_chart_series` bucketing and axis labels.
- * @param options.patientLocal - When true, copy states patient-local alignment (only when
- *   `chartTimeZone` is the patient's IANA zone, not the viewer's browser zone).
+ * @param options.variant - Copy source; defaults to `browser`, or `patientLocal` when
+ *   `patientLocal: true` is passed without `variant`.
+ * @param options.patientLocal - Deprecated shorthand for `variant: 'patientLocal'`.
  * @returns Note text for the chart figure.
  */
 export function formatInsightChartPatientTimeZoneNote(
   chartTimeZone: string,
-  options?: { patientLocal?: boolean },
+  options?: {
+    patientLocal?: boolean;
+    variant?: InsightChartTimeZoneNoteVariant;
+  },
 ): string {
   const label = formatIanaTimeZoneForDisplay(chartTimeZone);
-  if (options?.patientLocal) {
-    return `Period labels use the patient's local timezone (${label}).`;
+  const variant: InsightChartTimeZoneNoteVariant =
+    options?.variant ?? (options?.patientLocal ? 'patientLocal' : 'browser');
+
+  switch (variant) {
+    case 'patientLocal':
+      return `Period labels use the patient's local timezone (${label}).`;
+    case 'practitionerShared':
+      return `Period labels use your practitioner's chart timezone (${label}). Day, week, and month groupings use this timezone.`;
+    default:
+      return `Period labels use your browser timezone (${label}). Day, week, and month groupings use this timezone.`;
   }
-  return `Period labels use your browser timezone (${label}). Day, week, and month groupings use this timezone.`;
 }
 
 /**

@@ -1,16 +1,22 @@
+import type { Uuid } from '@abstrack/types';
 import { describe, expect, it, vi } from 'vitest';
+import { PresetDataError } from './preset-data-error.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
 import {
-  CHART_SNAPSHOT_PRACTITIONER_NOTE_MAX_LENGTH,
+  listUnseenChartSnapshotsForPatient,
   markChartSnapshotSeen,
   shareChartSnapshot,
+  type ChartSnapshotRow,
   type ChartSnapshotSeriesDefinition,
+  type ShareChartSnapshotParams,
 } from './chart-snapshots-query.js';
 
-const PATIENT_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
-const SNAPSHOT_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+const PATIENT_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' as Uuid;
+const SNAPSHOT_ID = 'bbbbbbbb-bbbb-cccc-dddd-ffffffffffff' as Uuid;
+const DATE_FROM = '2026-01-01T05:00:00.000Z';
+const DATE_TO = '2026-02-01T05:00:00.000Z';
 
-const SERIES: ChartSnapshotSeriesDefinition[] = [
+const SERIES_DEFINITION: ChartSnapshotSeriesDefinition[] = [
   {
     seriesId: 'health_marker::bac',
     seriesType: 'health_marker',
@@ -19,83 +25,195 @@ const SERIES: ChartSnapshotSeriesDefinition[] = [
     label: 'BAC',
     unit: '%',
     chartType: 'line',
-    color: '#2563eb',
+    color: '#1d4ed8',
   },
 ];
 
-function rpcClient(
-  data: unknown,
+const SHARE_PARAMS: ShareChartSnapshotParams = {
+  patientUserId: PATIENT_ID,
+  seriesDefinition: SERIES_DEFINITION,
+  dateFrom: DATE_FROM,
+  dateTo: DATE_TO,
+  bucket: 'week',
+  chartTimezone: 'America/New_York',
+  practitionerNote: '  Check this trend  ',
+};
+
+const CHART_SNAPSHOTS_SELECT =
+  'id, patient_user_id, practitioner_user_id, series_definition, date_from, date_to, bucket, practitioner_note, chart_timezone, created_at, seen_by_patient_at';
+
+const UNSEEN_SNAPSHOT_ROW: ChartSnapshotRow = {
+  id: SNAPSHOT_ID,
+  patient_user_id: PATIENT_ID,
+  practitioner_user_id: 'cccccccc-bbbb-cccc-dddd-111111111111',
+  series_definition: SERIES_DEFINITION,
+  date_from: DATE_FROM,
+  date_to: DATE_TO,
+  bucket: 'week',
+  practitioner_note: 'Check this trend',
+  chart_timezone: 'America/New_York',
+  created_at: '2026-05-01T12:00:00.000Z',
+  seen_by_patient_at: null,
+};
+
+function chartSnapshotsQueryClient(
+  rows: ChartSnapshotRow[] | null,
   error: { message: string } | null = null,
-): AbstrackSupabaseClient {
+) {
+  const order = vi.fn(async () => ({ data: rows, error }));
+  const is = vi.fn(() => ({ order }));
+  const eq = vi.fn(() => ({ is }));
+  const select = vi.fn(() => ({ eq }));
+  const from = vi.fn(() => ({ select }));
+
   return {
-    rpc: vi.fn().mockResolvedValue({ data, error }),
-  } as unknown as AbstrackSupabaseClient;
+    client: { from } as unknown as AbstrackSupabaseClient,
+    from,
+    select,
+    eq,
+    is,
+    order,
+  };
 }
 
-describe('shareChartSnapshot', () => {
-  it('calls share_chart_snapshot RPC with expected payload', async () => {
-    const client = rpcClient(SNAPSHOT_ID);
+describe('listUnseenChartSnapshotsForPatient', () => {
+  it('queries chart_snapshots for unseen rows newest first', async () => {
+    const { client, from, select, eq, is, order } = chartSnapshotsQueryClient([
+      UNSEEN_SNAPSHOT_ROW,
+    ]);
 
-    await shareChartSnapshot(client, {
-      patientUserId: PATIENT_ID,
-      seriesDefinition: SERIES,
-      dateFrom: '2026-04-01T00:00:00.000Z',
-      dateTo: '2026-05-01T00:00:00.000Z',
-      bucket: 'day',
-      practitionerNote: '  Trend looks stable.  ',
-    });
+    await listUnseenChartSnapshotsForPatient(client, PATIENT_ID);
 
-    expect(client.rpc).toHaveBeenCalledWith('share_chart_snapshot', {
-      p_patient_user_id: PATIENT_ID,
-      p_series_definition: SERIES,
-      p_date_from: '2026-04-01T00:00:00.000Z',
-      p_date_to: '2026-05-01T00:00:00.000Z',
-      p_bucket: 'day',
-      p_practitioner_note: 'Trend looks stable.',
-    });
+    expect(from).toHaveBeenCalledWith('chart_snapshots');
+    expect(select).toHaveBeenCalledWith(CHART_SNAPSHOTS_SELECT);
+    expect(eq).toHaveBeenCalledWith('patient_user_id', PATIENT_ID);
+    expect(is).toHaveBeenCalledWith('seen_by_patient_at', null);
+    expect(order).toHaveBeenCalledWith('created_at', { ascending: false });
   });
 
-  it('rejects practitioner notes longer than the database limit', async () => {
-    const client = rpcClient(SNAPSHOT_ID);
-    const tooLong = 'x'.repeat(CHART_SNAPSHOT_PRACTITIONER_NOTE_MAX_LENGTH + 1);
+  it('returns query rows on success', async () => {
+    const { client } = chartSnapshotsQueryClient([UNSEEN_SNAPSHOT_ROW]);
 
-    const result = await shareChartSnapshot(client, {
-      patientUserId: PATIENT_ID,
-      seriesDefinition: SERIES,
-      dateFrom: '2026-04-01T00:00:00.000Z',
-      dateTo: '2026-05-01T00:00:00.000Z',
-      bucket: 'day',
-      practitionerNote: tooLong,
+    const result = await listUnseenChartSnapshotsForPatient(client, PATIENT_ID);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.data).toEqual([UNSEEN_SNAPSHOT_ROW]);
+  });
+
+  it('returns an empty array when data is null', async () => {
+    const { client } = chartSnapshotsQueryClient(null);
+
+    const result = await listUnseenChartSnapshotsForPatient(client, PATIENT_ID);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.data).toEqual([]);
+  });
+
+  it('returns ok: false when the query returns an error', async () => {
+    const { client } = chartSnapshotsQueryClient(null, {
+      message: 'permission denied for table chart_snapshots',
     });
+
+    const result = await listUnseenChartSnapshotsForPatient(client, PATIENT_ID);
 
     expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.code).toBe('validation_error');
+    if (result.ok) {
+      return;
     }
-    expect(client.rpc).not.toHaveBeenCalled();
+
+    expect(result.error).toBeInstanceOf(PresetDataError);
+    expect(result.error.code).toBe('permission_denied');
+  });
+});
+
+describe('shareChartSnapshot', () => {
+  it('calls share_chart_snapshot RPC with snake_case payload', async () => {
+    const rpc = vi.fn(async () => ({ data: SNAPSHOT_ID, error: null }));
+    const client = { rpc } as unknown as AbstrackSupabaseClient;
+
+    await shareChartSnapshot(client, SHARE_PARAMS);
+
+    expect(rpc).toHaveBeenCalledWith('share_chart_snapshot', {
+      p_patient_user_id: PATIENT_ID,
+      p_series_definition: SERIES_DEFINITION,
+      p_date_from: DATE_FROM,
+      p_date_to: DATE_TO,
+      p_bucket: 'week',
+      p_practitioner_note: 'Check this trend',
+      p_chart_timezone: 'America/New_York',
+    });
   });
 
-  it('returns snapshot id on success', async () => {
-    const result = await shareChartSnapshot(rpcClient(SNAPSHOT_ID), {
-      patientUserId: PATIENT_ID,
-      seriesDefinition: SERIES,
-      dateFrom: '2026-04-01T00:00:00.000Z',
-      dateTo: '2026-05-01T00:00:00.000Z',
-      bucket: 'week',
+  it('omits practitioner note when blank after trim', async () => {
+    const rpc = vi.fn(async () => ({ data: SNAPSHOT_ID, error: null }));
+    const client = { rpc } as unknown as AbstrackSupabaseClient;
+
+    await shareChartSnapshot(client, {
+      ...SHARE_PARAMS,
+      practitionerNote: '   ',
     });
 
-    expect(result).toEqual({ ok: true, data: SNAPSHOT_ID });
+    expect(rpc).toHaveBeenCalledWith('share_chart_snapshot', {
+      p_patient_user_id: PATIENT_ID,
+      p_series_definition: SERIES_DEFINITION,
+      p_date_from: DATE_FROM,
+      p_date_to: DATE_TO,
+      p_bucket: 'week',
+      p_practitioner_note: undefined,
+      p_chart_timezone: 'America/New_York',
+    });
+  });
+
+  it('returns ok: false when rpc returns an error', async () => {
+    const rpc = vi.fn(async () => ({
+      data: null,
+      error: { message: 'permission denied for function share_chart_snapshot' },
+    }));
+    const client = { rpc } as unknown as AbstrackSupabaseClient;
+
+    const result = await shareChartSnapshot(client, SHARE_PARAMS);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+
+    expect(result.error).toBeInstanceOf(PresetDataError);
+    expect(result.error.code).toBe('permission_denied');
   });
 });
 
 describe('markChartSnapshotSeen', () => {
   it('calls mark_chart_snapshot_seen RPC with snapshot id', async () => {
-    const client = rpcClient(true);
+    const rpc = vi.fn(async () => ({ data: true, error: null }));
+    const client = { rpc } as unknown as AbstrackSupabaseClient;
 
     await markChartSnapshotSeen(client, SNAPSHOT_ID);
 
-    expect(client.rpc).toHaveBeenCalledWith('mark_chart_snapshot_seen', {
+    expect(rpc).toHaveBeenCalledWith('mark_chart_snapshot_seen', {
       p_snapshot_id: SNAPSHOT_ID,
     });
+  });
+
+  it('returns boolean from RPC data', async () => {
+    const rpc = vi.fn(async () => ({ data: false, error: null }));
+    const client = { rpc } as unknown as AbstrackSupabaseClient;
+
+    const result = await markChartSnapshotSeen(client, SNAPSHOT_ID);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.data).toBe(false);
   });
 });

@@ -1,4 +1,6 @@
 import {
+  chartSnapshotBoundsToInsightDateRange,
+  chartSnapshotDefinitionToSelectedSeries,
   formatInsightChartPageSummary,
   getDefaultInsightDateRange,
   insightDateRangeToRpcBounds,
@@ -43,6 +45,70 @@ describe('insight-chart-params', () => {
     expect(formatInsightChartPageSummary(['BAC readings'], range, 'day')).toBe(
       `BAC readings from ${fromLabel} to ${toLabel}, grouped by day`,
     );
+  });
+
+  it('round-trips snapshot RPC bounds to an inclusive date range', () => {
+    const range = {
+      from: new Date(2026, 3, 1),
+      to: new Date(2026, 3, 30),
+    };
+    const { p_from, p_to } = insightDateRangeToRpcBounds(range);
+    const restored = chartSnapshotBoundsToInsightDateRange(p_from, p_to);
+
+    expect(restored.from).toEqual(range.from);
+    expect(restored.to).toEqual(range.to);
+  });
+
+  it('uses the snapshot chart timezone for calendar days, not the patient browser zone', () => {
+    const dateFrom = '2026-01-01T05:00:00.000Z';
+    const dateTo = '2026-02-01T05:00:00.000Z';
+
+    const restored = chartSnapshotBoundsToInsightDateRange(
+      dateFrom,
+      dateTo,
+      'America/New_York',
+    );
+
+    expect(restored.from).toEqual(new Date(2026, 0, 1, 0, 0, 0, 0));
+    expect(restored.to).toEqual(new Date(2026, 0, 31, 0, 0, 0, 0));
+  });
+
+  it('normalizes snapshot bounds to local calendar midnights for the date picker', () => {
+    const fromIso = new Date(2026, 3, 15, 14, 30, 0).toISOString();
+    const toIso = new Date(2026, 4, 1, 9, 45, 0).toISOString();
+
+    const restored = chartSnapshotBoundsToInsightDateRange(fromIso, toIso);
+
+    expect(restored.from).toEqual(new Date(2026, 3, 15, 0, 0, 0, 0));
+    expect(restored.to).toEqual(new Date(2026, 3, 30, 0, 0, 0, 0));
+  });
+
+  it('maps snapshot series definition to selected series', () => {
+    expect(
+      chartSnapshotDefinitionToSelectedSeries([
+        {
+          seriesId: 'health_marker::bac',
+          seriesType: 'health_marker',
+          responseType: 'numeric',
+          isBloodPressure: false,
+          label: 'BAC',
+          unit: '%',
+          chartType: 'line',
+          color: '#1d4ed8',
+        },
+      ]),
+    ).toEqual([
+      {
+        seriesId: 'health_marker::bac',
+        seriesType: 'health_marker',
+        responseType: 'numeric',
+        isBloodPressure: false,
+        label: 'BAC',
+        unit: '%',
+        chartType: 'line',
+        color: '#1d4ed8',
+      },
+    ]);
   });
 
   it('maps selected series to RPC selections', () => {

@@ -113,6 +113,7 @@ export type Database = {
       chart_snapshots: {
         Row: {
           bucket: string
+          chart_timezone: string | null
           created_at: string
           date_from: string
           date_to: string
@@ -125,6 +126,7 @@ export type Database = {
         }
         Insert: {
           bucket: string
+          chart_timezone?: string | null
           created_at?: string
           date_from: string
           date_to: string
@@ -137,6 +139,7 @@ export type Database = {
         }
         Update: {
           bucket?: string
+          chart_timezone?: string | null
           created_at?: string
           date_from?: string
           date_to?: string
@@ -744,6 +747,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      chart_snapshots_normalize_chart_timezone: {
+        Args: { p_chart_timezone: string }
+        Returns: string
+      }
+      delete_chart_snapshots_maintenance: {
+        Args: { p_patient_user_id?: string; p_snapshot_id?: string }
+        Returns: number
+      }
       episode_media_storage_can_select: {
         Args: { p_object_name: string }
         Returns: boolean
@@ -817,6 +828,7 @@ export type Database = {
       share_chart_snapshot: {
         Args: {
           p_bucket: string
+          p_chart_timezone: string
           p_date_from: string
           p_date_to: string
           p_patient_user_id: string

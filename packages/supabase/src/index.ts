@@ -203,11 +203,13 @@ export type {
 } from './lib/chart-series-query.js';
 export { getChartSeries } from './lib/chart-series-query.js';
 export type {
+  ChartSnapshotRow,
   ChartSnapshotSeriesDefinition,
   ShareChartSnapshotParams,
 } from './lib/chart-snapshots-query.js';
 export {
   CHART_SNAPSHOT_PRACTITIONER_NOTE_MAX_LENGTH,
+  listUnseenChartSnapshotsForPatient,
   markChartSnapshotSeen,
   shareChartSnapshot,
 } from './lib/chart-snapshots-query.js';

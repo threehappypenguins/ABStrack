@@ -2,6 +2,7 @@ import type {
   ChartTypeChoice,
   SelectedSeries,
 } from './InsightSeriesPicker.types.js';
+import type { InsightChartTimeZoneNoteVariant } from './insight-composed-chart-utils.js';
 
 /** Time bucket granularity for insight charts (matches `get_chart_series`). */
 export type InsightChartBucket = 'day' | 'week' | 'month';
@@ -52,9 +53,15 @@ export interface InsightComposedChartProps {
   showPatientTimeZoneNote?: boolean;
   /**
    * When true with {@link showPatientTimeZoneNote}, copy claims patient-local alignment.
+   * Ignored when {@link patientTimeZoneNoteVariant} is set.
    * @defaultValue false
    */
   patientTimeZoneNoteUsesPatientLocal?: boolean;
+  /**
+   * Which timezone source the period note describes. Use `practitionerShared` when restoring
+   * a practitioner chart snapshot (`chart_snapshots.chart_timezone`).
+   */
+  patientTimeZoneNoteVariant?: InsightChartTimeZoneNoteVariant;
 }
 
 export type { ChartTypeChoice, SelectedSeries };

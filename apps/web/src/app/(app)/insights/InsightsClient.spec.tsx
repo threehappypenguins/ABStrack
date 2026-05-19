@@ -13,7 +13,12 @@ import type {
   InsightDateRange,
   SelectedSeries,
 } from '@abstrack/ui';
-import { getChartSeries, getUserChartManifest } from '@abstrack/supabase';
+import {
+  getChartSeries,
+  getUserChartManifest,
+  listUnseenChartSnapshotsForPatient,
+  markChartSnapshotSeen,
+} from '@abstrack/supabase';
 import {
   getDefaultInsightDateRange,
   insightDateRangeToRpcBounds,
@@ -62,6 +67,8 @@ jest.mock('../../../lib/supabase/browser-client', () => ({
 jest.mock('@abstrack/supabase', () => ({
   getUserChartManifest: jest.fn(),
   getChartSeries: jest.fn(),
+  listUnseenChartSnapshotsForPatient: jest.fn(),
+  markChartSnapshotSeen: jest.fn(),
 }));
 
 jest.mock('@abstrack/ui', () => {
@@ -176,6 +183,39 @@ const getUserChartManifestMock = getUserChartManifest as jest.MockedFunction<
 const getChartSeriesMock = getChartSeries as jest.MockedFunction<
   typeof getChartSeries
 >;
+const listUnseenChartSnapshotsForPatientMock =
+  listUnseenChartSnapshotsForPatient as jest.MockedFunction<
+    typeof listUnseenChartSnapshotsForPatient
+  >;
+const markChartSnapshotSeenMock = markChartSnapshotSeen as jest.MockedFunction<
+  typeof markChartSnapshotSeen
+>;
+
+const SHARED_SNAPSHOT_ID = 'cccccccc-bbbb-cccc-dddd-111111111111';
+const SHARED_SNAPSHOT = {
+  id: SHARED_SNAPSHOT_ID,
+  patient_user_id: PHI_SUBJECT_A,
+  practitioner_user_id: 'dddddddd-bbbb-cccc-dddd-222222222222',
+  series_definition: [
+    {
+      seriesId: 'health_marker::bac',
+      seriesType: 'health_marker' as const,
+      responseType: 'numeric' as const,
+      isBloodPressure: false,
+      label: 'BAC',
+      unit: '%',
+      chartType: 'line' as const,
+      color: '#1d4ed8',
+    },
+  ],
+  date_from: '2026-01-01T05:00:00.000Z',
+  date_to: '2026-02-01T05:00:00.000Z',
+  bucket: 'week' as const,
+  practitioner_note: 'Please review this trend.',
+  chart_timezone: 'America/New_York',
+  created_at: '2026-05-01T12:00:00.000Z',
+  seen_by_patient_at: null,
+};
 
 function renderInsights() {
   return render(
@@ -211,6 +251,11 @@ describe('InsightsClient', () => {
         },
       ],
     });
+    listUnseenChartSnapshotsForPatientMock.mockResolvedValue({
+      ok: true,
+      data: [],
+    });
+    markChartSnapshotSeenMock.mockResolvedValue({ ok: true, data: true });
   });
 
   it('does not show the empty state when PHI scope fails to resolve', async () => {
@@ -481,6 +526,131 @@ describe('InsightsClient', () => {
         }),
       );
     });
+  });
+
+  it('shows a banner when unseen practitioner chart snapshots exist', async () => {
+    listUnseenChartSnapshotsForPatientMock.mockResolvedValue({
+      ok: true,
+      data: [SHARED_SNAPSHOT],
+    });
+
+    renderInsights();
+
+    expect(
+      await screen.findByText('Your practitioner shared a chart with you.'),
+    ).toBeInTheDocument();
+  });
+
+  it('loads and marks a shared chart snapshot when the banner is activated', async () => {
+    listUnseenChartSnapshotsForPatientMock.mockResolvedValue({
+      ok: true,
+      data: [SHARED_SNAPSHOT],
+    });
+
+    renderInsights();
+
+    await screen.findByText('Your practitioner shared a chart with you.');
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: /your practitioner shared a chart with you/i,
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(getChartSeriesMock).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          p_from: SHARED_SNAPSHOT.date_from,
+          p_to: SHARED_SNAPSHOT.date_to,
+          p_bucket: 'week',
+          p_timezone: 'America/New_York',
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(markChartSnapshotSeenMock).toHaveBeenCalledWith(
+        expect.anything(),
+        SHARED_SNAPSHOT_ID,
+      );
+    });
+
+    expect(screen.getByText('Note from your practitioner')).toBeInTheDocument();
+    expect(screen.getByText('Please review this trend.')).toBeInTheDocument();
+  });
+
+  it('clears the banner when mark returns false because the snapshot was already seen', async () => {
+    listUnseenChartSnapshotsForPatientMock.mockResolvedValue({
+      ok: true,
+      data: [SHARED_SNAPSHOT],
+    });
+    markChartSnapshotSeenMock.mockResolvedValue({ ok: true, data: false });
+
+    renderInsights();
+
+    await screen.findByText('Your practitioner shared a chart with you.');
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: /your practitioner shared a chart with you/i,
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(markChartSnapshotSeenMock).toHaveBeenCalled();
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.queryByText('Your practitioner shared a chart with you.'),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  it('keeps the banner when mark_chart_snapshot_seen fails so the patient can retry', async () => {
+    listUnseenChartSnapshotsForPatientMock.mockResolvedValue({
+      ok: true,
+      data: [SHARED_SNAPSHOT],
+    });
+    markChartSnapshotSeenMock.mockResolvedValue({
+      ok: false,
+      error: { message: 'Network error.', code: 'network_error' },
+    });
+
+    renderInsights();
+
+    await screen.findByText('Your practitioner shared a chart with you.');
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: /your practitioner shared a chart with you/i,
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(markChartSnapshotSeenMock).toHaveBeenCalled();
+    });
+
+    expect(
+      screen.getByText('Your practitioner shared a chart with you.'),
+    ).toBeInTheDocument();
+  });
+
+  it('does not query unseen snapshots when viewing another PHI subject', async () => {
+    phiContext.phiSubjectUserId = PHI_SUBJECT_B;
+    phiContext.authUserId = PHI_SUBJECT_A;
+
+    renderInsights();
+
+    await screen.findByTestId('date-range-picker');
+    expect(listUnseenChartSnapshotsForPatientMock).not.toHaveBeenCalled();
+    expect(
+      screen.queryByText('Your practitioner shared a chart with you.'),
+    ).not.toBeInTheDocument();
   });
 
   it('updates chart bucket when the bucket selector changes', async () => {

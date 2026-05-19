@@ -1,4 +1,7 @@
-import type { ChartSeriesSelection } from '@abstrack/supabase';
+import type {
+  ChartSnapshotSeriesDefinition,
+  ChartSeriesSelection,
+} from '@abstrack/supabase';
 import type {
   InsightChartBucket,
   InsightDateRange,
@@ -100,4 +103,129 @@ export function formatInsightChartPageSummary(
   const fromLabel = dateFormatter.format(range.from);
   const toLabel = dateFormatter.format(range.to);
   return `${seriesPart} from ${fromLabel} to ${toLabel}, ${BUCKET_SUMMARY_LABEL[bucket]}`;
+}
+
+type CalendarDayParts = {
+  year: number;
+  month: number;
+  day: number;
+};
+
+/**
+ * Start of the local calendar day for an instant (matches {@link InsightDateRangePicker}).
+ *
+ * @param date - Input instant.
+ * @returns Local midnight on that calendar day.
+ */
+function toLocalCalendarDay(date: Date): Date {
+  const day = new Date(date);
+  day.setHours(0, 0, 0, 0);
+  return day;
+}
+
+/**
+ * Calendar day parts for an instant in an IANA timezone.
+ *
+ * @param iso - ISO timestamp.
+ * @param timeZone - IANA timezone name.
+ * @returns Year, month (1–12), and day in that zone.
+ */
+function calendarDayPartsInTimeZone(
+  iso: string,
+  timeZone: string,
+): CalendarDayParts {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+  });
+  const parts = formatter.formatToParts(new Date(iso));
+  const year = Number(parts.find((part) => part.type === 'year')?.value);
+  const month = Number(parts.find((part) => part.type === 'month')?.value);
+  const day = Number(parts.find((part) => part.type === 'day')?.value);
+  return { year, month, day };
+}
+
+/**
+ * Builds a {@link Date} at local midnight using calendar components (for the date picker).
+ *
+ * @param parts - Calendar day in the practitioner's chart zone.
+ * @returns Local midnight with those Y/M/D fields.
+ */
+function calendarPartsToLocalDate(parts: CalendarDayParts): Date {
+  return new Date(parts.year, parts.month - 1, parts.day);
+}
+
+/**
+ * Previous calendar day (local date arithmetic on Y/M/D components).
+ *
+ * @param parts - Starting calendar day.
+ * @returns Previous day.
+ */
+function previousCalendarDay(parts: CalendarDayParts): CalendarDayParts {
+  const date = new Date(parts.year, parts.month - 1, parts.day);
+  date.setDate(date.getDate() - 1);
+  return {
+    year: date.getFullYear(),
+    month: date.getMonth() + 1,
+    day: date.getDate(),
+  };
+}
+
+/**
+ * Converts stored snapshot bounds (`date_from` inclusive, `date_to` exclusive) to an
+ * {@link InsightDateRange} for the date picker and chart summary.
+ *
+ * When `chartTimeZone` is set, calendar days match the practitioner's chart zone (not the
+ * patient's current browser zone). Returned dates are local midnights so
+ * {@link InsightDateRangePicker} normalization does not clear an in-flight restore.
+ *
+ * @param dateFrom - Snapshot `date_from` (ISO).
+ * @param dateTo - Snapshot `date_to` exclusive end (ISO).
+ * @param chartTimeZone - IANA zone from `chart_snapshots.chart_timezone`; omit for legacy rows.
+ * @returns Inclusive local calendar range for the UI.
+ */
+export function chartSnapshotBoundsToInsightDateRange(
+  dateFrom: string,
+  dateTo: string,
+  chartTimeZone?: string | null,
+): InsightDateRange {
+  const trimmedZone = chartTimeZone?.trim();
+  if (trimmedZone == null || trimmedZone.length === 0) {
+    const from = toLocalCalendarDay(new Date(dateFrom));
+    const toExclusive = toLocalCalendarDay(new Date(dateTo));
+    const to = new Date(toExclusive);
+    to.setDate(to.getDate() - 1);
+    return { from, to };
+  }
+
+  const from = calendarPartsToLocalDate(
+    calendarDayPartsInTimeZone(dateFrom, trimmedZone),
+  );
+  const to = calendarPartsToLocalDate(
+    previousCalendarDay(calendarDayPartsInTimeZone(dateTo, trimmedZone)),
+  );
+  return { from, to };
+}
+
+/**
+ * Restores practitioner-shared {@link SelectedSeries} from `chart_snapshots.series_definition`.
+ *
+ * @param definition - Stored snapshot series rows.
+ * @returns Series selection for {@link InsightSeriesPicker} and {@link InsightComposedChart}.
+ */
+export function chartSnapshotDefinitionToSelectedSeries(
+  definition: ChartSnapshotSeriesDefinition[],
+): SelectedSeries[] {
+  return definition.map((item) => ({
+    seriesId: item.seriesId,
+    seriesType: item.seriesType,
+    responseType: item.responseType,
+    isBloodPressure: item.isBloodPressure,
+    label: item.label,
+    unit: item.unit,
+    chartType: item.chartType,
+    color: item.color,
+  }));
 }
