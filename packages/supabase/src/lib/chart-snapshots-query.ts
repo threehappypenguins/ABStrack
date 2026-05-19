@@ -5,6 +5,20 @@ import { PresetDataError, toPresetDataError } from './preset-data-error.js';
 import type { PresetDataResult } from './preset-data.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
 
+/** One `chart_snapshots` row (patient or practitioner SELECT via RLS). */
+export interface ChartSnapshotRow {
+  id: Uuid;
+  patient_user_id: Uuid;
+  practitioner_user_id: Uuid;
+  series_definition: ChartSnapshotSeriesDefinition[];
+  date_from: string;
+  date_to: string;
+  bucket: ChartSeriesBucket;
+  practitioner_note: string | null;
+  created_at: string;
+  seen_by_patient_at: string | null;
+}
+
 /** Matches `chart_snapshots_practitioner_note_len` (`char_length(practitioner_note) <= 16000`). */
 export const CHART_SNAPSHOT_PRACTITIONER_NOTE_MAX_LENGTH = 16_000;
 
@@ -97,6 +111,37 @@ export async function shareChartSnapshot(
     }
 
     return { ok: true, data };
+  } catch (cause) {
+    return { ok: false, error: toPresetDataError(cause) };
+  }
+}
+
+/**
+ * Lists unseen chart snapshots for the signed-in patient (`seen_by_patient_at IS NULL`).
+ *
+ * @param client - Supabase client with the patient JWT.
+ * @returns Newest-first unseen rows (RLS limits to `patient_user_id = auth.uid()`).
+ */
+export async function listUnseenChartSnapshotsForPatient(
+  client: AbstrackSupabaseClient,
+): Promise<PresetDataResult<ChartSnapshotRow[]>> {
+  try {
+    const { data, error } = await client
+      .from('chart_snapshots')
+      .select(
+        'id, patient_user_id, practitioner_user_id, series_definition, date_from, date_to, bucket, practitioner_note, created_at, seen_by_patient_at',
+      )
+      .is('seen_by_patient_at', null)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      return { ok: false, error: toPresetDataError(error) };
+    }
+
+    return {
+      ok: true,
+      data: (data ?? []) as unknown as ChartSnapshotRow[],
+    };
   } catch (cause) {
     return { ok: false, error: toPresetDataError(cause) };
   }

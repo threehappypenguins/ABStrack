@@ -1,4 +1,6 @@
 import {
+  chartSnapshotBoundsToInsightDateRange,
+  chartSnapshotDefinitionToSelectedSeries,
   formatInsightChartPageSummary,
   getDefaultInsightDateRange,
   insightDateRangeToRpcBounds,
@@ -43,6 +45,46 @@ describe('insight-chart-params', () => {
     expect(formatInsightChartPageSummary(['BAC readings'], range, 'day')).toBe(
       `BAC readings from ${fromLabel} to ${toLabel}, grouped by day`,
     );
+  });
+
+  it('round-trips snapshot RPC bounds to an inclusive date range', () => {
+    const range = {
+      from: new Date(2026, 3, 1),
+      to: new Date(2026, 3, 30),
+    };
+    const { p_from, p_to } = insightDateRangeToRpcBounds(range);
+    const restored = chartSnapshotBoundsToInsightDateRange(p_from, p_to);
+
+    expect(restored.from).toEqual(range.from);
+    expect(restored.to).toEqual(range.to);
+  });
+
+  it('maps snapshot series definition to selected series', () => {
+    expect(
+      chartSnapshotDefinitionToSelectedSeries([
+        {
+          seriesId: 'health_marker::bac',
+          seriesType: 'health_marker',
+          responseType: 'numeric',
+          isBloodPressure: false,
+          label: 'BAC',
+          unit: '%',
+          chartType: 'line',
+          color: '#1d4ed8',
+        },
+      ]),
+    ).toEqual([
+      {
+        seriesId: 'health_marker::bac',
+        seriesType: 'health_marker',
+        responseType: 'numeric',
+        isBloodPressure: false,
+        label: 'BAC',
+        unit: '%',
+        chartType: 'line',
+        color: '#1d4ed8',
+      },
+    ]);
   });
 
   it('maps selected series to RPC selections', () => {

@@ -12,6 +12,9 @@ import { chartManifestSeriesDisplayLabel } from '@abstrack/types';
 import {
   getChartSeries,
   getUserChartManifest,
+  listUnseenChartSnapshotsForPatient,
+  markChartSnapshotSeen,
+  type ChartSnapshotRow,
   type UserChartManifestSeries,
 } from '@abstrack/supabase';
 import {
@@ -28,6 +31,8 @@ import {
 } from '@abstrack/ui';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
 import {
+  chartSnapshotBoundsToInsightDateRange,
+  chartSnapshotDefinitionToSelectedSeries,
   formatInsightChartPageSummary,
   getDefaultInsightDateRange,
   insightDateRangeToRpcBounds,
@@ -87,6 +92,10 @@ export function InsightsClient() {
     phiSubjectUserId != null &&
     authUserId != null &&
     phiSubjectUserId !== authUserId;
+  const viewingOwnInsights =
+    phiSubjectUserId != null &&
+    authUserId != null &&
+    phiSubjectUserId === authUserId;
   const showPatientTimeZoneNote = viewingAnotherPhiSubject;
 
   const [manifestLoading, setManifestLoading] = useState(true);
@@ -105,8 +114,21 @@ export function InsightsClient() {
   >([]);
   const [chartError, setChartError] = useState<string | null>(null);
 
+  const [unseenSnapshots, setUnseenSnapshots] = useState<ChartSnapshotRow[]>(
+    [],
+  );
+  const [sharedSnapshotNote, setSharedSnapshotNote] = useState<string | null>(
+    null,
+  );
+
   const manifestLoadGenRef = useRef(0);
   const chartLoadGenRef = useRef(0);
+  const unseenSnapshotsLoadGenRef = useRef(0);
+  const pendingSeenSnapshotIdRef = useRef<string | null>(null);
+  const chartRpcBoundsOverrideRef = useRef<{
+    p_from: string;
+    p_to: string;
+  } | null>(null);
   const phiSubjectUserIdRef = useRef(phiSubjectUserId);
   phiSubjectUserIdRef.current = phiSubjectUserId;
   /** PHI subject that owns the current picker selection (null after scope reset). */
@@ -120,19 +142,39 @@ export function InsightsClient() {
 
   const resetInsightsPatientState = useCallback(() => {
     selectionOwnerUserIdRef.current = null;
+    pendingSeenSnapshotIdRef.current = null;
+    chartRpcBoundsOverrideRef.current = null;
     setSeries([]);
     setChartLoading(false);
     setChartRows([]);
     setChartError(null);
+    setSharedSnapshotNote(null);
   }, []);
 
   const handleSeriesChange = useCallback(
     (next: SelectedSeries[]) => {
       selectionOwnerUserIdRef.current = phiSubjectUserId;
+      pendingSeenSnapshotIdRef.current = null;
+      chartRpcBoundsOverrideRef.current = null;
+      setSharedSnapshotNote(null);
       setSeries(next);
     },
     [phiSubjectUserId],
   );
+
+  const handleDateRangeChange = useCallback((next: InsightDateRange) => {
+    pendingSeenSnapshotIdRef.current = null;
+    chartRpcBoundsOverrideRef.current = null;
+    setSharedSnapshotNote(null);
+    setDateRange(next);
+  }, []);
+
+  const handleBucketChange = useCallback((next: InsightChartBucket) => {
+    pendingSeenSnapshotIdRef.current = null;
+    chartRpcBoundsOverrideRef.current = null;
+    setSharedSnapshotNote(null);
+    setBucket(next);
+  }, []);
 
   const chartableManifest = useMemo(
     () => filterChartableManifestRows(manifest),
@@ -157,6 +199,28 @@ export function InsightsClient() {
       ),
     [series, dateRange, bucket],
   );
+
+  const loadUnseenSnapshots = useCallback(async () => {
+    if (!viewingOwnInsights) {
+      setUnseenSnapshots([]);
+      return;
+    }
+
+    const generation = ++unseenSnapshotsLoadGenRef.current;
+    const supabase = createBrowserClient();
+    const result = await listUnseenChartSnapshotsForPatient(supabase);
+
+    if (generation !== unseenSnapshotsLoadGenRef.current) {
+      return;
+    }
+
+    if (!result.ok) {
+      setUnseenSnapshots([]);
+      return;
+    }
+
+    setUnseenSnapshots(result.data);
+  }, [viewingOwnInsights]);
 
   const loadManifest = useCallback(async () => {
     if (phiSubjectUserId == null) {
@@ -198,6 +262,19 @@ export function InsightsClient() {
   }, [announce, phiSubjectUserId]);
 
   useEffect(() => {
+    if (viewingOwnInsights && phiScopeReady) {
+      void loadUnseenSnapshots();
+    } else {
+      unseenSnapshotsLoadGenRef.current += 1;
+      setUnseenSnapshots([]);
+    }
+
+    return () => {
+      unseenSnapshotsLoadGenRef.current += 1;
+    };
+  }, [loadUnseenSnapshots, phiScopeReady, viewingOwnInsights]);
+
+  useEffect(() => {
     invalidateInsightsLoads();
     resetInsightsPatientState();
 
@@ -236,7 +313,9 @@ export function InsightsClient() {
     setChartError(null);
     announce('Loading chart data.', { politeness: 'polite' });
 
-    const { p_from, p_to } = insightDateRangeToRpcBounds(dateRange);
+    const { p_from, p_to } =
+      chartRpcBoundsOverrideRef.current ??
+      insightDateRangeToRpcBounds(dateRange);
     const supabase = createBrowserClient();
     const result = await getChartSeries(supabase, {
       p_user_id: requestedUserId,
@@ -267,7 +346,47 @@ export function InsightsClient() {
 
     setChartRows(pivotChartSeriesBucketRows(result.data));
     announce('Chart data loaded.', { politeness: 'polite' });
+
+    const snapshotId = pendingSeenSnapshotIdRef.current;
+    if (snapshotId != null) {
+      pendingSeenSnapshotIdRef.current = null;
+      const markResult = await markChartSnapshotSeen(supabase, snapshotId);
+      if (markResult.ok && markResult.data) {
+        setUnseenSnapshots((current) =>
+          current.filter((row) => row.id !== snapshotId),
+        );
+        announce('Shared chart marked as viewed.', { politeness: 'polite' });
+      }
+    }
   }, [announce, bucket, chartTimeZone, dateRange, phiSubjectUserId, series]);
+
+  const handleViewSharedChart = useCallback(() => {
+    const snapshot = unseenSnapshots[0];
+    if (snapshot == null || phiSubjectUserId == null) {
+      return;
+    }
+
+    selectionOwnerUserIdRef.current = phiSubjectUserId;
+    pendingSeenSnapshotIdRef.current = snapshot.id;
+    chartRpcBoundsOverrideRef.current = {
+      p_from: snapshot.date_from,
+      p_to: snapshot.date_to,
+    };
+    setSharedSnapshotNote(snapshot.practitioner_note);
+    setSeries(
+      chartSnapshotDefinitionToSelectedSeries(snapshot.series_definition),
+    );
+    setDateRange(
+      chartSnapshotBoundsToInsightDateRange(
+        snapshot.date_from,
+        snapshot.date_to,
+      ),
+    );
+    setBucket(snapshot.bucket);
+    announce('Loading your practitioner’s shared chart.', {
+      politeness: 'polite',
+    });
+  }, [announce, phiSubjectUserId, unseenSnapshots]);
 
   useEffect(() => {
     const selectionOwnedByCurrentSubject =
@@ -277,6 +396,7 @@ export function InsightsClient() {
       series.every((item) =>
         manifest.some((row) => row.series_id === item.seriesId),
       );
+    const viewingSharedSnapshot = chartRpcBoundsOverrideRef.current != null;
 
     if (
       manifestLoading ||
@@ -284,7 +404,7 @@ export function InsightsClient() {
       phiSubjectUserId == null ||
       series.length === 0 ||
       !selectionOwnedByCurrentSubject ||
-      !selectionMatchesManifest
+      (!selectionMatchesManifest && !viewingSharedSnapshot)
     ) {
       chartLoadGenRef.current += 1;
       setChartLoading(false);
@@ -323,6 +443,29 @@ export function InsightsClient() {
         <p className="text-sm text-red-700 dark:text-red-300" role="alert">
           {phiScopeError}
         </p>
+      ) : null}
+
+      {viewingOwnInsights && unseenSnapshots.length > 0 ? (
+        <div
+          className="rounded-2xl border border-app-primary/30 bg-app-primary/5 p-4 shadow-soft ring-1 ring-app-primary/20"
+          role="region"
+          aria-label="Shared chart notification"
+        >
+          <button
+            type="button"
+            className="w-full rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+            onClick={handleViewSharedChart}
+          >
+            <p className="text-base font-semibold text-app-ink">
+              Your practitioner shared a chart with you.
+            </p>
+            <p className="mt-1 text-sm text-app-muted">
+              {unseenSnapshots.length === 1
+                ? 'Tap to view the chart they selected.'
+                : `Tap to view the most recent of ${unseenSnapshots.length} shared charts.`}
+            </p>
+          </button>
+        </div>
       ) : null}
 
       {manifestLoading ? (
@@ -367,7 +510,10 @@ export function InsightsClient() {
               value={series}
               onChange={handleSeriesChange}
             />
-            <InsightDateRangePicker value={dateRange} onChange={setDateRange} />
+            <InsightDateRangePicker
+              value={dateRange}
+              onChange={handleDateRangeChange}
+            />
           </div>
 
           {showChartSection ? (
@@ -381,6 +527,20 @@ export function InsightsClient() {
               >
                 Chart
               </h3>
+
+              {sharedSnapshotNote ? (
+                <div
+                  className="rounded-lg border border-app-border bg-app-bg/80 px-4 py-3 text-sm text-app-ink"
+                  role="note"
+                >
+                  <p className="font-medium text-app-ink">
+                    Note from your practitioner
+                  </p>
+                  <p className="mt-1 whitespace-pre-wrap text-app-muted">
+                    {sharedSnapshotNote}
+                  </p>
+                </div>
+              ) : null}
 
               <div
                 role="group"
@@ -402,7 +562,7 @@ export function InsightsClient() {
                           ? 'inline-flex min-h-11 items-center justify-center rounded-lg border border-app-border bg-app-primary px-4 text-base font-semibold text-white shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg'
                           : 'inline-flex min-h-11 items-center justify-center rounded-lg border border-app-border bg-app-surface px-4 text-base font-semibold text-app-ink shadow-sm transition hover:bg-[var(--app-nav-hover-bg)] outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg'
                       }
-                      onClick={() => setBucket(value)}
+                      onClick={() => handleBucketChange(value)}
                     >
                       {label}
                     </button>

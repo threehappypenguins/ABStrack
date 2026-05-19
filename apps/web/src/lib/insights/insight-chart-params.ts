@@ -1,4 +1,7 @@
-import type { ChartSeriesSelection } from '@abstrack/supabase';
+import type {
+  ChartSnapshotSeriesDefinition,
+  ChartSeriesSelection,
+} from '@abstrack/supabase';
 import type {
   InsightChartBucket,
   InsightDateRange,
@@ -100,4 +103,44 @@ export function formatInsightChartPageSummary(
   const fromLabel = dateFormatter.format(range.from);
   const toLabel = dateFormatter.format(range.to);
   return `${seriesPart} from ${fromLabel} to ${toLabel}, ${BUCKET_SUMMARY_LABEL[bucket]}`;
+}
+
+/**
+ * Converts stored snapshot bounds (`date_from` inclusive, `date_to` exclusive) to an
+ * {@link InsightDateRange} for the date picker and chart summary.
+ *
+ * @param dateFrom - Snapshot `date_from` (ISO).
+ * @param dateTo - Snapshot `date_to` exclusive end (ISO).
+ * @returns Inclusive local calendar range for the UI.
+ */
+export function chartSnapshotBoundsToInsightDateRange(
+  dateFrom: string,
+  dateTo: string,
+): InsightDateRange {
+  const from = new Date(dateFrom);
+  const toExclusive = new Date(dateTo);
+  const to = new Date(toExclusive);
+  to.setDate(to.getDate() - 1);
+  return { from, to };
+}
+
+/**
+ * Restores practitioner-shared {@link SelectedSeries} from `chart_snapshots.series_definition`.
+ *
+ * @param definition - Stored snapshot series rows.
+ * @returns Series selection for {@link InsightSeriesPicker} and {@link InsightComposedChart}.
+ */
+export function chartSnapshotDefinitionToSelectedSeries(
+  definition: ChartSnapshotSeriesDefinition[],
+): SelectedSeries[] {
+  return definition.map((item) => ({
+    seriesId: item.seriesId,
+    seriesType: item.seriesType,
+    responseType: item.responseType,
+    isBloodPressure: item.isBloodPressure,
+    label: item.label,
+    unit: item.unit,
+    chartType: item.chartType,
+    color: item.color,
+  }));
 }
