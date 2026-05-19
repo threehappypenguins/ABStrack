@@ -14,6 +14,10 @@ import {
   type PractitionerPatientObservationReadModel,
 } from '@abstrack/supabase';
 import { LiveAnnouncerProvider } from '@abstrack/ui/a11y-web';
+jest.mock('../src/components/practitioner-patient-insights-panel', () => ({
+  PractitionerPatientInsightsPanel: () => null,
+}));
+
 import { PractitionerPatientDetailPage } from '../src/app/patients/[patientId]/practitioner-patient-detail-page';
 
 /**

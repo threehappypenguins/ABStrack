@@ -11,6 +11,8 @@
     "react": "19.1.0",
     "react-day-picker": "^10.0.1",
     "react-dom": "19.1.0",
+    "react-native": "0.81.5",
+    "react-native-web": "~0.21.0",
     "recharts": "^3.8.1"
   },
   "devDependencies": {

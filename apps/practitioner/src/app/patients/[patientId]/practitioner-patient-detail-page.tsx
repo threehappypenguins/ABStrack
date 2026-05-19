@@ -22,6 +22,7 @@ import {
   PRACTITIONER_DETAILS_SUMMARY_BODY_CLASS,
   PRACTITIONER_DETAILS_SUMMARY_CLASS,
 } from '../../../components/practitioner-details-summary-classes';
+import { PractitionerPatientInsightsPanel } from '../../../components/practitioner-patient-insights-panel';
 import { PractitionerSymptomMediaViewer } from '../../../components/practitioner-symptom-media-viewer';
 import { useAuth } from '../../../lib/auth-provider';
 import Link from 'next/link';
@@ -32,7 +33,15 @@ import {
   useMemo,
   useRef,
   useState,
+  type KeyboardEvent,
 } from 'react';
+
+type PatientDetailTab = 'observations' | 'insights';
+
+const PATIENT_DETAIL_TAB_ORDER: readonly PatientDetailTab[] = [
+  'observations',
+  'insights',
+];
 
 type PatientDetailLoadState =
   | { kind: 'loading' }
@@ -552,6 +561,55 @@ export function PractitionerPatientDetailPage({
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const pageId = useId();
   const episodeRegionPrefix = `${pageId}-episode`;
+  const [activeTab, setActiveTab] = useState<PatientDetailTab>('observations');
+  const tabButtonRefs = useRef<
+    Partial<Record<PatientDetailTab, HTMLButtonElement>>
+  >({});
+
+  const patientDetailTabId = useCallback(
+    (tab: PatientDetailTab) => `${pageId}-tab-${tab}`,
+    [pageId],
+  );
+  const patientDetailPanelId = useCallback(
+    (tab: PatientDetailTab) => `${pageId}-panel-${tab}`,
+    [pageId],
+  );
+
+  const onPatientDetailTabKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLButtonElement>, current: PatientDetailTab) => {
+      const currentIndex = PATIENT_DETAIL_TAB_ORDER.indexOf(current);
+      if (currentIndex < 0) {
+        return;
+      }
+      let nextIndex = currentIndex;
+      if (event.key === 'ArrowRight') {
+        nextIndex = (currentIndex + 1) % PATIENT_DETAIL_TAB_ORDER.length;
+      } else if (event.key === 'ArrowLeft') {
+        nextIndex =
+          (currentIndex - 1 + PATIENT_DETAIL_TAB_ORDER.length) %
+          PATIENT_DETAIL_TAB_ORDER.length;
+      } else if (event.key === 'Home') {
+        nextIndex = 0;
+      } else if (event.key === 'End') {
+        nextIndex = PATIENT_DETAIL_TAB_ORDER.length - 1;
+      } else {
+        return;
+      }
+      event.preventDefault();
+      const target = PATIENT_DETAIL_TAB_ORDER[nextIndex];
+      if (!target) {
+        return;
+      }
+      setActiveTab(target);
+      tabButtonRefs.current[target]?.focus();
+    },
+    [],
+  );
+
+  const patientDetailTabClass = (tab: PatientDetailTab) =>
+    activeTab === tab
+      ? 'inline-flex min-h-11 flex-1 items-center justify-center rounded-full bg-app-primary-soft px-4 py-2 text-sm font-semibold text-app-primary shadow-sm ring-1 ring-app-primary/25'
+      : 'inline-flex min-h-11 flex-1 items-center justify-center rounded-full px-4 py-2 text-sm font-medium text-app-muted transition hover:bg-[var(--app-nav-hover-bg)] hover:text-app-ink';
 
   /** Monotonic token: bump when a load starts; effect cleanup bumps to drop in-flight work on route change/unmount. */
   const loadRequestTokenRef = useRef(0);
@@ -644,6 +702,10 @@ export function PractitionerPatientDetailPage({
     };
   }, [load]);
 
+  useEffect(() => {
+    setActiveTab('observations');
+  }, [patientUserId]);
+
   const title = useMemo(() => {
     if (
       loadState.kind === 'ready' &&
@@ -694,183 +756,251 @@ export function PractitionerPatientDetailPage({
         <h1 className="text-2xl font-semibold text-app-ink">{title}</h1>
         <p className="mt-2 font-mono text-xs text-app-muted">{patientUserId}</p>
         <p className="mt-3 text-sm text-app-muted">
-          Patient-logged timeline (read-only) plus practitioner observation
-          notes you can add or edit on this record and on individual episodes.
+          Patient-logged timeline (read-only), insights charts, and practitioner
+          observation notes you can add or edit on this record and on individual
+          episodes.
         </p>
       </header>
 
-      {model && practitionerUserId ? (
-        <PractitionerObservationNotesPanel
-          supabase={supabase}
-          patientUserId={patientUserId}
-          practitionerUserId={practitionerUserId}
-          notes={observationNotes}
-          onNotesChange={setObservationNotes}
-          notesLoading={observationNotesLoading}
-          notesLoadError={observationNotesLoadError}
-          headingId={`${pageId}-patient-notes-heading`}
-          heading="Patient record observation notes"
-          description="Notes about this patient that are not tied to a specific episode. Patients can read notes you save."
-          emptyListMessage="No patient-level observation notes yet."
-          composeSubmitLabel="Save patient note"
-        />
-      ) : null}
-
-      {isLoading ? (
-        <p
-          className="mt-8 text-sm text-app-muted"
-          role="status"
-          aria-live="polite"
-          aria-busy="true"
+      <div
+        role="tablist"
+        aria-label="Patient record sections"
+        className="mt-8 flex flex-wrap gap-2 rounded-2xl border border-app-border/90 bg-app-surface/80 p-2 shadow-sm"
+      >
+        <button
+          type="button"
+          role="tab"
+          id={patientDetailTabId('observations')}
+          aria-controls={patientDetailPanelId('observations')}
+          aria-selected={activeTab === 'observations' ? 'true' : 'false'}
+          tabIndex={activeTab === 'observations' ? 0 : -1}
+          className={patientDetailTabClass('observations')}
+          ref={(node) => {
+            tabButtonRefs.current.observations = node ?? undefined;
+          }}
+          onKeyDown={(event) =>
+            onPatientDetailTabKeyDown(event, 'observations')
+          }
+          onClick={() => setActiveTab('observations')}
         >
-          Loading patient record…
-        </p>
-      ) : null}
-
-      {errorMessage ? (
-        <div
-          className="mt-8 rounded-xl border border-app-border bg-app-surface p-5 shadow-soft"
-          role="alert"
+          Observations
+        </button>
+        <button
+          type="button"
+          role="tab"
+          id={patientDetailTabId('insights')}
+          aria-controls={patientDetailPanelId('insights')}
+          aria-selected={activeTab === 'insights' ? 'true' : 'false'}
+          tabIndex={activeTab === 'insights' ? 0 : -1}
+          className={patientDetailTabClass('insights')}
+          ref={(node) => {
+            tabButtonRefs.current.insights = node ?? undefined;
+          }}
+          onKeyDown={(event) => onPatientDetailTabKeyDown(event, 'insights')}
+          onClick={() => setActiveTab('insights')}
         >
-          <p className="text-sm text-app-ink">{errorMessage}</p>
-          <button
-            type="button"
-            onClick={() => void load()}
-            className="mt-4 inline-flex min-h-11 items-center justify-center rounded-md bg-app-primary px-4 py-2 text-sm font-medium text-white transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+          Insights
+        </button>
+      </div>
+
+      <div
+        id={patientDetailPanelId('observations')}
+        role="tabpanel"
+        aria-labelledby={patientDetailTabId('observations')}
+        hidden={activeTab !== 'observations'}
+        tabIndex={0}
+        className="mt-8 outline-none"
+      >
+        {model && practitionerUserId ? (
+          <PractitionerObservationNotesPanel
+            supabase={supabase}
+            patientUserId={patientUserId}
+            practitionerUserId={practitionerUserId}
+            notes={observationNotes}
+            onNotesChange={setObservationNotes}
+            notesLoading={observationNotesLoading}
+            notesLoadError={observationNotesLoadError}
+            headingId={`${pageId}-patient-notes-heading`}
+            heading="Patient record observation notes"
+            description="Notes about this patient that are not tied to a specific episode. Patients can read notes you save."
+            emptyListMessage="No patient-level observation notes yet."
+            composeSubmitLabel="Save patient note"
+          />
+        ) : null}
+
+        {isLoading ? (
+          <p
+            className="mt-8 text-sm text-app-muted"
+            role="status"
+            aria-live="polite"
+            aria-busy="true"
           >
-            Try again
-          </button>
-        </div>
-      ) : null}
-
-      {model?.moreEpisodesOmitted ? (
-        <p className="mt-6 text-sm text-app-muted" role="status">
-          Showing the {PRACTITIONER_PATIENT_EPISODE_HISTORY_CAP} most recent
-          episodes. Older episodes are not listed here.
-        </p>
-      ) : null}
-
-      {model &&
-      model.episodesWithTimelines.length === 0 &&
-      model.standaloneTimeline.length === 0 ? (
-        <div
-          className="mt-8 rounded-xl border border-dashed border-app-border bg-app-surface/60 p-6"
-          role="status"
-          aria-labelledby={`${pageId}-empty-heading`}
-        >
-          <h2
-            id={`${pageId}-empty-heading`}
-            className="text-lg font-semibold text-app-ink"
-          >
-            No observations yet
-          </h2>
-          <p className="mt-2 text-sm text-app-muted">
-            This patient has no logged episodes or standalone health markers and
-            food diary entries you can view.
+            Loading patient record…
           </p>
-        </div>
-      ) : null}
+        ) : null}
 
-      {model && model.episodesWithTimelines.length > 0 ? (
-        <section
-          className="mt-10"
-          aria-labelledby={`${pageId}-episodes-heading`}
-        >
-          <h2
-            id={`${pageId}-episodes-heading`}
-            className="text-lg font-semibold text-app-ink"
+        {errorMessage ? (
+          <div
+            className="mt-8 rounded-xl border border-app-border bg-app-surface p-5 shadow-soft"
+            role="alert"
           >
-            Episode history
-          </h2>
-          <p className="mt-2 text-sm text-app-muted">
-            Within each episode, observations are oldest first (timestamp, then
-            id as tie-breaker).
-          </p>
-          <div className="mt-6 space-y-8">
-            {model.episodesWithTimelines.map(
-              ({
-                episode,
-                timeline,
-                moreSymptomsOmitted,
-                moreHealthMarkersOmitted,
-                moreFoodDiaryOmitted,
-              }) => {
-                const regionId = `${episodeRegionPrefix}-${episode.id}`;
-                return (
-                  <section
-                    key={episode.id}
-                    aria-labelledby={`${regionId}-heading`}
-                  >
-                    <PractitionerEpisodeTimelineCard
-                      episode={episode}
-                      timeline={timeline}
-                      moreSymptomsOmitted={moreSymptomsOmitted}
-                      moreHealthMarkersOmitted={moreHealthMarkersOmitted}
-                      moreFoodDiaryOmitted={moreFoodDiaryOmitted}
-                      regionId={regionId}
-                      supabase={supabase}
-                      patientUserId={patientUserId}
-                      practitionerUserId={practitionerUserId}
-                      observationNotes={observationNotes}
-                      onObservationNotesChange={setObservationNotes}
-                      observationNotesLoading={observationNotesLoading}
-                      observationNotesLoadError={observationNotesLoadError}
-                    />
-                  </section>
-                );
-              },
-            )}
+            <p className="text-sm text-app-ink">{errorMessage}</p>
+            <button
+              type="button"
+              onClick={() => void load()}
+              className="mt-4 inline-flex min-h-11 items-center justify-center rounded-md bg-app-primary px-4 py-2 text-sm font-medium text-white transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+            >
+              Try again
+            </button>
           </div>
-        </section>
-      ) : null}
+        ) : null}
 
-      {model && model.standaloneTimeline.length > 0 ? (
-        <section
-          className="mt-10"
-          aria-labelledby={`${pageId}-standalone-heading`}
-        >
-          <h2
-            id={`${pageId}-standalone-heading`}
-            className="text-lg font-semibold text-app-ink"
-          >
-            Standalone health markers &amp; food diary
-          </h2>
-          <p className="mt-2 text-sm text-app-muted">
-            Entries logged outside any episode (not tied to a flare record),
-            oldest first.
+        {model?.moreEpisodesOmitted ? (
+          <p className="mt-6 text-sm text-app-muted" role="status">
+            Showing the {PRACTITIONER_PATIENT_EPISODE_HISTORY_CAP} most recent
+            episodes. Older episodes are not listed here.
           </p>
-          <div className="mt-6">
-            <PractitionerStandaloneTimelineSection
-              key={patientUserId}
-              standaloneTimeline={model.standaloneTimeline}
-              markersTruncated={model.standaloneHealthMarkersTruncated}
-              foodTruncated={model.standaloneFoodDiaryTruncated}
-              ariaLabelledBy={`${pageId}-standalone-heading`}
-            />
+        ) : null}
+
+        {model &&
+        model.episodesWithTimelines.length === 0 &&
+        model.standaloneTimeline.length === 0 ? (
+          <div
+            className="mt-8 rounded-xl border border-dashed border-app-border bg-app-surface/60 p-6"
+            role="status"
+            aria-labelledby={`${pageId}-empty-heading`}
+          >
+            <h2
+              id={`${pageId}-empty-heading`}
+              className="text-lg font-semibold text-app-ink"
+            >
+              No observations yet
+            </h2>
+            <p className="mt-2 text-sm text-app-muted">
+              This patient has no logged episodes or standalone health markers
+              and food diary entries you can view.
+            </p>
           </div>
-        </section>
-      ) : null}
+        ) : null}
 
-      {model &&
-      model.standaloneTimeline.length === 0 &&
-      model.episodesWithTimelines.length > 0 ? (
-        <div
-          className="mt-10 rounded-xl border border-dashed border-app-border bg-app-surface/60 p-6"
-          role="status"
-          aria-labelledby={`${pageId}-standalone-empty-heading`}
-        >
-          <h2
-            id={`${pageId}-standalone-empty-heading`}
-            className="text-lg font-semibold text-app-ink"
+        {model && model.episodesWithTimelines.length > 0 ? (
+          <section
+            className="mt-10"
+            aria-labelledby={`${pageId}-episodes-heading`}
           >
-            No standalone markers or food entries
-          </h2>
-          <p className="mt-2 text-sm text-app-muted">
-            This patient has not logged health markers or food outside of an
-            episode in the loaded window, or none appear here.
-          </p>
-        </div>
-      ) : null}
+            <h2
+              id={`${pageId}-episodes-heading`}
+              className="text-lg font-semibold text-app-ink"
+            >
+              Episode history
+            </h2>
+            <p className="mt-2 text-sm text-app-muted">
+              Within each episode, observations are oldest first (timestamp,
+              then id as tie-breaker).
+            </p>
+            <div className="mt-6 space-y-8">
+              {model.episodesWithTimelines.map(
+                ({
+                  episode,
+                  timeline,
+                  moreSymptomsOmitted,
+                  moreHealthMarkersOmitted,
+                  moreFoodDiaryOmitted,
+                }) => {
+                  const regionId = `${episodeRegionPrefix}-${episode.id}`;
+                  return (
+                    <section
+                      key={episode.id}
+                      aria-labelledby={`${regionId}-heading`}
+                    >
+                      <PractitionerEpisodeTimelineCard
+                        episode={episode}
+                        timeline={timeline}
+                        moreSymptomsOmitted={moreSymptomsOmitted}
+                        moreHealthMarkersOmitted={moreHealthMarkersOmitted}
+                        moreFoodDiaryOmitted={moreFoodDiaryOmitted}
+                        regionId={regionId}
+                        supabase={supabase}
+                        patientUserId={patientUserId}
+                        practitionerUserId={practitionerUserId}
+                        observationNotes={observationNotes}
+                        onObservationNotesChange={setObservationNotes}
+                        observationNotesLoading={observationNotesLoading}
+                        observationNotesLoadError={observationNotesLoadError}
+                      />
+                    </section>
+                  );
+                },
+              )}
+            </div>
+          </section>
+        ) : null}
+
+        {model && model.standaloneTimeline.length > 0 ? (
+          <section
+            className="mt-10"
+            aria-labelledby={`${pageId}-standalone-heading`}
+          >
+            <h2
+              id={`${pageId}-standalone-heading`}
+              className="text-lg font-semibold text-app-ink"
+            >
+              Standalone health markers &amp; food diary
+            </h2>
+            <p className="mt-2 text-sm text-app-muted">
+              Entries logged outside any episode (not tied to a flare record),
+              oldest first.
+            </p>
+            <div className="mt-6">
+              <PractitionerStandaloneTimelineSection
+                key={patientUserId}
+                standaloneTimeline={model.standaloneTimeline}
+                markersTruncated={model.standaloneHealthMarkersTruncated}
+                foodTruncated={model.standaloneFoodDiaryTruncated}
+                ariaLabelledBy={`${pageId}-standalone-heading`}
+              />
+            </div>
+          </section>
+        ) : null}
+
+        {model &&
+        model.standaloneTimeline.length === 0 &&
+        model.episodesWithTimelines.length > 0 ? (
+          <div
+            className="mt-10 rounded-xl border border-dashed border-app-border bg-app-surface/60 p-6"
+            role="status"
+            aria-labelledby={`${pageId}-standalone-empty-heading`}
+          >
+            <h2
+              id={`${pageId}-standalone-empty-heading`}
+              className="text-lg font-semibold text-app-ink"
+            >
+              No standalone markers or food entries
+            </h2>
+            <p className="mt-2 text-sm text-app-muted">
+              This patient has not logged health markers or food outside of an
+              episode in the loaded window, or none appear here.
+            </p>
+          </div>
+        ) : null}
+      </div>
+
+      <div
+        id={patientDetailPanelId('insights')}
+        role="tabpanel"
+        aria-labelledby={patientDetailTabId('insights')}
+        hidden={activeTab !== 'insights'}
+        tabIndex={0}
+        className="mt-8 outline-none"
+      >
+        {patientUserId ? (
+          <PractitionerPatientInsightsPanel
+            key={patientUserId}
+            patientUserId={patientUserId}
+            supabase={supabase}
+          />
+        ) : null}
+      </div>
     </div>
   );
 }

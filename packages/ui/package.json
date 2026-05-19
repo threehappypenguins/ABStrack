@@ -20,6 +20,18 @@
       "import": "./dist/a11y-web.js",
       "default": "./dist/a11y-web.js"
     },
+    "./insights-web": {
+      "@abstrack/source": "./src/insights-web.ts",
+      "types": "./dist/insights-web.d.ts",
+      "import": "./dist/insights-web.js",
+      "default": "./dist/insights-web.js"
+    },
+    "./insights-web-utils": {
+      "@abstrack/source": "./src/insights-web-utils.ts",
+      "types": "./dist/insights-web-utils.d.ts",
+      "import": "./dist/insights-web-utils.js",
+      "default": "./dist/insights-web-utils.js"
+    },
     "./native": {
       "@abstrack/source": "./src/native.ts",
       "types": "./dist/native.d.ts",

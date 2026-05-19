@@ -1,4 +1,5 @@
 //@ts-check
+const path = require('path');
 const { composePlugins, withNx } = require('@nx/next');
 const {
   buildPractitionerCspDirectives,
@@ -34,6 +35,30 @@ const nextConfig = {
   // Use this to set Nx-specific options
   // See: https://nx.dev/recipes/next/next-config-setup
   nx: {},
+  transpilePackages: [
+    '@abstrack/ui',
+    '@abstrack/types',
+    '@abstrack/supabase',
+    'react-native',
+    'react-native-web',
+  ],
+  webpack: (config) => {
+    const supabaseSrc = path.join(__dirname, '../../packages/supabase/src');
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      'react-native$': 'react-native-web',
+      '@abstrack/types$': path.join(
+        __dirname,
+        '../../packages/types/src/index.ts',
+      ),
+      '@abstrack/supabase$': path.join(supabaseSrc, 'index.ts'),
+      '@abstrack/supabase/browser': path.join(supabaseSrc, 'browser.ts'),
+      '@abstrack/supabase/server': path.join(supabaseSrc, 'server.ts'),
+      '@abstrack/supabase/native': path.join(supabaseSrc, 'native.ts'),
+      '@abstrack/supabase/admin': path.join(supabaseSrc, 'admin.ts'),
+    };
+    return config;
+  },
   async headers() {
     return [
       {

@@ -1,4 +1,24 @@
 {
+  "files.watcherExclude": {
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true,
+    "**/node_modules/**": true,
+    "**/.pnpm/**": true,
+    "**/.nx/**": true,
+    "**/dist/**": true,
+    "**/out-tsc/**": true,
+    "**/.next/**": true,
+    "**/out/**": true,
+    "**/coverage/**": true,
+    "**/.expo/**": true,
+    "**/.vercel/**": true,
+    "**/supabase/.temp/**": true,
+    "**/supabase/.branches/**": true,
+    "**/apps/mobile/android/**": true,
+    "**/apps/mobile/ios/**": true,
+    "**/test-output/**": true,
+    "**/.cursor/**": true
+  },
   "editor.formatOnSave": true,
   "editor.defaultFormatter": "esbenp.prettier-vscode",
   "[javascript]": {
