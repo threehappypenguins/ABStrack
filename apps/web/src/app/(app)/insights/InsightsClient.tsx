@@ -616,7 +616,11 @@ export function InsightsClient() {
                   showPatientTimeZoneNote={
                     showPatientTimeZoneNote || showSharedChartTimeZoneNote
                   }
-                  patientTimeZoneNoteUsesPatientLocal={false}
+                  patientTimeZoneNoteVariant={
+                    showSharedChartTimeZoneNote
+                      ? 'practitionerShared'
+                      : 'browser'
+                  }
                 />
               )}
             </section>

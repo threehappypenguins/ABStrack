@@ -204,6 +204,15 @@ describe('formatInsightChartPatientTimeZoneNote', () => {
       }),
     ).toMatch(/patient's local timezone/i);
   });
+
+  it('describes practitioner chart timezone for shared snapshots', () => {
+    const note = formatInsightChartPatientTimeZoneNote('America/New_York', {
+      variant: 'practitionerShared',
+    });
+    expect(note).toMatch(/practitioner's chart timezone/i);
+    expect(note).not.toMatch(/your browser timezone/i);
+    expect(note).toMatch(/day, week, and month groupings use this timezone/i);
+  });
 });
 
 describe('pivotChartSeriesBucketRows', () => {
