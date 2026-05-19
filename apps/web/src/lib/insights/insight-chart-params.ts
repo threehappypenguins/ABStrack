@@ -106,8 +106,23 @@ export function formatInsightChartPageSummary(
 }
 
 /**
+ * Start of the local calendar day for an instant (matches {@link InsightDateRangePicker}).
+ *
+ * @param date - Input instant.
+ * @returns Local midnight on that calendar day.
+ */
+function toLocalCalendarDay(date: Date): Date {
+  const day = new Date(date);
+  day.setHours(0, 0, 0, 0);
+  return day;
+}
+
+/**
  * Converts stored snapshot bounds (`date_from` inclusive, `date_to` exclusive) to an
  * {@link InsightDateRange} for the date picker and chart summary.
+ *
+ * Returned dates are local midnights so {@link InsightDateRangePicker} normalization does
+ * not call `onChange` and clear an in-flight shared-snapshot restore.
  *
  * @param dateFrom - Snapshot `date_from` (ISO).
  * @param dateTo - Snapshot `date_to` exclusive end (ISO).
@@ -117,8 +132,8 @@ export function chartSnapshotBoundsToInsightDateRange(
   dateFrom: string,
   dateTo: string,
 ): InsightDateRange {
-  const from = new Date(dateFrom);
-  const toExclusive = new Date(dateTo);
+  const from = toLocalCalendarDay(new Date(dateFrom));
+  const toExclusive = toLocalCalendarDay(new Date(dateTo));
   const to = new Date(toExclusive);
   to.setDate(to.getDate() - 1);
   return { from, to };

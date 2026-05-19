@@ -351,11 +351,13 @@ export function InsightsClient() {
     if (snapshotId != null) {
       pendingSeenSnapshotIdRef.current = null;
       const markResult = await markChartSnapshotSeen(supabase, snapshotId);
-      if (markResult.ok && markResult.data) {
+      if (markResult.ok) {
         setUnseenSnapshots((current) =>
           current.filter((row) => row.id !== snapshotId),
         );
-        announce('Shared chart marked as viewed.', { politeness: 'polite' });
+        if (markResult.data) {
+          announce('Shared chart marked as viewed.', { politeness: 'polite' });
+        }
       }
     }
   }, [announce, bucket, chartTimeZone, dateRange, phiSubjectUserId, series]);

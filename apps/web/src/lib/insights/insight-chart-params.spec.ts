@@ -59,6 +59,16 @@ describe('insight-chart-params', () => {
     expect(restored.to).toEqual(range.to);
   });
 
+  it('normalizes snapshot bounds to local calendar midnights for the date picker', () => {
+    const fromIso = new Date(2026, 3, 15, 14, 30, 0).toISOString();
+    const toIso = new Date(2026, 4, 1, 9, 45, 0).toISOString();
+
+    const restored = chartSnapshotBoundsToInsightDateRange(fromIso, toIso);
+
+    expect(restored.from).toEqual(new Date(2026, 3, 15, 0, 0, 0, 0));
+    expect(restored.to).toEqual(new Date(2026, 3, 30, 0, 0, 0, 0));
+  });
+
   it('maps snapshot series definition to selected series', () => {
     expect(
       chartSnapshotDefinitionToSelectedSeries([

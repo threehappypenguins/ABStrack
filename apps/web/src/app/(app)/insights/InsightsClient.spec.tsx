@@ -579,6 +579,65 @@ describe('InsightsClient', () => {
     expect(screen.getByText('Please review this trend.')).toBeInTheDocument();
   });
 
+  it('clears the banner when mark returns false because the snapshot was already seen', async () => {
+    listUnseenChartSnapshotsForPatientMock.mockResolvedValue({
+      ok: true,
+      data: [SHARED_SNAPSHOT],
+    });
+    markChartSnapshotSeenMock.mockResolvedValue({ ok: true, data: false });
+
+    renderInsights();
+
+    await screen.findByText('Your practitioner shared a chart with you.');
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: /your practitioner shared a chart with you/i,
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(markChartSnapshotSeenMock).toHaveBeenCalled();
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.queryByText('Your practitioner shared a chart with you.'),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  it('keeps the banner when mark_chart_snapshot_seen fails so the patient can retry', async () => {
+    listUnseenChartSnapshotsForPatientMock.mockResolvedValue({
+      ok: true,
+      data: [SHARED_SNAPSHOT],
+    });
+    markChartSnapshotSeenMock.mockResolvedValue({
+      ok: false,
+      error: { message: 'Network error.', code: 'network_error' },
+    });
+
+    renderInsights();
+
+    await screen.findByText('Your practitioner shared a chart with you.');
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: /your practitioner shared a chart with you/i,
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(markChartSnapshotSeenMock).toHaveBeenCalled();
+    });
+
+    expect(
+      screen.getByText('Your practitioner shared a chart with you.'),
+    ).toBeInTheDocument();
+  });
+
   it('does not query unseen snapshots when viewing another PHI subject', async () => {
     phiContext.phiSubjectUserId = PHI_SUBJECT_B;
     phiContext.authUserId = PHI_SUBJECT_A;

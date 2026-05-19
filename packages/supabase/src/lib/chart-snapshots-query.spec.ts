@@ -3,8 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { PresetDataError } from './preset-data-error.js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
 import {
+  listUnseenChartSnapshotsForPatient,
   markChartSnapshotSeen,
   shareChartSnapshot,
+  type ChartSnapshotRow,
   type ChartSnapshotSeriesDefinition,
   type ShareChartSnapshotParams,
 } from './chart-snapshots-query.js';
@@ -35,6 +37,97 @@ const SHARE_PARAMS: ShareChartSnapshotParams = {
   bucket: 'week',
   practitionerNote: '  Check this trend  ',
 };
+
+const CHART_SNAPSHOTS_SELECT =
+  'id, patient_user_id, practitioner_user_id, series_definition, date_from, date_to, bucket, practitioner_note, created_at, seen_by_patient_at';
+
+const UNSEEN_SNAPSHOT_ROW: ChartSnapshotRow = {
+  id: SNAPSHOT_ID,
+  patient_user_id: PATIENT_ID,
+  practitioner_user_id: 'cccccccc-bbbb-cccc-dddd-111111111111',
+  series_definition: SERIES_DEFINITION,
+  date_from: DATE_FROM,
+  date_to: DATE_TO,
+  bucket: 'week',
+  practitioner_note: 'Check this trend',
+  created_at: '2026-05-01T12:00:00.000Z',
+  seen_by_patient_at: null,
+};
+
+function chartSnapshotsQueryClient(
+  rows: ChartSnapshotRow[] | null,
+  error: { message: string } | null = null,
+) {
+  const order = vi.fn(async () => ({ data: rows, error }));
+  const is = vi.fn(() => ({ order }));
+  const select = vi.fn(() => ({ is }));
+  const from = vi.fn(() => ({ select }));
+
+  return {
+    client: { from } as unknown as AbstrackSupabaseClient,
+    from,
+    select,
+    is,
+    order,
+  };
+}
+
+describe('listUnseenChartSnapshotsForPatient', () => {
+  it('queries chart_snapshots for unseen rows newest first', async () => {
+    const { client, from, select, is, order } = chartSnapshotsQueryClient([
+      UNSEEN_SNAPSHOT_ROW,
+    ]);
+
+    await listUnseenChartSnapshotsForPatient(client);
+
+    expect(from).toHaveBeenCalledWith('chart_snapshots');
+    expect(select).toHaveBeenCalledWith(CHART_SNAPSHOTS_SELECT);
+    expect(is).toHaveBeenCalledWith('seen_by_patient_at', null);
+    expect(order).toHaveBeenCalledWith('created_at', { ascending: false });
+  });
+
+  it('returns query rows on success', async () => {
+    const { client } = chartSnapshotsQueryClient([UNSEEN_SNAPSHOT_ROW]);
+
+    const result = await listUnseenChartSnapshotsForPatient(client);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.data).toEqual([UNSEEN_SNAPSHOT_ROW]);
+  });
+
+  it('returns an empty array when data is null', async () => {
+    const { client } = chartSnapshotsQueryClient(null);
+
+    const result = await listUnseenChartSnapshotsForPatient(client);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.data).toEqual([]);
+  });
+
+  it('returns ok: false when the query returns an error', async () => {
+    const { client } = chartSnapshotsQueryClient(null, {
+      message: 'permission denied for table chart_snapshots',
+    });
+
+    const result = await listUnseenChartSnapshotsForPatient(client);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+
+    expect(result.error).toBeInstanceOf(PresetDataError);
+    expect(result.error.code).toBe('permission_denied');
+  });
+});
 
 describe('shareChartSnapshot', () => {
   it('calls share_chart_snapshot RPC with snake_case payload', async () => {
