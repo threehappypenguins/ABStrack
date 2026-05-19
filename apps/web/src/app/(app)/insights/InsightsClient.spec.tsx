@@ -187,6 +187,23 @@ describe('InsightsClient', () => {
     });
   });
 
+  it('does not show the empty state when PHI scope fails to resolve', async () => {
+    phiContext.phiSubjectUserId = null;
+    phiContext.errorMessage = 'Could not resolve patient context.';
+
+    renderInsights();
+
+    expect(
+      await screen.findByText('Could not resolve patient context.'),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        'No data to chart yet. Log some episodes or health markers to get started.',
+      ),
+    ).not.toBeInTheDocument();
+    expect(getUserChartManifestMock).not.toHaveBeenCalled();
+  });
+
   it('shows the empty state when the manifest is empty', async () => {
     getUserChartManifestMock.mockResolvedValue({ ok: true, data: [] });
 
@@ -344,6 +361,25 @@ describe('InsightsClient', () => {
     ).toBeInTheDocument();
     expect(screen.queryByTestId('composed-chart')).not.toBeInTheDocument();
     expect(getChartSeriesMock).not.toHaveBeenCalled();
+  });
+
+  it('does not render the chart when the series RPC fails', async () => {
+    getChartSeriesMock.mockResolvedValue({
+      ok: false,
+      error: { message: 'Chart RPC failed.', code: 'rpc_error' },
+    });
+
+    renderInsights();
+
+    await screen.findByRole('button', { name: 'Select first series' });
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Select first series' }),
+      );
+    });
+
+    expect(await screen.findByText('Chart RPC failed.')).toBeInTheDocument();
+    expect(screen.queryByTestId('composed-chart')).not.toBeInTheDocument();
   });
 
   it('updates chart bucket when the bucket selector changes', async () => {

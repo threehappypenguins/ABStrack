@@ -19,8 +19,10 @@ export function getDefaultInsightDateRange(): InsightDateRange {
 }
 
 /**
- * Inclusive local-calendar-day bounds for `get_chart_series` (`p_from` / `p_to`).
+ * Local-calendar-day bounds for `get_chart_series` (`p_from` inclusive, `p_to` exclusive).
  * Uses the browser's local timezone, matching {@link InsightDateRangePicker} calendar days.
+ * `p_to` is midnight on the day after `range.to` so the RPC can use `recorded_at < p_to` and
+ * include observations with sub-millisecond timestamps on the last selected day.
  *
  * @param range - Selected inclusive chart date range.
  * @returns ISO timestamps for RPC range filters.
@@ -31,11 +33,12 @@ export function insightDateRangeToRpcBounds(range: InsightDateRange): {
 } {
   const from = new Date(range.from);
   from.setHours(0, 0, 0, 0);
-  const to = new Date(range.to);
-  to.setHours(23, 59, 59, 999);
+  const toExclusive = new Date(range.to);
+  toExclusive.setHours(0, 0, 0, 0);
+  toExclusive.setDate(toExclusive.getDate() + 1);
   return {
     p_from: from.toISOString(),
-    p_to: to.toISOString(),
+    p_to: toExclusive.toISOString(),
   };
 }
 

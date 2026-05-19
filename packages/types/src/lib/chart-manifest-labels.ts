@@ -6,18 +6,10 @@ import {
 const HEALTH_MARKER_SERIES_PREFIX = 'health_marker::';
 
 /**
- * Human-readable label for a health-marker row from `get_user_chart_manifest`.
+ * Maps a preset `marker_kind` key to {@link PRESET_HEALTH_MARKER_KIND_LABELS}.
  *
- * The RPC uses `coalesce(custom_name, marker_kind)` for `label`, so preset kinds without
- * a stored custom name surface as snake_case keys (`bac`, `blood_glucose`). This maps those
- * to {@link PRESET_HEALTH_MARKER_KIND_LABELS} (same copy as the health-marker preset UI).
- *
- * @param seriesId - Manifest `series_id` (e.g. `health_marker::bac`).
- * Preset kinds use `health_marker::<kind>`; custom markers use `health_marker::custom::<name>`
- * and must keep the RPC label (even when the custom name matches a preset key string).
- *
- * @param rpcLabel - `label` returned by the RPC.
- * @returns Display label for chart pickers and summaries.
+ * @param markerKey - Suffix after `health_marker::` (e.g. `bac`, or `custom::steps`).
+ * @returns Preset display label, or `undefined` when the key is custom or not a preset kind.
  */
 function presetHealthMarkerLabelForKey(markerKey: string): string | undefined {
   if (
@@ -32,6 +24,19 @@ function presetHealthMarkerLabelForKey(markerKey: string): string | undefined {
   return undefined;
 }
 
+/**
+ * Human-readable label for a health-marker row from `get_user_chart_manifest`.
+ *
+ * The RPC uses `coalesce(custom_name, marker_kind)` for `label`, so preset kinds without
+ * a stored custom name surface as snake_case keys (`bac`, `blood_glucose`). Preset kinds
+ * use `health_marker::<kind>` and map through {@link PRESET_HEALTH_MARKER_KIND_LABELS}
+ * (same copy as the health-marker preset UI). Custom markers use `health_marker::custom::<name>`
+ * and keep the RPC label (even when the custom name matches a preset key string).
+ *
+ * @param seriesId - Manifest `series_id` (e.g. `health_marker::bac`).
+ * @param rpcLabel - `label` returned by the RPC.
+ * @returns Display label for chart pickers and summaries.
+ */
 export function chartManifestHealthMarkerDisplayLabel(
   seriesId: string,
   rpcLabel: string,

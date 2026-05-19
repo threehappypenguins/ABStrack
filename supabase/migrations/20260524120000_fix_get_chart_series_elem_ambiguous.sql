@@ -74,8 +74,8 @@ BEGIN
       USING ERRCODE = '22023';
   END IF;
 
-  IF p_from > p_to THEN
-    RAISE EXCEPTION 'get_chart_series: p_from must be less than or equal to p_to'
+  IF p_from >= p_to THEN
+    RAISE EXCEPTION 'get_chart_series: p_from must be less than p_to (p_to is exclusive)'
       USING ERRCODE = '22023';
   END IF;
 
@@ -219,7 +219,7 @@ BEGIN
     INNER JOIN public.health_markers hm
       ON hm.user_id = p_user_id
       AND hm.recorded_at >= p_from
-      AND hm.recorded_at <= p_to
+      AND hm.recorded_at < p_to
       AND (
         hm.marker_kind <> 'custom'
         OR nullif(trim(hm.custom_name), '') IS NOT NULL
@@ -291,7 +291,7 @@ BEGIN
     INNER JOIN public.episode_symptoms es
       ON es.user_id = p_user_id
       AND es.created_at >= p_from
-      AND es.created_at <= p_to
+      AND es.created_at < p_to
       AND lower(nullif(trim(es.symptom_name), '')) = sd.symptom_series_key
       AND es.response_type = 'yes_no'
     WHERE sd.response_type = 'boolean'
@@ -316,7 +316,7 @@ BEGIN
     INNER JOIN public.episode_symptoms es
       ON es.user_id = p_user_id
       AND es.created_at >= p_from
-      AND es.created_at <= p_to
+      AND es.created_at < p_to
       AND lower(nullif(trim(es.symptom_name), '')) = sd.symptom_series_key
       AND es.response_type = 'severity_scale'
     WHERE sd.response_type = 'severity'
@@ -336,4 +336,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION public.get_chart_series (uuid, jsonb, timestamptz, timestamptz, text, text) IS
-'Returns pre-bucketed chart series for p_user_id and selected manifest series. Buckets use date_trunc in p_timezone (IANA name, validated against pg_timezone_names) so bucket_start aligns with patient-local chart labels. Validates p_bucket (day|week|month), p_series (1–3 series), and p_from <= p_to. Severity: value_* ignores NULL response_severity; event_count is total severity_scale rows per bucket. SECURITY INVOKER.';
+'Returns pre-bucketed chart series for p_user_id and selected manifest series. Buckets use date_trunc in p_timezone (IANA name, validated against pg_timezone_names) so bucket_start aligns with patient-local chart labels. Validates p_bucket (day|week|month), p_series (1–3 series), and p_from < p_to (p_to exclusive). Severity: value_* ignores NULL response_severity; event_count is total severity_scale rows per bucket. SECURITY INVOKER.';
+
+REVOKE ALL ON FUNCTION public.get_chart_series (uuid, jsonb, timestamptz, timestamptz, text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_chart_series (uuid, jsonb, timestamptz, timestamptz, text, text) TO authenticated;

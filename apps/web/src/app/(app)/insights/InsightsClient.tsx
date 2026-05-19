@@ -139,8 +139,14 @@ export function InsightsClient() {
     [manifest],
   );
 
+  const phiScopeReady =
+    !phiScopeLoading && !phiScopeError && phiSubjectUserId != null;
+
   const manifestIsEmpty =
-    !manifestLoading && !manifestError && chartableManifest.length === 0;
+    phiScopeReady &&
+    !manifestLoading &&
+    !manifestError &&
+    chartableManifest.length === 0;
 
   const chartSummary = useMemo(
     () =>
@@ -331,7 +337,10 @@ export function InsightsClient() {
         </p>
       ) : null}
 
-      {!manifestLoading && !manifestError && chartableManifest.length > 0 ? (
+      {phiScopeReady &&
+      !manifestLoading &&
+      !manifestError &&
+      chartableManifest.length > 0 ? (
         <section aria-labelledby={filtersHeadingId} className="space-y-6">
           <h2 id={filtersHeadingId} className="sr-only">
             Chart filters
@@ -402,18 +411,18 @@ export function InsightsClient() {
                 >
                   {chartError}
                 </p>
-              ) : null}
-
-              <InsightComposedChart
-                series={series}
-                data={chartRows}
-                bucket={bucket}
-                loading={chartLoading}
-                summary={chartSummary}
-                patientTimeZone={chartTimeZone}
-                showPatientTimeZoneNote={showPatientTimeZoneNote}
-                patientTimeZoneNoteUsesPatientLocal={false}
-              />
+              ) : (
+                <InsightComposedChart
+                  series={series}
+                  data={chartRows}
+                  bucket={bucket}
+                  loading={chartLoading}
+                  summary={chartSummary}
+                  patientTimeZone={chartTimeZone}
+                  showPatientTimeZoneNote={showPatientTimeZoneNote}
+                  patientTimeZoneNoteUsesPatientLocal={false}
+                />
+              )}
             </section>
           ) : null}
         </section>

@@ -16,15 +16,16 @@ describe('insight-chart-params', () => {
     expect(range.from.getHours()).toBe(0);
   });
 
-  it('builds inclusive local-day RPC bounds', () => {
-    const range = getDefaultInsightDateRange();
+  it('builds local-day RPC bounds with an exclusive next-day p_to', () => {
+    const range = {
+      from: new Date(2026, 3, 1),
+      to: new Date(2026, 3, 30),
+    };
     const { p_from, p_to } = insightDateRangeToRpcBounds(range);
 
-    expect(new Date(p_from).getHours()).toBe(0);
-    expect(new Date(p_to).getHours()).toBe(23);
-    expect(new Date(p_from).getTime()).toBeLessThanOrEqual(
-      new Date(p_to).getTime(),
-    );
+    expect(new Date(p_from)).toEqual(new Date(2026, 3, 1, 0, 0, 0, 0));
+    expect(new Date(p_to)).toEqual(new Date(2026, 4, 1, 0, 0, 0, 0));
+    expect(new Date(p_from).getTime()).toBeLessThan(new Date(p_to).getTime());
   });
 
   it('formats a plain-English chart summary', () => {
