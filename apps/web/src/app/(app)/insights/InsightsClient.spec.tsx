@@ -212,6 +212,7 @@ const SHARED_SNAPSHOT = {
   date_to: '2026-02-01T05:00:00.000Z',
   bucket: 'week' as const,
   practitioner_note: 'Please review this trend.',
+  chart_timezone: 'America/New_York',
   created_at: '2026-05-01T12:00:00.000Z',
   seen_by_patient_at: null,
 };
@@ -564,6 +565,7 @@ describe('InsightsClient', () => {
           p_from: SHARED_SNAPSHOT.date_from,
           p_to: SHARED_SNAPSHOT.date_to,
           p_bucket: 'week',
+          p_timezone: 'America/New_York',
         }),
       );
     });

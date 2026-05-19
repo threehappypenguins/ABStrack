@@ -59,6 +59,20 @@ describe('insight-chart-params', () => {
     expect(restored.to).toEqual(range.to);
   });
 
+  it('uses the snapshot chart timezone for calendar days, not the patient browser zone', () => {
+    const dateFrom = '2026-01-01T05:00:00.000Z';
+    const dateTo = '2026-02-01T05:00:00.000Z';
+
+    const restored = chartSnapshotBoundsToInsightDateRange(
+      dateFrom,
+      dateTo,
+      'America/New_York',
+    );
+
+    expect(restored.from).toEqual(new Date(2026, 0, 1, 0, 0, 0, 0));
+    expect(restored.to).toEqual(new Date(2026, 0, 31, 0, 0, 0, 0));
+  });
+
   it('normalizes snapshot bounds to local calendar midnights for the date picker', () => {
     const fromIso = new Date(2026, 3, 15, 14, 30, 0).toISOString();
     const toIso = new Date(2026, 4, 1, 9, 45, 0).toISOString();

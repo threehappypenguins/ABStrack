@@ -253,6 +253,7 @@ describe('PractitionerPatientDetailPage insights tab', () => {
       expect.objectContaining({
         patientUserId: PATIENT_ID,
         bucket: 'day',
+        chartTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         practitionerNote: 'Please review this trend.',
         dateFrom: p_from,
         dateTo: p_to,

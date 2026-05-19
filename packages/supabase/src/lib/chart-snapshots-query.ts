@@ -15,6 +15,8 @@ export interface ChartSnapshotRow {
   date_to: string;
   bucket: ChartSeriesBucket;
   practitioner_note: string | null;
+  /** IANA zone from the practitioner chart builder; null on legacy rows. */
+  chart_timezone: string | null;
   created_at: string;
   seen_by_patient_at: string | null;
 }
@@ -56,6 +58,8 @@ export interface ShareChartSnapshotParams {
   /** Exclusive range end (ISO timestamp). */
   dateTo: string;
   bucket: ChartSeriesBucket;
+  /** IANA timezone used for date range and get_chart_series bucketing. */
+  chartTimezone: string;
   practitionerNote?: string | null;
 }
 
@@ -95,6 +99,7 @@ export async function shareChartSnapshot(
       p_date_to: params.dateTo,
       p_bucket: params.bucket,
       p_practitioner_note: practitionerNote ?? undefined,
+      p_chart_timezone: params.chartTimezone,
     });
 
     if (error) {
@@ -129,7 +134,7 @@ export async function listUnseenChartSnapshotsForPatient(
     const { data, error } = await client
       .from('chart_snapshots')
       .select(
-        'id, patient_user_id, practitioner_user_id, series_definition, date_from, date_to, bucket, practitioner_note, created_at, seen_by_patient_at',
+        'id, patient_user_id, practitioner_user_id, series_definition, date_from, date_to, bucket, practitioner_note, chart_timezone, created_at, seen_by_patient_at',
       )
       .is('seen_by_patient_at', null)
       .order('created_at', { ascending: false });

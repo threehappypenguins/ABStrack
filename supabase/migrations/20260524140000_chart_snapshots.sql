@@ -8,6 +8,106 @@ COMMENT ON COLUMN public.chart_snapshots.date_to IS 'Exclusive chart range end (
 ALTER TABLE public.chart_snapshots
   ADD CONSTRAINT chart_snapshots_date_range_chk CHECK (date_from < date_to);
 
+ALTER TABLE public.chart_snapshots
+  ADD COLUMN chart_timezone text;
+
+COMMENT ON COLUMN public.chart_snapshots.chart_timezone IS 'IANA timezone used when the practitioner built the chart (matches get_chart_series p_timezone). Nullable for rows created before this column existed.';
+
+-- ---------------------------------------------------------------------------
+-- share_chart_snapshot: persist chart_timezone (new parameter; drop prior overload)
+-- ---------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS public.share_chart_snapshot (uuid, jsonb, timestamptz, timestamptz, text, text);
+
+CREATE OR REPLACE FUNCTION public.share_chart_snapshot (
+  p_patient_user_id uuid,
+  p_series_definition jsonb,
+  p_date_from timestamptz,
+  p_date_to timestamptz,
+  p_bucket text,
+  p_practitioner_note text DEFAULT NULL,
+  p_chart_timezone text DEFAULT NULL
+)
+  RETURNS uuid
+  LANGUAGE plpgsql
+  SECURITY INVOKER
+  SET search_path = pg_catalog, public
+  AS $$
+DECLARE
+  v_id uuid;
+  v_tz text;
+BEGIN
+  IF NOT public.user_has_practitioner_access (p_patient_user_id) THEN
+    RAISE EXCEPTION 'permission denied'
+      USING ERRCODE = '42501';
+  END IF;
+
+  IF p_bucket IS NULL
+    OR p_bucket NOT IN ('day', 'week', 'month') THEN
+    RAISE EXCEPTION 'p_bucket must be day, week, or month';
+  END IF;
+
+  IF p_series_definition IS NULL
+    OR jsonb_typeof (p_series_definition) <> 'array'
+    OR jsonb_array_length (p_series_definition) < 1 THEN
+    RAISE EXCEPTION 'p_series_definition must be a non-empty JSON array';
+  END IF;
+
+  IF p_date_from IS NULL
+    OR p_date_to IS NULL
+    OR p_date_from >= p_date_to THEN
+    RAISE EXCEPTION 'p_date_from must be before p_date_to';
+  END IF;
+
+  v_tz := nullif(trim(p_chart_timezone), '');
+
+  IF v_tz IS NULL THEN
+    RAISE EXCEPTION 'p_chart_timezone must be a non-empty IANA timezone name'
+      USING ERRCODE = '22023';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT
+      1
+    FROM
+      pg_catalog.pg_timezone_names
+    WHERE
+      name = v_tz) THEN
+    RAISE EXCEPTION 'share_chart_snapshot: invalid IANA timezone %', v_tz
+      USING ERRCODE = '22023';
+  END IF;
+
+  INSERT INTO public.chart_snapshots (
+    patient_user_id,
+    practitioner_user_id,
+    series_definition,
+    date_from,
+    date_to,
+    bucket,
+    practitioner_note,
+    chart_timezone)
+  VALUES (
+    p_patient_user_id,
+    (SELECT auth.uid ()),
+    p_series_definition,
+    p_date_from,
+    p_date_to,
+    p_bucket,
+    NULLIF (trim(p_practitioner_note), ''),
+    v_tz)
+  RETURNING
+    id INTO v_id;
+
+  RETURN v_id;
+END;
+$$;
+
+COMMENT ON FUNCTION public.share_chart_snapshot (uuid, jsonb, timestamptz, timestamptz, text, text, text) IS 'Practitioner shares a chart snapshot with a linked patient. Stores chart_timezone (IANA) so patients see the same calendar range and bucket labels as the practitioner chart.';
+
+REVOKE ALL ON FUNCTION public.share_chart_snapshot (uuid, jsonb, timestamptz, timestamptz, text, text, text)
+FROM PUBLIC;
+
+GRANT EXECUTE ON FUNCTION public.share_chart_snapshot (uuid, jsonb, timestamptz, timestamptz, text, text, text) TO authenticated;
+
 CREATE OR REPLACE FUNCTION public.chart_snapshots_append_only_guard ()
   RETURNS TRIGGER
   LANGUAGE plpgsql
@@ -72,3 +172,5 @@ COMMENT ON FUNCTION public.delete_chart_snapshots_maintenance (uuid, uuid) IS 'T
 
 REVOKE ALL ON FUNCTION public.delete_chart_snapshots_maintenance (uuid, uuid)
 FROM PUBLIC;
+
+GRANT EXECUTE ON FUNCTION public.delete_chart_snapshots_maintenance (uuid, uuid) TO service_role;

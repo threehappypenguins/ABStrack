@@ -305,6 +305,7 @@ export function PractitionerPatientInsightsPanel({
       dateFrom: p_from,
       dateTo: p_to,
       bucket,
+      chartTimezone: chartTimeZone,
       practitionerNote: shareNote,
     });
 
@@ -318,7 +319,16 @@ export function PractitionerPatientInsightsPanel({
     announce('Chart shared with patient.', { politeness: 'polite' });
     setShareNote('');
     return;
-  }, [announce, bucket, dateRange, patientUserId, series, shareNote, supabase]);
+  }, [
+    announce,
+    bucket,
+    chartTimeZone,
+    dateRange,
+    patientUserId,
+    series,
+    shareNote,
+    supabase,
+  ]);
 
   return (
     <div className="space-y-8">

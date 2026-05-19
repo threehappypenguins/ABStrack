@@ -35,11 +35,12 @@ const SHARE_PARAMS: ShareChartSnapshotParams = {
   dateFrom: DATE_FROM,
   dateTo: DATE_TO,
   bucket: 'week',
+  chartTimezone: 'America/New_York',
   practitionerNote: '  Check this trend  ',
 };
 
 const CHART_SNAPSHOTS_SELECT =
-  'id, patient_user_id, practitioner_user_id, series_definition, date_from, date_to, bucket, practitioner_note, created_at, seen_by_patient_at';
+  'id, patient_user_id, practitioner_user_id, series_definition, date_from, date_to, bucket, practitioner_note, chart_timezone, created_at, seen_by_patient_at';
 
 const UNSEEN_SNAPSHOT_ROW: ChartSnapshotRow = {
   id: SNAPSHOT_ID,
@@ -50,6 +51,7 @@ const UNSEEN_SNAPSHOT_ROW: ChartSnapshotRow = {
   date_to: DATE_TO,
   bucket: 'week',
   practitioner_note: 'Check this trend',
+  chart_timezone: 'America/New_York',
   created_at: '2026-05-01T12:00:00.000Z',
   seen_by_patient_at: null,
 };
@@ -143,6 +145,7 @@ describe('shareChartSnapshot', () => {
       p_date_to: DATE_TO,
       p_bucket: 'week',
       p_practitioner_note: 'Check this trend',
+      p_chart_timezone: 'America/New_York',
     });
   });
 
@@ -162,6 +165,7 @@ describe('shareChartSnapshot', () => {
       p_date_to: DATE_TO,
       p_bucket: 'week',
       p_practitioner_note: undefined,
+      p_chart_timezone: 'America/New_York',
     });
   });
 

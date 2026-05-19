@@ -120,14 +120,18 @@ export function InsightsClient() {
   const [sharedSnapshotNote, setSharedSnapshotNote] = useState<string | null>(
     null,
   );
+  const [sharedSnapshotChartTimeZone, setSharedSnapshotChartTimeZone] =
+    useState<string | null>(null);
 
   const manifestLoadGenRef = useRef(0);
   const chartLoadGenRef = useRef(0);
   const unseenSnapshotsLoadGenRef = useRef(0);
   const pendingSeenSnapshotIdRef = useRef<string | null>(null);
+  /** Snapshot RPC bounds + timezone; set synchronously before series state updates. */
   const chartRpcBoundsOverrideRef = useRef<{
     p_from: string;
     p_to: string;
+    p_timezone: string;
   } | null>(null);
   const phiSubjectUserIdRef = useRef(phiSubjectUserId);
   phiSubjectUserIdRef.current = phiSubjectUserId;
@@ -149,6 +153,7 @@ export function InsightsClient() {
     setChartRows([]);
     setChartError(null);
     setSharedSnapshotNote(null);
+    setSharedSnapshotChartTimeZone(null);
   }, []);
 
   const handleSeriesChange = useCallback(
@@ -157,6 +162,7 @@ export function InsightsClient() {
       pendingSeenSnapshotIdRef.current = null;
       chartRpcBoundsOverrideRef.current = null;
       setSharedSnapshotNote(null);
+      setSharedSnapshotChartTimeZone(null);
       setSeries(next);
     },
     [phiSubjectUserId],
@@ -166,6 +172,7 @@ export function InsightsClient() {
     pendingSeenSnapshotIdRef.current = null;
     chartRpcBoundsOverrideRef.current = null;
     setSharedSnapshotNote(null);
+    setSharedSnapshotChartTimeZone(null);
     setDateRange(next);
   }, []);
 
@@ -173,8 +180,12 @@ export function InsightsClient() {
     pendingSeenSnapshotIdRef.current = null;
     chartRpcBoundsOverrideRef.current = null;
     setSharedSnapshotNote(null);
+    setSharedSnapshotChartTimeZone(null);
     setBucket(next);
   }, []);
+
+  const activeChartTimeZone = sharedSnapshotChartTimeZone ?? chartTimeZone;
+  const showSharedChartTimeZoneNote = sharedSnapshotChartTimeZone != null;
 
   const chartableManifest = useMemo(
     () => filterChartableManifestRows(manifest),
@@ -313,9 +324,9 @@ export function InsightsClient() {
     setChartError(null);
     announce('Loading chart data.', { politeness: 'polite' });
 
+    const rpcOverride = chartRpcBoundsOverrideRef.current;
     const { p_from, p_to } =
-      chartRpcBoundsOverrideRef.current ??
-      insightDateRangeToRpcBounds(dateRange);
+      rpcOverride ?? insightDateRangeToRpcBounds(dateRange);
     const supabase = createBrowserClient();
     const result = await getChartSeries(supabase, {
       p_user_id: requestedUserId,
@@ -323,7 +334,7 @@ export function InsightsClient() {
       p_from,
       p_to,
       p_bucket: bucket,
-      p_timezone: chartTimeZone,
+      p_timezone: rpcOverride?.p_timezone ?? chartTimeZone,
     });
 
     if (
@@ -370,11 +381,22 @@ export function InsightsClient() {
 
     selectionOwnerUserIdRef.current = phiSubjectUserId;
     pendingSeenSnapshotIdRef.current = snapshot.id;
+    const snapshotTimeZone = snapshot.chart_timezone?.trim() ?? null;
+    const snapshotChartTimeZone =
+      snapshotTimeZone != null && snapshotTimeZone.length > 0
+        ? snapshotTimeZone
+        : chartTimeZone;
     chartRpcBoundsOverrideRef.current = {
       p_from: snapshot.date_from,
       p_to: snapshot.date_to,
+      p_timezone: snapshotChartTimeZone,
     };
     setSharedSnapshotNote(snapshot.practitioner_note);
+    setSharedSnapshotChartTimeZone(
+      snapshotTimeZone != null && snapshotTimeZone.length > 0
+        ? snapshotTimeZone
+        : null,
+    );
     setSeries(
       chartSnapshotDefinitionToSelectedSeries(snapshot.series_definition),
     );
@@ -382,13 +404,14 @@ export function InsightsClient() {
       chartSnapshotBoundsToInsightDateRange(
         snapshot.date_from,
         snapshot.date_to,
+        snapshotTimeZone,
       ),
     );
     setBucket(snapshot.bucket);
     announce('Loading your practitioner’s shared chart.', {
       politeness: 'polite',
     });
-  }, [announce, phiSubjectUserId, unseenSnapshots]);
+  }, [announce, chartTimeZone, phiSubjectUserId, unseenSnapshots]);
 
   useEffect(() => {
     const selectionOwnedByCurrentSubject =
@@ -586,8 +609,10 @@ export function InsightsClient() {
                   bucket={bucket}
                   loading={chartLoading}
                   summary={chartSummary}
-                  patientTimeZone={chartTimeZone}
-                  showPatientTimeZoneNote={showPatientTimeZoneNote}
+                  patientTimeZone={activeChartTimeZone}
+                  showPatientTimeZoneNote={
+                    showPatientTimeZoneNote || showSharedChartTimeZoneNote
+                  }
                   patientTimeZoneNoteUsesPatientLocal={false}
                 />
               )}
