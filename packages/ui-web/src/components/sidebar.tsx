@@ -767,7 +767,8 @@ const SIDEBAR_MENU_SKELETON_WIDTHS = [
  */
 function sidebarMenuSkeletonWidth(index: number): string {
   const widths = SIDEBAR_MENU_SKELETON_WIDTHS;
-  return widths[((index % widths.length) + widths.length) % widths.length]!;
+  const slot = ((index % widths.length) + widths.length) % widths.length;
+  return widths[slot] ?? widths[0];
 }
 
 const SidebarMenuSkeleton = React.forwardRef<
