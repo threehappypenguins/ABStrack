@@ -186,28 +186,23 @@
 
 ---
 
-## Week 9: May 11-17 -- Charts, Graphs, and Integration Testing
+## Week 9: May 11-17 -- Charts, Graphs, and Integration Testing (**complete**)
 
 **Goal:** Build data visualizations using **server-side aggregation** and run full integration testing across all apps.
 
 **Tasks:**
 
-- [ ] Charts and graphs per [PRD](PRD.md) Section 9:
-  - Aggregations computed in PostgreSQL (RPCs with `SECURITY INVOKER`, views under caller JWT, or Edge Function)—**do not** download full histories to aggregate in the browser
-  - Episode frequency over time (daily/weekly/monthly)
-  - BAC and blood glucose over time (line charts)
-  - Symptom frequency; episode type breakdown (ABS vs Other)
-  - Food diary correlation timeline
-- [ ] Chart sharing: user selects chart + filters + notes → shares to practitioner
-- [ ] Practitioner in-app notification for shared charts
-- [ ] Charts in both user app and practitioner app (render server-prepared series only)
-- [ ] Integration testing:
-  - Full episode logging flow end-to-end (create presets → log episode → view in history)
-  - Caretaker logging on behalf of patient (grant + RLS)
-  - Practitioner viewing patient data and notes (grant + MFA + RLS)
-  - Offline sync round-trip (mobile); media queue upload
-  - Media: capture → upload to Storage → signed URL playback (no client DEK round-trip for stored objects)
-- [ ] Bug fixes and edge cases from testing
+- [x] Interactive insights chart builder per [PRD](PRD.md) Section 9 (server-side aggregation; client renders series only):
+  - PostgreSQL RPCs `get_user_chart_manifest` and `get_chart_series` (`SECURITY INVOKER`)
+  - User-selectable health markers (BAC, glucose, BP band, custom numeric) and symptoms (boolean event markers, severity line/bar)
+  - Photo/video/free-text symptoms excluded at manifest RPC (`response_type` `text`)
+  - Day/week/month buckets and date-range presets
+- [x] Chart sharing: practitioner shares chart + filters + note → patient Insights banner
+- [x] Patient in-app notification for practitioner-shared charts (`chart_snapshots`, `mark_chart_snapshot_seen`)
+- [x] Charts in user web and practitioner web (mobile remains logging-primary; charts on web per product direction)
+- [x] Chart feature verification: automated tests (#171–#178); manual smoke checklist in [CHARTS_VERIFICATION.md](CHARTS_VERIFICATION.md)
+- [x] Regression: Insights nav added without breaking dashboard, manage, or preset routes (`AuthenticatedShell` + proxy tests)
+- [x] Prior-week integration paths unchanged (episode logging, caretaker grants, practitioner MFA + RLS, offline sync, media)—re-smoke when touching shared auth or nav
 
 ---
 
@@ -240,6 +235,19 @@
   - Caretaker logging on behalf of patient
   - Practitioner viewing data and charts
 - [ ] Ensure demo environment is stable and seeded with realistic sample data
+
+---
+
+## Post-MVP — Additional charts (PRD §9)
+
+Week 9 shipped the **interactive insights chart builder** (server-side RPCs, user-selectable series, sharing). The items below are **fixed dashboards** from [PRD §9](PRD.md) that are not separate screens in the internship MVP; time-series for logged health markers and symptoms is covered by the builder. Implement with the same server-side aggregation rules as Week 9 (no full-history client aggregation).
+
+- [ ] Episode frequency over time (daily / weekly / monthly)
+- [ ] Symptom frequency — which symptoms appear most often
+- [ ] Episode type breakdown (ABS vs Other)
+- [ ] Food diary correlation — episodes mapped alongside food entries on a timeline
+
+Verification for the shipped builder: [CHARTS_VERIFICATION.md](CHARTS_VERIFICATION.md).
 
 ---
 
@@ -276,5 +284,5 @@ graph TD
 - **PowerSync + RLS consistency:** Sync Rules must mirror grant logic (patient / caretaker / practitioner). Treat RLS as authoritative for API access; validate rule changes in tests ([PRD](PRD.md) Architecture). Week 7 delivers online media upload and the offline queue + PowerSync work as listed in that week’s tasks.
 - **Practitioner MFA fail-closed:** Use an Edge Function (or equivalent) that verifies MFA before returning patient data; do not rely on JWT hooks alone if they can omit claims. This is part of Week 5’s practitioner MFA work, not a downgrade path.
 - **SQLCipher / offline queue:** Week 7 pairs media and offline sync. Device-bound encryption for queued blobs matches the PRD; it is separate from server-side PHI encryption and does not involve sharing keys between users.
-- **Charts:** Week 9 includes server-side aggregation for all charts in that week’s task list, including food diary correlation—no client-side download of full histories for aggregation.
+- **Charts:** Week 9 shipped the interactive insights chart builder (server-side RPCs + sharing). PRD §9 fixed dashboards not in the MVP are listed under [Post-MVP — Additional charts](#post-mvp--additional-charts-prd-9); builder verification is in [CHARTS_VERIFICATION.md](CHARTS_VERIFICATION.md).
 - **Presentation prep:** Week 10 reserves time for polish, report, and presentation; draft the demo script by mid-week 10 so rehearsal is on schedule.

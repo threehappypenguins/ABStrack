@@ -4,6 +4,7 @@ import { createServerClient } from './lib/supabase/server-client';
 // Protected routes that require authentication
 const protectedRoutes = [
   '/dashboard',
+  '/insights',
   '/presets',
   '/episode',
   '/episodes',

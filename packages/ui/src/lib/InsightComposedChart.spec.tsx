@@ -324,4 +324,88 @@ describe('InsightComposedChart', () => {
 
     expect(screen.getByText(/your browser timezone/i)).toBeInTheDocument();
   });
+
+  it('renders ComposedChart, figcaption summary, and accessible table for a line chart', () => {
+    const seriesId = 'health_marker::bac';
+    const summary = 'BAC averaged 0.05% over 2 weeks.';
+
+    render(
+      <InsightComposedChart
+        series={[
+          baseSeries({
+            seriesId,
+            chartType: 'line',
+            label: 'BAC',
+            unit: '%',
+          }),
+        ]}
+        data={[
+          bucketRow('2026-01-01T00:00:00.000Z', seriesId, {
+            value_avg: 0.05,
+            systolic_avg: null,
+            diastolic_avg: null,
+            event_count: null,
+          }),
+        ]}
+        bucket="week"
+        loading={false}
+        summary={summary}
+        patientTimeZone="UTC"
+      />,
+    );
+
+    expect(screen.getByTestId('composed-chart')).toBeInTheDocument();
+    expect(screen.getByText(summary)).toBeInTheDocument();
+    expect(screen.getByRole('table', { hidden: true })).toBeInTheDocument();
+  });
+
+  it('renders multiple numeric series on one ComposedChart', () => {
+    const bacId = 'health_marker::bac';
+    const glucoseId = 'health_marker::blood_glucose';
+
+    render(
+      <InsightComposedChart
+        series={[
+          baseSeries({
+            seriesId: bacId,
+            chartType: 'line',
+            label: 'BAC',
+            unit: '%',
+          }),
+          baseSeries({
+            seriesId: glucoseId,
+            chartType: 'line',
+            label: 'Glucose',
+            unit: 'mg/dL',
+            color: '#b45309',
+          }),
+        ]}
+        data={mergeRows(
+          bucketRow('2026-01-01T00:00:00.000Z', bacId, {
+            value_avg: 0.02,
+            systolic_avg: null,
+            diastolic_avg: null,
+            event_count: null,
+          }),
+          bucketRow('2026-01-01T00:00:00.000Z', glucoseId, {
+            value_avg: 110,
+            systolic_avg: null,
+            diastolic_avg: null,
+            event_count: null,
+          }),
+        )}
+        bucket="week"
+        loading={false}
+        summary="BAC and glucose trends."
+        patientTimeZone="UTC"
+      />,
+    );
+
+    const lines = rechartsMocks.Line.filter(
+      (props) =>
+        props.dataKey === chartSeriesValueAvgKey(bacId) ||
+        props.dataKey === chartSeriesValueAvgKey(glucoseId),
+    );
+    expect(lines).toHaveLength(2);
+  });
 });
