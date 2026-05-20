@@ -32,6 +32,11 @@ export type AppShellWithSideNavProps = {
   mainClassName?: string;
   /** Accessible label for the mobile menu trigger. */
   mobileMenuTriggerLabel?: string;
+  /**
+   * Cookie for desktop sidebar open state (uncontrolled). Use a distinct name per app on shared
+   * hosts (e.g. `abstrack_web_sidebar_state` vs `abstrack_practitioner_sidebar_state`).
+   */
+  sidebarCookieName?: string;
 };
 
 /**
@@ -51,6 +56,7 @@ export function AppShellWithSideNav({
   mainId = 'main-content',
   mainClassName,
   mobileMenuTriggerLabel = 'Open navigation menu',
+  sidebarCookieName,
 }: AppShellWithSideNavProps) {
   const showMobileTrigger = !header && !topHeader;
 
@@ -69,6 +75,7 @@ export function AppShellWithSideNav({
     <SidebarProvider
       className="flex min-h-svh w-full flex-col"
       style={providerStyle}
+      sidebarCookieName={sidebarCookieName}
     >
       {skipLink}
       {topHeader}

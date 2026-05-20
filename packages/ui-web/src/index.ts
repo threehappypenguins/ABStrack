@@ -9,6 +9,7 @@ export {
 } from './app-side-nav/index.js';
 
 export {
+  DEFAULT_SIDEBAR_COOKIE_NAME,
   Sidebar,
   SidebarContent,
   SidebarFooter,

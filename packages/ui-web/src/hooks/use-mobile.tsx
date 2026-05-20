@@ -10,8 +10,24 @@ function getMobileMediaQueryList(): MediaQueryList {
 
 function subscribeMobile(onStoreChange: () => void): () => void {
   const mql = getMobileMediaQueryList();
-  mql.addEventListener('change', onStoreChange);
-  return () => mql.removeEventListener('change', onStoreChange);
+
+  if ('addEventListener' in mql && typeof mql.addEventListener === 'function') {
+    mql.addEventListener('change', onStoreChange);
+    return () => {
+      mql.removeEventListener('change', onStoreChange);
+    };
+  }
+
+  if ('addListener' in mql && typeof mql.addListener === 'function') {
+    mql.addListener(onStoreChange);
+    return () => {
+      if ('removeListener' in mql && typeof mql.removeListener === 'function') {
+        mql.removeListener(onStoreChange);
+      }
+    };
+  }
+
+  return () => undefined;
 }
 
 function getMobileSnapshot(): boolean {
@@ -26,6 +42,7 @@ function getMobileServerSnapshot(): boolean {
 /**
  * Whether the viewport is below the Tailwind `md` breakpoint ({@link MOBILE_BREAKPOINT}px).
  * Uses `matchMedia` so the first client snapshot and subsequent updates stay consistent.
+ * Subscribes via `change` when supported, otherwise legacy `addListener` / `removeListener`.
  *
  * @returns `true` when width is under 768px.
  */

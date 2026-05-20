@@ -25,7 +25,8 @@ import {
   TooltipTrigger,
 } from './tooltip.js';
 
-const SIDEBAR_COOKIE_NAME = 'sidebar_state';
+/** Default cookie for uncontrolled desktop sidebar state; override per app on shared hosts. */
+export const DEFAULT_SIDEBAR_COOKIE_NAME = 'abstrack_sidebar_state';
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
 const SIDEBAR_WIDTH = '16rem';
 
@@ -34,11 +35,11 @@ const SIDEBAR_WIDTH = '16rem';
  *
  * @returns `true` / `false` when set, otherwise `null`.
  */
-function readSidebarOpenCookie(): boolean | null {
+function readSidebarOpenCookie(cookieName: string): boolean | null {
   if (typeof document === 'undefined') {
     return null;
   }
-  const prefix = `${SIDEBAR_COOKIE_NAME}=`;
+  const prefix = `${cookieName}=`;
   for (const entry of document.cookie.split(';')) {
     const trimmed = entry.trim();
     if (!trimmed.startsWith(prefix)) {
@@ -61,7 +62,7 @@ function readSidebarOpenCookie(): boolean | null {
  *
  * @param open - Whether the desktop sidebar rail is expanded.
  */
-function writeSidebarOpenCookie(open: boolean): void {
+function writeSidebarOpenCookie(cookieName: string, open: boolean): void {
   if (typeof document === 'undefined') {
     return;
   }
@@ -69,7 +70,7 @@ function writeSidebarOpenCookie(open: boolean): void {
     typeof window !== 'undefined' && window.location.protocol === 'https:'
       ? '; Secure'
       : '';
-  document.cookie = `${SIDEBAR_COOKIE_NAME}=${open}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}; SameSite=Lax${secure}`;
+  document.cookie = `${cookieName}=${open}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}; SameSite=Lax${secure}`;
 }
 const SIDEBAR_WIDTH_MOBILE = '18rem';
 const SIDEBAR_WIDTH_ICON = '3rem';
@@ -108,6 +109,11 @@ const SidebarProvider = React.forwardRef<
     open?: boolean;
     /** Controlled setter; must be paired with {@link open}. */
     onOpenChange?: (open: boolean) => void;
+    /**
+     * Cookie name for persisting desktop open state (uncontrolled mode). Use a distinct value per
+     * app when multiple ABStrack apps share a host (e.g. `abstrack_web_sidebar_state`).
+     */
+    sidebarCookieName?: string;
   }
 >(
   (
@@ -115,6 +121,7 @@ const SidebarProvider = React.forwardRef<
       defaultOpen = true,
       open: openProp,
       onOpenChange: setOpenProp,
+      sidebarCookieName = DEFAULT_SIDEBAR_COOKIE_NAME,
       className,
       style,
       children,
@@ -153,11 +160,11 @@ const SidebarProvider = React.forwardRef<
       if (isControlled) {
         return;
       }
-      const stored = readSidebarOpenCookie();
+      const stored = readSidebarOpenCookie(sidebarCookieName);
       if (stored !== null) {
         _setOpen(stored);
       }
-    }, [isControlled]);
+    }, [isControlled, sidebarCookieName]);
 
     const setOpen = React.useCallback(
       (value: boolean | ((value: boolean) => boolean)) => {
@@ -167,9 +174,9 @@ const SidebarProvider = React.forwardRef<
           return;
         }
         _setOpen(openState);
-        writeSidebarOpenCookie(openState);
+        writeSidebarOpenCookie(sidebarCookieName, openState);
       },
-      [isControlled, setOpenProp, open],
+      [isControlled, setOpenProp, open, sidebarCookieName],
     );
 
     // Helper to toggle the sidebar.

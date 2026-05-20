@@ -10,9 +10,10 @@ export default [
         {
           ignoredDependencies: [
             'vitest',
-            'react-dom',
             '@testing-library/react',
             '@testing-library/jest-dom',
+            // Peer for host apps (Next.js); not imported in package source — nx obsolete-deps false positive.
+            'react-dom',
           ],
           ignoredFiles: [
             '{projectRoot}/eslint.config.{js,cjs,mjs,ts,cts,mts}',

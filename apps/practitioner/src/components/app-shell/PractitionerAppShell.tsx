@@ -46,6 +46,7 @@ export function PractitionerAppShell({ children }: PractitionerAppShellProps) {
 
   return (
     <AppShellWithSideNav
+      sidebarCookieName="abstrack_practitioner_sidebar_state"
       skipLink={
         <a
           href="#main-content"

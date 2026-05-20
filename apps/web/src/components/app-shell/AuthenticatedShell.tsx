@@ -58,6 +58,7 @@ export function AuthenticatedShell({
   return (
     <AppShellWithSideNav
       sidebarTopOffset="4.5rem"
+      sidebarCookieName="abstrack_web_sidebar_state"
       skipLink={
         <a
           href="#main-content"
