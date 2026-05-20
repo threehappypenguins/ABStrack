@@ -8,23 +8,21 @@ import {
 } from '@abstrack/ui-web';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import type { ComponentType, ReactNode } from 'react';
+import { forwardRef, type ReactNode } from 'react';
 import { useMemo } from 'react';
 
 import { ThemeMenu } from '@/components/theme/ThemeMenu';
 import { WEB_APP_NAV_ITEMS } from '@/lib/app-nav-items';
 import { useWebPhiSubjectUserContext } from '@/lib/patient/use-web-phi-subject-user-context';
 
-const WebNavLink: ComponentType<AppSideNavLinkProps> = ({
-  href,
-  children,
-  className,
-  'aria-current': ariaCurrent,
-}) => (
-  <Link href={href} className={className} aria-current={ariaCurrent}>
-    {children}
-  </Link>
+const WebNavLink = forwardRef<HTMLAnchorElement, AppSideNavLinkProps>(
+  ({ href, children, ...rest }, ref) => (
+    <Link href={href} ref={ref} {...rest}>
+      {children}
+    </Link>
+  ),
 );
+WebNavLink.displayName = 'WebNavLink';
 
 export type AuthenticatedShellProps = {
   children: ReactNode;

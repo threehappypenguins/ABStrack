@@ -7,7 +7,7 @@ import {
 } from '@abstrack/ui-web';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import type { ComponentType, ReactNode } from 'react';
+import { forwardRef, type ReactNode } from 'react';
 
 import { ThemeMenu } from '@/components/theme/ThemeMenu';
 import { useAuth } from '@/lib/auth-provider';
@@ -26,16 +26,14 @@ function isPublicPractitionerPath(pathname: string): boolean {
   );
 }
 
-const PractitionerNavLink: ComponentType<AppSideNavLinkProps> = ({
-  href,
-  children,
-  className,
-  'aria-current': ariaCurrent,
-}) => (
-  <Link href={href} className={className} aria-current={ariaCurrent}>
-    {children}
-  </Link>
+const PractitionerNavLink = forwardRef<HTMLAnchorElement, AppSideNavLinkProps>(
+  ({ href, children, ...rest }, ref) => (
+    <Link href={href} ref={ref} {...rest}>
+      {children}
+    </Link>
+  ),
 );
+PractitionerNavLink.displayName = 'PractitionerNavLink';
 
 export type PractitionerAppShellProps = {
   children: ReactNode;

@@ -1,4 +1,4 @@
-import type { ComponentType, ReactNode } from 'react';
+import type { ComponentPropsWithoutRef, ComponentType, ReactNode } from 'react';
 
 /**
  * One primary navigation entry for {@link AppSideNav}.
@@ -14,15 +14,19 @@ export type AppSideNavItem = {
 
 /**
  * Props passed to the app-supplied link component (e.g. Next.js `Link`).
+ * Matches anchor semantics so Radix `Slot` / `asChild` can merge `data-*`, handlers, and `ref`
+ * from {@link SidebarMenuButton} and tooltip triggers.
  */
-export type AppSideNavLinkProps = {
+export type AppSideNavLinkProps = Omit<
+  ComponentPropsWithoutRef<'a'>,
+  'href'
+> & {
   href: string;
-  children: ReactNode;
-  className?: string;
-  'aria-current'?: 'page' | undefined;
+  children?: ReactNode;
 };
 
 /**
- * Link component type used by {@link AppSideNav} (`asChild` menu buttons).
+ * Link component type used by {@link AppSideNav} (`asChild` menu buttons). Implement with
+ * `forwardRef` and spread remaining props onto the underlying anchor (or Next.js `Link`).
  */
 export type AppSideNavLinkComponent = ComponentType<AppSideNavLinkProps>;

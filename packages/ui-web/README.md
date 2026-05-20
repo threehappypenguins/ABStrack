@@ -4,9 +4,9 @@ Shared **web-only** UI built on [shadcn/ui](https://ui.shadcn.com/docs/component
 
 ## Theming
 
-Semantic Tailwind tokens (`bg-sidebar`, `text-foreground`, etc.) map to ABStrack `--app-*` CSS variables via `tailwind-shadcn-preset.js`. Each Next app must:
+Semantic Tailwind tokens (`bg-sidebar`, `text-foreground`, etc.) map to ABStrack `--app-*` CSS variables via `tailwind-shadcn-preset.cjs` (CommonJS; this package is ESM). Each Next app must:
 
-1. `presets: [require('../../packages/ui-web/tailwind-shadcn-preset')]`
+1. `presets: [require('../../packages/ui-web/tailwind-shadcn-preset.cjs')]`
 2. `plugins: [require('tailwindcss-animate')]`
 3. Include `packages/ui-web/src/**/*` in `content`
 

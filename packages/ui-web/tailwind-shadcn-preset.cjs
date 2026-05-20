@@ -2,6 +2,9 @@
  * Maps shadcn/ui semantic Tailwind tokens to ABStrack `--app-*` theme channels.
  * Import in app `tailwind.config.js` via `presets` and add `tailwindcss-animate` to `plugins`.
  *
+ * CommonJS (`.cjs`) because this package is `"type": "module"` and Next app Tailwind
+ * configs load the preset with `require()`.
+ *
  * @type {import('tailwindcss').Config}
  */
 module.exports = {
