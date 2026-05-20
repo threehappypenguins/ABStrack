@@ -168,15 +168,17 @@ const SidebarProvider = React.forwardRef<
 
     const setOpen = React.useCallback(
       (value: boolean | ((value: boolean) => boolean)) => {
-        const openState = typeof value === 'function' ? value(open) : value;
         if (isControlled) {
-          setOpenProp(openState);
+          setOpenProp(typeof value === 'function' ? value(openProp) : value);
           return;
         }
-        _setOpen(openState);
-        writeSidebarOpenCookie(sidebarCookieName, openState);
+        _setOpen((prev) => {
+          const next = typeof value === 'function' ? value(prev) : value;
+          writeSidebarOpenCookie(sidebarCookieName, next);
+          return next;
+        });
       },
-      [isControlled, setOpenProp, open, sidebarCookieName],
+      [isControlled, setOpenProp, openProp, sidebarCookieName],
     );
 
     // Helper to toggle the sidebar.
