@@ -34,6 +34,7 @@ export default function PractitionerAuthCallbackFragmentPage() {
     <Suspense
       fallback={
         <main
+          id="main-content"
           aria-live="polite"
           className="mx-auto max-w-lg p-6 text-base text-neutral-700"
         >
@@ -153,6 +154,7 @@ function PractitionerAuthCallbackFragmentContent() {
   if (surfaceError) {
     return (
       <main
+        id="main-content"
         role="alert"
         className="mx-auto max-w-lg p-6 text-base text-red-700"
       >
@@ -163,6 +165,7 @@ function PractitionerAuthCallbackFragmentContent() {
 
   return (
     <main
+      id="main-content"
       aria-live="polite"
       className="mx-auto max-w-lg p-6 text-base text-neutral-700"
     >

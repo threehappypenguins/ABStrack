@@ -181,7 +181,10 @@ export default function PractitionerInviteJoinPage() {
   const donePasswordSet = state.kind === 'done' && state.passwordSignInEnabled;
 
   return (
-    <div className="mx-auto flex w-full max-w-lg flex-col gap-6 px-4 py-12 sm:px-6">
+    <main
+      id="main-content"
+      className="mx-auto flex w-full max-w-lg flex-col gap-6 px-4 py-12 sm:px-6"
+    >
       <h1 className="text-2xl font-bold tracking-tight text-app-ink">
         Welcome to ABStrack Practitioner
       </h1>
@@ -261,6 +264,6 @@ export default function PractitionerInviteJoinPage() {
           Go to patient workspace
         </Link>
       ) : null}
-    </div>
+    </main>
   );
 }

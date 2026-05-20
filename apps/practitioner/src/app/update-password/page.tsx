@@ -170,7 +170,10 @@ export default function PractitionerUpdatePasswordPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-app-bg bg-app-gradient px-4 py-12">
+    <main
+      id="main-content"
+      className="flex min-h-screen items-center justify-center bg-app-bg bg-app-gradient px-4 py-12"
+    >
       <div className="w-full max-w-md rounded-2xl border border-app-border/90 bg-app-surface p-8 shadow-soft ring-1 ring-[color:var(--app-ring-slate)]">
         <h1 className="mb-6 text-center text-2xl font-bold text-app-ink">
           {isInvitePassword ? 'Create your password' : 'Set new password'}
@@ -277,6 +280,6 @@ export default function PractitionerUpdatePasswordPage() {
           </p>
         )}
       </div>
-    </div>
+    </main>
   );
 }
