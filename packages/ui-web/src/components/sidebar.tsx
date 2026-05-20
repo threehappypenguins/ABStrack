@@ -39,11 +39,12 @@ function readSidebarOpenCookie(): boolean | null {
     return null;
   }
   const prefix = `${SIDEBAR_COOKIE_NAME}=`;
-  for (const entry of document.cookie.split('; ')) {
-    if (!entry.startsWith(prefix)) {
+  for (const entry of document.cookie.split(';')) {
+    const trimmed = entry.trim();
+    if (!trimmed.startsWith(prefix)) {
       continue;
     }
-    const value = entry.slice(prefix.length);
+    const value = trimmed.slice(prefix.length);
     if (value === 'true') {
       return true;
     }
@@ -267,8 +268,9 @@ const Sidebar = React.forwardRef<
 
     if (isMobile) {
       return (
-        <Sheet open={openMobile} onOpenChange={setOpenMobile} {...props}>
+        <Sheet open={openMobile} onOpenChange={setOpenMobile}>
           <SheetContent
+            ref={ref}
             data-sidebar="sidebar"
             data-mobile="true"
             className={cn(
@@ -277,6 +279,7 @@ const Sidebar = React.forwardRef<
               className,
             )}
             side={side}
+            {...props}
           >
             <SheetHeader className="sr-only">
               <SheetTitle>Sidebar</SheetTitle>
@@ -290,7 +293,6 @@ const Sidebar = React.forwardRef<
 
     return (
       <div
-        ref={ref}
         className="group peer hidden text-sidebar-foreground md:block"
         data-state={state}
         data-collapsible={state === 'collapsed' ? collapsible : ''}
@@ -309,6 +311,7 @@ const Sidebar = React.forwardRef<
           )}
         />
         <div
+          ref={ref}
           className={cn(
             'fixed top-[var(--sidebar-top-offset,0px)] z-10 hidden h-[calc(100svh-var(--sidebar-top-offset,0px))] w-[--sidebar-width] transition-[left,right,width] duration-200 ease-linear md:flex',
             side === 'left'
