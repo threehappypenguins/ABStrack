@@ -14,9 +14,27 @@
   "include": ["src/**/*.ts", "src/**/*.tsx"],
   "references": [],
   "exclude": [
-    "src/**/*.spec.ts",
-    "src/**/*.spec.tsx",
+    "src/test-setup.ts",
+    "vite.config.ts",
+    "vite.config.mts",
+    "vitest.config.ts",
+    "vitest.config.mts",
+    "src/**/__tests__/**",
     "src/**/*.test.ts",
-    "src/**/*.test.tsx"
+    "src/**/*.spec.ts",
+    "src/**/*.test.tsx",
+    "src/**/*.spec.tsx",
+    "src/**/*.test.mts",
+    "src/**/*.spec.mts",
+    "src/**/*.test.cts",
+    "src/**/*.spec.cts",
+    "src/**/*.test.js",
+    "src/**/*.spec.js",
+    "src/**/*.test.jsx",
+    "src/**/*.spec.jsx",
+    "src/**/*.test.mjs",
+    "src/**/*.spec.mjs",
+    "src/**/*.test.cjs",
+    "src/**/*.spec.cjs"
   ]
 }
