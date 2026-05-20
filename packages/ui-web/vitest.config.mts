@@ -5,7 +5,7 @@ export default defineConfig(() => ({
   cacheDir: '../../node_modules/.vite/packages/ui-web',
   test: {
     name: '@abstrack/ui-web',
-    passWithNoTests: true,
+    setupFiles: ['./src/test-setup.ts'],
     watch: false,
     globals: true,
     environment: 'jsdom',

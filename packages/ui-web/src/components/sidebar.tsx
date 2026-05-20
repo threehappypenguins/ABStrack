@@ -133,13 +133,18 @@ const SidebarProvider = React.forwardRef<
     const open = isControlled ? openProp : _open;
 
     React.useEffect(() => {
-      if (
-        process.env.NODE_ENV !== 'production' &&
-        openProp !== undefined &&
-        setOpenProp === undefined
-      ) {
+      if (process.env.NODE_ENV === 'production') {
+        return;
+      }
+      const hasOpen = openProp !== undefined;
+      const hasOnOpenChange = setOpenProp !== undefined;
+      if (hasOpen && !hasOnOpenChange) {
         console.warn(
           'SidebarProvider: `open` without `onOpenChange` is ignored. Pass both props for controlled mode.',
+        );
+      } else if (!hasOpen && hasOnOpenChange) {
+        console.warn(
+          'SidebarProvider: `onOpenChange` without `open` is ignored. Pass both props for controlled mode.',
         );
       }
     }, [openProp, setOpenProp]);
