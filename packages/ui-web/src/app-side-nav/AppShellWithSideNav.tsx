@@ -6,6 +6,7 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from '../components/sidebar.js';
+import { cn } from '../lib/utils.js';
 
 export type AppShellWithSideNavProps = {
   children: ReactNode;
@@ -14,16 +15,20 @@ export type AppShellWithSideNavProps = {
   /**
    * Full-width top chrome above the sidebar + main row (e.g. user web top bar).
    * Must render inside {@link SidebarProvider} (e.g. for {@link SidebarTrigger}).
-   * Set `--app-shell-header-height` on the header element so the desktop sidebar stops below it.
    */
   topHeader?: ReactNode;
+  /**
+   * Height of {@link topHeader} for desktop sidebar positioning. Sets `--app-shell-header-height`
+   * and `--sidebar-top-offset` on {@link SidebarProvider} (defaults to `4.5rem` when `topHeader` is set).
+   */
+  sidebarTopOffset?: string;
   /** Top chrome inside the main column only (legacy; prefer {@link topHeader}). */
   header?: ReactNode;
   /** Optional skip link rendered before main content. */
   skipLink?: ReactNode;
-  /** `id` for the scrollable main region (skip-link target). */
+  /** `id` on the `<main>` landmark (skip-link target); receives `tabIndex={-1}` for focus. */
   mainId?: string;
-  /** Classes on the inner main content wrapper. */
+  /** Classes on the `<main>` landmark (`SidebarInset`). */
   mainClassName?: string;
   /** Accessible label for the mobile menu trigger. */
   mobileMenuTriggerLabel?: string;
@@ -40,6 +45,7 @@ export function AppShellWithSideNav({
   children,
   sideNav,
   topHeader,
+  sidebarTopOffset = '4.5rem',
   header,
   skipLink,
   mainId = 'main-content',
@@ -53,7 +59,8 @@ export function AppShellWithSideNav({
     '--sidebar-width-mobile': '18rem',
     ...(topHeader
       ? {
-          '--sidebar-top-offset': 'var(--app-shell-header-height, 4.5rem)',
+          '--app-shell-header-height': sidebarTopOffset,
+          '--sidebar-top-offset': sidebarTopOffset,
         }
       : {}),
   } as CSSProperties;
@@ -67,7 +74,14 @@ export function AppShellWithSideNav({
       {topHeader}
       <div className="flex min-h-0 w-full flex-1">
         {sideNav}
-        <SidebarInset className="app-grid-background flex min-h-0 min-w-0 flex-1 flex-col">
+        <SidebarInset
+          id={mainId}
+          tabIndex={-1}
+          className={cn(
+            'app-grid-background flex min-h-0 min-w-0 flex-1 flex-col',
+            mainClassName,
+          )}
+        >
           {header}
           {showMobileTrigger ? (
             <div className="flex h-14 shrink-0 items-center gap-2 border-b border-app-border bg-[var(--app-header-bg)] px-4 shadow-header backdrop-blur-md md:hidden">
@@ -78,9 +92,7 @@ export function AppShellWithSideNav({
               <span className="text-sm font-semibold text-app-ink">Menu</span>
             </div>
           ) : null}
-          <div id={mainId} className={mainClassName}>
-            {children}
-          </div>
+          {children}
         </SidebarInset>
       </div>
     </SidebarProvider>

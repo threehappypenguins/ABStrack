@@ -8,7 +8,7 @@ import {
 } from '@abstrack/ui-web';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { forwardRef, useMemo, type CSSProperties, type ReactNode } from 'react';
+import { forwardRef, useMemo, type ReactNode } from 'react';
 
 import { ThemeMenu } from '@/components/theme/ThemeMenu';
 import { WEB_APP_NAV_ITEMS } from '@/lib/app-nav-items';
@@ -57,6 +57,7 @@ export function AuthenticatedShell({
 
   return (
     <AppShellWithSideNav
+      sidebarTopOffset="4.5rem"
       skipLink={
         <a
           href="#main-content"
@@ -66,10 +67,7 @@ export function AuthenticatedShell({
         </a>
       }
       topHeader={
-        <header
-          className="sticky top-0 z-50 w-full shrink-0 overflow-visible border-b border-[var(--app-header-border)] bg-[var(--app-header-bg)] shadow-header backdrop-blur-md supports-[backdrop-filter]:bg-[var(--app-header-bg)]"
-          style={{ '--app-shell-header-height': '4.5rem' } as CSSProperties}
-        >
+        <header className="sticky top-0 z-50 w-full shrink-0 overflow-visible border-b border-[var(--app-header-border)] bg-[var(--app-header-bg)] shadow-header backdrop-blur-md supports-[backdrop-filter]:bg-[var(--app-header-bg)]">
           <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3.5 sm:px-6 lg:px-8">
             <SidebarTrigger
               className="min-h-11 min-w-11 shrink-0 text-app-ink md:hidden"
