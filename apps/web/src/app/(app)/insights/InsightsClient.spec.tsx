@@ -108,41 +108,44 @@ jest.mock('@abstrack/ui', () => {
       manifest: ChartManifestRow[];
       value: unknown[];
       onChange: (next: unknown[]) => void;
-    }) => (
-      <div>
-        {manifest.map((row) => (
-          <span
-            key={row.series_id}
-            data-testid={`manifest-label-${row.series_id}`}
+    }) => {
+      const chartable = filterChartableManifestRows(manifest);
+      return (
+        <div>
+          {chartable.map((row) => (
+            <span
+              key={row.series_id}
+              data-testid={`manifest-label-${row.series_id}`}
+            >
+              {row.label}
+            </span>
+          ))}
+          <button
+            type="button"
+            onClick={() => {
+              const row = chartable[0];
+              if (!row) {
+                return;
+              }
+              const selected: SelectedSeries = {
+                seriesId: row.series_id,
+                seriesType: row.series_type,
+                responseType: row.response_type as 'numeric',
+                isBloodPressure: row.is_blood_pressure,
+                label: row.label,
+                unit: row.unit,
+                chartType: 'line',
+                color: '#1d4ed8',
+              };
+              onChange([selected]);
+            }}
           >
-            {row.label}
-          </span>
-        ))}
-        <button
-          type="button"
-          onClick={() => {
-            const row = manifest[0];
-            if (!row) {
-              return;
-            }
-            const selected: SelectedSeries = {
-              seriesId: row.series_id,
-              seriesType: row.series_type,
-              responseType: row.response_type as 'numeric',
-              isBloodPressure: row.is_blood_pressure,
-              label: row.label,
-              unit: row.unit,
-              chartType: 'line',
-              color: '#1d4ed8',
-            };
-            onChange([selected]);
-          }}
-        >
-          Select first series
-        </button>
-        <span data-testid="selected-count">{value.length}</span>
-      </div>
-    ),
+            Select first series
+          </button>
+          <span data-testid="selected-count">{value.length}</span>
+        </div>
+      );
+    },
     InsightDateRangePicker: ({
       onChange,
     }: {
@@ -393,6 +396,77 @@ describe('InsightsClient', () => {
     });
 
     expect(announceMock).not.toHaveBeenCalled();
+  });
+
+  it('lists chartable manifest series and omits text-only symptom rows', async () => {
+    getUserChartManifestMock.mockResolvedValue({
+      ok: true,
+      data: [
+        bacManifestRow,
+        {
+          series_id: 'symptom::nausea::boolean',
+          series_type: 'symptom',
+          label: 'Nausea',
+          response_type: 'boolean',
+          is_blood_pressure: false,
+          unit: null,
+          observation_count: 2,
+          first_observed_at: '2026-01-01T00:00:00.000Z',
+          last_observed_at: '2026-02-01T00:00:00.000Z',
+        },
+        {
+          series_id: 'symptom::brain_fog::severity',
+          series_type: 'symptom',
+          label: 'Brain fog',
+          response_type: 'severity',
+          is_blood_pressure: false,
+          unit: null,
+          observation_count: 1,
+          first_observed_at: '2026-01-01T00:00:00.000Z',
+          last_observed_at: '2026-02-01T00:00:00.000Z',
+        },
+        {
+          series_id: 'health_marker::weight',
+          series_type: 'health_marker',
+          label: 'weight',
+          response_type: 'numeric',
+          is_blood_pressure: false,
+          unit: 'kg',
+          observation_count: 2,
+          first_observed_at: '2026-01-01T00:00:00.000Z',
+          last_observed_at: '2026-02-01T00:00:00.000Z',
+        },
+        {
+          series_id: 'symptom::rash_photo::text',
+          series_type: 'symptom',
+          label: 'Rash photo',
+          response_type: 'text',
+          is_blood_pressure: false,
+          unit: null,
+          observation_count: 1,
+          first_observed_at: '2026-01-01T00:00:00.000Z',
+          last_observed_at: '2026-02-01T00:00:00.000Z',
+        },
+      ],
+    });
+
+    renderInsights();
+
+    expect(
+      await screen.findByTestId('manifest-label-health_marker::bac'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId('manifest-label-symptom::nausea::boolean'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId('manifest-label-symptom::brain_fog::severity'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId('manifest-label-health_marker::weight'),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId('manifest-label-symptom::rash_photo::text'),
+    ).not.toBeInTheDocument();
   });
 
   it('maps raw RPC health marker labels to preset display names', async () => {
