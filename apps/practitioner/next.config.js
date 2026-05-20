@@ -37,6 +37,7 @@ const nextConfig = {
   nx: {},
   transpilePackages: [
     '@abstrack/ui',
+    '@abstrack/ui-web',
     '@abstrack/types',
     '@abstrack/supabase',
     'react-native',
@@ -56,6 +57,10 @@ const nextConfig = {
       '@abstrack/supabase/server': path.join(supabaseSrc, 'server.ts'),
       '@abstrack/supabase/native': path.join(supabaseSrc, 'native.ts'),
       '@abstrack/supabase/admin': path.join(supabaseSrc, 'admin.ts'),
+      '@abstrack/ui-web': path.join(
+        __dirname,
+        '../../packages/ui-web/src/index.ts',
+      ),
     };
     return config;
   },

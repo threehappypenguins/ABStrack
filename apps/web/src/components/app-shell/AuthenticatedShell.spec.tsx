@@ -41,19 +41,36 @@ jest.mock('../theme/ThemeMenu', () => ({
   ThemeMenu: () => <button type="button">Theme</button>,
 }));
 
-jest.mock('@abstrack/ui', () => ({
-  NavigationShell: ({
+jest.mock('@abstrack/ui-web', () => ({
+  AppShellWithSideNav: ({
     children,
-    header,
+    topHeader,
+    sideNav,
   }: {
     children: ReactNode;
-    header?: ReactNode;
+    topHeader?: ReactNode;
+    sideNav?: ReactNode;
   }) => (
     <div>
-      <div data-testid="nav-shell-header">{header}</div>
-      <div data-testid="nav-shell-main">{children}</div>
+      <div data-testid="app-shell-top-header">{topHeader}</div>
+      <div data-testid="app-side-nav">{sideNav}</div>
+      <div data-testid="app-shell-main">{children}</div>
     </div>
   ),
+  AppSideNav: ({
+    items,
+  }: {
+    items: Array<{ href: string; label: string }>;
+  }) => (
+    <nav aria-label="ABStrack application">
+      {items.map((item) => (
+        <a key={item.href} href={item.href}>
+          {item.label}
+        </a>
+      ))}
+    </nav>
+  ),
+  SidebarTrigger: () => <button type="button">Menu</button>,
 }));
 
 import { AuthenticatedShell } from './AuthenticatedShell';

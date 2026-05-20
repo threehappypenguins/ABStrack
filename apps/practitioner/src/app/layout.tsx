@@ -2,8 +2,9 @@ import './global.css';
 import type { ReactNode } from 'react';
 import { Plus_Jakarta_Sans } from 'next/font/google';
 import Script from 'next/script';
+import { PractitionerAppShell } from '../components/app-shell/PractitionerAppShell';
+import { PractitionerPublicThemeBar } from '../components/app-shell/PractitionerPublicThemeBar';
 import { LiveAnnouncerRoot } from '../components/a11y/LiveAnnouncerRoot';
-import { ThemeMenu } from '../components/theme/ThemeMenu';
 import { ThemeProvider } from '../components/theme/ThemeProvider';
 import { AuthProvider } from '../lib/auth-provider';
 import { THEME_INIT_SCRIPT } from '../lib/theme-init-script';
@@ -30,14 +31,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           {THEME_INIT_SCRIPT}
         </Script>
         <ThemeProvider>
-          <div className="pointer-events-none fixed right-3 top-3 z-[200] sm:right-4 sm:top-4">
-            <div className="pointer-events-auto">
-              <ThemeMenu />
-            </div>
-          </div>
           <AuthProvider>
             <LiveAnnouncerRoot>
-              <main>{children}</main>
+              <PractitionerPublicThemeBar />
+              <PractitionerAppShell>{children}</PractitionerAppShell>
             </LiveAnnouncerRoot>
           </AuthProvider>
         </ThemeProvider>

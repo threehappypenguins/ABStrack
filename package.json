@@ -29,7 +29,7 @@
     "supabase:test": "nx test @abstrack/supabase",
     "supabase:typecheck": "nx run @abstrack/supabase:typecheck",
     "supabase:validate": "nx run-many -t lint test typecheck -p @abstrack/supabase",
-    "packages:validate": "nx run-many -t lint test typecheck -p @abstrack/types,@abstrack/ui,@abstrack/supabase,@abstrack/powersync",
+    "packages:validate": "nx run-many -t lint test typecheck -p @abstrack/types,@abstrack/ui,@abstrack/ui-web,@abstrack/supabase,@abstrack/powersync",
     "lint": "nx run-many -t lint",
     "test": "nx run-many -t test",
     "build": "nx run-many -t build -p web,practitioner && pnpm mobile:typecheck && pnpm supabase:typecheck",
@@ -118,7 +118,8 @@
     "react-native": "0.81.5",
     "react-native-svg": "15.12.1",
     "react-native-svg-transformer": "~1.5.1",
-    "react-native-web": "~0.21.0"
+    "react-native-web": "~0.21.0",
+    "tailwindcss-animate": "^1.0.7"
   },
   "pnpm": {
     "overrides": {

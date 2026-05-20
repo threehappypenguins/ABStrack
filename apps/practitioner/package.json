@@ -6,6 +6,7 @@
     "@abstrack/supabase": "workspace:*",
     "@abstrack/types": "workspace:*",
     "@abstrack/ui": "workspace:*",
+    "@abstrack/ui-web": "workspace:*",
     "next": "~16.0.1",
     "qrcode": "^1.5.4",
     "react": "19.1.0",
