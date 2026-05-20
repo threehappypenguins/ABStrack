@@ -1,4 +1,9 @@
-import type { ComponentPropsWithoutRef, ComponentType, ReactNode } from 'react';
+import type {
+  ComponentPropsWithoutRef,
+  ForwardRefExoticComponent,
+  ReactNode,
+  RefAttributes,
+} from 'react';
 
 /**
  * One primary navigation entry for {@link AppSideNav}.
@@ -26,7 +31,10 @@ export type AppSideNavLinkProps = Omit<
 };
 
 /**
- * Link component type used by {@link AppSideNav} (`asChild` menu buttons). Implement with
- * `forwardRef` and spread remaining props onto the underlying anchor (or Next.js `Link`).
+ * Link component used by {@link AppSideNav} (`asChild` menu buttons). Must use `forwardRef` and
+ * spread remaining props onto the underlying anchor (or Next.js `Link`) so Radix `Slot` can merge
+ * refs and `data-*` attributes.
  */
-export type AppSideNavLinkComponent = ComponentType<AppSideNavLinkProps>;
+export type AppSideNavLinkComponent = ForwardRefExoticComponent<
+  AppSideNavLinkProps & RefAttributes<HTMLAnchorElement>
+>;

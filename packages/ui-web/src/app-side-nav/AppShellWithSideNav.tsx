@@ -60,22 +60,12 @@ export function AppShellWithSideNav({
 
   return (
     <SidebarProvider
-      className={
-        topHeader
-          ? 'flex min-h-svh w-full flex-col'
-          : 'flex min-h-svh w-full flex-col'
-      }
+      className="flex min-h-svh w-full flex-col"
       style={providerStyle}
     >
       {skipLink}
       {topHeader}
-      <div
-        className={
-          topHeader
-            ? 'flex min-h-0 w-full flex-1'
-            : 'flex min-h-0 w-full flex-1'
-        }
-      >
+      <div className="flex min-h-0 w-full flex-1">
         {sideNav}
         <SidebarInset className="app-grid-background flex min-h-0 min-w-0 flex-1 flex-col">
           {header}

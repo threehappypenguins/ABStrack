@@ -28,6 +28,48 @@ import {
 const SIDEBAR_COOKIE_NAME = 'sidebar_state';
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
 const SIDEBAR_WIDTH = '16rem';
+
+/**
+ * Reads persisted desktop sidebar open state from `document.cookie`.
+ *
+ * @returns `true` / `false` when set, otherwise `null`.
+ */
+function readSidebarOpenCookie(): boolean | null {
+  if (typeof document === 'undefined') {
+    return null;
+  }
+  const prefix = `${SIDEBAR_COOKIE_NAME}=`;
+  for (const entry of document.cookie.split('; ')) {
+    if (!entry.startsWith(prefix)) {
+      continue;
+    }
+    const value = entry.slice(prefix.length);
+    if (value === 'true') {
+      return true;
+    }
+    if (value === 'false') {
+      return false;
+    }
+    return null;
+  }
+  return null;
+}
+
+/**
+ * Persists desktop sidebar open state (uncontrolled {@link SidebarProvider} only).
+ *
+ * @param open - Whether the desktop sidebar rail is expanded.
+ */
+function writeSidebarOpenCookie(open: boolean): void {
+  if (typeof document === 'undefined') {
+    return;
+  }
+  const secure =
+    typeof window !== 'undefined' && window.location.protocol === 'https:'
+      ? '; Secure'
+      : '';
+  document.cookie = `${SIDEBAR_COOKIE_NAME}=${open}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}; SameSite=Lax${secure}`;
+}
 const SIDEBAR_WIDTH_MOBILE = '18rem';
 const SIDEBAR_WIDTH_ICON = '3rem';
 const SIDEBAR_KEYBOARD_SHORTCUT = 'b';
@@ -79,11 +121,28 @@ const SidebarProvider = React.forwardRef<
   ) => {
     const isMobile = useIsMobile();
     const [openMobile, setOpenMobile] = React.useState(false);
+    const isControlled = openProp !== undefined;
 
     // This is the internal state of the sidebar.
     // We use openProp and setOpenProp for control from outside the component.
-    const [_open, _setOpen] = React.useState(defaultOpen);
+    const [_open, _setOpen] = React.useState(() => {
+      if (isControlled) {
+        return defaultOpen;
+      }
+      return readSidebarOpenCookie() ?? defaultOpen;
+    });
     const open = openProp ?? _open;
+
+    React.useEffect(() => {
+      if (isControlled) {
+        return;
+      }
+      const stored = readSidebarOpenCookie();
+      if (stored !== null) {
+        _setOpen(stored);
+      }
+    }, [isControlled]);
+
     const setOpen = React.useCallback(
       (value: boolean | ((value: boolean) => boolean)) => {
         const openState = typeof value === 'function' ? value(open) : value;
@@ -91,10 +150,8 @@ const SidebarProvider = React.forwardRef<
           setOpenProp(openState);
         } else {
           _setOpen(openState);
+          writeSidebarOpenCookie(openState);
         }
-
-        // This sets the cookie to keep the sidebar state.
-        document.cookie = `${SIDEBAR_COOKIE_NAME}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
       },
       [setOpenProp, open],
     );
@@ -344,7 +401,7 @@ const SidebarRail = React.forwardRef<
 SidebarRail.displayName = 'SidebarRail';
 
 const SidebarInset = React.forwardRef<
-  HTMLDivElement,
+  React.ElementRef<'main'>,
   React.ComponentProps<'main'>
 >(({ className, ...props }, ref) => {
   return (
