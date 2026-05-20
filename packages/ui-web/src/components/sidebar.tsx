@@ -125,12 +125,8 @@ const SidebarProvider = React.forwardRef<
 
     // This is the internal state of the sidebar.
     // We use openProp and setOpenProp for control from outside the component.
-    const [_open, _setOpen] = React.useState(() => {
-      if (isControlled) {
-        return defaultOpen;
-      }
-      return readSidebarOpenCookie() ?? defaultOpen;
-    });
+    // Initialize from defaultOpen only; restore cookie after mount to avoid SSR/client mismatch.
+    const [_open, _setOpen] = React.useState(defaultOpen);
     const open = openProp ?? _open;
 
     React.useEffect(() => {
@@ -278,6 +274,7 @@ const Sidebar = React.forwardRef<
             className={cn(
               'w-[--sidebar-width-mobile] p-0 [&>button]:hidden',
               SIDEBAR_PANEL_SURFACE,
+              className,
             )}
             side={side}
           >
@@ -726,16 +723,36 @@ const SidebarMenuBadge = React.forwardRef<
 ));
 SidebarMenuBadge.displayName = 'SidebarMenuBadge';
 
+/** Deterministic label widths (50–90%) for {@link SidebarMenuSkeleton} — avoids SSR hydration mismatch. */
+const SIDEBAR_MENU_SKELETON_WIDTHS = [
+  '65%',
+  '78%',
+  '55%',
+  '82%',
+  '70%',
+  '60%',
+  '88%',
+  '52%',
+] as const;
+
+/**
+ * @param index - Row index; cycles through {@link SIDEBAR_MENU_SKELETON_WIDTHS}.
+ * @returns CSS width percentage for the skeleton label bar.
+ */
+function sidebarMenuSkeletonWidth(index: number): string {
+  const widths = SIDEBAR_MENU_SKELETON_WIDTHS;
+  return widths[((index % widths.length) + widths.length) % widths.length]!;
+}
+
 const SidebarMenuSkeleton = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<'div'> & {
     showIcon?: boolean;
+    /** Row index for varied, SSR-stable skeleton label width (default `0`). */
+    index?: number;
   }
->(({ className, showIcon = false, ...props }, ref) => {
-  // Random width between 50 to 90%.
-  const width = React.useMemo(() => {
-    return `${Math.floor(Math.random() * 40) + 50}%`;
-  }, []);
+>(({ className, showIcon = false, index = 0, ...props }, ref) => {
+  const width = sidebarMenuSkeletonWidth(index);
 
   return (
     <div
