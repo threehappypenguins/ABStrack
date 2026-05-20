@@ -8,8 +8,7 @@ import {
 } from '@abstrack/ui-web';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { forwardRef, type ReactNode } from 'react';
-import { useMemo } from 'react';
+import { forwardRef, useMemo, type CSSProperties, type ReactNode } from 'react';
 
 import { ThemeMenu } from '@/components/theme/ThemeMenu';
 import { WEB_APP_NAV_ITEMS } from '@/lib/app-nav-items';
@@ -69,9 +68,7 @@ export function AuthenticatedShell({
       topHeader={
         <header
           className="sticky top-0 z-50 w-full shrink-0 overflow-visible border-b border-[var(--app-header-border)] bg-[var(--app-header-bg)] shadow-header backdrop-blur-md supports-[backdrop-filter]:bg-[var(--app-header-bg)]"
-          style={
-            { '--app-shell-header-height': '4.5rem' } as React.CSSProperties
-          }
+          style={{ '--app-shell-header-height': '4.5rem' } as CSSProperties}
         >
           <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3.5 sm:px-6 lg:px-8">
             <SidebarTrigger

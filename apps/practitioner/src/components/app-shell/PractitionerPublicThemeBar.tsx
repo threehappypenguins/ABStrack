@@ -4,19 +4,7 @@ import { usePathname } from 'next/navigation';
 
 import { ThemeMenu } from '@/components/theme/ThemeMenu';
 import { useAuth } from '@/lib/auth-provider';
-
-const PUBLIC_PATH_PREFIXES = [
-  '/login',
-  '/invite',
-  '/update-password',
-  '/auth',
-] as const;
-
-function isPublicPractitionerPath(pathname: string): boolean {
-  return PUBLIC_PATH_PREFIXES.some(
-    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
-  );
-}
+import { isPublicPractitionerPath } from '@/lib/practitioner-public-paths';
 
 /**
  * Fixed theme control when the authenticated app shell (sidebar footer) is not shown.
