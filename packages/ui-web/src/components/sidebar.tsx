@@ -104,7 +104,9 @@ const SidebarProvider = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<'div'> & {
     defaultOpen?: boolean;
+    /** Controlled open state; must be paired with {@link onOpenChange}. */
     open?: boolean;
+    /** Controlled setter; must be paired with {@link open}. */
     onOpenChange?: (open: boolean) => void;
   }
 >(
@@ -122,13 +124,25 @@ const SidebarProvider = React.forwardRef<
   ) => {
     const isMobile = useIsMobile();
     const [openMobile, setOpenMobile] = React.useState(false);
-    const isControlled = openProp !== undefined;
+    const isControlled = openProp !== undefined && setOpenProp !== undefined;
 
     // This is the internal state of the sidebar.
-    // We use openProp and setOpenProp for control from outside the component.
+    // Controlled only when both `open` and `onOpenChange` are provided.
     // Initialize from defaultOpen only; restore cookie after mount to avoid SSR/client mismatch.
     const [_open, _setOpen] = React.useState(defaultOpen);
-    const open = openProp ?? _open;
+    const open = isControlled ? openProp : _open;
+
+    React.useEffect(() => {
+      if (
+        process.env.NODE_ENV !== 'production' &&
+        openProp !== undefined &&
+        setOpenProp === undefined
+      ) {
+        console.warn(
+          'SidebarProvider: `open` without `onOpenChange` is ignored. Pass both props for controlled mode.',
+        );
+      }
+    }, [openProp, setOpenProp]);
 
     React.useEffect(() => {
       if (isControlled) {
@@ -143,14 +157,14 @@ const SidebarProvider = React.forwardRef<
     const setOpen = React.useCallback(
       (value: boolean | ((value: boolean) => boolean)) => {
         const openState = typeof value === 'function' ? value(open) : value;
-        if (setOpenProp) {
+        if (isControlled) {
           setOpenProp(openState);
-        } else {
-          _setOpen(openState);
-          writeSidebarOpenCookie(openState);
+          return;
         }
+        _setOpen(openState);
+        writeSidebarOpenCookie(openState);
       },
-      [setOpenProp, open],
+      [isControlled, setOpenProp, open],
     );
 
     // Helper to toggle the sidebar.
@@ -371,7 +385,11 @@ const SidebarRail = React.forwardRef<
   HTMLButtonElement,
   React.ComponentProps<'button'>
 >(({ className, ...props }, ref) => {
-  const { toggleSidebar } = useSidebar();
+  const { toggleSidebar, isMobile } = useSidebar();
+
+  if (isMobile) {
+    return null;
+  }
 
   return (
     <button
@@ -382,7 +400,7 @@ const SidebarRail = React.forwardRef<
       onClick={toggleSidebar}
       title="Toggle Sidebar"
       className={cn(
-        'absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 transition-all ease-linear after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] hover:after:bg-sidebar-border group-data-[side=left]:-right-4 group-data-[side=right]:left-0 sm:flex',
+        'absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 transition-all ease-linear after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] hover:after:bg-sidebar-border group-data-[side=left]:-right-4 group-data-[side=right]:left-0 md:flex',
         '[[data-side=left]_&]:cursor-w-resize [[data-side=right]_&]:cursor-e-resize',
         '[[data-side=left][data-state=collapsed]_&]:cursor-e-resize [[data-side=right][data-state=collapsed]_&]:cursor-w-resize',
         'group-data-[collapsible=offcanvas]:translate-x-0 group-data-[collapsible=offcanvas]:after:left-full group-data-[collapsible=offcanvas]:hover:bg-sidebar',
