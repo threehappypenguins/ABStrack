@@ -211,6 +211,7 @@ const SidebarProvider = React.forwardRef<
             style={
               {
                 '--sidebar-width': SIDEBAR_WIDTH,
+                '--sidebar-width-mobile': SIDEBAR_WIDTH_MOBILE,
                 '--sidebar-width-icon': SIDEBAR_WIDTH_ICON,
                 ...style,
               } as React.CSSProperties
@@ -275,14 +276,9 @@ const Sidebar = React.forwardRef<
             data-sidebar="sidebar"
             data-mobile="true"
             className={cn(
-              'w-[--sidebar-width] p-0 [&>button]:hidden',
+              'w-[--sidebar-width-mobile] p-0 [&>button]:hidden',
               SIDEBAR_PANEL_SURFACE,
             )}
-            style={
-              {
-                '--sidebar-width': SIDEBAR_WIDTH_MOBILE,
-              } as React.CSSProperties
-            }
             side={side}
           >
             <SheetHeader className="sr-only">
@@ -604,7 +600,7 @@ const sidebarMenuButtonVariants = cva(
       variant: {
         default: 'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
         outline:
-          'bg-background shadow-[0_0_0_1px_hsl(var(--sidebar-border))] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:shadow-[0_0_0_1px_hsl(var(--sidebar-accent))]',
+          'bg-background shadow-[0_0_0_1px] shadow-sidebar-border hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:shadow-[0_0_0_1px] hover:shadow-sidebar-accent',
       },
       size: {
         default: 'h-8 text-sm',
