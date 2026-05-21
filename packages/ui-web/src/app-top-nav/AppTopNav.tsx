@@ -1,7 +1,12 @@
 'use client';
 
 import { Menu } from 'lucide-react';
-import type { ComponentType, ReactNode, RefAttributes } from 'react';
+import type {
+  ComponentPropsWithoutRef,
+  ForwardRefExoticComponent,
+  ReactNode,
+  RefAttributes,
+} from 'react';
 
 import { Button } from '../components/button.js';
 import {
@@ -16,15 +21,26 @@ import { SidebarTrigger } from '../components/sidebar.js';
 import { cn } from '../lib/utils.js';
 import { ABSTRACK_APP_LOGO_SRC } from './constants.js';
 
-/** Host app link for the brand block (e.g. Next.js `Link`). */
-export type AppTopNavBrandLinkProps = {
+/**
+ * Props passed to the app-supplied brand link (e.g. Next.js `Link`).
+ * Matches anchor semantics so hosts can forward `aria-*`, `data-*`, and other attributes from
+ * {@link AppTopNav}.
+ */
+export type AppTopNavBrandLinkProps = Omit<
+  ComponentPropsWithoutRef<'a'>,
+  'href'
+> & {
   href: string;
   children?: ReactNode;
-  className?: string;
-} & RefAttributes<HTMLAnchorElement>;
+};
 
-export type AppTopNavBrandLinkComponent =
-  ComponentType<AppTopNavBrandLinkProps>;
+/**
+ * Brand link component for {@link AppTopNav}. Must use `forwardRef` and spread remaining props
+ * onto the underlying anchor (or Next.js `Link`).
+ */
+export type AppTopNavBrandLinkComponent = ForwardRefExoticComponent<
+  AppTopNavBrandLinkProps & RefAttributes<HTMLAnchorElement>
+>;
 
 export type AppTopNavProps = {
   /** Destination for the logo + wordmark (e.g. `/` or `/dashboard`). */
