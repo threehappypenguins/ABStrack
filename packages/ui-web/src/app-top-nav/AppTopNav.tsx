@@ -107,7 +107,7 @@ export function AppTopNav({
   const hasAccountSection = Boolean(email || actions);
 
   return (
-    <header className="sticky top-0 z-50 w-full shrink-0 overflow-visible border-b border-[var(--app-header-border)] bg-[var(--app-header-bg)] shadow-header backdrop-blur-md supports-[backdrop-filter]:bg-[var(--app-header-bg)]">
+    <header className="sticky top-0 z-50 w-full shrink-0 overflow-visible border-b border-[color:var(--app-header-border)] bg-[var(--app-header-bg)] shadow-header backdrop-blur-md supports-[backdrop-filter]:bg-[var(--app-header-bg)]">
       <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3.5 sm:px-6 lg:px-8">
         {showSidebarTrigger ? (
           <SidebarTrigger

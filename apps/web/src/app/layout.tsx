@@ -7,10 +7,8 @@ import { THEME_INIT_SCRIPT } from '../lib/theme-init-script';
 import { WebAppShell } from '../components/app-shell/WebAppShell';
 import { WebPublicTopNav } from '../components/app-shell/WebPublicTopNav';
 import { LiveAnnouncerRoot } from '../components/a11y/LiveAnnouncerRoot';
-import {
-  AuthProvider,
-  mapSupabaseSessionToAuthContext,
-} from '../lib/auth-provider';
+import { AuthProvider } from '../lib/auth-provider';
+import { mapSupabaseSessionToAuthContext } from '../lib/auth-provider-session';
 import { createServerClient } from '../lib/supabase/server-client';
 
 const fontSans = Plus_Jakarta_Sans({

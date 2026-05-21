@@ -1,12 +1,13 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState } from 'react';
+import {
+  type AuthProviderSession,
+  mapSupabaseSessionToAuthContext,
+} from './auth-provider-session';
 import { createBrowserClient } from './supabase/browser-client';
 
-/** Session shape exposed to client components via {@link useAuth}. */
-export type AuthProviderSession = {
-  user: { id: string; email?: string };
-} | null;
+export type { AuthProviderSession } from './auth-provider-session';
 
 interface AuthContextType {
   session: AuthProviderSession;
@@ -22,26 +23,6 @@ export type AuthProviderProps = {
    */
   initialSession?: AuthProviderSession | null;
 };
-
-/**
- * Maps a Supabase session from the server client to {@link AuthProviderSession}.
- *
- * @param session - Result of `supabase.auth.getSession()` on the server.
- * @returns Context session or `null` when signed out.
- */
-export function mapSupabaseSessionToAuthContext(
-  session: { user: { id: string; email?: string | null } } | null,
-): AuthProviderSession {
-  if (!session?.user?.id) {
-    return null;
-  }
-  return {
-    user: {
-      id: session.user.id,
-      email: session.user.email ?? undefined,
-    },
-  };
-}
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
@@ -119,7 +100,7 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
         }
 
         if (mounted) {
-          setSession(nextSession);
+          setSession(mapSupabaseSessionToAuthContext(nextSession));
         }
       } catch (error) {
         console.error('Failed to load auth session', error);
@@ -142,7 +123,7 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
+      setSession(mapSupabaseSessionToAuthContext(session));
     });
 
     return () => {
