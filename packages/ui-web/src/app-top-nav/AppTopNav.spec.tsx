@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { forwardRef, type ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
 
@@ -87,7 +87,9 @@ describe('AppTopNav', () => {
     const dialog = screen.getByRole('dialog');
     expect(dialog).toHaveTextContent('doc@example.com');
     expect(dialog).toHaveTextContent('Log out');
-    expect(screen.getByRole('button', { name: 'Theme' })).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole('button', { name: 'Theme' }),
+    ).toBeInTheDocument();
   });
 
   it('renders public chrome without a sidebar trigger', () => {

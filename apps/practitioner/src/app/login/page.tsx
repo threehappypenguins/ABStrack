@@ -581,7 +581,7 @@ export default function LoginPage() {
   return (
     <main
       id="main-content"
-      className="app-grid-background flex min-h-screen items-center justify-center px-4"
+      className="app-grid-background flex min-h-[calc(100svh-4.5rem)] items-center justify-center px-4"
     >
       <div className="w-full max-w-md rounded-2xl border border-app-border/90 bg-app-surface p-8 shadow-soft ring-1 ring-[color:var(--app-ring-slate)]">
         <h1 className="mb-2 text-center text-2xl font-bold text-app-ink">
