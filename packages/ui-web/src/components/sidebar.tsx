@@ -76,6 +76,82 @@ const SIDEBAR_WIDTH_MOBILE = '18rem';
 const SIDEBAR_WIDTH_ICON = '3rem';
 const SIDEBAR_KEYBOARD_SHORTCUT = 'b';
 
+/**
+ * Whether `target` is a field where modifier+B is used for text editing (not sidebar chrome).
+ *
+ * @param target - `keydown` event target.
+ * @returns `true` when the shortcut should not toggle the sidebar.
+ */
+function isEditableKeyboardTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  if (target.isContentEditable) {
+    return true;
+  }
+  const tag = target.tagName;
+  if (tag === 'TEXTAREA' || tag === 'SELECT') {
+    return true;
+  }
+  if (tag === 'INPUT') {
+    const type = (target as HTMLInputElement).type;
+    if (
+      type === 'button' ||
+      type === 'submit' ||
+      type === 'reset' ||
+      type === 'checkbox' ||
+      type === 'radio' ||
+      type === 'file' ||
+      type === 'hidden' ||
+      type === 'image'
+    ) {
+      return false;
+    }
+    return true;
+  }
+  return (
+    target.closest(
+      '[contenteditable=""], [contenteditable="true"], [contenteditable="plaintext-only"]',
+    ) != null
+  );
+}
+
+/**
+ * macOS / iOS: Cmd+B only — leave Ctrl+B for editor navigation (e.g. move backward).
+ *
+ * @returns `true` on Apple desktop/mobile platforms.
+ */
+function isMacLikePlatform(): boolean {
+  if (typeof navigator === 'undefined') {
+    return false;
+  }
+  const platform = navigator.platform ?? '';
+  if (/Mac|iPhone|iPad|iPod/i.test(platform)) {
+    return true;
+  }
+  return /Mac OS X|iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+
+/**
+ * Whether a `keydown` should toggle the sidebar (Cmd/Ctrl+B), respecting editable focus and platform.
+ *
+ * @param event - Window `keydown` event.
+ * @returns `true` when the handler should toggle the sidebar.
+ */
+function shouldToggleSidebarFromKeyboard(event: KeyboardEvent): boolean {
+  if (event.key.toLowerCase() !== SIDEBAR_KEYBOARD_SHORTCUT) {
+    return false;
+  }
+  const isMac = isMacLikePlatform();
+  const hasShortcutModifier = isMac
+    ? event.metaKey
+    : event.metaKey || event.ctrlKey;
+  if (!hasShortcutModifier) {
+    return false;
+  }
+  return !isEditableKeyboardTarget(event.target);
+}
+
 /** Frosted panel fill; uses `--app-sidebar-bg` from app `global.css` (alpha must be below 1). */
 const SIDEBAR_PANEL_SURFACE =
   'bg-[var(--app-sidebar-bg,rgb(var(--app-surface)/0.88))] text-sidebar-foreground backdrop-blur-sm supports-[backdrop-filter]:bg-[var(--app-sidebar-bg,rgb(var(--app-surface)/0.88))]';
@@ -188,16 +264,14 @@ const SidebarProvider = React.forwardRef<
         : setOpen((open) => !open);
     }, [isMobile, setOpen, setOpenMobile]);
 
-    // Adds a keyboard shortcut to toggle the sidebar.
+    // Cmd/Ctrl+B toggles the sidebar; skip editable targets and Ctrl+B on macOS.
     React.useEffect(() => {
       const handleKeyDown = (event: KeyboardEvent) => {
-        if (
-          event.key === SIDEBAR_KEYBOARD_SHORTCUT &&
-          (event.metaKey || event.ctrlKey)
-        ) {
-          event.preventDefault();
-          toggleSidebar();
+        if (!shouldToggleSidebarFromKeyboard(event)) {
+          return;
         }
+        event.preventDefault();
+        toggleSidebar();
       };
 
       window.addEventListener('keydown', handleKeyDown);
@@ -372,12 +446,13 @@ Sidebar.displayName = 'Sidebar';
 const SidebarTrigger = React.forwardRef<
   React.ElementRef<typeof Button>,
   React.ComponentProps<typeof Button>
->(({ className, onClick, ...props }, ref) => {
+>(({ className, onClick, type = 'button', ...props }, ref) => {
   const { toggleSidebar } = useSidebar();
 
   return (
     <Button
       ref={ref}
+      type={type}
       data-sidebar="trigger"
       variant="ghost"
       size="icon"
@@ -398,7 +473,7 @@ SidebarTrigger.displayName = 'SidebarTrigger';
 const SidebarRail = React.forwardRef<
   HTMLButtonElement,
   React.ComponentProps<'button'>
->(({ className, ...props }, ref) => {
+>(({ className, type = 'button', ...props }, ref) => {
   const { toggleSidebar, isMobile } = useSidebar();
 
   if (isMobile) {
@@ -408,6 +483,7 @@ const SidebarRail = React.forwardRef<
   return (
     <button
       ref={ref}
+      type={type}
       data-sidebar="rail"
       aria-label="Toggle Sidebar"
       tabIndex={-1}
