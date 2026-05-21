@@ -27,14 +27,15 @@ PractitionerPublicNavLink.displayName = 'PractitionerPublicNavLink';
  * Shared top navigation on public practitioner routes (login, invite, password reset).
  * No self-service registration link — practitioners join via invite only.
  *
- * @returns Sticky header or null when authenticated app chrome is active.
+ * @returns Sticky header on public routes; `null` on private routes while signed in or while auth
+ * is still resolving (avoids public chrome flashing before {@link PractitionerAppShell}).
  */
 export function PractitionerPublicTopNav() {
   const pathname = usePathname() ?? '/';
   const { session, loading } = useAuth();
   const isPublic = isPublicPractitionerPath(pathname);
 
-  if (!isPublic && !loading && session) {
+  if (!isPublic && (loading || session)) {
     return null;
   }
 

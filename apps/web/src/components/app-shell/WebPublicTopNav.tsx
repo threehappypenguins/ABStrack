@@ -54,7 +54,8 @@ function resolvePublicTopNavActions(pathname: string): ReactNode {
 /**
  * Shared top navigation for public user-web routes (landing, login, sign-up, etc.).
  *
- * @returns Sticky header or null on authenticated app routes.
+ * @returns Sticky header on public routes; `null` on private routes while signed in or while auth
+ * is still resolving (avoids public chrome flashing before {@link AuthenticatedShell}).
  */
 export function WebPublicTopNav() {
   const pathname = usePathname() ?? '/';
@@ -64,7 +65,7 @@ export function WebPublicTopNav() {
     [pathname],
   );
 
-  if (!isPublicWebPath(pathname) && !loading && session) {
+  if (!isPublicWebPath(pathname) && (loading || session)) {
     return null;
   }
 
