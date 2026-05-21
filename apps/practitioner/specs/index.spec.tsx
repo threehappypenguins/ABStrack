@@ -9,6 +9,12 @@ jest.mock('../src/lib/auth-provider', () => ({
   useAuth: jest.fn(),
 }));
 
+const replaceMock = jest.fn();
+
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: replaceMock }),
+}));
+
 const mockedUseAuth = jest.mocked(useAuth);
 
 /** Minimal session shape for gate branches that require `session?.access_token`. */
@@ -86,6 +92,7 @@ describe('Page', () => {
   });
 
   beforeEach(() => {
+    replaceMock.mockClear();
     mockedUseAuth.mockReturnValue({
       session: null,
       loading: false,
@@ -101,13 +108,11 @@ describe('Page', () => {
     expect(baseElement).toBeTruthy();
   });
 
-  it('shows signed-out landing with Log in link and no logout form', () => {
+  it('redirects signed-out visitors to /login', () => {
     renderPage();
-    expect(
-      screen.getByRole('heading', { name: /ABStrack Practitioner/i }),
-    ).toBeTruthy();
-    expect(screen.getByRole('link', { name: /^Log in$/i })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /^Log out$/i })).toBeNull();
+    expect(replaceMock).toHaveBeenCalledWith('/login');
+    expect(screen.getByText(/Redirecting to sign in/i)).toBeTruthy();
+    expect(screen.queryByRole('link', { name: /^Log in$/i })).toBeNull();
   });
 
   it('shows profile_error copy and practitioner sign-out control', () => {

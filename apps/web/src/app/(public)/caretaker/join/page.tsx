@@ -210,7 +210,7 @@ export default function CaretakerJoinPage() {
       {state.kind === 'need_sign_in' ? (
         <Link
           href="/login"
-          className="min-h-[44px] rounded-full bg-app-primary px-5 py-3 text-center text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring"
+          className="min-h-[44px] rounded-full bg-app-primary-solid px-5 py-3 text-center text-sm font-semibold text-app-on-primary-solid focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring"
         >
           Go to sign in
         </Link>
@@ -219,7 +219,7 @@ export default function CaretakerJoinPage() {
         <div className="flex flex-col gap-3">
           <Link
             href={`/update-password?from=${CARETAKER_INVITE_SET_PASSWORD_FROM}`}
-            className="min-h-[44px] rounded-full bg-app-primary px-5 py-3 text-center text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring"
+            className="min-h-[44px] rounded-full bg-app-primary-solid px-5 py-3 text-center text-sm font-semibold text-app-on-primary-solid focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring"
           >
             Create password (recommended)
           </Link>

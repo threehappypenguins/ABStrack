@@ -581,7 +581,7 @@ export default function LoginPage() {
   return (
     <main
       id="main-content"
-      className="flex min-h-screen items-center justify-center bg-app-bg bg-app-gradient px-4"
+      className="app-grid-background flex min-h-screen items-center justify-center px-4"
     >
       <div className="w-full max-w-md rounded-2xl border border-app-border/90 bg-app-surface p-8 shadow-soft ring-1 ring-[color:var(--app-ring-slate)]">
         <h1 className="mb-2 text-center text-2xl font-bold text-app-ink">
@@ -654,7 +654,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-md bg-app-primary px-4 py-2 text-white transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+              className="w-full rounded-md bg-app-primary-solid px-4 py-2 text-app-on-primary-solid transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {loading ? 'Signing in...' : 'Sign in'}
             </button>
@@ -741,7 +741,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={verifyLoading}
-              className="w-full rounded-md bg-app-primary px-4 py-2 text-white transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+              className="w-full rounded-md bg-app-primary-solid px-4 py-2 text-app-on-primary-solid transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {verifyLoading ? 'Verifying code...' : 'Verify and continue'}
             </button>

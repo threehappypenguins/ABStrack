@@ -206,7 +206,7 @@ export default function PractitionerInviteJoinPage() {
       {state.kind === 'need_sign_in' ? (
         <Link
           href="/login"
-          className="min-h-[44px] rounded-full bg-app-primary px-5 py-3 text-center text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+          className="min-h-[44px] rounded-full bg-app-primary-solid px-5 py-3 text-center text-sm font-semibold text-app-on-primary-solid focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
         >
           Go to sign in
         </Link>
@@ -216,14 +216,14 @@ export default function PractitionerInviteJoinPage() {
           {donePasswordSet ? (
             <Link
               href="/"
-              className="min-h-[44px] rounded-full bg-app-primary px-5 py-3 text-center text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+              className="min-h-[44px] rounded-full bg-app-primary-solid px-5 py-3 text-center text-sm font-semibold text-app-on-primary-solid focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
             >
               Set up two-factor authentication
             </Link>
           ) : (
             <Link
               href="/patients"
-              className="min-h-[44px] rounded-full bg-app-primary px-5 py-3 text-center text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+              className="min-h-[44px] rounded-full bg-app-primary-solid px-5 py-3 text-center text-sm font-semibold text-app-on-primary-solid focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
             >
               Go to patient workspace
             </Link>

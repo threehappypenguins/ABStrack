@@ -130,7 +130,7 @@ export function PractitionerPatientRoutesGate({
           <button
             type="button"
             onClick={() => void refreshTotpFactors()}
-            className="min-h-11 rounded-md bg-app-primary px-4 py-2 text-sm font-medium text-white transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+            className="min-h-11 rounded-md bg-app-primary-solid px-4 py-2 text-sm font-medium text-app-on-primary-solid transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
           >
             Try again
           </button>
@@ -162,7 +162,7 @@ export function PractitionerPatientRoutesGate({
         <div className="mt-6">
           <Link
             href="/login"
-            className="inline-flex min-h-11 items-center justify-center rounded-md bg-app-primary px-4 py-2 text-sm font-medium text-white transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+            className="inline-flex min-h-11 items-center justify-center rounded-md bg-app-primary-solid px-4 py-2 text-sm font-medium text-app-on-primary-solid transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
           >
             Go to sign in
           </Link>
@@ -221,14 +221,14 @@ export function PractitionerPatientRoutesGate({
             {mfaBlockReason === 'enrollment' ? (
               <Link
                 href="/"
-                className="inline-flex min-h-11 items-center justify-center rounded-md bg-app-primary px-4 py-2 text-sm font-medium text-white transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+                className="inline-flex min-h-11 items-center justify-center rounded-md bg-app-primary-solid px-4 py-2 text-sm font-medium text-app-on-primary-solid transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
               >
                 Set up two-factor authentication
               </Link>
             ) : (
               <Link
                 href="/login"
-                className="inline-flex min-h-11 items-center justify-center rounded-md bg-app-primary px-4 py-2 text-sm font-medium text-white transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+                className="inline-flex min-h-11 items-center justify-center rounded-md bg-app-primary-solid px-4 py-2 text-sm font-medium text-app-on-primary-solid transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
               >
                 Go to sign in
               </Link>

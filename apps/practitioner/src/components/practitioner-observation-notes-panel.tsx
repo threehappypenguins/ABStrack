@@ -263,7 +263,7 @@ export function PractitionerObservationNotesPanel({
               <button
                 type="submit"
                 disabled={composeSubmitting}
-                className="inline-flex min-h-11 items-center justify-center rounded-md bg-app-primary px-4 py-2 text-sm font-medium text-white transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:opacity-60"
+                className="inline-flex min-h-11 items-center justify-center rounded-md bg-app-primary-solid px-4 py-2 text-sm font-medium text-app-on-primary-solid transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:opacity-60"
               >
                 {composeSubmitting ? 'Saving…' : composeSubmitLabel}
               </button>
@@ -386,7 +386,7 @@ export function PractitionerObservationNotesPanel({
                       <button
                         type="submit"
                         disabled={editSubmitting}
-                        className="inline-flex min-h-11 items-center justify-center rounded-md bg-app-primary px-4 py-2 text-sm font-medium text-white transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:opacity-60"
+                        className="inline-flex min-h-11 items-center justify-center rounded-md bg-app-primary-solid px-4 py-2 text-sm font-medium text-app-on-primary-solid transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:opacity-60"
                       >
                         {editSubmitting ? 'Saving…' : 'Save changes'}
                       </button>

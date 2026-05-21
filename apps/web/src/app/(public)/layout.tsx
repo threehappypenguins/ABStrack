@@ -1,4 +1,4 @@
-import { PublicChromeThemeBar } from './PublicChromeThemeBar';
+import { WebPublicTopNav } from '@/components/app-shell/WebPublicTopNav';
 
 /**
  * Single primary landmark for marketing and auth flows. Authenticated app routes under
@@ -11,9 +11,9 @@ export default function PublicLayout({
   children: React.ReactNode;
 }) {
   return (
-    <main id="main-content">
-      <PublicChromeThemeBar />
-      {children}
-    </main>
+    <>
+      <WebPublicTopNav />
+      <main id="main-content">{children}</main>
+    </>
   );
 }

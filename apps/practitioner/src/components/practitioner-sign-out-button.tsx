@@ -2,16 +2,13 @@
 
 import { getSupabaseBrowserClient } from '@abstrack/supabase/browser';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
+import { ACCOUNT_ACTIONS_SURFACE_CLASS } from '@abstrack/ui-web';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   isPractitionerMfaDeviceTrustActive,
   practitionerSignOut,
   practitionerSignOutEverywhere,
 } from '@/lib/practitioner-device-trust';
-
-/** Default surface styling for primary and secondary sign-out controls. */
-const SIGN_OUT_BUTTON_SURFACE_CLASS =
-  'min-h-11 rounded-md border border-app-border bg-app-surface px-4 py-2 text-sm font-medium text-app-ink shadow-sm transition hover:bg-[var(--app-nav-hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg';
 
 export type PractitionerSignOutButtonProps = {
   /** Visible button label for the default (session-aware) sign-out. */
@@ -26,7 +23,8 @@ export type PractitionerSignOutButtonProps = {
 /**
  * Practitioner sign-out: default action respects MFA device trust (soft local clear) when active;
  * secondary action performs full server sign-out via `POST /api/auth/logout`. Primary and secondary
- * buttons share a default surface style; pass `className` on the primary control only to override.
+ * buttons share {@link ACCOUNT_ACTIONS_SURFACE_CLASS} with user web top nav; pass `className` on the
+ * primary control only to override.
  *
  * @param props - Labels and styling.
  * @returns Accessible sign-out controls and optional trust explanation.
@@ -35,7 +33,7 @@ export function PractitionerSignOutButton({
   label = 'Log out',
   className,
 }: PractitionerSignOutButtonProps) {
-  const primaryClassName = className ?? SIGN_OUT_BUTTON_SURFACE_CLASS;
+  const primaryClassName = className ?? ACCOUNT_ACTIONS_SURFACE_CLASS;
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const { announce } = useAnnounce();
   const [signingOut, setSigningOut] = useState(false);
@@ -155,7 +153,7 @@ export function PractitionerSignOutButton({
         <button
           type="button"
           data-testid="practitioner-sign-out-everywhere"
-          className={SIGN_OUT_BUTTON_SURFACE_CLASS}
+          className={ACCOUNT_ACTIONS_SURFACE_CLASS}
           disabled={busy}
           {...(signingOutEverywhere ? { 'aria-busy': true as const } : {})}
           onClick={handleSignOutEverywhere}

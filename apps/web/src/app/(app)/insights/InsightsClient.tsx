@@ -587,7 +587,7 @@ export function InsightsClient() {
                       aria-pressed={selected}
                       className={
                         selected
-                          ? 'inline-flex min-h-11 items-center justify-center rounded-lg border border-app-border bg-app-primary px-4 text-base font-semibold text-white shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg'
+                          ? 'inline-flex min-h-11 items-center justify-center rounded-lg border border-app-border bg-app-primary-solid px-4 text-base font-semibold text-app-on-primary-solid shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg'
                           : 'inline-flex min-h-11 items-center justify-center rounded-lg border border-app-border bg-app-surface px-4 text-base font-semibold text-app-ink shadow-sm transition hover:bg-[var(--app-nav-hover-bg)] outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg'
                       }
                       onClick={() => handleBucketChange(value)}

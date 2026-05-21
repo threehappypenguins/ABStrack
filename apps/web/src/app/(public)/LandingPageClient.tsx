@@ -1,12 +1,10 @@
 'use client';
 
 import { useAnnounce } from '@abstrack/ui/a11y-web';
-import Image from 'next/image';
 import { Inter } from 'next/font/google';
 import { useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
-import { useCallback, useEffect, useId, useState } from 'react';
-import { ThemeMenu } from '@/components/theme/ThemeMenu';
+import { useCallback, useEffect } from 'react';
 import { useAuth } from '../../lib/auth-provider';
 import { LandingDashboardCharts } from './components/LandingDashboardCharts';
 
@@ -34,50 +32,13 @@ const STORE_BADGE_FRAME_CLASS =
 export function LandingPageClient() {
   const { session, loading } = useAuth();
   const router = useRouter();
-  const { announce } = useAnnounce();
-  const mobileNavPanelId = useId();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
   useEffect(() => {
     if (!loading && session) {
       router.replace('/dashboard');
     }
   }, [loading, session, router]);
 
-  useEffect(() => {
-    if (!mobileMenuOpen) {
-      return;
-    }
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setMobileMenuOpen(false);
-      }
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [mobileMenuOpen]);
-
-  useEffect(() => {
-    if (!mobileMenuOpen) {
-      return;
-    }
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [mobileMenuOpen]);
-
-  useEffect(() => {
-    const mq = window.matchMedia('(min-width: 768px)');
-    const onChange = () => {
-      if (mq.matches) {
-        setMobileMenuOpen(false);
-      }
-    };
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-  }, []);
+  const { announce } = useAnnounce();
 
   const onMvpPlaceholder = useCallback(
     (label: string) => {
@@ -120,83 +81,6 @@ export function LandingPageClient() {
 
   return (
     <div className="min-h-screen bg-transparent">
-      <header className="relative z-50 border-b border-app-border/80 bg-app-surface/90 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-4 sm:px-6 lg:px-8">
-          <div className="flex min-w-0 flex-1 items-center gap-3">
-            <a
-              href="/"
-              aria-label="ABStrack home"
-              className="flex min-w-0 items-center gap-2.5 rounded-md text-app-ink outline-none ring-app-ring ring-offset-2 ring-offset-app-bg transition hover:opacity-90 focus-visible:ring-2"
-            >
-              <Image
-                src="/logo.png"
-                alt=""
-                width={40}
-                height={40}
-                className="h-9 w-9 shrink-0 object-contain sm:h-10 sm:w-10"
-                priority
-              />
-              <BrandWordmarkText className="text-lg tracking-tight" />
-            </a>
-            <span className="hidden text-xs text-app-muted sm:inline">
-              Auto-Brewery Syndrome tracking
-            </span>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <nav
-              className="hidden items-center gap-2 md:flex"
-              aria-label="Sign-in (not yet active)"
-            >
-              <MvpButton
-                label="Patient sign-in"
-                onActivate={() => onMvpPlaceholder('Patient sign-in')}
-              />
-              <MvpButton
-                label="Practitioner sign-in"
-                onActivate={() => onMvpPlaceholder('Practitioner sign-in')}
-              />
-            </nav>
-            <ThemeMenu />
-            <button
-              type="button"
-              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-app-border bg-app-surface text-app-ink shadow-sm transition hover:bg-[var(--app-nav-hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg md:hidden"
-              aria-expanded={mobileMenuOpen}
-              aria-controls={mobileNavPanelId}
-              aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
-              onClick={() => setMobileMenuOpen((open) => !open)}
-            >
-              <HamburgerIcon open={mobileMenuOpen} />
-            </button>
-          </div>
-        </div>
-        <div
-          id={mobileNavPanelId}
-          role="region"
-          aria-label="Sign-in options (not yet active)"
-          hidden={!mobileMenuOpen}
-          className="absolute left-0 right-0 top-full z-50 border-t border-app-border bg-app-surface shadow-lg md:hidden"
-        >
-          <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-4 sm:px-6">
-            <MvpButton
-              label="Patient sign-in"
-              onActivate={() => {
-                onMvpPlaceholder('Patient sign-in');
-                setMobileMenuOpen(false);
-              }}
-              className="w-full justify-center py-3"
-            />
-            <MvpButton
-              label="Practitioner sign-in"
-              onActivate={() => {
-                onMvpPlaceholder('Practitioner sign-in');
-                setMobileMenuOpen(false);
-              }}
-              className="w-full justify-center py-3"
-            />
-          </div>
-        </div>
-      </header>
-
       <div className="mx-auto max-w-6xl space-y-16 px-4 py-12 sm:px-6 lg:space-y-20 lg:px-8 lg:py-16">
         <section className="text-center lg:text-left lg:grid lg:grid-cols-[1.1fr_0.9fr] lg:items-center lg:gap-12">
           <div>
@@ -358,65 +242,6 @@ function BrandWordmarkText({ className = '' }: { className?: string }) {
       <span className="font-medium">ABS</span>
       <span className="font-normal">track</span>
     </span>
-  );
-}
-
-/**
- * MVP placeholder sign-in control (full-width supported for mobile menu).
- *
- * @param props - Props.
- * @returns Button element.
- */
-function MvpButton({
-  label,
-  onActivate,
-  className = '',
-}: {
-  label: string;
-  onActivate: () => void;
-  className?: string;
-}) {
-  return (
-    <button
-      type="button"
-      className={`inline-flex items-center rounded-full border border-app-border bg-app-surface px-3 py-2 text-sm font-medium text-app-ink shadow-sm transition hover:bg-[var(--app-nav-hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg ${className}`.trim()}
-      onClick={onActivate}
-    >
-      {label}
-      <span className="ml-1 text-xs font-normal text-app-muted">
-        coming soon
-      </span>
-    </button>
-  );
-}
-
-/**
- * Hamburger / close icon for the mobile landing nav trigger.
- *
- * @param props - Icon props.
- * @param props.open - When true, render a close (X) icon.
- * @returns SVG icon.
- */
-function HamburgerIcon({ open }: { open: boolean }) {
-  return (
-    <svg
-      width={22}
-      height={22}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      aria-hidden
-    >
-      {open ? (
-        <path d="M18 6 6 18M6 6l12 12" />
-      ) : (
-        <>
-          <path d="M4 6h16M4 12h16M4 18h16" />
-        </>
-      )}
-    </svg>
   );
 }
 

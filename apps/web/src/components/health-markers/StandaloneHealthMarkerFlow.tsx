@@ -317,7 +317,7 @@ export function StandaloneHealthMarkerFlow() {
         <p className="text-sm text-app-muted">You need to be signed in.</p>
         <Link
           href="/login"
-          className="inline-flex min-h-[44px] items-center justify-center rounded-full bg-app-primary px-5 text-sm font-semibold text-white"
+          className="inline-flex min-h-[44px] items-center justify-center rounded-full bg-app-primary-solid px-5 text-sm font-semibold text-app-on-primary-solid"
         >
           Sign in
         </Link>

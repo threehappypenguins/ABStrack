@@ -9,6 +9,21 @@ export {
 } from './app-side-nav/index.js';
 
 export {
+  ABSTRACK_APP_LOGO_SRC,
+  ABSTRACK_USER_WEB_TAGLINE,
+  ACCOUNT_ACTIONS_SURFACE_CLASS,
+  AppTopNav,
+  type AppTopNavBrandLinkComponent,
+  type AppTopNavBrandLinkProps,
+  type AppTopNavProps,
+} from './app-top-nav/index.js';
+
+export {
+  AppNotFoundPanel,
+  type AppNotFoundPanelProps,
+} from './app-not-found/index.js';
+
+export {
   DEFAULT_SIDEBAR_COOKIE_NAME,
   Sidebar,
   SidebarContent,

@@ -1,9 +1,11 @@
 'use client';
 
 import {
+  ACCOUNT_ACTIONS_SURFACE_CLASS,
   AppShellWithSideNav,
   AppSideNav,
-  SidebarTrigger,
+  AppTopNav,
+  ABSTRACK_USER_WEB_TAGLINE,
   type AppSideNavLinkProps,
 } from '@abstrack/ui-web';
 import Link from 'next/link';
@@ -68,45 +70,24 @@ export function AuthenticatedShell({
         </a>
       }
       topHeader={
-        <header className="sticky top-0 z-50 w-full shrink-0 overflow-visible border-b border-[var(--app-header-border)] bg-[var(--app-header-bg)] shadow-header backdrop-blur-md supports-[backdrop-filter]:bg-[var(--app-header-bg)]">
-          <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3.5 sm:px-6 lg:px-8">
-            <SidebarTrigger
-              className="min-h-11 min-w-11 shrink-0 text-app-ink md:hidden"
-              aria-label="Open navigation menu"
-            />
-            <Link
-              href="/dashboard"
-              className="shrink-0 rounded-lg outline-none ring-offset-2 ring-offset-app-bg transition hover:text-app-primary focus-visible:ring-2 focus-visible:ring-app-ring"
-            >
-              <span className="block text-lg font-bold tracking-tight text-app-ink">
-                ABStrack
-              </span>
-              <span className="mt-0.5 block text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-app-muted">
-                Health tracking
-              </span>
-            </Link>
-            <div className="flex flex-1 flex-wrap items-center justify-end gap-3">
-              {email ? (
-                <p
-                  className="max-w-[min(100%,14rem)] truncate text-right text-xs text-app-muted"
-                  title={email}
-                  aria-label={`Signed in as ${email}`}
-                >
-                  {email}
-                </p>
-              ) : null}
-              <form action="/api/auth/logout" method="POST">
-                <button
-                  type="submit"
-                  className="min-h-[44px] rounded-full border border-app-border bg-app-surface px-4 text-sm font-semibold text-app-ink shadow-sm transition hover:bg-[var(--app-nav-hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
-                >
-                  Log out
-                </button>
-              </form>
-              <ThemeMenu />
-            </div>
-          </div>
-        </header>
+        <AppTopNav
+          brandHref="/dashboard"
+          brandLinkComponent={WebNavLink}
+          tagline={ABSTRACK_USER_WEB_TAGLINE}
+          email={email}
+          themeMenu={<ThemeMenu />}
+          showSidebarTrigger
+          actions={
+            <form action="/api/auth/logout" method="POST">
+              <button type="submit" className={ACCOUNT_ACTIONS_SURFACE_CLASS}>
+                Log out
+              </button>
+            </form>
+          }
+          mobileSheetTitle="Account"
+          mobileSheetDescription="Signed-in account, sign out, and appearance settings."
+          mobileMenuTriggerAriaLabel="Open account menu"
+        />
       }
       sideNav={
         <AppSideNav

@@ -42,6 +42,7 @@ jest.mock('../theme/ThemeMenu', () => ({
 }));
 
 jest.mock('@abstrack/ui-web', () => ({
+  ACCOUNT_ACTIONS_SURFACE_CLASS: 'account-actions-surface',
   AppShellWithSideNav: ({
     children,
     topHeader,
@@ -57,6 +58,21 @@ jest.mock('@abstrack/ui-web', () => ({
       <div data-testid="app-shell-main">{children}</div>
     </div>
   ),
+  AppTopNav: ({
+    email,
+    actions,
+    themeMenu,
+  }: {
+    email?: string | null;
+    actions?: ReactNode;
+    themeMenu: ReactNode;
+  }) => (
+    <header data-testid="app-top-nav">
+      {email ? <p>{email}</p> : null}
+      {actions}
+      {themeMenu}
+    </header>
+  ),
   AppSideNav: ({
     items,
   }: {
@@ -70,7 +86,6 @@ jest.mock('@abstrack/ui-web', () => ({
       ))}
     </nav>
   ),
-  SidebarTrigger: () => <button type="button">Menu</button>,
 }));
 
 import { AuthenticatedShell } from './AuthenticatedShell';

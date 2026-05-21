@@ -822,10 +822,10 @@ function SymptomPhotoCaptureField({
                     type="button"
                     aria-disabled={starting || !cameraReady || capturing}
                     aria-label={`Capture ${line.symptom_name} photo`}
-                    className={`inline-flex min-h-[56px] min-w-[200px] items-center justify-center rounded-full px-6 text-base font-semibold text-white ${
+                    className={`inline-flex min-h-[56px] min-w-[200px] items-center justify-center rounded-full px-6 text-base font-semibold ${
                       starting || !cameraReady || capturing
-                        ? 'cursor-not-allowed bg-slate-400 dark:bg-slate-600'
-                        : 'bg-app-primary hover:opacity-95'
+                        ? 'cursor-not-allowed bg-slate-400 text-white dark:bg-slate-600'
+                        : 'bg-app-primary-solid text-app-on-primary-solid hover:opacity-95'
                     }`}
                     disabled={starting || !cameraReady || capturing}
                     onClick={() => {
@@ -858,7 +858,7 @@ function SymptomPhotoCaptureField({
                   <button
                     type="button"
                     aria-label={`Use ${line.symptom_name} photo`}
-                    className="inline-flex min-h-[56px] flex-1 items-center justify-center rounded-xl bg-app-primary px-4 text-base font-semibold text-white hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+                    className="inline-flex min-h-[56px] flex-1 items-center justify-center rounded-xl bg-app-primary-solid px-4 text-base font-semibold text-app-on-primary-solid hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
                     onClick={() => {
                       flushSync(() => {
                         setConfirmUseTapPending(true);
@@ -1515,7 +1515,7 @@ function SymptomVideoCaptureField({
                   <button
                     type="button"
                     aria-label={`Use ${line.symptom_name} video`}
-                    className="inline-flex min-h-[56px] flex-1 items-center justify-center rounded-xl bg-app-primary px-4 text-base font-semibold text-white hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+                    className="inline-flex min-h-[56px] flex-1 items-center justify-center rounded-xl bg-app-primary-solid px-4 text-base font-semibold text-app-on-primary-solid hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
                     onClick={() => {
                       flushSync(() => {
                         setConfirmVideoUseTapPending(true);

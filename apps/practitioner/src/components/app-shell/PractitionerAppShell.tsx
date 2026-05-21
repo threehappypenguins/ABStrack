@@ -3,6 +3,8 @@
 import {
   AppShellWithSideNav,
   AppSideNav,
+  ABSTRACK_USER_WEB_TAGLINE,
+  AppTopNav,
   type AppSideNavLinkProps,
 } from '@abstrack/ui-web';
 import Link from 'next/link';
@@ -10,6 +12,7 @@ import { usePathname } from 'next/navigation';
 import { forwardRef, type ReactNode } from 'react';
 
 import { ThemeMenu } from '@/components/theme/ThemeMenu';
+import { PractitionerSignOutButton } from '@/components/practitioner-sign-out-button';
 import { useAuth } from '@/lib/auth-provider';
 import { PRACTITIONER_APP_NAV_ITEMS } from '@/lib/practitioner-nav-items';
 import { isPublicPractitionerPath } from '@/lib/practitioner-public-paths';
@@ -44,13 +47,21 @@ export function PractitionerAppShell({ children }: PractitionerAppShellProps) {
   }
 
   if (loading || !session) {
-    return <main id="main-content">{children}</main>;
+    return (
+      <main
+        id="main-content"
+        className="app-grid-background flex min-h-svh min-w-0 flex-col"
+      >
+        {children}
+      </main>
+    );
   }
 
   const email = session.user.email;
 
   return (
     <AppShellWithSideNav
+      sidebarTopOffset="4.5rem"
       sidebarCookieName="abstrack_practitioner_sidebar_state"
       skipLink={
         <a
@@ -60,43 +71,30 @@ export function PractitionerAppShell({ children }: PractitionerAppShellProps) {
           Skip to main content
         </a>
       }
+      topHeader={
+        <AppTopNav
+          brandHref="/"
+          brandLinkComponent={PractitionerNavLink}
+          tagline={ABSTRACK_USER_WEB_TAGLINE}
+          email={email}
+          themeMenu={<ThemeMenu />}
+          showSidebarTrigger
+          actions={<PractitionerSignOutButton />}
+          sidebarTriggerAriaLabel="Open practitioner navigation menu"
+          mobileSheetTitle="Account"
+          mobileSheetDescription="Signed-in account, sign out, and appearance settings."
+          mobileMenuTriggerAriaLabel="Open account menu"
+        />
+      }
       sideNav={
         <AppSideNav
           pathname={pathname}
           items={PRACTITIONER_APP_NAV_ITEMS}
           LinkComponent={PractitionerNavLink}
           accessibilityLabel="Practitioner application"
-          brand={
-            <Link
-              href="/"
-              className="block rounded-lg outline-none ring-offset-2 ring-offset-app-bg transition hover:text-app-primary focus-visible:ring-2 focus-visible:ring-app-ring"
-            >
-              <span className="block text-lg font-bold tracking-tight text-sidebar-foreground">
-                ABStrack
-              </span>
-              <span className="mt-0.5 block text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                Practitioner
-              </span>
-            </Link>
-          }
-          footer={
-            <div className="flex flex-col gap-3">
-              {email ? (
-                <p
-                  className="truncate text-xs text-muted-foreground"
-                  title={email}
-                  aria-label={`Signed in as ${email}`}
-                >
-                  {email}
-                </p>
-              ) : null}
-              <ThemeMenu />
-            </div>
-          }
         />
       }
       mainClassName="mx-auto w-full max-w-3xl flex-1 px-4 py-8 sm:px-6 lg:px-8"
-      mobileMenuTriggerLabel="Open practitioner navigation menu"
     >
       {children}
     </AppShellWithSideNav>

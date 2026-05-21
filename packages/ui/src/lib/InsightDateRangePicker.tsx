@@ -61,7 +61,7 @@ const dayPickerClassNames = {
   day_button:
     'flex h-11 w-11 items-center justify-center rounded-lg font-medium text-app-ink hover:bg-app-primary-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-ring disabled:cursor-not-allowed disabled:text-app-muted disabled:opacity-50',
   selected:
-    '[&>button]:bg-app-primary [&>button]:text-white [&>button]:hover:bg-app-primary',
+    '[&>button]:bg-app-primary-solid [&>button]:text-app-on-primary-solid [&>button]:hover:bg-app-primary-solid',
   range_start: '[&>button]:rounded-l-lg [&>button]:rounded-r-none',
   range_end: '[&>button]:rounded-r-lg [&>button]:rounded-l-none',
   range_middle:

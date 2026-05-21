@@ -16,6 +16,8 @@
     --app-muted: 100 116 139;
     --app-ink: 15 23 42;
     --app-primary: 29 78 216;
+    --app-primary-solid: 29 78 216;
+    --app-primary-on-solid: 255 255 255;
     --app-primary-soft: 219 234 254;
     --app-ring: 37 99 235;
     --app-header-bg: rgba(255, 255, 255, 0.92);
@@ -44,6 +46,8 @@
     --app-ink: 241 245 249;
     --app-primary: 96 165 250;
     /* Opaque fill uses `dark:bg-app-primary-soft/28` where applied. */
+    --app-primary-solid: 29 78 216;
+    --app-primary-on-solid: 255 255 255;
     --app-primary-soft: 37 99 235;
     --app-ring: 147 197 253;
     --app-header-bg: rgba(15, 23, 42, 0.92);
@@ -73,6 +77,8 @@
       --app-muted: 15 23 42;
       --app-ink: 2 6 23;
       --app-primary: 30 64 175;
+      --app-primary-solid: 30 64 175;
+      --app-primary-on-solid: 255 255 255;
       --app-primary-soft: 219 234 254;
       --app-ring: 30 64 175;
       --app-header-bg: rgba(255, 255, 255, 1);
@@ -93,6 +99,8 @@
       --app-muted: 255 255 255;
       --app-ink: 255 255 255;
       --app-primary: 147 197 253;
+      --app-primary-solid: 30 64 175;
+      --app-primary-on-solid: 255 255 255;
       --app-primary-soft: 30 64 175;
       --app-ring: 250 204 21;
       --app-header-bg: rgba(0, 0, 0, 1);

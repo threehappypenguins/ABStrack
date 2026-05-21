@@ -3,6 +3,7 @@
 import { getSupabaseBrowserClient } from '@abstrack/supabase/browser';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../lib/auth-provider';
 import {
@@ -80,6 +81,7 @@ async function otpauthUriToQrPngDataUrl(otpauthUri: string): Promise<string> {
  * @returns Client page rendering enrollment status and setup actions.
  */
 export default function Index() {
+  const router = useRouter();
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const { announce } = useAnnounce();
   const { session, loading: sessionLoading, gate } = useAuth();
@@ -329,11 +331,17 @@ export default function Index() {
   const isAuthenticated = Boolean(session?.access_token);
   const showLoadingState = sessionLoading || isLoading;
 
+  useEffect(() => {
+    if (!sessionLoading && !isAuthenticated) {
+      router.replace('/login');
+    }
+  }, [sessionLoading, isAuthenticated, router]);
+
   if (sessionLoading) {
     return (
       <div
         id="practitioner-home"
-        className="flex min-h-screen flex-col items-center justify-center bg-app-bg bg-app-gradient px-4 py-12 sm:px-6 lg:px-8"
+        className="app-grid-background flex min-h-screen flex-col items-center justify-center px-4 py-12 sm:px-6 lg:px-8"
         role="status"
         aria-busy="true"
         aria-live="polite"
@@ -349,25 +357,13 @@ export default function Index() {
     return (
       <div
         id="practitioner-home"
-        className="min-h-screen bg-app-bg bg-app-gradient px-4 py-12 sm:px-6 lg:px-8"
+        className="app-grid-background flex min-h-screen flex-col items-center justify-center px-4 py-12 sm:px-6 lg:px-8"
+        role="status"
+        aria-live="polite"
       >
-        <div className="mx-auto max-w-md rounded-2xl border border-app-border/90 bg-app-surface p-8 shadow-soft ring-1 ring-[color:var(--app-ring-slate)]">
-          <h1 className="text-center text-3xl font-bold tracking-tight text-app-ink">
-            ABStrack Practitioner
-          </h1>
-          <p className="mt-3 text-center text-sm leading-relaxed text-app-muted">
-            Secure practitioner access for patient support and care workflows.
-          </p>
-
-          <div className="mt-8 space-y-3">
-            <Link
-              href="/login"
-              className="block w-full rounded-full bg-app-primary py-3 text-center text-sm font-semibold text-white shadow-sm transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
-            >
-              Log in
-            </Link>
-          </div>
-        </div>
+        <p className="text-center text-sm text-app-muted">
+          Redirecting to sign in…
+        </p>
       </div>
     );
   }
@@ -536,7 +532,7 @@ export default function Index() {
             type="button"
             onClick={startEnrollment}
             disabled={showLoadingState || isEnrolling || !isAuthenticated}
-            className="mt-4 min-h-11 rounded-md bg-app-primary px-4 py-2 text-sm font-medium text-white transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+            className="mt-4 min-h-11 rounded-md bg-app-primary-solid px-4 py-2 text-sm font-medium text-app-on-primary-solid transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isEnrolling ? 'Starting enrollment...' : 'Set up TOTP'}
           </button>
