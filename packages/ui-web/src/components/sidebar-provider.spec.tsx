@@ -21,6 +21,7 @@ function OpenStateProbe() {
 describe('SidebarProvider cookie persistence', () => {
   afterEach(() => {
     clearCookie(COOKIE);
+    vi.unstubAllGlobals();
   });
 
   it('restores collapsed state from cookie after mount', async () => {
@@ -38,6 +39,11 @@ describe('SidebarProvider cookie persistence', () => {
   });
 
   it('writes cookie when toggled via keyboard shortcut', async () => {
+    vi.stubGlobal('navigator', {
+      platform: 'Win32',
+      userAgent: 'Windows',
+    });
+
     render(
       <SidebarProvider sidebarCookieName={COOKIE} defaultOpen>
         <OpenStateProbe />
