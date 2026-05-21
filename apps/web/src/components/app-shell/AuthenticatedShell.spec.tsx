@@ -41,52 +41,60 @@ jest.mock('../theme/ThemeMenu', () => ({
   ThemeMenu: () => <button type="button">Theme</button>,
 }));
 
-jest.mock('@abstrack/ui-web', () => ({
-  ACCOUNT_ACTIONS_SURFACE_CLASS: 'account-actions-surface',
-  AppShellWithSideNav: ({
-    children,
-    topHeader,
-    sideNav,
-  }: {
-    children: ReactNode;
-    topHeader?: ReactNode;
-    sideNav?: ReactNode;
-  }) => (
-    <div>
-      <div data-testid="app-shell-top-header">{topHeader}</div>
-      <div data-testid="app-side-nav">{sideNav}</div>
-      <div data-testid="app-shell-main">{children}</div>
-    </div>
-  ),
-  AppTopNav: ({
-    email,
-    actions,
-    themeMenu,
-  }: {
-    email?: string | null;
-    actions?: ReactNode;
-    themeMenu: ReactNode;
-  }) => (
-    <header data-testid="app-top-nav">
-      {email ? <p>{email}</p> : null}
-      {actions}
-      {themeMenu}
-    </header>
-  ),
-  AppSideNav: ({
-    items,
-  }: {
-    items: Array<{ href: string; label: string }>;
-  }) => (
-    <nav aria-label="ABStrack application">
-      {items.map((item) => (
-        <a key={item.href} href={item.href}>
-          {item.label}
-        </a>
-      ))}
-    </nav>
-  ),
-}));
+jest.mock('@abstrack/ui-web', () => {
+  const actual =
+    jest.requireActual<typeof import('@abstrack/ui-web')>('@abstrack/ui-web');
+
+  return {
+    ...actual,
+    AppShellWithSideNav: ({
+      children,
+      topHeader,
+      sideNav,
+    }: {
+      children: ReactNode;
+      topHeader?: ReactNode;
+      sideNav?: ReactNode;
+    }) => (
+      <div>
+        <div data-testid="app-shell-top-header">{topHeader}</div>
+        <div data-testid="app-side-nav">{sideNav}</div>
+        <div data-testid="app-shell-main">{children}</div>
+      </div>
+    ),
+    AppTopNav: ({
+      email,
+      actions,
+      themeMenu,
+      tagline,
+    }: {
+      email?: string | null;
+      actions?: ReactNode;
+      themeMenu: ReactNode;
+      tagline: string;
+    }) => (
+      <header data-testid="app-top-nav">
+        <a aria-label={`ABStrack ${tagline}`}>ABStrack</a>
+        {email ? <p>{email}</p> : null}
+        {actions}
+        {themeMenu}
+      </header>
+    ),
+    AppSideNav: ({
+      items,
+    }: {
+      items: Array<{ href: string; label: string }>;
+    }) => (
+      <nav aria-label="ABStrack application">
+        {items.map((item) => (
+          <a key={item.href} href={item.href}>
+            {item.label}
+          </a>
+        ))}
+      </nav>
+    ),
+  };
+});
 
 import { AuthenticatedShell } from './AuthenticatedShell';
 
@@ -119,6 +127,9 @@ describe('AuthenticatedShell', () => {
       screen.getByRole('link', { name: 'Health marker presets' }),
     ).toHaveAttribute('href', '/presets/health-markers');
     expect(screen.getByText('Page content')).toBeInTheDocument();
+    expect(
+      screen.getByLabelText('ABStrack Auto-Brewery Syndrome Tracking'),
+    ).toBeInTheDocument();
   });
 
   it('hides patient-only settings links when the viewer is not a patient', () => {
