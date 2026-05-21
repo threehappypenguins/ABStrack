@@ -1,18 +1,13 @@
 'use client';
 
 import { AppNotFoundPage } from '@abstrack/ui-web';
-import { usePathname } from 'next/navigation';
-
-import { isPublicPractitionerPath } from '@/lib/practitioner-public-paths';
 
 /**
- * Practitioner root `not-found` content: avoids a nested `<main>` on public routes that supply
- * their own `<main>` landmark.
+ * Practitioner root `not-found` content: never wraps in `<main>` — public pages supply their own
+ * landmark, and {@link PractitionerAppShell} provides `<main id="main-content">` on private routes.
  *
- * @returns Themed 404 panel with optional main wrapper.
+ * @returns Themed 404 panel without an extra main wrapper.
  */
 export function PractitionerNotFoundBoundary() {
-  const pathname = usePathname() ?? '/';
-
-  return <AppNotFoundPage wrapInMain={!isPublicPractitionerPath(pathname)} />;
+  return <AppNotFoundPage wrapInMain={false} />;
 }
