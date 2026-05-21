@@ -102,6 +102,15 @@ describe('shouldToggleSidebarFromKeyboard', () => {
     expect(shouldToggleSidebarFromKeyboard(event)).toBe(false);
   });
 
+  it('ignores repeated keydown while the shortcut is held', () => {
+    vi.stubGlobal('navigator', {
+      platform: 'Win32',
+      userAgent: 'Windows',
+    });
+    const event = dispatchKey({ key: 'b', ctrlKey: true, repeat: true });
+    expect(shouldToggleSidebarFromKeyboard(event)).toBe(false);
+  });
+
   it('ignores the shortcut when focus is in a text input', () => {
     const input = document.createElement('input');
     document.body.append(input);

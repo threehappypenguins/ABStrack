@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { Slot } from '@radix-ui/react-slot';
 import { cva, type VariantProps } from 'class-variance-authority';
-import { PanelLeft } from 'lucide-react';
+import { PanelLeft, X } from 'lucide-react';
 
 import { useIsMobile } from '../hooks/use-mobile.js';
 import {
@@ -17,6 +17,7 @@ import { Input } from './input.js';
 import { Separator } from './separator.js';
 import {
   Sheet,
+  SheetClose,
   SheetContent,
   SheetDescription,
   SheetHeader,
@@ -317,10 +318,30 @@ const Sidebar = React.forwardRef<
             {...props}
           >
             <SheetHeader className="sr-only">
-              <SheetTitle>Sidebar</SheetTitle>
-              <SheetDescription>Displays the mobile sidebar.</SheetDescription>
+              <SheetTitle>Navigation menu</SheetTitle>
+              <SheetDescription>Application navigation links.</SheetDescription>
             </SheetHeader>
-            <div className="flex h-full w-full flex-col">{children}</div>
+            <div className="flex h-full w-full flex-col">
+              <div
+                className={cn(
+                  'flex shrink-0 border-b border-sidebar-border p-2',
+                  side === 'left' ? 'justify-end' : 'justify-start',
+                )}
+              >
+                <SheetClose asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="min-h-11 min-w-11 text-sidebar-foreground"
+                    aria-label="Close navigation menu"
+                  >
+                    <X className="h-4 w-4" aria-hidden />
+                  </Button>
+                </SheetClose>
+              </div>
+              {children}
+            </div>
           </SheetContent>
         </Sheet>
       );

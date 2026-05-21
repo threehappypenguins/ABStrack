@@ -115,6 +115,9 @@ export function isMacLikePlatform(): boolean {
  * @returns `true` when the handler should toggle the sidebar.
  */
 export function shouldToggleSidebarFromKeyboard(event: KeyboardEvent): boolean {
+  if (event.repeat) {
+    return false;
+  }
   if (event.key.toLowerCase() !== SIDEBAR_KEYBOARD_SHORTCUT) {
     return false;
   }
