@@ -47,10 +47,14 @@ export function PractitionerAppShell({ children }: PractitionerAppShellProps) {
   }
 
   if (loading || !session) {
+    const minHeightClass = loading
+      ? 'min-h-svh'
+      : 'min-h-[calc(100svh-4.5rem)]';
+
     return (
       <main
         id="main-content"
-        className="app-grid-background flex min-h-[calc(100svh-4.5rem)] min-w-0 flex-col"
+        className={`app-grid-background flex min-w-0 flex-col ${minHeightClass}`}
       >
         {children}
       </main>

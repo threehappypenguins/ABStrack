@@ -29,8 +29,16 @@ export function WebAppShell({ children }: WebAppShellProps) {
   }
 
   if (loading || !session) {
+    // Public top nav is hidden while auth resolves on private routes; signed-out private
+    // routes still show it — subtract header height only then.
+    const minHeightClass = loading
+      ? 'min-h-svh'
+      : 'min-h-[calc(100svh-4.5rem)]';
+
     return (
-      <div className="app-grid-background flex min-h-[calc(100svh-4.5rem)] min-w-0 flex-col">
+      <div
+        className={`app-grid-background flex min-w-0 flex-col ${minHeightClass}`}
+      >
         {children}
       </div>
     );
