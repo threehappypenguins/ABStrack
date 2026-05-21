@@ -6,7 +6,10 @@ afterEach(() => {
   cleanup();
 });
 
-/** jsdom has no `matchMedia`; {@link useIsMobile} and sidebar layout depend on it. */
+/**
+ * jsdom has no `matchMedia`; provide a stub for tests. {@link useIsMobile} falls back to
+ * `innerWidth` + `resize` when `matchMedia` is missing (see `use-mobile.spec.tsx`).
+ */
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
   configurable: true,

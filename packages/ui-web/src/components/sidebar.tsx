@@ -170,6 +170,12 @@ const SidebarProvider = React.forwardRef<
       }
     }, [isControlled, sidebarCookieName]);
 
+    React.useEffect(() => {
+      if (!isMobile) {
+        setOpenMobile(false);
+      }
+    }, [isMobile]);
+
     const setOpen = React.useCallback(
       (value: boolean | ((value: boolean) => boolean)) => {
         if (controlledOpen !== null && setOpenProp !== undefined) {

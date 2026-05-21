@@ -4,33 +4,29 @@ const MOBILE_BREAKPOINT = 768;
 
 const MOBILE_MEDIA_QUERY = `(max-width: ${MOBILE_BREAKPOINT - 1}px)`;
 
-/** Desktop layout when `matchMedia` is unavailable (SSR, tests, older engines). */
-function createFallbackMediaQueryList(): MediaQueryList {
-  const noop = () => undefined;
-  return {
-    matches: false,
-    media: MOBILE_MEDIA_QUERY,
-    onchange: null,
-    addListener: noop,
-    removeListener: noop,
-    addEventListener: noop,
-    removeEventListener: noop,
-    dispatchEvent: () => false,
-  } as MediaQueryList;
+function canUseMatchMedia(): boolean {
+  return (
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+  );
 }
 
-function getMobileMediaQueryList(): MediaQueryList {
-  if (
-    typeof window === 'undefined' ||
-    typeof window.matchMedia !== 'function'
-  ) {
-    return createFallbackMediaQueryList();
+/**
+ * Client-only mobile check: `matchMedia` when available, otherwise `innerWidth`.
+ *
+ * @returns `true` when the viewport is below {@link MOBILE_BREAKPOINT}.
+ */
+function getViewportIsMobile(): boolean {
+  if (typeof window === 'undefined') {
+    return false;
   }
-  return window.matchMedia(MOBILE_MEDIA_QUERY);
+  if (canUseMatchMedia()) {
+    return window.matchMedia(MOBILE_MEDIA_QUERY).matches;
+  }
+  return window.innerWidth < MOBILE_BREAKPOINT;
 }
 
-function subscribeMobile(onStoreChange: () => void): () => void {
-  const mql = getMobileMediaQueryList();
+function subscribeMatchMedia(onStoreChange: () => void): () => void {
+  const mql = window.matchMedia(MOBILE_MEDIA_QUERY);
 
   if ('addEventListener' in mql && typeof mql.addEventListener === 'function') {
     mql.addEventListener('change', onStoreChange);
@@ -51,8 +47,23 @@ function subscribeMobile(onStoreChange: () => void): () => void {
   return () => undefined;
 }
 
+function subscribeMobile(onStoreChange: () => void): () => void {
+  if (typeof window === 'undefined') {
+    return () => undefined;
+  }
+
+  if (canUseMatchMedia()) {
+    return subscribeMatchMedia(onStoreChange);
+  }
+
+  window.addEventListener('resize', onStoreChange);
+  return () => {
+    window.removeEventListener('resize', onStoreChange);
+  };
+}
+
 function getMobileSnapshot(): boolean {
-  return getMobileMediaQueryList().matches;
+  return getViewportIsMobile();
 }
 
 /** SSR / pre-hydration: assume desktop layout until the client subscribes. */
@@ -62,9 +73,7 @@ function getMobileServerSnapshot(): boolean {
 
 /**
  * Whether the viewport is below the Tailwind `md` breakpoint ({@link MOBILE_BREAKPOINT}px).
- * Uses `matchMedia` so the first client snapshot and subsequent updates stay consistent.
- * Subscribes via `change` when supported, otherwise legacy `addListener` / `removeListener`.
- * Falls back to desktop (`false`) when `matchMedia` is missing.
+ * Uses `matchMedia` when available; otherwise derives from `window.innerWidth` and `resize`.
  *
  * @returns `true` when width is under 768px.
  */
