@@ -9,14 +9,19 @@
 // If you are **not** using `--turbo` you can uncomment both lines 1 & 19.
 // A discussion of the issue can be found: https://github.com/nrwl/nx/issues/26510
 
+const shadcnPreset = require('../../packages/ui-web/tailwind-shadcn-preset.cjs');
+
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   darkMode: 'class',
+  presets: [shadcnPreset],
   content: [
     './{src,pages,components,app}/**/*.{ts,tsx,js,jsx,html}',
     '!./{src,pages,components,app}/**/*.{stories,spec}.{ts,tsx,js,jsx,html}',
     '../../packages/ui/src/**/*.{ts,tsx}',
     '!../../packages/ui/src/**/*.{stories,spec}.{ts,tsx}',
+    '../../packages/ui-web/src/**/*.{ts,tsx}',
+    '!../../packages/ui-web/src/**/*.{stories,spec}.{ts,tsx}',
     //     ...createGlobPatternsForDependencies(__dirname)
   ],
   theme: {
@@ -53,11 +58,12 @@ module.exports = {
       boxShadow: {
         soft: 'var(--app-shadow-soft)',
         header: 'var(--app-shadow-header)',
+        'sidebar-edge': 'var(--app-shadow-sidebar-edge)',
       },
       backgroundImage: {
         'app-gradient': 'var(--app-gradient)',
       },
     },
   },
-  plugins: [],
+  plugins: [require('tailwindcss-animate')],
 };

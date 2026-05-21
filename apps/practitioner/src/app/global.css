@@ -16,6 +16,7 @@
     --app-primary-soft: 219 234 254;
     --app-ring: 37 99 235;
     --app-header-bg: rgba(255, 255, 255, 0.92);
+    --app-sidebar-bg: rgba(255, 255, 255, 0.94);
     --app-header-border: rgba(226, 232, 240, 0.95);
     --app-nav-hover-bg: #f1f5f9;
     --app-ring-slate: rgba(15, 23, 42, 0.06);
@@ -28,6 +29,7 @@
     --app-shadow-soft:
       0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px -4px rgba(15, 23, 42, 0.08);
     --app-shadow-header: 0 1px 0 rgba(15, 23, 42, 0.06);
+    --app-shadow-sidebar-edge: 1px 0 0 rgba(15, 23, 42, 0.06);
   }
 
   html.dark {
@@ -40,6 +42,7 @@
     --app-primary-soft: 37 99 235;
     --app-ring: 147 197 253;
     --app-header-bg: rgba(15, 23, 42, 0.92);
+    --app-sidebar-bg: rgba(15, 23, 42, 0.94);
     --app-header-border: rgba(51, 65, 85, 0.95);
     --app-nav-hover-bg: #334155;
     --app-ring-slate: rgba(241, 245, 249, 0.08);
@@ -52,6 +55,50 @@
     --app-shadow-soft:
       0 1px 2px rgba(0, 0, 0, 0.25), 0 8px 24px -4px rgba(0, 0, 0, 0.35);
     --app-shadow-header: 0 1px 0 rgba(0, 0, 0, 0.35);
+    --app-shadow-sidebar-edge: 1px 0 0 rgba(0, 0, 0, 0.35);
+  }
+
+  /* OS-level higher contrast: align with user web (`apps/web/src/app/global.css`). */
+  @media (prefers-contrast: more) {
+    :root {
+      --app-bg: 255 255 255;
+      --app-surface: 255 255 255;
+      --app-border: 15 23 42;
+      --app-muted: 15 23 42;
+      --app-ink: 2 6 23;
+      --app-primary: 30 64 175;
+      --app-primary-soft: 219 234 254;
+      --app-ring: 30 64 175;
+      --app-header-bg: rgba(255, 255, 255, 1);
+      --app-sidebar-bg: rgba(255, 255, 255, 1);
+      --app-header-border: rgba(15, 23, 42, 0.85);
+      --app-nav-hover-bg: #dbeafe;
+      --app-ring-slate: rgba(15, 23, 42, 0.2);
+      --app-gradient: none;
+      --app-shadow-soft: 0 0 0 transparent;
+      --app-shadow-header: 0 0 0 transparent;
+      --app-shadow-sidebar-edge: 0 0 0 transparent;
+    }
+
+    html.dark {
+      --app-bg: 0 0 0;
+      --app-surface: 0 0 0;
+      --app-border: 255 255 255;
+      --app-muted: 255 255 255;
+      --app-ink: 255 255 255;
+      --app-primary: 147 197 253;
+      --app-primary-soft: 30 64 175;
+      --app-ring: 250 204 21;
+      --app-header-bg: rgba(0, 0, 0, 1);
+      --app-sidebar-bg: rgba(0, 0, 0, 1);
+      --app-header-border: rgba(255, 255, 255, 0.9);
+      --app-nav-hover-bg: #1e3a8a;
+      --app-ring-slate: rgba(255, 255, 255, 0.22);
+      --app-gradient: none;
+      --app-shadow-soft: 0 0 0 transparent;
+      --app-shadow-header: 0 0 0 transparent;
+      --app-shadow-sidebar-edge: 0 0 0 transparent;
+    }
   }
 
   /* react-day-picker: map accent colors to semantic app tokens (light + html.dark). */
@@ -63,13 +110,33 @@
     --rdp-range_end-color: rgb(var(--app-surface) / 1);
     color: rgb(var(--app-ink) / 1);
   }
+}
 
-  body {
-    color: rgb(var(--app-ink) / 1);
-    background-color: rgb(var(--app-bg) / 1);
-    background-image: var(--app-gradient);
-    min-height: 100vh;
-  }
+/* Grid-paper viewport background (body + app shell main column). Outside @layer so it
+ * wins over Tailwind utilities such as bg-background on layout wrappers. */
+body,
+.app-grid-background {
+  background-color: rgb(var(--app-bg) / 1);
+  background-image:
+    linear-gradient(to right, #80808012 1px, transparent 1px),
+    linear-gradient(to bottom, #80808012 1px, transparent 1px),
+    var(--app-gradient);
+  background-size:
+    14px 24px,
+    14px 24px,
+    100% 100%;
+}
+
+html.dark body,
+html.dark .app-grid-background {
+  background-image:
+    linear-gradient(to right, #ffffff0a 1px, transparent 1px),
+    linear-gradient(to bottom, #ffffff0a 1px, transparent 1px),
+    var(--app-gradient);
+  background-size:
+    14px 24px,
+    14px 24px,
+    100% 100%;
 }
 
 html {
@@ -95,9 +162,12 @@ html {
   scroll-behavior: smooth;
 }
 body {
+  color: rgb(var(--app-ink) / 1);
   font-family: inherit;
   line-height: inherit;
   margin: 0;
+  min-height: 100vh;
+  text-rendering: optimizeLegibility;
 }
 h1,
 h2,

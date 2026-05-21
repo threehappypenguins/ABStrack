@@ -13,6 +13,7 @@ const nextConfig = {
   // so the dev server does not bundle a stale `packages/types/dist` (see webpack alias below).
   transpilePackages: [
     '@abstrack/ui',
+    '@abstrack/ui-web',
     '@abstrack/types',
     '@abstrack/supabase',
     'react-native',
@@ -20,6 +21,7 @@ const nextConfig = {
   ],
   webpack: (config) => {
     const supabaseSrc = path.join(__dirname, '../../packages/supabase/src');
+    const uiWebSrc = path.join(__dirname, '../../packages/ui-web/src');
     config.resolve.alias = {
       ...config.resolve.alias,
       'react-native$': 'react-native-web',
@@ -36,6 +38,8 @@ const nextConfig = {
       '@abstrack/supabase/server': path.join(supabaseSrc, 'server.ts'),
       '@abstrack/supabase/native': path.join(supabaseSrc, 'native.ts'),
       '@abstrack/supabase/admin': path.join(supabaseSrc, 'admin.ts'),
+      '@abstrack/ui-web$': path.join(uiWebSrc, 'index.ts'),
+      '@abstrack/ui-web/sidebar': path.join(uiWebSrc, 'components/sidebar.tsx'),
     };
     return config;
   },
