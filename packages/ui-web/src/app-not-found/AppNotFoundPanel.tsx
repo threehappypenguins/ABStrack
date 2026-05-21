@@ -1,4 +1,6 @@
-import type { ReactNode } from 'react';
+'use client';
+
+import { useId, type ReactNode } from 'react';
 
 import { cn } from '../lib/utils.js';
 
@@ -7,6 +9,11 @@ export type AppNotFoundPanelProps = {
   homeLink?: ReactNode;
   /** Extra layout classes on the panel root. */
   className?: string;
+  /**
+   * Override the heading element id for `aria-labelledby`. Defaults to a stable unique id from
+   * {@link useId} so multiple panels on one page do not collide.
+   */
+  headingId?: string;
 };
 
 /**
@@ -19,20 +26,24 @@ export type AppNotFoundPanelProps = {
 export function AppNotFoundPanel({
   homeLink,
   className,
+  headingId: headingIdProp,
 }: AppNotFoundPanelProps) {
+  const generatedHeadingId = useId();
+  const headingId = headingIdProp ?? generatedHeadingId;
+
   return (
     <section
       className={cn(
         'flex flex-1 flex-col items-center justify-center px-4 py-16 text-center',
         className,
       )}
-      aria-labelledby="app-not-found-heading"
+      aria-labelledby={headingId}
     >
       <p className="text-sm font-semibold uppercase tracking-wide text-app-muted">
         404
       </p>
       <h1
-        id="app-not-found-heading"
+        id={headingId}
         className="mt-2 text-2xl font-bold tracking-tight text-app-ink sm:text-3xl"
       >
         Page not found

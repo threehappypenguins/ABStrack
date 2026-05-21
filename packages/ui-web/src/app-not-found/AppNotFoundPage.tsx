@@ -7,11 +7,8 @@ import {
 } from './AppNotFoundPanel.js';
 
 export type AppNotFoundPageProps = AppNotFoundPanelProps & {
-  /**
-   * Optional top navigation when the app root layout does not already render chrome.
-   * Pass `null` to omit nav while still using {@link wrapInMain}.
-   */
-  topNav?: ReactNode | null;
+  /** Optional top navigation when the app root layout does not already render chrome. */
+  topNav?: ReactNode;
   /**
    * When true (default), wraps the panel in `<main id="main-content">` with the app grid
    * background. Set false when a parent layout or shell already supplies the main landmark.
@@ -52,7 +49,7 @@ export function AppNotFoundPage({
     panel
   );
 
-  if (topNav !== undefined) {
+  if (topNav) {
     return (
       <>
         {topNav}

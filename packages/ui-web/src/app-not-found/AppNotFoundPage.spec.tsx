@@ -33,11 +33,4 @@ describe('AppNotFoundPage', () => {
       screen.getByRole('heading', { name: 'Page not found' }),
     );
   });
-
-  it('renders main without top nav when topNav is null', () => {
-    render(<AppNotFoundPage topNav={null} />);
-
-    expect(screen.queryByRole('banner')).not.toBeInTheDocument();
-    expect(screen.getByRole('main')).toBeInTheDocument();
-  });
 });
