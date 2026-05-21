@@ -60,8 +60,8 @@ function isSidebarRailElement(child: React.ReactNode): boolean {
 }
 
 /**
- * Splits {@link SidebarRail} from other sidebar children so the rail stays focusable when the
- * offcanvas panel is collapsed and inert.
+ * Splits {@link SidebarRail} from other sidebar children so the rail renders outside the inert
+ * offcanvas panel when collapsed (see {@link SidebarRail} for keyboard focus).
  *
  * @param children - {@link Sidebar} children.
  * @returns Rails vs main panel content.
@@ -426,15 +426,22 @@ const SidebarTrigger = React.forwardRef<
 });
 SidebarTrigger.displayName = 'SidebarTrigger';
 
+/**
+ * Desktop edge control to expand/collapse the sidebar. Tabbable when {@link SidebarProvider}
+ * state is `collapsed` (including offcanvas); removed from tab order when expanded so nav links
+ * are not preceded by an extra stop. Cmd/Ctrl+B also toggles the sidebar.
+ */
 const SidebarRail = React.forwardRef<
   HTMLButtonElement,
   React.ComponentProps<'button'>
->(({ className, type = 'button', ...props }, ref) => {
-  const { toggleSidebar, isMobile } = useSidebar();
+>(({ className, type = 'button', tabIndex, ...props }, ref) => {
+  const { toggleSidebar, isMobile, state } = useSidebar();
 
   if (isMobile) {
     return null;
   }
+
+  const resolvedTabIndex = tabIndex ?? (state === 'collapsed' ? 0 : -1);
 
   return (
     <button
@@ -442,11 +449,11 @@ const SidebarRail = React.forwardRef<
       type={type}
       data-sidebar="rail"
       aria-label="Toggle Sidebar"
-      tabIndex={-1}
+      tabIndex={resolvedTabIndex}
       onClick={toggleSidebar}
       title="Toggle Sidebar"
       className={cn(
-        'absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 transition-all ease-linear after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] hover:after:bg-sidebar-border group-data-[side=left]:-right-4 group-data-[side=right]:left-0 md:flex',
+        'absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 transition-all ease-linear after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] hover:after:bg-sidebar-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg group-data-[side=left]:-right-4 group-data-[side=right]:left-0 md:flex',
         '[[data-side=left]_&]:cursor-w-resize [[data-side=right]_&]:cursor-e-resize',
         '[[data-side=left][data-state=collapsed]_&]:cursor-e-resize [[data-side=right][data-state=collapsed]_&]:cursor-w-resize',
         'group-data-[collapsible=offcanvas]:translate-x-0 group-data-[collapsible=offcanvas]:after:left-full group-data-[collapsible=offcanvas]:hover:bg-sidebar',
