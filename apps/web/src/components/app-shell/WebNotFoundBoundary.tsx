@@ -2,6 +2,7 @@
 
 import { AppNotFoundPage } from '@abstrack/ui-web';
 import { usePathname } from 'next/navigation';
+import { useId } from 'react';
 
 import { useAuth } from '@/lib/auth-provider';
 import { isPublicWebPath } from '@/lib/web-public-paths';
@@ -18,6 +19,12 @@ export function WebNotFoundBoundary() {
   const { session, loading } = useAuth();
   const isPublic = isPublicWebPath(pathname);
   const hasAuthenticatedShell = !isPublic && !loading && Boolean(session);
+  const headingId = useId();
 
-  return <AppNotFoundPage wrapInMain={!isPublic && !hasAuthenticatedShell} />;
+  return (
+    <AppNotFoundPage
+      headingId={headingId}
+      wrapInMain={!isPublic && !hasAuthenticatedShell}
+    />
+  );
 }

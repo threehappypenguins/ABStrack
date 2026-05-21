@@ -13,19 +13,18 @@ describe('AppNotFoundPanel', () => {
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
 
-  it('uses unique heading ids when rendered more than once', () => {
+  it('uses distinct heading ids when callers pass them explicitly', () => {
     render(
       <>
-        <AppNotFoundPanel />
-        <AppNotFoundPanel />
+        <AppNotFoundPanel headingId="not-found-a" />
+        <AppNotFoundPanel headingId="not-found-b" />
       </>,
     );
 
     const headings = screen.getAllByRole('heading', { name: 'Page not found' });
     expect(headings).toHaveLength(2);
-    expect(headings[0]?.id).toBeTruthy();
-    expect(headings[1]?.id).toBeTruthy();
-    expect(headings[0]?.id).not.toBe(headings[1]?.id);
+    expect(headings[0]).toHaveAttribute('id', 'not-found-a');
+    expect(headings[1]).toHaveAttribute('id', 'not-found-b');
   });
 
   it('renders an optional recovery link when provided', () => {

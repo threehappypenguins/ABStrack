@@ -33,11 +33,13 @@ export function AppNotFoundPage({
   wrapInMain = true,
   className,
   homeLink,
+  headingId,
 }: AppNotFoundPageProps) {
   const panel = (
     <AppNotFoundPanel
       homeLink={homeLink}
       className={cn(DEFAULT_PANEL_CLASS, className)}
+      headingId={headingId}
     />
   );
 

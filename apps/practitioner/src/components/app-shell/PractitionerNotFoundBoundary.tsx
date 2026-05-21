@@ -1,6 +1,7 @@
 'use client';
 
 import { AppNotFoundPage } from '@abstrack/ui-web';
+import { useId } from 'react';
 
 /**
  * Practitioner root `not-found` content: never wraps in `<main>` — public pages supply their own
@@ -9,5 +10,7 @@ import { AppNotFoundPage } from '@abstrack/ui-web';
  * @returns Themed 404 panel without an extra main wrapper.
  */
 export function PractitionerNotFoundBoundary() {
-  return <AppNotFoundPage wrapInMain={false} />;
+  const headingId = useId();
+
+  return <AppNotFoundPage headingId={headingId} wrapInMain={false} />;
 }

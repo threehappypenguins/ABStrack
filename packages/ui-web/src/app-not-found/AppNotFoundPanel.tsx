@@ -1,8 +1,9 @@
-'use client';
-
-import { useId, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 
 import { cn } from '../lib/utils.js';
+
+/** Default heading id when a route renders a single not-found panel (one per page). */
+export const APP_NOT_FOUND_HEADING_ID = 'app-not-found-heading';
 
 export type AppNotFoundPanelProps = {
   /** Optional recovery control (e.g. a Next.js `Link` to dashboard or patients). */
@@ -10,8 +11,8 @@ export type AppNotFoundPanelProps = {
   /** Extra layout classes on the panel root. */
   className?: string;
   /**
-   * Override the heading element id for `aria-labelledby`. Defaults to a stable unique id from
-   * {@link useId} so multiple panels on one page do not collide.
+   * Heading element id for `aria-labelledby`. Defaults to {@link APP_NOT_FOUND_HEADING_ID};
+   * pass a unique value when rendering multiple panels on one page.
    */
   headingId?: string;
 };
@@ -26,11 +27,8 @@ export type AppNotFoundPanelProps = {
 export function AppNotFoundPanel({
   homeLink,
   className,
-  headingId: headingIdProp,
+  headingId = APP_NOT_FOUND_HEADING_ID,
 }: AppNotFoundPanelProps) {
-  const generatedHeadingId = useId();
-  const headingId = headingIdProp ?? generatedHeadingId;
-
   return (
     <section
       className={cn(
