@@ -341,7 +341,7 @@ export default function Index() {
     return (
       <div
         id="practitioner-home"
-        className="app-grid-background flex min-h-screen flex-col items-center justify-center px-4 py-12 sm:px-6 lg:px-8"
+        className="flex min-h-full flex-1 flex-col items-center justify-center px-4 py-12 sm:px-6 lg:px-8"
         role="status"
         aria-busy="true"
         aria-live="polite"
@@ -357,7 +357,7 @@ export default function Index() {
     return (
       <div
         id="practitioner-home"
-        className="app-grid-background flex min-h-screen flex-col items-center justify-center px-4 py-12 sm:px-6 lg:px-8"
+        className="flex min-h-full flex-1 flex-col items-center justify-center px-4 py-12 sm:px-6 lg:px-8"
         role="status"
         aria-live="polite"
       >
