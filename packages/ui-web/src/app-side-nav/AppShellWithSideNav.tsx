@@ -71,16 +71,12 @@ export function AppShellWithSideNav({
 }: AppShellWithSideNavProps) {
   const showMobileTrigger = showMobileMenuTrigger ?? !topHeader;
 
-  const providerStyle: CSSProperties = {
-    '--sidebar-width': '16rem',
-    '--sidebar-width-mobile': '18rem',
-    ...(topHeader
-      ? {
-          '--app-shell-header-height': sidebarTopOffset,
-          '--sidebar-top-offset': sidebarTopOffset,
-        }
-      : {}),
-  } as CSSProperties;
+  const providerStyle: CSSProperties | undefined = topHeader
+    ? ({
+        '--app-shell-header-height': sidebarTopOffset,
+        '--sidebar-top-offset': sidebarTopOffset,
+      } as CSSProperties)
+    : undefined;
 
   return (
     <SidebarProvider
