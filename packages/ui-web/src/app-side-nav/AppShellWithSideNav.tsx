@@ -28,7 +28,10 @@ export type AppShellWithSideNavProps = {
   skipLink?: ReactNode;
   /** `id` on the `<main>` landmark (skip-link target); receives `tabIndex={-1}` for focus. */
   mainId?: string;
-  /** Classes on the `<main>` landmark (`SidebarInset`). */
+  /**
+   * Layout classes for page content below {@link header} and the built-in mobile menu row
+   * (not applied to `<main>` itself, so mobile chrome stays full-width).
+   */
   mainClassName?: string;
   /** Accessible label for the mobile menu trigger. */
   mobileMenuTriggerLabel?: string;
@@ -92,10 +95,7 @@ export function AppShellWithSideNav({
         <SidebarInset
           id={mainId}
           tabIndex={-1}
-          className={cn(
-            'app-grid-background flex min-h-0 min-w-0 flex-1 flex-col',
-            mainClassName,
-          )}
+          className="app-grid-background flex min-h-0 min-w-0 flex-1 flex-col"
         >
           {header}
           {showMobileTrigger ? (
@@ -107,7 +107,9 @@ export function AppShellWithSideNav({
               <span className="text-sm font-semibold text-app-ink">Menu</span>
             </div>
           ) : null}
-          {children}
+          <div className={cn('flex min-h-0 flex-1 flex-col', mainClassName)}>
+            {children}
+          </div>
         </SidebarInset>
       </div>
     </SidebarProvider>

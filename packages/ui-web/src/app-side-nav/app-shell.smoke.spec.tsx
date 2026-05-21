@@ -78,6 +78,35 @@ describe('@abstrack/ui-web shell smoke', () => {
     ).toBeInTheDocument();
   });
 
+  it('applies mainClassName to page content, not the mobile menu row', () => {
+    render(
+      <AppShellWithSideNav
+        mainClassName="test-main-content-layout"
+        sideNav={
+          <AppSideNav
+            pathname="/dashboard"
+            items={navItems}
+            LinkComponent={TestNavLink}
+            accessibilityLabel="Test app"
+          />
+        }
+      >
+        <p>Page body</p>
+      </AppShellWithSideNav>,
+    );
+
+    const main = screen.getByRole('main');
+    expect(main).not.toHaveClass('test-main-content-layout');
+    expect(screen.getByText('Page body').parentElement).toHaveClass(
+      'test-main-content-layout',
+    );
+    expect(
+      screen
+        .getByRole('button', { name: 'Open navigation menu' })
+        .closest('.border-b'),
+    ).not.toHaveClass('test-main-content-layout');
+  });
+
   it('hides built-in mobile trigger when topHeader is provided', () => {
     render(
       <AppShellWithSideNav

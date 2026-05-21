@@ -8,20 +8,17 @@ import { isPublicPractitionerPath } from '@/lib/practitioner-public-paths';
 
 /**
  * Fixed theme control when the authenticated app shell (sidebar footer) is not shown.
+ * Always renders on public routes (including while auth is loading) so login/invite pages
+ * never flash without a theme toggle.
  *
  * @returns Theme menu portal or null.
  */
 export function PractitionerPublicThemeBar() {
   const pathname = usePathname() ?? '/';
   const { session, loading } = useAuth();
+  const isPublic = isPublicPractitionerPath(pathname);
 
-  if (loading) {
-    return null;
-  }
-
-  const usesAppShell = !!session && !isPublicPractitionerPath(pathname);
-
-  if (usesAppShell) {
+  if (!isPublic && !loading && session) {
     return null;
   }
 
