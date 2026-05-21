@@ -156,6 +156,47 @@ function shouldToggleSidebarFromKeyboard(event: KeyboardEvent): boolean {
 const SIDEBAR_PANEL_SURFACE =
   'bg-[var(--app-sidebar-bg,rgb(var(--app-surface)/0.88))] text-sidebar-foreground backdrop-blur-sm supports-[backdrop-filter]:bg-[var(--app-sidebar-bg,rgb(var(--app-surface)/0.88))]';
 
+/**
+ * Whether `child` is a {@link SidebarRail} element (matched by `displayName`).
+ *
+ * @param child - A child of {@link Sidebar}.
+ * @returns `true` when the child should render outside the offcanvas inert panel.
+ */
+function isSidebarRailElement(child: React.ReactNode): boolean {
+  if (!React.isValidElement(child)) {
+    return false;
+  }
+  const type = child.type as { displayName?: string; name?: string };
+  const name =
+    typeof type === 'function' || typeof type === 'object'
+      ? (type.displayName ?? type.name)
+      : undefined;
+  return name === 'SidebarRail';
+}
+
+/**
+ * Splits {@link SidebarRail} from other sidebar children so the rail stays focusable when the
+ * offcanvas panel is collapsed and inert.
+ *
+ * @param children - {@link Sidebar} children.
+ * @returns Rails vs main panel content.
+ */
+function partitionSidebarChildren(children: React.ReactNode): {
+  rails: React.ReactNode[];
+  content: React.ReactNode[];
+} {
+  const rails: React.ReactNode[] = [];
+  const content: React.ReactNode[] = [];
+  React.Children.forEach(children, (child) => {
+    if (isSidebarRailElement(child)) {
+      rails.push(child);
+    } else {
+      content.push(child);
+    }
+  });
+  return { rails, content };
+}
+
 type SidebarContextProps = {
   state: 'expanded' | 'collapsed';
   open: boolean;
@@ -368,6 +409,10 @@ const Sidebar = React.forwardRef<
       );
     }
 
+    const isOffcanvasHidden =
+      collapsible === 'offcanvas' && state === 'collapsed';
+    const { rails, content } = partitionSidebarChildren(children);
+
     if (isMobile) {
       return (
         <Sheet open={openMobile} onOpenChange={setOpenMobile}>
@@ -433,9 +478,11 @@ const Sidebar = React.forwardRef<
               'flex h-full w-full flex-col group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border group-data-[variant=floating]:shadow',
               SIDEBAR_PANEL_SURFACE,
             )}
+            {...(isOffcanvasHidden ? { inert: true, 'aria-hidden': true } : {})}
           >
-            {children}
+            {content}
           </div>
+          {rails}
         </div>
       </div>
     );

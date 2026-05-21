@@ -32,15 +32,19 @@ export type PractitionerAppShellProps = {
  * public (login, invite, password reset, auth callback). Uses shadcn/ui sidebar with themed tokens.
  *
  * @param props - Layout children.
- * @returns Shell or unwrapped children for public/unauthenticated views (each public page
- * supplies its own single `<main>` landmark where needed).
+ * @returns Shell, a layout `<main>` while auth is resolving on private routes, or unwrapped
+ * children on public routes (each public page supplies its own single `<main>` landmark).
  */
 export function PractitionerAppShell({ children }: PractitionerAppShellProps) {
   const pathname = usePathname() ?? '/';
   const { session, loading } = useAuth();
 
-  if (loading || !session || isPublicPractitionerPath(pathname)) {
+  if (isPublicPractitionerPath(pathname)) {
     return <>{children}</>;
+  }
+
+  if (loading || !session) {
+    return <main id="main-content">{children}</main>;
   }
 
   const email = session.user.email;
