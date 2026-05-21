@@ -3,9 +3,44 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { createBrowserClient } from './supabase/browser-client';
 
+/** Session shape exposed to client components via {@link useAuth}. */
+export type AuthProviderSession = {
+  user: { id: string; email?: string };
+} | null;
+
 interface AuthContextType {
-  session: { user: { id: string; email?: string } } | null;
+  session: AuthProviderSession;
   loading: boolean;
+}
+
+export type AuthProviderProps = {
+  children: React.ReactNode;
+  /**
+   * Server-hydrated session from the root layout. When provided (including `null`),
+   * `loading` starts `false` so authenticated private routes can render app chrome on
+   * first paint without waiting for client `getSession`.
+   */
+  initialSession?: AuthProviderSession | null;
+};
+
+/**
+ * Maps a Supabase session from the server client to {@link AuthProviderSession}.
+ *
+ * @param session - Result of `supabase.auth.getSession()` on the server.
+ * @returns Context session or `null` when signed out.
+ */
+export function mapSupabaseSessionToAuthContext(
+  session: { user: { id: string; email?: string | null } } | null,
+): AuthProviderSession {
+  if (!session?.user?.id) {
+    return null;
+  }
+  return {
+    user: {
+      id: session.user.id,
+      email: session.user.email ?? undefined,
+    },
+  };
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -31,9 +66,12 @@ function isRefreshTokenFailure(error: unknown): boolean {
   return false;
 }
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [session, setSession] = useState<AuthContextType['session']>(null);
-  const [loading, setLoading] = useState(true);
+export function AuthProvider({ children, initialSession }: AuthProviderProps) {
+  const hasInitialSession = initialSession !== undefined;
+  const [session, setSession] = useState<AuthProviderSession>(
+    hasInitialSession ? initialSession : null,
+  );
+  const [loading, setLoading] = useState(!hasInitialSession);
 
   useEffect(() => {
     let mounted = true;

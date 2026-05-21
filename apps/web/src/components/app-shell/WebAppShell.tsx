@@ -29,8 +29,8 @@ export function WebAppShell({ children }: WebAppShellProps) {
   }
 
   if (loading || !session) {
-    // Public top nav is hidden while auth resolves on private routes; signed-out private
-    // routes still show it — subtract header height only then.
+    // Interim wrapper: signed-out private routes and client bootstrap before
+    // `initialSession` hydrates. Public top nav is hidden while `loading` on private routes.
     const minHeightClass = loading
       ? 'min-h-svh'
       : 'min-h-[calc(100svh-4.5rem)]';
