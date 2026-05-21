@@ -5,7 +5,7 @@ import {
   AppShellWithSideNav,
   AppSideNav,
   AppTopNav,
-  ABSTRACK_USER_WEB_TAGLINE,
+  ABSTRACK_WEB_TAGLINE,
   type AppSideNavLinkProps,
 } from '@abstrack/ui-web';
 import Link from 'next/link';
@@ -73,7 +73,7 @@ export function AuthenticatedShell({
         <AppTopNav
           brandHref="/dashboard"
           brandLinkComponent={WebNavLink}
-          tagline={ABSTRACK_USER_WEB_TAGLINE}
+          tagline={ABSTRACK_WEB_TAGLINE}
           email={email}
           themeMenu={<ThemeMenu />}
           showSidebarTrigger

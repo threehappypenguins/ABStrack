@@ -1,7 +1,7 @@
 'use client';
 
 import {
-  ABSTRACK_USER_WEB_TAGLINE,
+  ABSTRACK_WEB_TAGLINE,
   ACCOUNT_ACTIONS_SURFACE_CLASS,
   AppTopNav,
   type AppTopNavBrandLinkProps,
@@ -73,7 +73,7 @@ export function WebPublicTopNav() {
     <AppTopNav
       brandHref="/"
       brandLinkComponent={WebPublicNavLink}
-      tagline={ABSTRACK_USER_WEB_TAGLINE}
+      tagline={ABSTRACK_WEB_TAGLINE}
       themeMenu={<ThemeMenu />}
       actions={actions}
       mobileSheetTitle="Menu"

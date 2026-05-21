@@ -5,7 +5,4 @@ export {
   type AppTopNavBrandLinkProps,
   type AppTopNavProps,
 } from './AppTopNav.js';
-export {
-  ABSTRACK_APP_LOGO_SRC,
-  ABSTRACK_USER_WEB_TAGLINE,
-} from './constants.js';
+export { ABSTRACK_APP_LOGO_SRC, ABSTRACK_WEB_TAGLINE } from './constants.js';

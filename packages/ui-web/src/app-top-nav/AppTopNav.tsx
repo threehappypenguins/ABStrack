@@ -48,7 +48,7 @@ export type AppTopNavProps = {
   /** App router link component. */
   brandLinkComponent: AppTopNavBrandLinkComponent;
   /**
-   * Secondary line under “ABStrack” (use `ABSTRACK_USER_WEB_TAGLINE` on both web apps).
+   * Secondary line under “ABStrack” (use `ABSTRACK_WEB_TAGLINE` on both web apps).
    * Rendered in small semibold type with wide tracking below the product name.
    */
   tagline: string;

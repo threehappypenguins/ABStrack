@@ -1,7 +1,7 @@
 'use client';
 
 import {
-  ABSTRACK_USER_WEB_TAGLINE,
+  ABSTRACK_WEB_TAGLINE,
   AppTopNav,
   type AppTopNavBrandLinkProps,
 } from '@abstrack/ui-web';
@@ -43,7 +43,7 @@ export function PractitionerPublicTopNav() {
     <AppTopNav
       brandHref="/"
       brandLinkComponent={PractitionerPublicNavLink}
-      tagline={ABSTRACK_USER_WEB_TAGLINE}
+      tagline={ABSTRACK_WEB_TAGLINE}
       themeMenu={<ThemeMenu />}
       mobileSheetTitle="Menu"
       mobileSheetDescription="Appearance settings."

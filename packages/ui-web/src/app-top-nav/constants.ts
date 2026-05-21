@@ -9,4 +9,4 @@ export const ABSTRACK_APP_LOGO_SRC = '/logo.png';
  * Secondary line under “ABStrack” on user and practitioner web chrome (nav, public header).
  * Matches marketing copy: Auto-Brewery Syndrome Tracking.
  */
-export const ABSTRACK_USER_WEB_TAGLINE = 'Auto-Brewery Syndrome Tracking';
+export const ABSTRACK_WEB_TAGLINE = 'Auto-Brewery Syndrome Tracking';
