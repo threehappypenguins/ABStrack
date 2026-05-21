@@ -50,7 +50,7 @@ export function PractitionerAppShell({ children }: PractitionerAppShellProps) {
     return (
       <main
         id="main-content"
-        className="app-grid-background flex min-h-svh min-w-0 flex-col"
+        className="app-grid-background flex min-h-[calc(100svh-4.5rem)] min-w-0 flex-col"
       >
         {children}
       </main>

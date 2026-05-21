@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { useCallback, useEffect } from 'react';
 import { useAuth } from '../../lib/auth-provider';
+import { PUBLIC_PAGE_CENTER_CLASS } from '@/components/app-shell/public-page-layout-classes';
 import { LandingDashboardCharts } from './components/LandingDashboardCharts';
 
 const fontWordmark = Inter({
@@ -51,7 +52,7 @@ export function LandingPageClient() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-transparent px-4">
+      <div className={PUBLIC_PAGE_CENTER_CLASS}>
         <div className="text-center">
           <div
             className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-app-primary border-t-transparent"
@@ -65,7 +66,7 @@ export function LandingPageClient() {
 
   if (session) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-transparent px-4">
+      <div className={PUBLIC_PAGE_CENTER_CLASS}>
         <div className="text-center">
           <div
             className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-app-primary border-t-transparent"
@@ -80,7 +81,7 @@ export function LandingPageClient() {
   }
 
   return (
-    <div className="min-h-screen bg-transparent">
+    <div className="min-h-full flex-1 bg-transparent">
       <div className="mx-auto max-w-6xl space-y-16 px-4 py-12 sm:px-6 lg:space-y-20 lg:px-8 lg:py-16">
         <section className="text-center lg:text-left lg:grid lg:grid-cols-[1.1fr_0.9fr] lg:items-center lg:gap-12">
           <div>

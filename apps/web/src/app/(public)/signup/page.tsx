@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
 import { signUpWithEmailPassword } from '@abstrack/supabase';
+import { PUBLIC_PAGE_CENTER_CLASS } from '@/components/app-shell/public-page-layout-classes';
 
 export default function SignupPage() {
   const [email, setEmail] = useState('');
@@ -47,7 +48,7 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-transparent px-4">
+    <div className={PUBLIC_PAGE_CENTER_CLASS}>
       <div className="w-full max-w-md rounded-2xl border border-app-border/90 bg-app-surface p-8 shadow-soft ring-1 ring-[color:var(--app-ring-slate)]">
         <h1 className="mb-6 text-center text-2xl font-bold text-app-ink">
           Sign up

@@ -14,11 +14,11 @@ export type WebAppShellProps = {
 
 /**
  * User-web chrome: authenticated shell on private routes when signed in; otherwise a single
- * grid `<main>` (public pages supply their own landmark via `(public)/layout`).
+ * grid wrapper without a `<main>` landmark (pages or {@link AuthenticatedShell} supply `main-content`).
  *
  * @param props - Layout children.
- * @returns Shell, interim main while auth resolves on private routes, or unwrapped children on
- * public routes.
+ * @returns Shell, interim layout wrapper while auth resolves on private routes, or unwrapped
+ * children on public routes.
  */
 export function WebAppShell({ children }: WebAppShellProps) {
   const pathname = usePathname() ?? '/';
@@ -30,12 +30,9 @@ export function WebAppShell({ children }: WebAppShellProps) {
 
   if (loading || !session) {
     return (
-      <main
-        id="main-content"
-        className="app-grid-background flex min-h-svh min-w-0 flex-col"
-      >
+      <div className="app-grid-background flex min-h-[calc(100svh-4.5rem)] min-w-0 flex-col">
         {children}
-      </main>
+      </div>
     );
   }
 
