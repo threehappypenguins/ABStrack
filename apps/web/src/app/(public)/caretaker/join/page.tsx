@@ -43,19 +43,18 @@ export default function CaretakerJoinPage() {
       try {
         const supabase = createBrowserClient();
         const {
-          data: { session },
-          error: sessionError,
-        } = await supabase.auth.getSession();
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
 
-        if (sessionError || !session?.user) {
+        if (userError || !user) {
           if (!cancelled) {
             setState({ kind: 'need_sign_in' });
           }
           return;
         }
 
-        const inviteIdRaw =
-          session.user.user_metadata?.abstrack_caretaker_invite_id;
+        const inviteIdRaw = user.user_metadata?.abstrack_caretaker_invite_id;
         const inviteId =
           typeof inviteIdRaw === 'string' && inviteIdRaw.trim().length > 0
             ? inviteIdRaw.trim()
@@ -71,7 +70,7 @@ export default function CaretakerJoinPage() {
         const { data: profile, error: profileReadErr } = await supabase
           .from('profiles')
           .select('app_role')
-          .eq('id', session.user.id)
+          .eq('id', user.id)
           .maybeSingle();
 
         if (profileReadErr) {
@@ -86,7 +85,7 @@ export default function CaretakerJoinPage() {
 
         if (!profile) {
           const { error: insErr } = await supabase.from('profiles').insert({
-            id: session.user.id,
+            id: user.id,
             app_role: 'caretaker',
           });
           if (insErr) {
@@ -94,7 +93,7 @@ export default function CaretakerJoinPage() {
               const { data: afterRace, error: raceReadErr } = await supabase
                 .from('profiles')
                 .select('app_role')
-                .eq('id', session.user.id)
+                .eq('id', user.id)
                 .maybeSingle();
               if (raceReadErr || !afterRace) {
                 if (!cancelled) {

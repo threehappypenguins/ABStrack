@@ -86,7 +86,7 @@ export function useMobilePhiSubjectUserContext(): MobilePhiSubjectUserContextSta
     setPhiSubjectUserId(result.data.phiSubjectUserId);
     setProfileAppRole(result.data.profileAppRole);
     setErrorMessage(null);
-  }, [authUserId, dbForPhi]);
+  }, [dbForPhi]);
 
   /**
    * Invalidate in-flight resolves only on real unmount. Do not bump `genRef` from other effect

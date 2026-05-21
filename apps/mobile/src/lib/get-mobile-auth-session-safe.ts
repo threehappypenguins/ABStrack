@@ -141,10 +141,56 @@ export function persistedSessionIdentityWithRedactedAccessJwt(
  *
  * @returns Same shape as `SupabaseClient.auth.getSession()`.
  */
+async function attachVerifiedUserToSession(
+  client: AbstrackSupabaseClient,
+  session: Session,
+): Promise<Session> {
+  try {
+    const {
+      data: { user },
+      error,
+    } = await client.auth.getUser();
+    if (!error && user) {
+      return { ...session, user };
+    }
+  } catch {
+    // Offline: keep tokens from getSession but avoid reading session.user from that return value.
+  }
+  const storageKey = (client.auth as unknown as { storageKey?: string })
+    .storageKey;
+  if (!storageKey) {
+    return session;
+  }
+  try {
+    const raw = await mobileAuthStorage.getItem(storageKey);
+    if (!raw) {
+      return session;
+    }
+    const persisted = JSON.parse(raw) as Session;
+    if (persisted?.user?.id) {
+      return { ...session, user: persisted.user };
+    }
+  } catch {
+    // Best-effort offline identity only.
+  }
+  return session;
+}
+
 export async function getMobileAuthSessionSafe(): Promise<MobileAuthGetSessionResult> {
   const client = getMobileSupabaseClient();
   try {
-    return await client.auth.getSession();
+    const result = await client.auth.getSession();
+    if (result.data.session) {
+      const session = await attachVerifiedUserToSession(
+        client,
+        result.data.session,
+      );
+      if (result.error) {
+        return { data: { session: null }, error: result.error };
+      }
+      return { data: { session }, error: null };
+    }
+    return result;
   } catch (getSessionError) {
     const storageKey = (client.auth as unknown as { storageKey?: string })
       .storageKey;
@@ -178,14 +224,12 @@ export async function getMobileAuthSessionSafe(): Promise<MobileAuthGetSessionRe
         };
       }
       if (isPersistedSupabaseSessionAccessExpired(session)) {
-        return {
-          data: {
-            session: persistedSessionIdentityWithRedactedAccessJwt(session),
-          },
-          error: null,
-        };
+        const redacted = persistedSessionIdentityWithRedactedAccessJwt(session);
+        const withUser = await attachVerifiedUserToSession(client, redacted);
+        return { data: { session: withUser }, error: null };
       }
-      return { data: { session }, error: null };
+      const withUser = await attachVerifiedUserToSession(client, session);
+      return { data: { session: withUser }, error: null };
     } catch (persistedReadError) {
       return {
         data: { session: null },

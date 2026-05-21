@@ -74,10 +74,7 @@ import {
   powerSyncReplicaSqliteReady,
   usePowerSyncBridgeState,
 } from '../../lib/powersync/PowerSyncSessionBridge';
-import {
-  getMobileAuthSessionSafe,
-  getMobileSupabaseClient,
-} from '../../lib/supabase-wiring';
+import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { resolveMobilePhiSubjectUserContext } from '../../lib/phi-subject/resolve-mobile-phi-subject-user-context';
 import {
   clearSymptomPromptSession,

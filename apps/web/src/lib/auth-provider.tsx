@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import {
   type AuthProviderSession,
-  mapSupabaseSessionToAuthContext,
+  mapSupabaseUserToAuthContext,
 } from './auth-provider-session';
 import { createBrowserClient } from './supabase/browser-client';
 
@@ -19,14 +19,14 @@ export type AuthProviderProps = {
   /**
    * Server-hydrated session from the root layout. When provided (including `null`),
    * `loading` starts `false` so authenticated private routes can render app chrome on
-   * first paint without waiting for client `getSession`.
+   * first paint without waiting for client `getUser`.
    */
   initialSession?: AuthProviderSession | null;
 };
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-/** Avoid infinite loading if `getSession` never settles (e.g. bad refresh cookie edge cases). */
+/** Avoid infinite loading if `getUser` never settles (e.g. bad refresh cookie edge cases). */
 const SESSION_BOOTSTRAP_TIMEOUT_MS = 8_000;
 
 function isRefreshTokenFailure(error: unknown): boolean {
@@ -58,8 +58,7 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
     let mounted = true;
     const supabase = createBrowserClient();
 
-    // Get initial session and always clear loading, even on failure.
-    const initializeSession = async () => {
+    const syncVerifiedUser = async (): Promise<void> => {
       let timeoutId: ReturnType<typeof setTimeout> | undefined;
       try {
         const timeoutPromise = new Promise<never>((_, reject) => {
@@ -69,27 +68,26 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
         });
 
         const {
-          data: { session: nextSession },
+          data: { user },
           error,
-        } = await Promise.race([
-          supabase.auth.getSession(),
-          timeoutPromise,
-        ]).catch(async (raceError: unknown) => {
-          if (
-            raceError instanceof Error &&
-            raceError.message === 'session_bootstrap_timeout'
-          ) {
-            console.warn(
-              'Auth session bootstrap timed out; clearing local session',
-            );
-            await supabase.auth.signOut();
-            return { data: { session: null }, error: null };
-          }
-          throw raceError;
-        });
+        } = await Promise.race([supabase.auth.getUser(), timeoutPromise]).catch(
+          async (raceError: unknown) => {
+            if (
+              raceError instanceof Error &&
+              raceError.message === 'session_bootstrap_timeout'
+            ) {
+              console.warn(
+                'Auth user bootstrap timed out; clearing local session',
+              );
+              await supabase.auth.signOut();
+              return { data: { user: null }, error: null };
+            }
+            throw raceError;
+          },
+        );
 
         if (error) {
-          console.error('Failed to load auth session', error);
+          console.error('Failed to verify authenticated user', error);
           if (isRefreshTokenFailure(error)) {
             await supabase.auth.signOut();
           }
@@ -100,30 +98,39 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
         }
 
         if (mounted) {
-          setSession(mapSupabaseSessionToAuthContext(nextSession));
+          setSession(mapSupabaseUserToAuthContext(user));
         }
       } catch (error) {
-        console.error('Failed to load auth session', error);
+        console.error('Failed to verify authenticated user', error);
         if (isRefreshTokenFailure(error)) {
           await supabase.auth.signOut();
+        }
+        if (mounted) {
+          setSession(null);
         }
       } finally {
         if (timeoutId !== undefined) {
           clearTimeout(timeoutId);
         }
+      }
+    };
+
+    const initializeAuth = async () => {
+      try {
+        await syncVerifiedUser();
+      } finally {
         if (mounted) {
           setLoading(false);
         }
       }
     };
 
-    void initializeSession();
+    void initializeAuth();
 
-    // Listen for auth state changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(mapSupabaseSessionToAuthContext(session));
+    } = supabase.auth.onAuthStateChange(() => {
+      void syncVerifiedUser();
     });
 
     return () => {

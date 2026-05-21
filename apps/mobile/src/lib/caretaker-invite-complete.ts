@@ -4,6 +4,7 @@ import {
   isMissingPublishableKeyForCaretakerEdge,
   resolvePatientCaretakerAccessUrl,
 } from './patient-caretaker-edge-api';
+import { getAccessTokenFromSession } from '@abstrack/supabase';
 import { getMobileSupabaseClient } from './supabase-wiring';
 
 /** PostgREST duplicate key — profile row may have been created concurrently. */
@@ -27,18 +28,20 @@ export type CompleteCaretakerInviteResult =
 export async function completeCaretakerInviteAfterAuth(): Promise<CompleteCaretakerInviteResult> {
   const supabase = getMobileSupabaseClient();
   const {
-    data: { session },
-    error: sessErr,
-  } = await supabase.auth.getSession();
+    data: { user },
+    error: userErr,
+  } = await supabase.auth.getUser();
+  const { accessToken, error: tokenErr } =
+    await getAccessTokenFromSession(supabase);
 
-  if (sessErr || !session?.user || !session.access_token?.trim()) {
+  if (userErr || !user || tokenErr || !accessToken) {
     return {
       ok: false,
       message: 'No active session after opening the invite link.',
     };
   }
 
-  const inviteIdRaw = session.user.user_metadata?.abstrack_caretaker_invite_id;
+  const inviteIdRaw = user.user_metadata?.abstrack_caretaker_invite_id;
   const inviteId =
     typeof inviteIdRaw === 'string' && inviteIdRaw.trim().length > 0
       ? inviteIdRaw.trim()
@@ -55,7 +58,7 @@ export async function completeCaretakerInviteAfterAuth(): Promise<CompleteCareta
   const { data: profile, error: readPErr } = await supabase
     .from('profiles')
     .select('app_role')
-    .eq('id', session.user.id)
+    .eq('id', user.id)
     .maybeSingle();
 
   if (readPErr) {
@@ -67,7 +70,7 @@ export async function completeCaretakerInviteAfterAuth(): Promise<CompleteCareta
 
   if (!profile) {
     const { error: insPErr } = await supabase.from('profiles').insert({
-      id: session.user.id,
+      id: user.id,
       app_role: 'caretaker',
     });
     if (insPErr) {
@@ -75,7 +78,7 @@ export async function completeCaretakerInviteAfterAuth(): Promise<CompleteCareta
         const { data: afterRace, error: raceReadErr } = await supabase
           .from('profiles')
           .select('app_role')
-          .eq('id', session.user.id)
+          .eq('id', user.id)
           .maybeSingle();
         if (raceReadErr || !afterRace) {
           return {
@@ -118,7 +121,7 @@ export async function completeCaretakerInviteAfterAuth(): Promise<CompleteCareta
 
   let res: Response;
   try {
-    res = await fetchCaretakerAccessPostJson(session.access_token, {
+    res = await fetchCaretakerAccessPostJson(accessToken, {
       finalizeCaretakerInvite: true,
       inviteId,
     });

@@ -282,6 +282,8 @@ export function EpisodeTemplateEditorScreen() {
     return () => {
       ac.abort();
     };
+    // status/errorMessage: auth-hydration skip only — omit to avoid refetch loops.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- template load keyed on viewer/PHI scope
   }, [
     templateId,
     viewerUserId,

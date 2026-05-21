@@ -2,6 +2,7 @@
 
 import {
   fetchProfileByUserId,
+  getVerifiedAuthSession,
   parseAbstrackAccessTokenClaims,
   resolvePractitionerAppGate,
   type AbstrackAccessTokenClaims,
@@ -39,7 +40,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-/** Avoid infinite loading if `getSession` never settles. */
+/** Avoid infinite loading if auth bootstrap never settles. */
 const SESSION_BOOTSTRAP_TIMEOUT_MS = 8_000;
 
 function isRefreshTokenFailure(error: unknown): boolean {
@@ -100,7 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true;
 
-    const initializeSession = async () => {
+    const syncVerifiedSession = async () => {
       let timeoutId: ReturnType<typeof setTimeout> | undefined;
       try {
         const timeoutPromise = new Promise<never>((_, reject) => {
@@ -113,7 +114,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           data: { session: nextSession },
           error,
         } = await Promise.race([
-          supabase.auth.getSession(),
+          getVerifiedAuthSession(supabase),
           timeoutPromise,
         ]).catch(async (raceError: unknown) => {
           if (
@@ -124,13 +125,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               'Auth session bootstrap timed out; clearing local session',
             );
             await supabase.auth.signOut();
-            return { data: { session: null }, error: null };
+            return { data: { user: null, session: null }, error: null };
           }
           throw raceError;
         });
 
         if (error) {
-          console.error('Failed to load practitioner auth session', error);
+          console.error('Failed to verify practitioner auth session', error);
           if (isRefreshTokenFailure(error)) {
             await supabase.auth.signOut();
           }
@@ -144,29 +145,79 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setSession(nextSession);
         }
       } catch (error) {
-        console.error('Failed to load practitioner auth session', error);
+        console.error('Failed to verify practitioner auth session', error);
         if (isRefreshTokenFailure(error)) {
           await supabase.auth.signOut();
+        }
+        if (mounted) {
+          setSession(null);
         }
       } finally {
         if (timeoutId !== undefined) {
           clearTimeout(timeoutId);
         }
+      }
+    };
+
+    const initializeAuth = async () => {
+      try {
+        await syncVerifiedSession();
+      } finally {
         if (mounted) {
           setAuthLoading(false);
         }
       }
     };
 
-    void initializeSession();
+    void initializeAuth();
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, nextSession) => {
-      setSession(nextSession);
-      if (event === 'TOKEN_REFRESHED') {
-        void syncMfaTrustBundleAfterTokenRefresh(supabase, nextSession);
-      }
+    } = supabase.auth.onAuthStateChange((event) => {
+      void (async () => {
+        let timeoutId: ReturnType<typeof setTimeout> | undefined;
+        try {
+          const timeoutPromise = new Promise<never>((_, reject) => {
+            timeoutId = setTimeout(() => {
+              reject(new Error('session_bootstrap_timeout'));
+            }, SESSION_BOOTSTRAP_TIMEOUT_MS);
+          });
+          const {
+            data: { session: nextSession },
+            error,
+          } = await Promise.race([
+            getVerifiedAuthSession(supabase),
+            timeoutPromise,
+          ]);
+          if (error) {
+            if (isRefreshTokenFailure(error)) {
+              await supabase.auth.signOut();
+            }
+            if (mounted) {
+              setSession(null);
+            }
+            return;
+          }
+          if (mounted) {
+            setSession(nextSession);
+          }
+          if (event === 'TOKEN_REFRESHED' && nextSession) {
+            await syncMfaTrustBundleAfterTokenRefresh(supabase, nextSession);
+          }
+        } catch (error) {
+          console.error('Failed to verify practitioner auth session', error);
+          if (isRefreshTokenFailure(error)) {
+            await supabase.auth.signOut();
+          }
+          if (mounted) {
+            setSession(null);
+          }
+        } finally {
+          if (timeoutId !== undefined) {
+            clearTimeout(timeoutId);
+          }
+        }
+      })();
     });
 
     return () => {
@@ -218,11 +269,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setProfile(data);
         return;
       }
-      const { data: liveSession } = await supabase.auth.getSession();
+      const { data: liveUserData } = await supabase.auth.getUser();
       const pendingInviteId =
-        typeof liveSession.session?.user?.user_metadata
+        typeof liveUserData.user?.user_metadata
           ?.abstrack_practitioner_invite_id === 'string'
-          ? liveSession.session.user.user_metadata.abstrack_practitioner_invite_id.trim()
+          ? liveUserData.user.user_metadata.abstrack_practitioner_invite_id.trim()
           : '';
       if (pendingInviteId !== '') {
         // Finalize runs on `/invite/join`; keep loading until profile exists.

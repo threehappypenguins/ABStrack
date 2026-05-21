@@ -28,7 +28,11 @@
  * @module practitioner-device-trust
  */
 
-import type { AbstrackSupabaseClient, Session } from '@abstrack/supabase';
+import {
+  getVerifiedAuthSession,
+  type AbstrackSupabaseClient,
+  type Session,
+} from '@abstrack/supabase';
 
 type PractitionerBrowserClient = AbstrackSupabaseClient;
 
@@ -478,6 +482,19 @@ export async function tryRestoreTrustedMfaSession(
     return { status: 'not_restored' };
   }
 
+  const preUserResult = await supabase.auth.getUser();
+  if (preUserResult.error) {
+    clearMfaTrustBundle();
+    await revertToPreRestoreSession(supabase, null);
+    return { status: 'signed_out' };
+  }
+
+  if (preUserResult.data.user?.id !== userId) {
+    clearMfaTrustBundle();
+    await supabase.auth.signOut();
+    return { status: 'signed_out' };
+  }
+
   const preSessionResult = await supabase.auth.getSession();
   if (preSessionResult.error) {
     clearMfaTrustBundle();
@@ -486,8 +503,7 @@ export async function tryRestoreTrustedMfaSession(
   }
 
   const preRestoreSession = preSessionResult.data.session;
-
-  if (preRestoreSession?.user?.id !== userId) {
+  if (!preRestoreSession) {
     clearMfaTrustBundle();
     await supabase.auth.signOut();
     return { status: 'signed_out' };
@@ -519,10 +535,11 @@ export async function tryRestoreTrustedMfaSession(
     return finishFailedBundleRestore(supabase, preSessionTokens);
   }
 
-  const sessionAfterRefresh = refreshData.session;
+  const refreshedUserResult = await supabase.auth.getUser();
   if (
-    sessionAfterRefresh.user?.id == null ||
-    sessionAfterRefresh.user.id !== userId
+    refreshedUserResult.error ||
+    refreshedUserResult.data.user?.id == null ||
+    refreshedUserResult.data.user.id !== userId
   ) {
     return finishFailedBundleRestore(supabase, preSessionTokens);
   }
@@ -535,17 +552,13 @@ export async function tryRestoreTrustedMfaSession(
     return finishFailedBundleRestore(supabase, preSessionTokens);
   }
 
-  const finalSessionResult = await supabase.auth.getSession();
-  if (finalSessionResult.error) {
+  const { data: verified, error: verifiedError } =
+    await getVerifiedAuthSession(supabase);
+  if (verifiedError || verified.session == null) {
     return finishFailedBundleRestore(supabase, preSessionTokens);
   }
 
-  const session = finalSessionResult.data.session;
-  if (session == null) {
-    return finishFailedBundleRestore(supabase, preSessionTokens);
-  }
-
-  saveMfaTrustBundle(session, bundle.trustedUntilMs);
+  saveMfaTrustBundle(verified.session, bundle.trustedUntilMs);
 
   return { status: 'restored' };
 }
@@ -625,13 +638,14 @@ async function clearBrowserSessionWithoutServerLogout(
 export async function practitionerSignOut(
   supabase: PractitionerBrowserClient,
 ): Promise<void> {
-  const { data: sessionData } = await supabase.auth.getSession();
-  const session = sessionData.session;
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   const bundle = readBundle();
   const trustActiveForUser =
-    session &&
+    user &&
     bundle &&
-    bundle.userId === session.user.id &&
+    bundle.userId === user.id &&
     bundle.trustedUntilMs > Date.now();
 
   if (trustActiveForUser) {

@@ -83,10 +83,10 @@ function PractitionerAuthCallbackFragmentContent() {
         const supabase = getSupabaseBrowserClient();
 
         const {
-          data: { session: existing },
-        } = await supabase.auth.getSession();
+          data: { user: existingUser },
+        } = await supabase.auth.getUser();
 
-        if (existing?.user) {
+        if (existingUser) {
           finishOk();
           return;
         }
@@ -125,10 +125,10 @@ function PractitionerAuthCallbackFragmentContent() {
         }
 
         const {
-          data: { session: afterDetect },
-        } = await supabase.auth.getSession();
+          data: { user: afterDetectUser },
+        } = await supabase.auth.getUser();
 
-        if (afterDetect?.user) {
+        if (afterDetectUser) {
           finishOk();
           return;
         }

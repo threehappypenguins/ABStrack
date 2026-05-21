@@ -501,21 +501,21 @@ function AppBootstrap() {
 
     const {
       data: { subscription },
-    } = mobileSupabase.auth.onAuthStateChange((event, nextSession) => {
+    } = mobileSupabase.auth.onAuthStateChange((event) => {
       if (event === 'SIGNED_OUT') {
         authRouteRef.current = 'Login';
         recoveryFlowActiveRef.current = false;
         setAuthRoute('Login');
         setRecoveryFlowActive(false);
         setRecoveryError(null);
+        setSession(null);
+        return;
       }
 
-      if (
-        event === 'SIGNED_IN' ||
-        event === 'SIGNED_OUT' ||
-        event === 'TOKEN_REFRESHED'
-      ) {
-        setSession(nextSession ?? null);
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        void getMobileAuthSessionSafe().then(({ data }) => {
+          setSession(data.session ?? null);
+        });
       }
     });
 

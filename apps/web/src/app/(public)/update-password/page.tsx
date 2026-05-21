@@ -51,10 +51,10 @@ export default function UpdatePasswordPage() {
 
       try {
         const {
-          data: { session },
-        } = await supabase.auth.getSession();
+          data: { user },
+        } = await supabase.auth.getUser();
 
-        if (!session && mounted && !errorParam) {
+        if (!user && mounted && !errorParam) {
           setError(
             fromParam === CARETAKER_INVITE_SET_PASSWORD_FROM
               ? 'You must be signed in to create a password. Open your invite link again, then return here.'
@@ -118,10 +118,10 @@ export default function UpdatePasswordPage() {
 
     try {
       const {
-        data: { session },
-      } = await supabase.auth.getSession();
+        data: { user },
+      } = await supabase.auth.getUser();
 
-      if (!session) {
+      if (!user) {
         setError(
           postInviteCaretaker
             ? 'Your session expired. Open your invite link again, then return here to create a password.'

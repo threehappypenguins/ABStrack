@@ -114,10 +114,6 @@ export function useMobileAuthUserId(): string | null {
         applyIfCurrent(generation, null);
         return;
       }
-      const primed = session?.user?.id;
-      if (primed != null && primed !== '') {
-        lastKnownUserIdRef.current = primed;
-      }
       refresh();
     });
 

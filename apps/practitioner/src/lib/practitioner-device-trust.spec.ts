@@ -10,6 +10,44 @@ import {
   tryRestoreTrustedMfaSession,
 } from './practitioner-device-trust';
 
+jest.mock('@abstrack/supabase', () => {
+  const actual =
+    jest.requireActual<typeof import('@abstrack/supabase')>(
+      '@abstrack/supabase',
+    );
+  return {
+    ...actual,
+    getVerifiedAuthSession: jest.fn(async (client: AbstrackSupabaseClient) => {
+      const userResult = await client.auth.getUser();
+      if (userResult.error) {
+        return {
+          data: { user: null, session: null },
+          error: userResult.error,
+        };
+      }
+      const sessionResult = await client.auth.getSession();
+      if (sessionResult.error) {
+        return {
+          data: { user: null, session: null },
+          error: sessionResult.error,
+        };
+      }
+      const user = userResult.data.user;
+      const session = sessionResult.data.session;
+      if (!user) {
+        return { data: { user: null, session: null }, error: null };
+      }
+      if (!session) {
+        return { data: { user, session: null }, error: null };
+      }
+      return {
+        data: { user, session: { ...session, user } },
+        error: null,
+      };
+    }),
+  };
+});
+
 const prevPractitionerDeviceTrustEnv =
   process.env['NEXT_PUBLIC_PRACTITIONER_MFA_DEVICE_TRUST'];
 
@@ -66,6 +104,26 @@ function prePasswordSession(id: string) {
   };
 }
 
+/** Default `auth.getUser` for restore/sign-out tests (pre-check + post-refresh). */
+function mockGetUserForId(userId: string, callCount = 2) {
+  const getUser = jest.fn();
+  for (let i = 0; i < callCount; i++) {
+    getUser.mockResolvedValueOnce({
+      data: { user: { id: userId } },
+      error: null,
+    });
+  }
+  getUser.mockResolvedValue({ data: { user: { id: userId } }, error: null });
+  return getUser;
+}
+
+function mockGetUserOnce(id: string) {
+  return jest.fn().mockResolvedValue({
+    data: { user: { id } },
+    error: null,
+  });
+}
+
 describe('tryRestoreTrustedMfaSession', () => {
   const userId = '00000000-0000-0000-0000-000000000042';
 
@@ -88,6 +146,7 @@ describe('tryRestoreTrustedMfaSession', () => {
     });
     const supabase = {
       auth: {
+        getUser: mockGetUserForId(userId),
         refreshSession,
         setSession: jest.fn().mockResolvedValue({ error: null }),
         signOut: jest.fn(),
@@ -162,6 +221,7 @@ describe('tryRestoreTrustedMfaSession', () => {
 
     const supabase = {
       auth: {
+        getUser: mockGetUserForId(userId),
         refreshSession,
         setSession,
         signOut,
@@ -215,6 +275,7 @@ describe('tryRestoreTrustedMfaSession', () => {
 
     const supabase = {
       auth: {
+        getUser: mockGetUserForId(userId),
         refreshSession,
         setSession,
         signOut,
@@ -261,11 +322,10 @@ describe('tryRestoreTrustedMfaSession', () => {
 
     const supabase = {
       auth: {
+        getUser: mockGetUserOnce(otherId),
         setSession,
         signOut,
-        getSession: jest.fn().mockResolvedValue({
-          data: { session: prePasswordSession(otherId) },
-        }),
+        getSession: jest.fn(),
         mfa: {
           getAuthenticatorAssuranceLevel: jest.fn(),
         },
@@ -303,8 +363,20 @@ describe('tryRestoreTrustedMfaSession', () => {
     const setSession = jest.fn().mockResolvedValue({ error: null });
     const signOut = jest.fn().mockResolvedValue({ error: null });
 
+    const getUser = jest
+      .fn()
+      .mockResolvedValueOnce({
+        data: { user: { id: userId } },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { user: { id: otherId } },
+        error: null,
+      });
+
     const supabase = {
       auth: {
+        getUser,
         refreshSession,
         setSession,
         signOut,
@@ -351,6 +423,7 @@ describe('tryRestoreTrustedMfaSession', () => {
 
     const supabase = {
       auth: {
+        getUser: mockGetUserForId(userId),
         refreshSession,
         setSession,
         signOut,
@@ -390,6 +463,7 @@ describe('tryRestoreTrustedMfaSession', () => {
 
     const supabase = {
       auth: {
+        getUser: mockGetUserOnce(userId),
         refreshSession: jest.fn(),
         setSession,
         signOut,
@@ -425,6 +499,7 @@ describe('tryRestoreTrustedMfaSession', () => {
 
     const supabase = {
       auth: {
+        getUser: mockGetUserForId(userId),
         refreshSession,
         setSession,
         signOut,
@@ -475,6 +550,7 @@ describe('tryRestoreTrustedMfaSession', () => {
 
     const supabase = {
       auth: {
+        getUser: mockGetUserForId(userId),
         refreshSession,
         setSession,
         signOut,
@@ -528,6 +604,7 @@ describe('tryRestoreTrustedMfaSession', () => {
 
     const supabase = {
       auth: {
+        getUser: mockGetUserForId(userId),
         refreshSession,
         setSession,
         signOut,
@@ -583,6 +660,7 @@ describe('tryRestoreTrustedMfaSession', () => {
 
     const supabase = {
       auth: {
+        getUser: mockGetUserForId(userId),
         refreshSession,
         setSession,
         signOut,
@@ -773,6 +851,7 @@ describe('practitionerSignOut', () => {
     const signOut = jest.fn().mockResolvedValue({ error: null });
     const supabase = {
       auth: {
+        getUser: mockGetUserOnce(userId),
         getSession: jest.fn().mockResolvedValue({
           data: {
             session: sessionForUser(userId),
@@ -804,6 +883,7 @@ describe('practitionerSignOut', () => {
     const signOut = jest.fn().mockResolvedValue({ error: null });
     const supabase = {
       auth: {
+        getUser: mockGetUserOnce(userId),
         getSession: jest.fn().mockResolvedValue({
           data: { session: sessionForUser(userId) },
         }),
@@ -829,6 +909,9 @@ describe('practitionerSignOut', () => {
     const signOut = jest.fn().mockResolvedValue({ error: null });
     const supabase = {
       auth: {
+        getUser: jest
+          .fn()
+          .mockResolvedValue({ data: { user: null }, error: null }),
         getSession: jest.fn().mockResolvedValue({ data: { session: null } }),
         signOut,
       },
@@ -860,6 +943,7 @@ describe('practitionerSignOut', () => {
     const signOut = jest.fn().mockResolvedValue({ error: null });
     const supabase = {
       auth: {
+        getUser: mockGetUserOnce(userId),
         getSession: jest.fn().mockResolvedValue({
           data: {
             session: sessionForUser(userId),
@@ -898,6 +982,7 @@ describe('practitionerSignOut', () => {
       .mockResolvedValue({ error: { message: 'sign-out failed' } });
     const supabase = {
       auth: {
+        getUser: mockGetUserOnce(userId),
         getSession: jest.fn().mockResolvedValue({
           data: { session: sessionForUser(userId) },
         }),

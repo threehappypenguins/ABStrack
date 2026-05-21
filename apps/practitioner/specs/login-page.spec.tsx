@@ -108,6 +108,11 @@ function createLoginSupabaseMock(options?: {
   };
   /** Access token for default `getSession()` results (e.g. JWT with `aal` for post-verify flows). */
   sessionAccessToken?: string;
+  /** Second `getUser()` after trust restore (login now verifies with `getUser`, not `getSession`). */
+  afterTrustRestoreGetUser?: {
+    error?: { message: string } | null;
+    user?: { id: string } | null;
+  };
 }): { client: { auth: Record<string, unknown> }; mfa: MfaMock } {
   const signInError = options?.signInError ?? null;
   const totpList = options?.listFactors?.totp ?? [
@@ -122,7 +127,18 @@ function createLoginSupabaseMock(options?: {
     error: null as Error | null,
     user: { id: USER_ID },
   };
-  const getUser = jest.fn().mockResolvedValue({
+  const getUser = jest.fn().mockResolvedValueOnce({
+    data: { user: getUserResolved.user },
+    error: getUserResolved.error,
+  });
+  if (options?.afterTrustRestoreGetUser !== undefined) {
+    const followUp = options.afterTrustRestoreGetUser;
+    getUser.mockResolvedValueOnce({
+      data: { user: followUp.user ?? null },
+      error: followUp.error ?? null,
+    });
+  }
+  getUser.mockResolvedValue({
     data: { user: getUserResolved.user },
     error: getUserResolved.error,
   });
@@ -167,20 +183,7 @@ function createLoginSupabaseMock(options?: {
     },
     error: mfaSessionOpts?.error ?? null,
   };
-  /** Login calls `getSession` after `tryRestoreTrustedMfaSession` before MFA; keep that success when verify-phase mocks simulate failure. */
-  const postTrustRestoreGetSessionOk = {
-    data: { session: defaultMfaSession },
-    error: null as const,
-  };
-  const verifyPhaseDiffersFromHealthy =
-    mfaSessionOpts != null &&
-    (mfaSessionOpts.error != null || mfaSessionOpts.session === null);
-  const getSession = verifyPhaseDiffersFromHealthy
-    ? jest
-        .fn()
-        .mockResolvedValueOnce(postTrustRestoreGetSessionOk)
-        .mockResolvedValue(verifyPhaseGetSessionResult)
-    : jest.fn().mockResolvedValue(verifyPhaseGetSessionResult);
+  const getSession = jest.fn().mockResolvedValue(verifyPhaseGetSessionResult);
   const signOut = jest.fn().mockResolvedValue({ error: null });
 
   const challenge = jest.fn().mockResolvedValue({
@@ -532,13 +535,13 @@ describe('LoginPage MFA state machine', () => {
     expect(mockPush).not.toHaveBeenCalledWith('/patients');
   });
 
-  it('returns to credentials when getSession fails after trust restore returns false', async () => {
+  it('returns to credentials when getUser fails after trust restore returns false', async () => {
     const { client } = createLoginSupabaseMock({
       assuranceFirst: { currentLevel: 'aal1', nextLevel: 'aal2' },
-    });
-    (client.auth.getSession as jest.Mock).mockResolvedValueOnce({
-      error: { message: 'storage read failed' },
-      data: { session: null },
+      afterTrustRestoreGetUser: {
+        error: { message: 'storage read failed' },
+        user: null,
+      },
     });
     mockedGetClient.mockReturnValue(client as never);
 
@@ -554,13 +557,10 @@ describe('LoginPage MFA state machine', () => {
     expect(mockPush).not.toHaveBeenCalled();
   });
 
-  it('returns to credentials when getSession returns no session after trust restore returns false', async () => {
+  it('returns to credentials when getUser returns no user after trust restore returns false', async () => {
     const { client } = createLoginSupabaseMock({
       assuranceFirst: { currentLevel: 'aal1', nextLevel: 'aal2' },
-    });
-    (client.auth.getSession as jest.Mock).mockResolvedValueOnce({
-      error: null,
-      data: { session: null },
+      afterTrustRestoreGetUser: { error: null, user: null },
     });
     mockedGetClient.mockReturnValue(client as never);
 
@@ -576,18 +576,12 @@ describe('LoginPage MFA state machine', () => {
     expect(mockPush).not.toHaveBeenCalled();
   });
 
-  it('returns to credentials when session user id differs after trust restore returns false', async () => {
+  it('returns to credentials when user id differs after trust restore returns false', async () => {
     const { client } = createLoginSupabaseMock({
       assuranceFirst: { currentLevel: 'aal1', nextLevel: 'aal2' },
-    });
-    (client.auth.getSession as jest.Mock).mockResolvedValueOnce({
-      error: null,
-      data: {
-        session: {
-          user: { id: '99999999-9999-9999-9999-999999999999' },
-          refresh_token: 'refresh-token',
-          access_token: 'access-token',
-        },
+      afterTrustRestoreGetUser: {
+        error: null,
+        user: { id: '99999999-9999-9999-9999-999999999999' },
       },
     });
     mockedGetClient.mockReturnValue(client as never);

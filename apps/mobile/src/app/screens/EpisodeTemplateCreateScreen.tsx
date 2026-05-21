@@ -237,6 +237,8 @@ export function EpisodeTemplateCreateScreen() {
     return () => {
       ac.abort();
     };
+    // listsLoading/listsError: auth-hydration skip only — omit to avoid refetch loops.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- preset fetch keyed on viewer/PHI scope
   }, [
     viewerUserId,
     phiSubjectUserId,

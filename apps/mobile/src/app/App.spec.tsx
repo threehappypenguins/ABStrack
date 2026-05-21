@@ -10,10 +10,15 @@ import App from './App';
 import { completeCaretakerInviteAfterAuth } from '../lib/caretaker-invite-complete';
 import {
   createMobileSupabaseClient,
+  getMobileAuthSessionSafe,
   getMobileSupabaseClient,
 } from '../lib/supabase-wiring';
 import * as mobilePhiHook from '../lib/auth/use-mobile-phi-subject-user-context';
 import * as mobileNetinfo from '../lib/network/mobile-device-netinfo';
+
+type MobileAuthGetSessionResult = Awaited<
+  ReturnType<typeof getMobileAuthSessionSafe>
+>;
 
 jest.mock('@abstrack/supabase', () => {
   const actual =
@@ -34,6 +39,14 @@ jest.mock('../lib/supabase-wiring-core', () => {
   return {
     ...original,
     getMobileSupabaseClient: jest.fn(),
+  };
+});
+
+jest.mock('../lib/get-mobile-auth-session-safe', () => {
+  const original = jest.requireActual('../lib/get-mobile-auth-session-safe');
+  return {
+    ...original,
+    getMobileAuthSessionSafe: jest.fn(),
   };
 });
 
@@ -77,6 +90,12 @@ beforeEach(() => {
   jest
     .mocked(getMobileSupabaseClient)
     .mockReturnValue(makeMockClient() as unknown as AbstrackSupabaseClient);
+
+  jest.mocked(getMobileAuthSessionSafe).mockImplementation(async () => {
+    const client = jest.mocked(getMobileSupabaseClient)();
+    const { data, error } = await client.auth.getSession();
+    return { data, error } as MobileAuthGetSessionResult;
+  });
 });
 
 afterEach(() => {
@@ -139,6 +158,24 @@ describe('mobile auth state sync', () => {
       };
     });
     const emitAuth = (event: string, session: Session | null) => {
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        jest
+          .mocked(getMobileAuthSessionSafe)
+          .mockResolvedValue(
+            (session
+              ? { data: { session }, error: null }
+              : {
+                  data: { session: null },
+                  error: null,
+                }) as MobileAuthGetSessionResult,
+          );
+      }
+      if (event === 'SIGNED_OUT') {
+        jest.mocked(getMobileAuthSessionSafe).mockResolvedValue({
+          data: { session: null },
+          error: null,
+        } as MobileAuthGetSessionResult);
+      }
       for (const cb of callbacks) {
         cb(event, session);
       }

@@ -48,10 +48,10 @@ export default function PractitionerUpdatePasswordPage() {
 
       try {
         const {
-          data: { session },
-        } = await supabase.auth.getSession();
+          data: { user },
+        } = await supabase.auth.getUser();
 
-        if (!session && mounted && !errorParam) {
+        if (!user && mounted && !errorParam) {
           setError(
             fromParam === PRACTITIONER_INVITE_SET_PASSWORD_FROM
               ? 'You must be signed in to create a password. Open your invite link again, then return here.'
@@ -115,10 +115,10 @@ export default function PractitionerUpdatePasswordPage() {
 
     try {
       const {
-        data: { session },
-      } = await supabase.auth.getSession();
+        data: { user },
+      } = await supabase.auth.getUser();
 
-      if (!session) {
+      if (!user) {
         setError(
           postInvite
             ? 'Your session expired. Open your invite link again, then return here to create a password.'

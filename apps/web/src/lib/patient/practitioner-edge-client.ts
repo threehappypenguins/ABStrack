@@ -1,6 +1,10 @@
 'use client';
 
-import { getSupabasePublishableKey, getSupabaseUrl } from '@abstrack/supabase';
+import {
+  getAccessTokenFromSession,
+  getSupabasePublishableKey,
+  getSupabaseUrl,
+} from '@abstrack/supabase';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
 
 /**
@@ -76,14 +80,11 @@ export function practitionerEdgeClientPreflightErrorMessage(
 
 async function requireAccessToken(): Promise<string> {
   const supabase = createBrowserClient();
-  const {
-    data: { session },
-    error,
-  } = await supabase.auth.getSession();
-  if (error || !session?.access_token?.trim()) {
+  const { accessToken, error } = await getAccessTokenFromSession(supabase);
+  if (error || !accessToken) {
     throw new Error(PATIENT_PRACTITIONER_ACCESS_ERROR_MISSING_TOKEN);
   }
-  return session.access_token;
+  return accessToken;
 }
 
 async function invokeWithPractitionerClientEnvGuards<T>(

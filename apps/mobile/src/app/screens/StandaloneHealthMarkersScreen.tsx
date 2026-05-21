@@ -118,16 +118,41 @@ export function StandaloneHealthMarkersScreen() {
         }
       }
     })();
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: sub } = supabase.auth.onAuthStateChange(() => {
       authSnapshotGenerationRef.current += 1;
       // Invalidate in-flight getMobileAuthSessionSafe completions (see runGeneration above).
       if (cancelled) {
         return;
       }
-      const uid = session?.user?.id ?? null;
-      setAuthUserId(uid);
-      setAuthSessionError(null);
-      setAuthLoading(false);
+      void (async () => {
+        const runGeneration = authSnapshotGenerationRef.current;
+        setAuthLoading(true);
+        try {
+          const { data, error } = await getMobileAuthSessionSafe();
+          if (
+            cancelled ||
+            authSnapshotGenerationRef.current !== runGeneration
+          ) {
+            return;
+          }
+          if (error) {
+            setAuthUserId(null);
+            setAuthSessionError(
+              error.message || 'Unable to read your sign-in session.',
+            );
+            return;
+          }
+          setAuthSessionError(null);
+          setAuthUserId(data.session?.user?.id ?? null);
+        } finally {
+          if (
+            !cancelled &&
+            authSnapshotGenerationRef.current === runGeneration
+          ) {
+            setAuthLoading(false);
+          }
+        }
+      })();
     });
     return () => {
       cancelled = true;

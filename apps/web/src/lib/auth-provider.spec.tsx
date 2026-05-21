@@ -1,22 +1,19 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { AuthProvider, useAuth } from './auth-provider';
 
-const getSessionMock = jest.fn();
+const getUserMock = jest.fn();
 const signOutMock = jest.fn().mockResolvedValue({ error: null });
 const onAuthStateChangeMock = jest.fn();
 const unsubscribeMock = jest.fn();
 
 let authStateChangeHandler:
-  | ((
-      event: 'SIGNED_IN' | 'SIGNED_OUT' | 'TOKEN_REFRESHED',
-      session: { user: { id: string; email?: string } } | null,
-    ) => void)
+  | ((event: 'SIGNED_IN' | 'SIGNED_OUT' | 'TOKEN_REFRESHED') => void)
   | undefined;
 
 jest.mock('./supabase/browser-client', () => ({
   createBrowserClient: () => ({
     auth: {
-      getSession: (...args: unknown[]) => getSessionMock(...args),
+      getUser: (...args: unknown[]) => getUserMock(...args),
       signOut: (...args: unknown[]) => signOutMock(...args),
       onAuthStateChange: (handler: typeof authStateChangeHandler) => {
         authStateChangeHandler = handler;
@@ -74,8 +71,8 @@ describe('AuthProvider', () => {
     });
   });
 
-  it('transitions loading from true to false after initial session bootstrap', async () => {
-    getSessionMock.mockResolvedValue({ data: { session: null } });
+  it('transitions loading from true to false after initial user bootstrap', async () => {
+    getUserMock.mockResolvedValue({ data: { user: null } });
 
     render(
       <AuthProvider>
@@ -97,12 +94,18 @@ describe('AuthProvider', () => {
       });
     });
 
-    expect(getSessionMock).toHaveBeenCalledTimes(1);
+    expect(getUserMock).toHaveBeenCalledTimes(1);
     expect(onAuthStateChangeMock).toHaveBeenCalledTimes(1);
   });
 
   it('updates context session when auth state change events fire', async () => {
-    getSessionMock.mockResolvedValue({ data: { session: null } });
+    getUserMock
+      .mockResolvedValueOnce({ data: { user: null } })
+      .mockResolvedValueOnce({
+        data: {
+          user: { id: 'user-123', email: 'patient@example.com' },
+        },
+      });
 
     render(
       <AuthProvider>
@@ -114,12 +117,8 @@ describe('AuthProvider', () => {
       expect(readAuthState().loading).toBe(false);
     });
 
-    const nextSession = {
-      user: { id: 'user-123', email: 'patient@example.com' },
-    };
-
     act(() => {
-      authStateChangeHandler?.('SIGNED_IN', nextSession);
+      authStateChangeHandler?.('SIGNED_IN');
     });
 
     await waitFor(() => {
@@ -129,10 +128,12 @@ describe('AuthProvider', () => {
         email: 'patient@example.com',
       });
     });
+
+    expect(getUserMock).toHaveBeenCalledTimes(2);
   });
 
   it('unsubscribes from auth events on unmount', () => {
-    getSessionMock.mockResolvedValue({ data: { session: null } });
+    getUserMock.mockResolvedValue({ data: { user: null } });
 
     const { unmount } = render(
       <AuthProvider>
@@ -146,8 +147,8 @@ describe('AuthProvider', () => {
   });
 
   it('clears invalid refresh tokens via signOut and still finishes loading', async () => {
-    getSessionMock.mockResolvedValue({
-      data: { session: null },
+    getUserMock.mockResolvedValue({
+      data: { user: null },
       error: {
         code: 'refresh_token_not_found',
         message: 'Invalid Refresh Token: Refresh Token Not Found',
