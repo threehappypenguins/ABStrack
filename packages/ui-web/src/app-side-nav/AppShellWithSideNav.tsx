@@ -33,6 +33,12 @@ export type AppShellWithSideNavProps = {
   /** Accessible label for the mobile menu trigger. */
   mobileMenuTriggerLabel?: string;
   /**
+   * Built-in mobile {@link SidebarTrigger} row inside the main column. Defaults to `false` when
+   * {@link topHeader} is set (the header should include a trigger); defaults to `true` otherwise,
+   * including when only the legacy {@link header} prop is used.
+   */
+  showMobileMenuTrigger?: boolean;
+  /**
    * Cookie for desktop sidebar open state (uncontrolled). Use a distinct name per app on shared
    * hosts (e.g. `abstrack_web_sidebar_state` vs `abstrack_practitioner_sidebar_state`).
    */
@@ -41,7 +47,8 @@ export type AppShellWithSideNavProps = {
 
 /**
  * Layout shell: optional full-width top header, then side navigation and main column under
- * {@link SidebarProvider}. Exposes {@link SidebarTrigger} on small screens when no header is passed.
+ * {@link SidebarProvider}. Exposes a built-in {@link SidebarTrigger} on small screens unless
+ * {@link topHeader} supplies one (override with {@link showMobileMenuTrigger}).
  *
  * @param props - Shell layout props.
  * @returns Provider-wrapped page chrome.
@@ -56,9 +63,10 @@ export function AppShellWithSideNav({
   mainId = 'main-content',
   mainClassName,
   mobileMenuTriggerLabel = 'Open navigation menu',
+  showMobileMenuTrigger,
   sidebarCookieName,
 }: AppShellWithSideNavProps) {
-  const showMobileTrigger = !header && !topHeader;
+  const showMobileTrigger = showMobileMenuTrigger ?? !topHeader;
 
   const providerStyle: CSSProperties = {
     '--sidebar-width': '16rem',

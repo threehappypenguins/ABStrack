@@ -55,4 +55,48 @@ describe('@abstrack/ui-web shell smoke', () => {
       '/dashboard',
     );
   });
+
+  it('shows built-in mobile trigger with legacy header when topHeader is absent', () => {
+    render(
+      <AppShellWithSideNav
+        header={<div>Legacy header</div>}
+        sideNav={
+          <AppSideNav
+            pathname="/dashboard"
+            items={navItems}
+            LinkComponent={TestNavLink}
+            accessibilityLabel="Test app"
+          />
+        }
+      >
+        <p>Page body</p>
+      </AppShellWithSideNav>,
+    );
+
+    expect(
+      screen.getByRole('button', { name: 'Open navigation menu' }),
+    ).toBeInTheDocument();
+  });
+
+  it('hides built-in mobile trigger when topHeader is provided', () => {
+    render(
+      <AppShellWithSideNav
+        topHeader={<div>Top chrome</div>}
+        sideNav={
+          <AppSideNav
+            pathname="/dashboard"
+            items={navItems}
+            LinkComponent={TestNavLink}
+            accessibilityLabel="Test app"
+          />
+        }
+      >
+        <p>Page body</p>
+      </AppShellWithSideNav>,
+    );
+
+    expect(
+      screen.queryByRole('button', { name: 'Open navigation menu' }),
+    ).not.toBeInTheDocument();
+  });
 });

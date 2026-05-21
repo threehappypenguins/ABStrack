@@ -16,5 +16,8 @@
     "react-native": "0.81.5",
     "react-native-web": "~0.21.0",
     "recharts": "^3.8.1"
+  },
+  "devDependencies": {
+    "tailwindcss-animate": "^1.0.7"
   }
 }
