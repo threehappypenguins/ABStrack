@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
-import { AuthenticatedShell } from '@/components/app-shell/AuthenticatedShell';
 import { createServerClient } from '@/lib/supabase/server-client';
 
 /**
@@ -30,9 +29,5 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     redirect('/login');
   }
 
-  return (
-    <AuthenticatedShell email={user?.email ?? null}>
-      {children}
-    </AuthenticatedShell>
-  );
+  return children;
 }

@@ -1,12 +1,28 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState } from 'react';
+import {
+  type AuthProviderSession,
+  mapSupabaseSessionToAuthContext,
+} from './auth-provider-session';
 import { createBrowserClient } from './supabase/browser-client';
 
+export type { AuthProviderSession } from './auth-provider-session';
+
 interface AuthContextType {
-  session: { user: { id: string; email?: string } } | null;
+  session: AuthProviderSession;
   loading: boolean;
 }
+
+export type AuthProviderProps = {
+  children: React.ReactNode;
+  /**
+   * Server-hydrated session from the root layout. When provided (including `null`),
+   * `loading` starts `false` so authenticated private routes can render app chrome on
+   * first paint without waiting for client `getSession`.
+   */
+  initialSession?: AuthProviderSession | null;
+};
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
@@ -31,9 +47,12 @@ function isRefreshTokenFailure(error: unknown): boolean {
   return false;
 }
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [session, setSession] = useState<AuthContextType['session']>(null);
-  const [loading, setLoading] = useState(true);
+export function AuthProvider({ children, initialSession }: AuthProviderProps) {
+  const hasInitialSession = initialSession !== undefined;
+  const [session, setSession] = useState<AuthProviderSession>(
+    hasInitialSession ? initialSession : null,
+  );
+  const [loading, setLoading] = useState(!hasInitialSession);
 
   useEffect(() => {
     let mounted = true;
@@ -81,7 +100,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (mounted) {
-          setSession(nextSession);
+          setSession(mapSupabaseSessionToAuthContext(nextSession));
         }
       } catch (error) {
         console.error('Failed to load auth session', error);
@@ -104,7 +123,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
+      setSession(mapSupabaseSessionToAuthContext(session));
     });
 
     return () => {

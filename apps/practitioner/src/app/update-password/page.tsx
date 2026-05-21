@@ -172,7 +172,7 @@ export default function PractitionerUpdatePasswordPage() {
   return (
     <main
       id="main-content"
-      className="flex min-h-screen items-center justify-center bg-app-bg bg-app-gradient px-4 py-12"
+      className="app-grid-background flex min-h-[calc(100svh-4.5rem)] items-center justify-center px-4 py-12"
     >
       <div className="w-full max-w-md rounded-2xl border border-app-border/90 bg-app-surface p-8 shadow-soft ring-1 ring-[color:var(--app-ring-slate)]">
         <h1 className="mb-6 text-center text-2xl font-bold text-app-ink">
@@ -251,7 +251,7 @@ export default function PractitionerUpdatePasswordPage() {
           <button
             type="submit"
             disabled={loading || checkingSession}
-            className="min-h-[44px] w-full rounded-full bg-app-primary px-4 py-2 text-sm font-semibold text-white transition hover:brightness-105 disabled:opacity-50"
+            className="min-h-[44px] w-full rounded-full bg-app-primary-solid px-4 py-2 text-sm font-semibold text-app-on-primary-solid transition hover:brightness-105 disabled:opacity-50"
           >
             {loading
               ? isInvitePassword

@@ -7,7 +7,7 @@ import AxeBuilder from '@axe-core/playwright';
  * `testInfo.project.name` if you need Firefox/WebKit-specific coverage.
  */
 test.describe('Accessibility (axe-core)', () => {
-  test('home page has no axe violations @a11y', async ({ page }, testInfo) => {
+  test('login page has no axe violations @a11y', async ({ page }, testInfo) => {
     // Axe runs once per URL; Firefox/WebKit are skipped to keep full e2e runs fast.
     // eslint-disable-next-line playwright/no-skipped-test -- intentional per-project skip
     test.skip(
@@ -15,16 +15,16 @@ test.describe('Accessibility (axe-core)', () => {
       'Axe runs on Chromium only for this suite; adjust if you need per-engine scans.',
     );
 
-    await page.goto('/');
+    await page.goto('/login');
 
-    // Scope to `#practitioner-home` (see `apps/practitioner/src/app/page.tsx`) so the
+    // Scope to `#main-content` (see `apps/practitioner/src/app/login/page.tsx`) so the
     // scan targets page content, not chrome. Wait so `include` always matches — axe throws
     // if the selector matches zero nodes.
-    const home = page.locator('#practitioner-home');
-    await home.waitFor({ state: 'visible', timeout: 20_000 });
+    const loginMain = page.locator('#main-content');
+    await loginMain.waitFor({ state: 'visible', timeout: 20_000 });
 
     const results = await new AxeBuilder({ page })
-      .include('#practitioner-home')
+      .include('#main-content')
       .analyze();
 
     expect(

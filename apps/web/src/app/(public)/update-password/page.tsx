@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { CARETAKER_INVITE_SET_PASSWORD_FROM } from '@/lib/auth/caretaker-invite-password';
+import { PUBLIC_PAGE_CENTER_CLASS } from '@/components/app-shell/public-page-layout-classes';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
 import { updateUserPassword } from '@abstrack/supabase';
 
@@ -157,7 +158,7 @@ export default function UpdatePasswordPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-transparent px-4">
+    <div className={PUBLIC_PAGE_CENTER_CLASS}>
       <div className="w-full max-w-md rounded-2xl border border-app-border/90 bg-app-surface p-8 shadow-soft ring-1 ring-[color:var(--app-ring-slate)]">
         <h1 className="mb-6 text-center text-2xl font-bold text-app-ink">
           {isCaretakerInvitePassword
@@ -234,7 +235,7 @@ export default function UpdatePasswordPage() {
           <button
             type="submit"
             disabled={loading || checkingSession}
-            className="w-full rounded-md bg-app-primary px-4 py-2 text-white transition hover:brightness-105 disabled:opacity-50"
+            className="w-full rounded-md bg-app-primary-solid px-4 py-2 text-app-on-primary-solid transition hover:brightness-105 disabled:opacity-50"
           >
             {loading
               ? isCaretakerInvitePassword

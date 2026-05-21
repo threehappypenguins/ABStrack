@@ -1,6 +1,6 @@
 /**
  * Route prefixes where practitioner chrome (sidebar shell, etc.) is not shown.
- * Used by the practitioner app shell and public theme bar components.
+ * Used by the practitioner app shell and public top navigation.
  */
 export const PRACTITIONER_PUBLIC_PATH_PREFIXES = [
   '/login',

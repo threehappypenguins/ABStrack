@@ -58,6 +58,22 @@ describe('AuthProvider', () => {
     });
   });
 
+  it('starts with loading false when initialSession is provided', () => {
+    render(
+      <AuthProvider
+        initialSession={{ user: { id: 'user-1', email: 'user@example.com' } }}
+      >
+        <AuthProbe />
+      </AuthProvider>,
+    );
+
+    expect(readAuthState()).toEqual({
+      loading: false,
+      userId: 'user-1',
+      email: 'user@example.com',
+    });
+  });
+
   it('transitions loading from true to false after initial session bootstrap', async () => {
     getSessionMock.mockResolvedValue({ data: { session: null } });
 

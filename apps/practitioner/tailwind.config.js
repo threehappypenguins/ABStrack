@@ -46,6 +46,9 @@ module.exports = {
           muted: 'rgb(var(--app-muted) / <alpha-value>)',
           ink: 'rgb(var(--app-ink) / <alpha-value>)',
           primary: 'rgb(var(--app-primary) / <alpha-value>)',
+          'primary-solid': 'rgb(var(--app-primary-solid) / <alpha-value>)',
+          'on-primary-solid':
+            'rgb(var(--app-primary-on-solid) / <alpha-value>)',
           'primary-soft': 'rgb(var(--app-primary-soft) / <alpha-value>)',
           ring: 'rgb(var(--app-ring) / <alpha-value>)',
         },

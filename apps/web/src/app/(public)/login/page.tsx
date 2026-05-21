@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
 import { signInWithEmailPassword } from '@abstrack/supabase';
+import { PUBLIC_PAGE_CENTER_CLASS } from '@/components/app-shell/public-page-layout-classes';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -41,7 +42,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-transparent px-4">
+    <div className={PUBLIC_PAGE_CENTER_CLASS}>
       <div className="w-full max-w-md rounded-2xl border border-app-border/90 bg-app-surface p-8 shadow-soft ring-1 ring-[color:var(--app-ring-slate)]">
         <h1 className="mb-6 text-center text-2xl font-bold text-app-ink">
           Login
@@ -101,7 +102,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-md bg-app-primary px-4 py-2 text-white transition hover:brightness-105 disabled:opacity-50"
+            className="w-full rounded-md bg-app-primary-solid px-4 py-2 text-app-on-primary-solid transition hover:brightness-105 disabled:opacity-50"
           >
             {loading ? 'Logging in...' : 'Login'}
           </button>

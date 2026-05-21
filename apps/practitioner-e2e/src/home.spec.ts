@@ -1,9 +1,14 @@
 import { test, expect } from '@playwright/test';
 
-test('unauthenticated landing shows practitioner heading', async ({ page }) => {
+test('unauthenticated root redirects to practitioner login', async ({
+  page,
+}) => {
   await page.goto('/');
 
-  await expect(page.locator('h1')).toContainText('ABStrack Practitioner');
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(
+    page.getByRole('heading', { name: 'Practitioner login' }),
+  ).toBeVisible();
 });
 
 test('unauthenticated patients route shows sign-in gate', async ({ page }) => {

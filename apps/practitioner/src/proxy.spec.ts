@@ -114,4 +114,30 @@ describe('practitioner proxy', () => {
     const { NextResponse } = jest.requireMock('next/server');
     expect(NextResponse.rewrite).not.toHaveBeenCalled();
   });
+
+  it('redirects signed-out root to /login', async () => {
+    const result = await proxy(makeRequest('/'));
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        type: 'redirect',
+        location: 'https://practitioner.example.com/login',
+      }),
+    );
+  });
+
+  it('does not redirect signed-in root away from MFA home', async () => {
+    createServerClientMock.mockReturnValue({
+      auth: {
+        getUser: jest.fn(async () => ({
+          data: { user: { id: 'user-1' } },
+          error: null,
+        })),
+      },
+    } as unknown as ServerClient);
+
+    const result = await proxy(makeRequest('/'));
+
+    expect(result).toEqual(expect.objectContaining({ type: 'next' }));
+  });
 });
