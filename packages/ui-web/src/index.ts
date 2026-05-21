@@ -19,7 +19,9 @@ export {
 } from './app-top-nav/index.js';
 
 export {
+  AppNotFoundPage,
   AppNotFoundPanel,
+  type AppNotFoundPageProps,
   type AppNotFoundPanelProps,
 } from './app-not-found/index.js';
 

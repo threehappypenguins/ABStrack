@@ -104,7 +104,7 @@ export function AppTopNav({
   mobileSheetTitle = 'Menu',
   mobileSheetDescription = 'Navigation, account, and appearance settings.',
 }: AppTopNavProps) {
-  const showActionsRegion = Boolean(email || actions);
+  const hasAccountSection = Boolean(email || actions);
 
   return (
     <header className="sticky top-0 z-50 w-full shrink-0 overflow-visible border-b border-[var(--app-header-border)] bg-[var(--app-header-bg)] shadow-header backdrop-blur-md supports-[backdrop-filter]:bg-[var(--app-header-bg)]">
@@ -188,14 +188,14 @@ export function AppTopNav({
                     {email}
                   </p>
                 ) : null}
-                {showActionsRegion ? (
+                {actions ? (
                   <div className="flex flex-col gap-3 [&_a]:w-full [&_button]:w-full [&_form]:w-full">
                     {actions}
                   </div>
                 ) : null}
                 <div
                   className={cn(
-                    showActionsRegion || email
+                    hasAccountSection
                       ? 'border-t border-[color:var(--app-header-border)] pt-4'
                       : undefined,
                   )}

@@ -32,9 +32,10 @@ The sidebar panel uses `--app-sidebar-bg` with `backdrop-blur-sm`. Grid lines ar
 
 Pass the host app’s `Link` component so routing stays in Next.js.
 
-- `AppNotFoundPanel` — themed 404 content for root `not-found.tsx` (avoids Next’s OS-scheme `body` override; optional `homeLink`)
+- `AppNotFoundPanel` — themed 404 copy (avoids Next’s OS-scheme `body` override; optional `homeLink`)
+- `AppNotFoundPage` — panel with default min-height for `not-found.tsx`; use when the app root layout already supplies top nav / shell chrome (user and practitioner web)
 
-Each app should define `src/app/not-found.tsx` using `AppNotFoundPanel` so 404s respect `html.dark` and the grid background.
+Each app should define `src/app/not-found.tsx` with `AppNotFoundPage` and mount public or authenticated top navigation in the **root** layout (same pattern as practitioner) so unknown routes still show chrome.
 
 ### Brand assets (logo and favicons)
 

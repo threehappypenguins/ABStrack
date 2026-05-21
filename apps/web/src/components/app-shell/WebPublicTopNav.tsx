@@ -11,6 +11,8 @@ import { usePathname } from 'next/navigation';
 import { forwardRef, useMemo, type ReactNode } from 'react';
 
 import { ThemeMenu } from '@/components/theme/ThemeMenu';
+import { useAuth } from '@/lib/auth-provider';
+import { isPublicWebPath } from '@/lib/web-public-paths';
 import { LandingTopNavActions } from './LandingTopNavActions';
 
 const WebPublicNavLink = forwardRef<HTMLAnchorElement, AppTopNavBrandLinkProps>(
@@ -35,7 +37,7 @@ function resolvePublicTopNavActions(pathname: string): ReactNode {
   if (pathname === '/login') {
     return (
       <Link href="/signup" className={ACCOUNT_ACTIONS_SURFACE_CLASS}>
-        Sign-Up
+        Sign up
       </Link>
     );
   }
@@ -56,10 +58,15 @@ function resolvePublicTopNavActions(pathname: string): ReactNode {
  */
 export function WebPublicTopNav() {
   const pathname = usePathname() ?? '/';
+  const { session, loading } = useAuth();
   const actions = useMemo(
     () => resolvePublicTopNavActions(pathname),
     [pathname],
   );
+
+  if (!isPublicWebPath(pathname) && !loading && session) {
+    return null;
+  }
 
   return (
     <AppTopNav
