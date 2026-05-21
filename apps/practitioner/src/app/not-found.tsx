@@ -1,4 +1,4 @@
-import { AppNotFoundPage } from '@abstrack/ui-web';
+import { PractitionerNotFoundBoundary } from '@/components/app-shell/PractitionerNotFoundBoundary';
 
 /**
  * Practitioner 404 boundary — uses app theme tokens instead of the Next.js default
@@ -6,5 +6,5 @@ import { AppNotFoundPage } from '@abstrack/ui-web';
  * root layout ({@link PractitionerPublicTopNav} / {@link PractitionerAppShell}).
  */
 export default function PractitionerNotFound() {
-  return <AppNotFoundPage />;
+  return <PractitionerNotFoundBoundary />;
 }
