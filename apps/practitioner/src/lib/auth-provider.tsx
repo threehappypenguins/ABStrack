@@ -181,9 +181,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         setSession(nextSession);
         if (event === 'TOKEN_REFRESHED' && nextSession) {
-          await syncMfaTrustBundleAfterTokenRefresh(supabase, nextSession);
-          if (!mounted || generation !== verifyGenerationRef.current) {
-            return;
+          try {
+            await syncMfaTrustBundleAfterTokenRefresh(supabase, nextSession);
+          } catch (trustError) {
+            console.error(
+              'Failed to sync MFA trust bundle after token refresh',
+              trustError,
+            );
           }
         }
       } catch (error) {

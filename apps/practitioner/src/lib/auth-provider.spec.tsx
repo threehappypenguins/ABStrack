@@ -205,4 +205,43 @@ describe('AuthProvider', () => {
     expect(readAuthState().userId).toBeNull();
     expect(syncMfaTrustBundleAfterTokenRefreshMock).not.toHaveBeenCalled();
   });
+
+  it('keeps session when MFA trust sync fails after TOKEN_REFRESHED', async () => {
+    const session = makeSession('practitioner-1');
+
+    getVerifiedAuthSessionMock
+      .mockResolvedValueOnce({
+        data: { user: null, session: null },
+        error: null,
+      })
+      .mockResolvedValue({
+        data: { user: session.user, session },
+        error: null,
+      });
+
+    syncMfaTrustBundleAfterTokenRefreshMock.mockRejectedValueOnce(
+      new Error('trust bundle storage failed'),
+    );
+
+    render(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => {
+      expect(readAuthState().loading).toBe(false);
+    });
+
+    act(() => {
+      authStateChangeHandler?.('TOKEN_REFRESHED');
+    });
+
+    await waitFor(() => {
+      expect(readAuthState().userId).toBe('practitioner-1');
+    });
+
+    expect(signOutMock).not.toHaveBeenCalled();
+    expect(syncMfaTrustBundleAfterTokenRefreshMock).toHaveBeenCalledTimes(1);
+  });
 });
