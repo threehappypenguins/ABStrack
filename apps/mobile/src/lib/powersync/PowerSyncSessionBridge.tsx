@@ -300,7 +300,7 @@ export function PowerSyncSessionBridge({
       powerSyncUrl,
       getSession: async () => {
         try {
-          const { data } = await getMobileAuthSessionSafe();
+          const { data } = await getMobileAuthSessionSafe({ verifyUser: false });
           const next = data.session;
           if (!next?.access_token) {
             return null;

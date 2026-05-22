@@ -19,6 +19,7 @@ import {
   isHttpsCaretakerJoinWithoutCodeUrl,
 } from '../lib/caretaker-invite-deep-link';
 import {
+  clearMobileVerifiedAuthUserCache,
   getMobileAuthSessionSafe,
   getMobileSupabaseClient,
   isAuthSessionRecoveryFailure,
@@ -509,6 +510,7 @@ function AppBootstrap() {
       data: { subscription },
     } = mobileSupabase.auth.onAuthStateChange((event) => {
       if (event === 'SIGNED_OUT') {
+        clearMobileVerifiedAuthUserCache();
         authSessionReadGenerationRef.current += 1;
         authRouteRef.current = 'Login';
         recoveryFlowActiveRef.current = false;
