@@ -527,10 +527,7 @@ function AppBootstrap() {
             }
             return;
           }
-          const nextSession = data.session ?? null;
-          if (nextSession != null) {
-            setSession(nextSession);
-          }
+          setSession(data.session ?? null);
         });
       }
     });

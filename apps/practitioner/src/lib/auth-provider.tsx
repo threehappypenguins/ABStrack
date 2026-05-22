@@ -185,13 +185,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event) => {
       void (async () => {
-        const nextSession = await loadVerifiedAuthSessionWithTimeout(supabase);
-        if (!mounted) {
-          return;
-        }
-        setSession(nextSession);
-        if (event === 'TOKEN_REFRESHED' && nextSession) {
-          await syncMfaTrustBundleAfterTokenRefresh(supabase, nextSession);
+        try {
+          const nextSession =
+            await loadVerifiedAuthSessionWithTimeout(supabase);
+          if (!mounted) {
+            return;
+          }
+          setSession(nextSession);
+          if (event === 'TOKEN_REFRESHED' && nextSession) {
+            await syncMfaTrustBundleAfterTokenRefresh(supabase, nextSession);
+          }
+        } catch (error) {
+          console.error(
+            'Failed to handle practitioner auth state change',
+            error,
+          );
+          if (isRefreshTokenFailure(error)) {
+            await supabase.auth.signOut();
+          }
+          if (mounted) {
+            setSession(null);
+          }
         }
       })();
     });
