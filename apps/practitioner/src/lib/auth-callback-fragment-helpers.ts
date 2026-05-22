@@ -16,6 +16,20 @@ export function parseImplicitHashParams(hash: string): Record<string, string> {
 }
 
 /**
+ * True when `err` is a Supabase Auth API error from `getUser()` / `setSession()` (not a config throw).
+ *
+ * @param err - Value from `catch` or `getUser()` `error`.
+ */
+export function isSupabaseAuthApiError(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    '__isAuthError' in err &&
+    (err as { __isAuthError?: boolean }).__isAuthError === true
+  );
+}
+
+/**
  * True when `getSupabaseBrowserClient()` failed because URL / publishable key env is missing or invalid.
  *
  * @param err - Value from `catch`.

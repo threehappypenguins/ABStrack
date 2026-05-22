@@ -30,8 +30,19 @@ export default async function RootLayout({
   const supabase = await createServerClient();
   const {
     data: { user },
+    error: getUserError,
   } = await supabase.auth.getUser();
-  const initialSession = mapSupabaseUserToAuthContext(user);
+
+  if (getUserError) {
+    console.error(
+      'Failed to verify user for root layout; deferring session to client',
+      getUserError,
+    );
+  }
+
+  const initialSession = getUserError
+    ? undefined
+    : mapSupabaseUserToAuthContext(user);
 
   return (
     <html lang="en" className={fontSans.variable} suppressHydrationWarning>

@@ -589,6 +589,40 @@ export function practitionerSignOutEverywhere(): void {
 }
 
 /**
+ * Resolves the current user id for soft vs full sign-out when matching the MFA trust bundle.
+ * Prefers verified {@link AbstrackSupabaseClient.auth.getUser}; on failure, best-effort
+ * `getSession().session.user.id` so offline verification does not force full sign-out and
+ * revoke the refresh token still held in the bundle.
+ *
+ * @param supabase - Browser Supabase client.
+ * @returns User id string, or `null` when none can be resolved.
+ */
+async function resolveUserIdForMfaTrustSignOut(
+  supabase: PractitionerBrowserClient,
+): Promise<string | null> {
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (!userError) {
+    const id = userData.user?.id;
+    return id != null && id !== '' ? id : null;
+  }
+  console.warn(
+    'practitionerSignOut: getUser failed; using session user id for trust-bundle check',
+    userError,
+  );
+  try {
+    const { data: sessionData, error: sessionError } =
+      await supabase.auth.getSession();
+    if (sessionError) {
+      return null;
+    }
+    const id = sessionData.session?.user?.id;
+    return id != null && id !== '' ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Clears the browser auth session **without** calling GoTrue’s `POST /logout` endpoint.
  *
  * **`signOut({ scope: 'local' })` still revokes the current session’s refresh token on the server**
@@ -638,14 +672,12 @@ async function clearBrowserSessionWithoutServerLogout(
 export async function practitionerSignOut(
   supabase: PractitionerBrowserClient,
 ): Promise<void> {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const userId = await resolveUserIdForMfaTrustSignOut(supabase);
   const bundle = readBundle();
   const trustActiveForUser =
-    user &&
-    bundle &&
-    bundle.userId === user.id &&
+    userId != null &&
+    bundle != null &&
+    bundle.userId === userId &&
     bundle.trustedUntilMs > Date.now();
 
   if (trustActiveForUser) {

@@ -5,9 +5,11 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { getSupabaseBrowserClient } from '@abstrack/supabase/browser';
 import {
   AUTH_CALLBACK_INVALID_LINK_MESSAGE,
+  AUTH_CALLBACK_VERIFICATION_FAILED_MESSAGE,
   getSafePractitionerAuthCallbackRedirectPath,
 } from '@/lib/auth-callback-redirect';
 import {
+  isSupabaseAuthApiError,
   isSupabaseBrowserConfigError,
   parseImplicitHashParams,
 } from '@/lib/auth-callback-fragment-helpers';
@@ -84,7 +86,12 @@ function PractitionerAuthCallbackFragmentContent() {
 
         const {
           data: { user: existingUser },
+          error: existingUserError,
         } = await supabase.auth.getUser();
+        if (cancelled) return;
+        if (existingUserError) {
+          throw existingUserError;
+        }
 
         if (existingUser) {
           finishOk();
@@ -126,7 +133,12 @@ function PractitionerAuthCallbackFragmentContent() {
 
         const {
           data: { user: afterDetectUser },
+          error: afterDetectUserError,
         } = await supabase.auth.getUser();
+        if (cancelled) return;
+        if (afterDetectUserError) {
+          throw afterDetectUserError;
+        }
 
         if (afterDetectUser) {
           finishOk();
@@ -140,7 +152,15 @@ function PractitionerAuthCallbackFragmentContent() {
           setSurfaceError(err.message);
           return;
         }
-        setSurfaceError(AUTH_CALLBACK_INVALID_LINK_MESSAGE);
+        if (isSupabaseAuthApiError(err)) {
+          console.error(
+            'Failed to verify user during auth callback fragment handling',
+            err,
+          );
+          finishErr(AUTH_CALLBACK_VERIFICATION_FAILED_MESSAGE);
+          return;
+        }
+        finishErr(AUTH_CALLBACK_INVALID_LINK_MESSAGE);
       }
     };
 

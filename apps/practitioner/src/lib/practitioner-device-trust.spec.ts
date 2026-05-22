@@ -841,6 +841,38 @@ describe('practitionerSignOut', () => {
     localStorage.clear();
   });
 
+  it('soft sign-out when getUser fails but session user id matches trust bundle', async () => {
+    localStorage.setItem(
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
+      buildBundleJson(userId, Date.now() + 60_000),
+    );
+
+    const removeItem = jest.fn().mockResolvedValue(undefined);
+    const signOut = jest.fn().mockResolvedValue({ error: null });
+    const supabase = {
+      auth: {
+        getUser: jest.fn().mockResolvedValue({
+          data: { user: null },
+          error: { message: 'Network error', __isAuthError: true },
+        }),
+        getSession: jest.fn().mockResolvedValue({
+          data: { session: sessionForUser(userId) },
+        }),
+        signOut,
+        storage: { removeItem },
+        storageKey: 'sb-test-auth-token',
+      },
+    } as unknown as BrowserClient;
+
+    await practitionerSignOut(supabase);
+
+    expect(
+      localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
+    ).not.toBeNull();
+    expect(signOut).not.toHaveBeenCalled();
+    expect(removeItem).toHaveBeenCalledWith('sb-test-auth-token');
+  });
+
   it('soft sign-out: clears auth storage without POST /logout, keeps MFA bundle', async () => {
     localStorage.setItem(
       PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,

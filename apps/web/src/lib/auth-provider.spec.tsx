@@ -146,6 +146,55 @@ describe('AuthProvider', () => {
     expect(unsubscribeMock).toHaveBeenCalledTimes(1);
   });
 
+  it('preserves initialSession when getUser returns a transient error', async () => {
+    getUserMock.mockResolvedValue({
+      data: { user: null },
+      error: { message: 'Failed to fetch' },
+    });
+
+    render(
+      <AuthProvider
+        initialSession={{ user: { id: 'user-1', email: 'user@example.com' } }}
+      >
+        <AuthProbe />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => {
+      expect(getUserMock).toHaveBeenCalled();
+    });
+
+    expect(readAuthState()).toEqual({
+      loading: false,
+      userId: 'user-1',
+      email: 'user@example.com',
+    });
+    expect(signOutMock).not.toHaveBeenCalled();
+  });
+
+  it('preserves initialSession when getUser throws a transient error', async () => {
+    getUserMock.mockRejectedValue(new TypeError('Failed to fetch'));
+
+    render(
+      <AuthProvider
+        initialSession={{ user: { id: 'user-1', email: 'user@example.com' } }}
+      >
+        <AuthProbe />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => {
+      expect(getUserMock).toHaveBeenCalled();
+    });
+
+    expect(readAuthState()).toEqual({
+      loading: false,
+      userId: 'user-1',
+      email: 'user@example.com',
+    });
+    expect(signOutMock).not.toHaveBeenCalled();
+  });
+
   it('clears invalid refresh tokens via signOut and still finishes loading', async () => {
     getUserMock.mockResolvedValue({
       data: { user: null },

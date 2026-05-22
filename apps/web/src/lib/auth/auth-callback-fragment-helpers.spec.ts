@@ -1,4 +1,7 @@
-import { parseImplicitHashParams } from './auth-callback-fragment-helpers';
+import {
+  isSupabaseAuthApiError,
+  parseImplicitHashParams,
+} from './auth-callback-fragment-helpers';
 
 describe('parseImplicitHashParams', () => {
   it('parses access_token and refresh_token from a Supabase-style hash', () => {
@@ -10,5 +13,20 @@ describe('parseImplicitHashParams', () => {
       expires_in: '3600',
       token_type: 'bearer',
     });
+  });
+});
+
+describe('isSupabaseAuthApiError', () => {
+  it('returns true for Supabase Auth API errors', () => {
+    expect(
+      isSupabaseAuthApiError({
+        __isAuthError: true,
+        message: 'Network error',
+      }),
+    ).toBe(true);
+  });
+
+  it('returns false for ordinary errors', () => {
+    expect(isSupabaseAuthApiError(new Error('nope'))).toBe(false);
   });
 });

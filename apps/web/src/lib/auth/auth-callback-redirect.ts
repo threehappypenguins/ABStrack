@@ -7,6 +7,13 @@ export const AUTH_CALLBACK_INVALID_LINK_MESSAGE =
   'This sign-in link is invalid or expired. Request a new one.';
 
 /**
+ * User-facing message when {@link AbstrackSupabaseClient.auth.getUser} fails during callback
+ * handling (distinct from an invalid or expired link).
+ */
+export const AUTH_CALLBACK_VERIFICATION_FAILED_MESSAGE =
+  "We couldn't verify your sign-in. Try again in a moment.";
+
+/**
  * Returns a same-origin relative path for post-auth redirect, or the default when `next` is unsafe.
  *
  * @param nextParam - Optional `next` query value from `/auth/callback`.

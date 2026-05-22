@@ -67,32 +67,38 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
           }, SESSION_BOOTSTRAP_TIMEOUT_MS);
         });
 
+        const result = await Promise.race([
+          supabase.auth.getUser(),
+          timeoutPromise,
+        ]).catch(async (raceError: unknown) => {
+          if (
+            raceError instanceof Error &&
+            raceError.message === 'session_bootstrap_timeout'
+          ) {
+            console.warn(
+              'Auth user bootstrap timed out; keeping in-memory session',
+            );
+            return null;
+          }
+          throw raceError;
+        });
+
+        if (result === null) {
+          return;
+        }
+
         const {
           data: { user },
           error,
-        } = await Promise.race([supabase.auth.getUser(), timeoutPromise]).catch(
-          async (raceError: unknown) => {
-            if (
-              raceError instanceof Error &&
-              raceError.message === 'session_bootstrap_timeout'
-            ) {
-              console.warn(
-                'Auth user bootstrap timed out; clearing local session',
-              );
-              await supabase.auth.signOut();
-              return { data: { user: null }, error: null };
-            }
-            throw raceError;
-          },
-        );
+        } = result;
 
         if (error) {
           console.error('Failed to verify authenticated user', error);
           if (isRefreshTokenFailure(error)) {
             await supabase.auth.signOut();
-          }
-          if (mounted) {
-            setSession(null);
+            if (mounted) {
+              setSession(null);
+            }
           }
           return;
         }
@@ -104,9 +110,9 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
         console.error('Failed to verify authenticated user', error);
         if (isRefreshTokenFailure(error)) {
           await supabase.auth.signOut();
-        }
-        if (mounted) {
-          setSession(null);
+          if (mounted) {
+            setSession(null);
+          }
         }
       } finally {
         if (timeoutId !== undefined) {

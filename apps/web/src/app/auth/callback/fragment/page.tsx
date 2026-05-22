@@ -4,9 +4,11 @@ import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   AUTH_CALLBACK_INVALID_LINK_MESSAGE,
+  AUTH_CALLBACK_VERIFICATION_FAILED_MESSAGE,
   getSafeAuthCallbackRedirectPath,
 } from '@/lib/auth/auth-callback-redirect';
 import {
+  isSupabaseAuthApiError,
   isSupabaseBrowserConfigError,
   parseImplicitHashParams,
 } from '@/lib/auth/auth-callback-fragment-helpers';
@@ -80,7 +82,12 @@ function AuthCallbackFragmentContent() {
 
         const {
           data: { user: existingUser },
+          error: existingUserError,
         } = await supabase.auth.getUser();
+        if (cancelled) return;
+        if (existingUserError) {
+          throw existingUserError;
+        }
 
         if (existingUser) {
           finishOk();
@@ -122,7 +129,12 @@ function AuthCallbackFragmentContent() {
 
         const {
           data: { user: afterDetectUser },
+          error: afterDetectUserError,
         } = await supabase.auth.getUser();
+        if (cancelled) return;
+        if (afterDetectUserError) {
+          throw afterDetectUserError;
+        }
 
         if (afterDetectUser) {
           finishOk();
@@ -136,7 +148,15 @@ function AuthCallbackFragmentContent() {
           setSurfaceError(err.message);
           return;
         }
-        setSurfaceError(AUTH_CALLBACK_INVALID_LINK_MESSAGE);
+        if (isSupabaseAuthApiError(err)) {
+          console.error(
+            'Failed to verify user during auth callback fragment handling',
+            err,
+          );
+          finishErr(AUTH_CALLBACK_VERIFICATION_FAILED_MESSAGE);
+          return;
+        }
+        finishErr(AUTH_CALLBACK_INVALID_LINK_MESSAGE);
       }
     };
 
