@@ -21,6 +21,7 @@ import {
 import {
   getMobileAuthSessionSafe,
   getMobileSupabaseClient,
+  isAuthSessionRecoveryFailure,
 } from '../lib/supabase-wiring';
 import { AppProviders } from './components/AppProviders';
 import { SyncHealthFooter } from './components/SyncHealthFooter';
@@ -513,11 +514,23 @@ function AppBootstrap() {
       }
 
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-        void getMobileAuthSessionSafe().then(({ data }) => {
+        void getMobileAuthSessionSafe().then(({ data, error }) => {
           if (!mounted) {
             return;
           }
-          setSession(data.session ?? null);
+          if (error) {
+            if (!isAuthSessionRecoveryFailure(error)) {
+              console.warn(
+                'Auth state changed but session read failed; keeping in-memory session',
+                error,
+              );
+            }
+            return;
+          }
+          const nextSession = data.session ?? null;
+          if (nextSession != null) {
+            setSession(nextSession);
+          }
         });
       }
     });

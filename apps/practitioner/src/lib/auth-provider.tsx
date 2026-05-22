@@ -6,6 +6,7 @@ import {
   parseAbstrackAccessTokenClaims,
   resolvePractitionerAppGate,
   type AbstrackAccessTokenClaims,
+  type AbstrackSupabaseClient,
   type Database,
   type PractitionerAppGate,
   type Session,
@@ -62,6 +63,66 @@ function isRefreshTokenFailure(error: unknown): boolean {
 }
 
 /**
+ * Loads a verified practitioner session with a bounded wait, shared by bootstrap and
+ * `onAuthStateChange`. On bootstrap timeout or refresh-token failure, signs out locally.
+ *
+ * @param client - Browser Supabase client.
+ * @returns Verified session to store in context, or `null` when signed out / verification failed.
+ */
+async function loadVerifiedAuthSessionWithTimeout(
+  client: AbstrackSupabaseClient,
+): Promise<Session | null> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error('session_bootstrap_timeout'));
+      }, SESSION_BOOTSTRAP_TIMEOUT_MS);
+    });
+
+    const {
+      data: { session: nextSession },
+      error,
+    } = await Promise.race([
+      getVerifiedAuthSession(client),
+      timeoutPromise,
+    ]).catch(async (raceError: unknown) => {
+      if (
+        raceError instanceof Error &&
+        raceError.message === 'session_bootstrap_timeout'
+      ) {
+        console.warn(
+          'Auth session bootstrap timed out; clearing local session',
+        );
+        await client.auth.signOut();
+        return { data: { user: null, session: null }, error: null };
+      }
+      throw raceError;
+    });
+
+    if (error) {
+      console.error('Failed to verify practitioner auth session', error);
+      if (isRefreshTokenFailure(error)) {
+        await client.auth.signOut();
+      }
+      return null;
+    }
+
+    return nextSession;
+  } catch (error) {
+    console.error('Failed to verify practitioner auth session', error);
+    if (isRefreshTokenFailure(error)) {
+      await client.auth.signOut();
+    }
+    return null;
+  } finally {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
+
+/**
  * Provides practitioner auth session state, `profiles.app_role`, and JWT claim metadata from
  * Supabase browser auth. See `docs/AUTH_CLAIM_CONTRACT.md`.
  *
@@ -102,60 +163,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let mounted = true;
 
     const syncVerifiedSession = async () => {
-      let timeoutId: ReturnType<typeof setTimeout> | undefined;
-      try {
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          timeoutId = setTimeout(() => {
-            reject(new Error('session_bootstrap_timeout'));
-          }, SESSION_BOOTSTRAP_TIMEOUT_MS);
-        });
-
-        const {
-          data: { session: nextSession },
-          error,
-        } = await Promise.race([
-          getVerifiedAuthSession(supabase),
-          timeoutPromise,
-        ]).catch(async (raceError: unknown) => {
-          if (
-            raceError instanceof Error &&
-            raceError.message === 'session_bootstrap_timeout'
-          ) {
-            console.warn(
-              'Auth session bootstrap timed out; clearing local session',
-            );
-            await supabase.auth.signOut();
-            return { data: { user: null, session: null }, error: null };
-          }
-          throw raceError;
-        });
-
-        if (error) {
-          console.error('Failed to verify practitioner auth session', error);
-          if (isRefreshTokenFailure(error)) {
-            await supabase.auth.signOut();
-          }
-          if (mounted) {
-            setSession(null);
-          }
-          return;
-        }
-
-        if (mounted) {
-          setSession(nextSession);
-        }
-      } catch (error) {
-        console.error('Failed to verify practitioner auth session', error);
-        if (isRefreshTokenFailure(error)) {
-          await supabase.auth.signOut();
-        }
-        if (mounted) {
-          setSession(null);
-        }
-      } finally {
-        if (timeoutId !== undefined) {
-          clearTimeout(timeoutId);
-        }
+      const nextSession = await loadVerifiedAuthSessionWithTimeout(supabase);
+      if (mounted) {
+        setSession(nextSession);
       }
     };
 
@@ -175,47 +185,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event) => {
       void (async () => {
-        let timeoutId: ReturnType<typeof setTimeout> | undefined;
-        try {
-          const timeoutPromise = new Promise<never>((_, reject) => {
-            timeoutId = setTimeout(() => {
-              reject(new Error('session_bootstrap_timeout'));
-            }, SESSION_BOOTSTRAP_TIMEOUT_MS);
-          });
-          const {
-            data: { session: nextSession },
-            error,
-          } = await Promise.race([
-            getVerifiedAuthSession(supabase),
-            timeoutPromise,
-          ]);
-          if (error) {
-            if (isRefreshTokenFailure(error)) {
-              await supabase.auth.signOut();
-            }
-            if (mounted) {
-              setSession(null);
-            }
-            return;
-          }
-          if (mounted) {
-            setSession(nextSession);
-          }
-          if (event === 'TOKEN_REFRESHED' && nextSession) {
-            await syncMfaTrustBundleAfterTokenRefresh(supabase, nextSession);
-          }
-        } catch (error) {
-          console.error('Failed to verify practitioner auth session', error);
-          if (isRefreshTokenFailure(error)) {
-            await supabase.auth.signOut();
-          }
-          if (mounted) {
-            setSession(null);
-          }
-        } finally {
-          if (timeoutId !== undefined) {
-            clearTimeout(timeoutId);
-          }
+        const nextSession = await loadVerifiedAuthSessionWithTimeout(supabase);
+        if (!mounted) {
+          return;
+        }
+        setSession(nextSession);
+        if (event === 'TOKEN_REFRESHED' && nextSession) {
+          await syncMfaTrustBundleAfterTokenRefresh(supabase, nextSession);
         }
       })();
     });
