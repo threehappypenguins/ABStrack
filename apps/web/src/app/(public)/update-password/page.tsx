@@ -5,6 +5,10 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { CARETAKER_INVITE_SET_PASSWORD_FROM } from '@/lib/auth/caretaker-invite-password';
 import { PUBLIC_PAGE_CENTER_CLASS } from '@/components/app-shell/public-page-layout-classes';
+import {
+  AUTH_CALLBACK_INVALID_LINK_MESSAGE,
+  AUTH_CALLBACK_VERIFICATION_FAILED_MESSAGE,
+} from '@/lib/auth/auth-callback-redirect';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
 import { updateUserPassword } from '@abstrack/supabase';
 
@@ -52,22 +56,35 @@ export default function UpdatePasswordPage() {
       try {
         const {
           data: { user },
+          error: getUserError,
         } = await supabase.auth.getUser();
 
-        if (!user && mounted && !errorParam) {
+        if (getUserError) {
+          console.error(
+            'Failed to verify user on update-password page',
+            getUserError,
+          );
+          if (mounted && !errorParam) {
+            setError(
+              fromParam === CARETAKER_INVITE_SET_PASSWORD_FROM
+                ? 'Unable to verify your session. Open your invite link again, or reload this page.'
+                : AUTH_CALLBACK_VERIFICATION_FAILED_MESSAGE,
+            );
+          }
+        } else if (!user && mounted && !errorParam) {
           setError(
             fromParam === CARETAKER_INVITE_SET_PASSWORD_FROM
               ? 'You must be signed in to create a password. Open your invite link again, then return here.'
-              : 'This sign-in link is invalid or expired. Request a new one.',
+              : AUTH_CALLBACK_INVALID_LINK_MESSAGE,
           );
         }
       } catch (sessionError) {
         console.error(sessionError);
-        if (mounted) {
+        if (mounted && !errorParam) {
           setError(
             fromParam === CARETAKER_INVITE_SET_PASSWORD_FROM
               ? 'Unable to verify your session. Open your invite link again, or reload this page.'
-              : 'Unable to validate sign-in link. Request a new one.',
+              : AUTH_CALLBACK_VERIFICATION_FAILED_MESSAGE,
           );
         }
       } finally {
@@ -119,13 +136,27 @@ export default function UpdatePasswordPage() {
     try {
       const {
         data: { user },
+        error: getUserError,
       } = await supabase.auth.getUser();
+
+      if (getUserError) {
+        console.error(
+          'Failed to verify user before password update',
+          getUserError,
+        );
+        setError(
+          postInviteCaretaker
+            ? 'Unable to verify your session. Open your invite link again, or reload this page.'
+            : AUTH_CALLBACK_VERIFICATION_FAILED_MESSAGE,
+        );
+        return;
+      }
 
       if (!user) {
         setError(
           postInviteCaretaker
             ? 'Your session expired. Open your invite link again, then return here to create a password.'
-            : 'This sign-in link is invalid or expired. Request a new one.',
+            : AUTH_CALLBACK_INVALID_LINK_MESSAGE,
         );
         return;
       }

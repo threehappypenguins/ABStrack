@@ -259,13 +259,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setProfile(data);
         return;
       }
-      const { data: liveUserData } = await supabase.auth.getUser();
-      const pendingInviteId =
-        typeof liveUserData.user?.user_metadata
-          ?.abstrack_practitioner_invite_id === 'string'
-          ? liveUserData.user.user_metadata.abstrack_practitioner_invite_id.trim()
-          : '';
-      if (pendingInviteId !== '') {
+      if (pendingInviteMetadataId !== '') {
         // Finalize runs on `/invite/join`; keep loading until profile exists.
         setProfile(undefined);
         return;
