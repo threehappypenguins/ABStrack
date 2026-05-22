@@ -94,6 +94,23 @@ export function isSupabaseAuthApiError(err: unknown): boolean {
 }
 
 /**
+ * True when `getUser()` failed because there is no session (e.g. after logout or before sign-in).
+ * Expected on public routes — not a verification failure.
+ *
+ * @param err - Value from `getUser()` `error`.
+ */
+export function isAuthSessionMissingError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') {
+    return false;
+  }
+  const e = err as { name?: string; message?: string };
+  return (
+    e.name === 'AuthSessionMissingError' ||
+    (typeof e.message === 'string' && /auth session missing/i.test(e.message))
+  );
+}
+
+/**
  * Returns a trimmed access token from {@link getSession} without using `session.user`
  * for identity (avoids Supabase insecure-user warnings).
  *

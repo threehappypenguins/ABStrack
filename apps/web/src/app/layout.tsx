@@ -7,6 +7,7 @@ import { THEME_INIT_SCRIPT } from '../lib/theme-init-script';
 import { WebAppShell } from '../components/app-shell/WebAppShell';
 import { WebPublicTopNav } from '../components/app-shell/WebPublicTopNav';
 import { LiveAnnouncerRoot } from '../components/a11y/LiveAnnouncerRoot';
+import { isAuthSessionMissingError } from '@abstrack/supabase';
 import { AuthProvider } from '../lib/auth-provider';
 import { mapSupabaseUserToAuthContext } from '../lib/auth-provider-session';
 import { createServerClient } from '../lib/supabase/server-client';
@@ -33,16 +34,17 @@ export default async function RootLayout({
     error: getUserError,
   } = await supabase.auth.getUser();
 
-  if (getUserError) {
+  if (getUserError && !isAuthSessionMissingError(getUserError)) {
     console.error(
       'Failed to verify user for root layout; deferring session to client',
       getUserError,
     );
   }
 
-  const initialSession = getUserError
-    ? undefined
-    : mapSupabaseUserToAuthContext(user);
+  const initialSession =
+    getUserError && !isAuthSessionMissingError(getUserError)
+      ? undefined
+      : mapSupabaseUserToAuthContext(user);
 
   return (
     <html lang="en" className={fontSans.variable} suppressHydrationWarning>
