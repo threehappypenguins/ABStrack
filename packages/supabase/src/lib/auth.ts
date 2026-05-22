@@ -79,8 +79,11 @@ export async function getAuthUser(client: AbstrackSupabaseClient) {
 }
 
 /**
- * Returns a trimmed access token from persisted session storage only.
- * Does not read `session.user` (avoids Supabase insecure-user warnings).
+ * Returns a trimmed access token from {@link getSession} without using `session.user`
+ * for identity (avoids Supabase insecure-user warnings).
+ *
+ * `getSession()` may refresh expired tokens over the network; this is not a guaranteed
+ * local-only storage read.
  *
  * @param client - Supabase client.
  * @returns Access token or `null` when missing or on error.

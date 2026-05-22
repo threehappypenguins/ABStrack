@@ -166,6 +166,11 @@ function AppBootstrap() {
   const resumeRefreshInFlightRef = useRef(false);
   /** Prevents resume handler `setInitializing(false)` from racing cold start `bootstrap` `finally`. */
   const bootstrapCompleteRef = useRef(false);
+  /**
+   * Invalidates in-flight {@link getMobileAuthSessionSafe} completions from `onAuthStateChange`
+   * when a newer auth event (e.g. `SIGNED_OUT`) arrives before the promise resolves.
+   */
+  const authSessionReadGenerationRef = useRef(0);
 
   const stackScreenOptions = useMemo(
     () => ({
@@ -504,6 +509,7 @@ function AppBootstrap() {
       data: { subscription },
     } = mobileSupabase.auth.onAuthStateChange((event) => {
       if (event === 'SIGNED_OUT') {
+        authSessionReadGenerationRef.current += 1;
         authRouteRef.current = 'Login';
         recoveryFlowActiveRef.current = false;
         setAuthRoute('Login');
@@ -514,8 +520,9 @@ function AppBootstrap() {
       }
 
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        const generation = ++authSessionReadGenerationRef.current;
         void getMobileAuthSessionSafe().then(({ data, error }) => {
-          if (!mounted) {
+          if (!mounted || generation !== authSessionReadGenerationRef.current) {
             return;
           }
           if (error) {
@@ -534,6 +541,7 @@ function AppBootstrap() {
 
     return () => {
       mounted = false;
+      authSessionReadGenerationRef.current += 1;
       subscription.unsubscribe();
       urlSubscription?.remove?.();
       appStateSubscription?.remove?.();

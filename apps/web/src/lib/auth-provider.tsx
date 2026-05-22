@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import {
   type AuthProviderSession,
   mapSupabaseUserToAuthContext,
@@ -53,12 +53,15 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
     hasInitialSession ? initialSession : null,
   );
   const [loading, setLoading] = useState(!hasInitialSession);
+  /** Drops stale verify completions after newer auth events or unmount. */
+  const verifyGenerationRef = useRef(0);
 
   useEffect(() => {
     let mounted = true;
     const supabase = createBrowserClient();
 
     const syncVerifiedUser = async (): Promise<void> => {
+      const generation = ++verifyGenerationRef.current;
       let timeoutId: ReturnType<typeof setTimeout> | undefined;
       try {
         const timeoutPromise = new Promise<never>((_, reject) => {
@@ -96,21 +99,21 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
           console.error('Failed to verify authenticated user', error);
           if (isRefreshTokenFailure(error)) {
             await supabase.auth.signOut();
-            if (mounted) {
+            if (mounted && generation === verifyGenerationRef.current) {
               setSession(null);
             }
           }
           return;
         }
 
-        if (mounted) {
+        if (mounted && generation === verifyGenerationRef.current) {
           setSession(mapSupabaseUserToAuthContext(user));
         }
       } catch (error) {
         console.error('Failed to verify authenticated user', error);
         if (isRefreshTokenFailure(error)) {
           await supabase.auth.signOut();
-          if (mounted) {
+          if (mounted && generation === verifyGenerationRef.current) {
             setSession(null);
           }
         }
@@ -135,12 +138,19 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(() => {
+    } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
+        verifyGenerationRef.current += 1;
+        if (mounted) {
+          setSession(null);
+        }
+      }
       void syncVerifiedUser();
     });
 
     return () => {
       mounted = false;
+      verifyGenerationRef.current += 1;
       subscription.unsubscribe();
     };
   }, []);

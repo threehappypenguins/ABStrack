@@ -17,12 +17,18 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
 import { syncMfaTrustBundleAfterTokenRefresh } from './practitioner-device-trust';
 
 type ProfileRow = Database['public']['Tables']['profiles']['Row'];
+
+/** Auth listener event type from the shared Supabase client (no direct `supabase-js` import). */
+type AuthStateChangeEvent = Parameters<
+  Parameters<AbstrackSupabaseClient['auth']['onAuthStateChange']>[0]
+>[0];
 
 interface AuthContextType {
   session: Session | null;
@@ -158,14 +164,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     Boolean(session?.user) && profile === undefined && profileError === null;
 
   const loading = authLoading || identityLoading;
+  /** Drops stale verify completions after newer auth events or unmount. */
+  const verifyGenerationRef = useRef(0);
 
   useEffect(() => {
     let mounted = true;
 
-    const syncVerifiedSession = async () => {
-      const nextSession = await loadVerifiedAuthSessionWithTimeout(supabase);
-      if (mounted) {
+    const syncVerifiedSession = async (
+      event?: AuthStateChangeEvent,
+    ): Promise<void> => {
+      const generation = ++verifyGenerationRef.current;
+      try {
+        const nextSession = await loadVerifiedAuthSessionWithTimeout(supabase);
+        if (!mounted || generation !== verifyGenerationRef.current) {
+          return;
+        }
         setSession(nextSession);
+        if (event === 'TOKEN_REFRESHED' && nextSession) {
+          await syncMfaTrustBundleAfterTokenRefresh(supabase, nextSession);
+          if (!mounted || generation !== verifyGenerationRef.current) {
+            return;
+          }
+        }
+      } catch (error) {
+        console.error('Failed to handle practitioner auth state change', error);
+        if (isRefreshTokenFailure(error)) {
+          await supabase.auth.signOut();
+        }
+        if (mounted && generation === verifyGenerationRef.current) {
+          setSession(null);
+        }
       }
     };
 
@@ -184,34 +212,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event) => {
-      void (async () => {
-        try {
-          const nextSession =
-            await loadVerifiedAuthSessionWithTimeout(supabase);
-          if (!mounted) {
-            return;
-          }
-          setSession(nextSession);
-          if (event === 'TOKEN_REFRESHED' && nextSession) {
-            await syncMfaTrustBundleAfterTokenRefresh(supabase, nextSession);
-          }
-        } catch (error) {
-          console.error(
-            'Failed to handle practitioner auth state change',
-            error,
-          );
-          if (isRefreshTokenFailure(error)) {
-            await supabase.auth.signOut();
-          }
-          if (mounted) {
-            setSession(null);
-          }
+      if (event === 'SIGNED_OUT') {
+        verifyGenerationRef.current += 1;
+        if (mounted) {
+          setSession(null);
         }
-      })();
+      }
+      void syncVerifiedSession(event);
     });
 
     return () => {
       mounted = false;
+      verifyGenerationRef.current += 1;
       subscription.unsubscribe();
     };
   }, [supabase]);

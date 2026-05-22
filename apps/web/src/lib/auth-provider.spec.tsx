@@ -195,6 +195,50 @@ describe('AuthProvider', () => {
     expect(signOutMock).not.toHaveBeenCalled();
   });
 
+  it('does not restore session when SIGNED_OUT invalidates an in-flight SIGNED_IN verify', async () => {
+    type GetUserResult = Awaited<ReturnType<typeof getUserMock>>;
+    let resolveSlow: (value: GetUserResult) => void;
+    const slowGetUser = new Promise<GetUserResult>((resolve) => {
+      resolveSlow = resolve;
+    });
+
+    getUserMock
+      .mockResolvedValueOnce({ data: { user: null }, error: null })
+      .mockReturnValueOnce(slowGetUser)
+      .mockResolvedValue({ data: { user: null }, error: null });
+
+    render(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => {
+      expect(readAuthState().loading).toBe(false);
+    });
+
+    act(() => {
+      authStateChangeHandler?.('SIGNED_IN');
+    });
+    act(() => {
+      authStateChangeHandler?.('SIGNED_OUT');
+    });
+
+    expect(readAuthState().userId).toBeNull();
+
+    await act(async () => {
+      resolveSlow({
+        data: {
+          user: { id: 'stale-user', email: 'stale@example.com' },
+        },
+        error: null,
+      });
+      await slowGetUser;
+    });
+
+    expect(readAuthState().userId).toBeNull();
+  });
+
   it('clears invalid refresh tokens via signOut and still finishes loading', async () => {
     getUserMock.mockResolvedValue({
       data: { user: null },
