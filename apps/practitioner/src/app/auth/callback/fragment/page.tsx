@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { isSupabaseAuthApiError } from '@abstrack/supabase';
 import { getSupabaseBrowserClient } from '@abstrack/supabase/browser';
 import {
   AUTH_CALLBACK_INVALID_LINK_MESSAGE,
@@ -9,7 +10,6 @@ import {
   getSafePractitionerAuthCallbackRedirectPath,
 } from '@/lib/auth-callback-redirect';
 import {
-  isSupabaseAuthApiError,
   isSupabaseBrowserConfigError,
   parseImplicitHashParams,
 } from '@/lib/auth-callback-fragment-helpers';

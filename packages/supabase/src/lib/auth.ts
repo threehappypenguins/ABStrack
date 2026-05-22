@@ -79,6 +79,21 @@ export async function getAuthUser(client: AbstrackSupabaseClient) {
 }
 
 /**
+ * True when `err` is a Supabase Auth API error from `getUser()` / `setSession()` (not a config throw).
+ *
+ * @param err - Value from `catch` or auth method `error`.
+ * @returns Whether `err` is tagged as a Supabase Auth API error (`__isAuthError`).
+ */
+export function isSupabaseAuthApiError(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    '__isAuthError' in err &&
+    (err as { __isAuthError?: boolean }).__isAuthError === true
+  );
+}
+
+/**
  * Returns a trimmed access token from {@link getSession} without using `session.user`
  * for identity (avoids Supabase insecure-user warnings).
  *

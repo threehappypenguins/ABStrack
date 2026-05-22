@@ -135,7 +135,8 @@ async function loadVerifiedAuthSessionWithTimeout(
       return { action: 'set', session: nextSession };
     }
 
-    return { action: 'preserve' };
+    // Verified signed out (`getVerifiedAuthSession`: no user / no session, no error).
+    return { action: 'clear' };
   } catch (error) {
     console.error('Failed to verify practitioner auth session', error);
     if (isRefreshTokenFailure(error)) {

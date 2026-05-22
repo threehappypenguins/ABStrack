@@ -23,6 +23,7 @@ export {
   getAuthUser,
   getSession,
   getVerifiedAuthSession,
+  isSupabaseAuthApiError,
   resetPasswordForEmail,
   signInWithEmailPassword,
   signOut,

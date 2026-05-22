@@ -7,8 +7,8 @@ import {
   AUTH_CALLBACK_VERIFICATION_FAILED_MESSAGE,
   getSafeAuthCallbackRedirectPath,
 } from '@/lib/auth/auth-callback-redirect';
+import { isSupabaseAuthApiError } from '@abstrack/supabase';
 import {
-  isSupabaseAuthApiError,
   isSupabaseBrowserConfigError,
   parseImplicitHashParams,
 } from '@/lib/auth/auth-callback-fragment-helpers';
