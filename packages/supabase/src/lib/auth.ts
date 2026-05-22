@@ -114,7 +114,7 @@ export async function getVerifiedAuthSession(
   data: { user: User | null; session: Session | null };
   error: Error | null;
 }> {
-  const { data: userData, error: userError } = await client.auth.getUser();
+  const { data: userData, error: userError } = await getAuthUser(client);
   if (userError) {
     return { data: { user: null, session: null }, error: userError };
   }
@@ -123,8 +123,7 @@ export async function getVerifiedAuthSession(
     return { data: { user: null, session: null }, error: null };
   }
 
-  const { data: sessionData, error: sessionError } =
-    await client.auth.getSession();
+  const { data: sessionData, error: sessionError } = await getSession(client);
   if (sessionError) {
     return { data: { user, session: null }, error: sessionError };
   }
