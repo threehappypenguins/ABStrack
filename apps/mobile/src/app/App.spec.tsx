@@ -159,16 +159,14 @@ describe('mobile auth state sync', () => {
     });
     const emitAuth = (event: string, session: Session | null) => {
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-        jest
-          .mocked(getMobileAuthSessionSafe)
-          .mockResolvedValue(
-            (session
-              ? { data: { session }, error: null }
-              : {
-                  data: { session: null },
-                  error: null,
-                }) as MobileAuthGetSessionResult,
-          );
+        jest.mocked(getMobileAuthSessionSafe).mockResolvedValue(
+          (session
+            ? { data: { session }, error: null }
+            : {
+                data: { session: null },
+                error: null,
+              }) as MobileAuthGetSessionResult,
+        );
       }
       if (event === 'SIGNED_OUT') {
         jest.mocked(getMobileAuthSessionSafe).mockResolvedValue({

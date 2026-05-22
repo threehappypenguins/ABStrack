@@ -104,7 +104,9 @@ export async function getAccessTokenFromSession(
  * Use instead of trusting `getSession().data.session.user` alone.
  *
  * @param client - Supabase client.
- * @returns Verified user, session (with verified user), and any error.
+ * @returns Verified user, session (with verified user), and any error. When `getUser()`
+ * succeeds but `getSession()` fails, returns the verified `user` with `session: null` and the
+ * session error (does not discard the verified user).
  */
 export async function getVerifiedAuthSession(
   client: AbstrackSupabaseClient,
@@ -124,7 +126,7 @@ export async function getVerifiedAuthSession(
   const { data: sessionData, error: sessionError } =
     await client.auth.getSession();
   if (sessionError) {
-    return { data: { user: null, session: null }, error: sessionError };
+    return { data: { user, session: null }, error: sessionError };
   }
 
   const persisted = sessionData.session;

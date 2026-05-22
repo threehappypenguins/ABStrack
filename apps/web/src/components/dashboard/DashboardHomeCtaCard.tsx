@@ -1,7 +1,8 @@
 import Link from 'next/link';
+import { useId } from 'react';
 
 export type DashboardHomeCtaCardProps = {
-  /** Visible section heading (also used for `aria-labelledby`). */
+  /** Visible section heading. */
   heading: string;
   /** Short explanatory copy under the heading. */
   description: string;
@@ -33,7 +34,8 @@ export function DashboardHomeCtaCard({
   ctaLabel,
   className = '',
 }: DashboardHomeCtaCardProps) {
-  const headingId = `dashboard-cta-${heading.replace(/\s+/g, '-').toLowerCase()}-heading`;
+  const instanceId = useId();
+  const headingId = `dashboard-cta-heading-${instanceId}`;
 
   return (
     <section

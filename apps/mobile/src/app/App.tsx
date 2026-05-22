@@ -514,6 +514,9 @@ function AppBootstrap() {
 
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         void getMobileAuthSessionSafe().then(({ data }) => {
+          if (!mounted) {
+            return;
+          }
           setSession(data.session ?? null);
         });
       }

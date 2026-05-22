@@ -86,7 +86,10 @@ export function useMobilePhiSubjectUserContext(): MobilePhiSubjectUserContextSta
     setPhiSubjectUserId(result.data.phiSubjectUserId);
     setProfileAppRole(result.data.profileAppRole);
     setErrorMessage(null);
-  }, [dbForPhi]);
+    // `authUserId` is not read here; it is listed so sign-in/sign-out/account switches
+    // recreate `runResolve` and re-run the effect below (see module JSDoc).
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- PHI scope must refresh on auth change
+  }, [authUserId, dbForPhi]);
 
   /**
    * Invalidate in-flight resolves only on real unmount. Do not bump `genRef` from other effect
