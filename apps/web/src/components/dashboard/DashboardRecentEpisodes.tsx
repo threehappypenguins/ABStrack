@@ -44,6 +44,9 @@ export function DashboardRecentEpisodes({
 
   useEffect(() => {
     if (phiLoading) {
+      setEpisodes([]);
+      setError(null);
+      setLoading(true);
       return;
     }
     if (phiError) {
@@ -100,6 +103,8 @@ export function DashboardRecentEpisodes({
     };
   }, [phiError, phiLoading, phiSubjectUserId]);
 
+  const episodesLoading = phiLoading || loading;
+
   return (
     <section
       className={`${cardShellClass} ${className}`.trim()}
@@ -116,19 +121,19 @@ export function DashboardRecentEpisodes({
         and delete actions.
       </p>
 
-      {loading ? (
+      {episodesLoading ? (
         <p className="mt-4 text-sm text-app-muted" aria-busy="true">
           Loading recent episodes…
         </p>
       ) : null}
 
-      {!loading && error ? (
+      {!episodesLoading && error ? (
         <p className="mt-4 text-sm text-red-700 dark:text-red-300" role="alert">
           {error}
         </p>
       ) : null}
 
-      {!loading && !error && episodes.length === 0 ? (
+      {!episodesLoading && !error && episodes.length === 0 ? (
         <p className="mt-4 rounded-xl border border-dashed border-app-border/90 bg-app-bg/40 p-4 text-sm text-app-muted">
           No ended episodes yet.{' '}
           <Link
@@ -141,7 +146,7 @@ export function DashboardRecentEpisodes({
         </p>
       ) : null}
 
-      {!loading && !error && episodes.length > 0 ? (
+      {!episodesLoading && !error && episodes.length > 0 ? (
         <>
           <ul className="mt-4 space-y-3" role="list">
             {episodes.map((ep) => (
