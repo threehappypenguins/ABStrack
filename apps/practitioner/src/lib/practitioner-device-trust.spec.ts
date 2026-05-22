@@ -25,18 +25,18 @@ jest.mock('@abstrack/supabase', () => {
           error: userResult.error,
         };
       }
-      const sessionResult = await client.auth.getSession();
-      if (sessionResult.error) {
-        return {
-          data: { user: null, session: null },
-          error: sessionResult.error,
-        };
-      }
       const user = userResult.data.user;
-      const session = sessionResult.data.session;
       if (!user) {
         return { data: { user: null, session: null }, error: null };
       }
+      const sessionResult = await client.auth.getSession();
+      if (sessionResult.error) {
+        return {
+          data: { user, session: null },
+          error: sessionResult.error,
+        };
+      }
+      const session = sessionResult.data.session;
       if (!session) {
         return { data: { user, session: null }, error: null };
       }
