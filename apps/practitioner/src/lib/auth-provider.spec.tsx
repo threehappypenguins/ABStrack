@@ -244,4 +244,100 @@ describe('AuthProvider', () => {
     expect(signOutMock).not.toHaveBeenCalled();
     expect(syncMfaTrustBundleAfterTokenRefreshMock).toHaveBeenCalledTimes(1);
   });
+
+  it('preserves session when verify returns a transient error', async () => {
+    const session = makeSession('practitioner-1');
+
+    getVerifiedAuthSessionMock
+      .mockResolvedValueOnce({
+        data: { user: null, session: null },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { user: session.user, session },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { user: null, session: null },
+        error: new Error('Failed to fetch'),
+      });
+
+    render(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => {
+      expect(readAuthState().loading).toBe(false);
+    });
+
+    act(() => {
+      authStateChangeHandler?.('SIGNED_IN');
+    });
+
+    await waitFor(() => {
+      expect(readAuthState().userId).toBe('practitioner-1');
+    });
+
+    act(() => {
+      authStateChangeHandler?.('TOKEN_REFRESHED');
+    });
+
+    await waitFor(() => {
+      expect(getVerifiedAuthSessionMock).toHaveBeenCalledTimes(3);
+    });
+
+    expect(readAuthState().userId).toBe('practitioner-1');
+    expect(signOutMock).not.toHaveBeenCalled();
+  });
+
+  it('clears session when verify reports a refresh-token failure', async () => {
+    const session = makeSession('practitioner-1');
+
+    getVerifiedAuthSessionMock
+      .mockResolvedValueOnce({
+        data: { user: null, session: null },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { user: session.user, session },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { user: null, session: null },
+        error: {
+          code: 'refresh_token_not_found',
+          message: 'Invalid Refresh Token: Refresh Token Not Found',
+        },
+      });
+
+    render(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => {
+      expect(readAuthState().loading).toBe(false);
+    });
+
+    act(() => {
+      authStateChangeHandler?.('SIGNED_IN');
+    });
+
+    await waitFor(() => {
+      expect(readAuthState().userId).toBe('practitioner-1');
+    });
+
+    act(() => {
+      authStateChangeHandler?.('TOKEN_REFRESHED');
+    });
+
+    await waitFor(() => {
+      expect(readAuthState().userId).toBeNull();
+    });
+
+    expect(signOutMock).toHaveBeenCalled();
+  });
 });
