@@ -153,10 +153,13 @@ function AuthCallbackFragmentContent() {
             'Failed to verify user during auth callback fragment handling',
             err,
           );
-          finishErr(AUTH_CALLBACK_VERIFICATION_FAILED_MESSAGE);
-          return;
+        } else {
+          console.error(
+            'Unexpected error during auth callback fragment handling',
+            err,
+          );
         }
-        finishErr(AUTH_CALLBACK_INVALID_LINK_MESSAGE);
+        finishErr(AUTH_CALLBACK_VERIFICATION_FAILED_MESSAGE);
       }
     };
 

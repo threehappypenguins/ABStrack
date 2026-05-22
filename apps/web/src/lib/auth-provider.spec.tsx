@@ -239,6 +239,29 @@ describe('AuthProvider', () => {
     expect(readAuthState().userId).toBeNull();
   });
 
+  it('does not call getUser again on SIGNED_OUT', async () => {
+    getUserMock.mockResolvedValue({ data: { user: null }, error: null });
+
+    render(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => {
+      expect(readAuthState().loading).toBe(false);
+    });
+
+    expect(getUserMock).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      authStateChangeHandler?.('SIGNED_OUT');
+    });
+
+    expect(getUserMock).toHaveBeenCalledTimes(1);
+    expect(readAuthState().userId).toBeNull();
+  });
+
   it('clears invalid refresh tokens via signOut and still finishes loading', async () => {
     getUserMock.mockResolvedValue({
       data: { user: null },

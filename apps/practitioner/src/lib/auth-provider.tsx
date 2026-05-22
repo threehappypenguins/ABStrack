@@ -251,6 +251,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (mounted) {
           setSession(null);
         }
+        return;
       }
       void syncVerifiedSession(event);
     });

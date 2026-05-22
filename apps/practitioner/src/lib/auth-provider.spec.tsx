@@ -154,6 +154,32 @@ describe('AuthProvider', () => {
     expect(readAuthState().userId).toBeNull();
   });
 
+  it('does not call getVerifiedAuthSession again on SIGNED_OUT', async () => {
+    getVerifiedAuthSessionMock.mockResolvedValue({
+      data: { user: null, session: null },
+      error: null,
+    });
+
+    render(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => {
+      expect(readAuthState().loading).toBe(false);
+    });
+
+    expect(getVerifiedAuthSessionMock).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      authStateChangeHandler?.('SIGNED_OUT');
+    });
+
+    expect(getVerifiedAuthSessionMock).toHaveBeenCalledTimes(1);
+    expect(readAuthState().userId).toBeNull();
+  });
+
   it('does not run MFA trust sync when TOKEN_REFRESHED verify is superseded by SIGNED_OUT', async () => {
     type VerifiedResult = Awaited<
       ReturnType<typeof getVerifiedAuthSessionMock>

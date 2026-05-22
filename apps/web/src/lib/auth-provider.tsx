@@ -144,6 +144,7 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
         if (mounted) {
           setSession(null);
         }
+        return;
       }
       void syncVerifiedUser();
     });
