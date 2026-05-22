@@ -4,8 +4,12 @@ import {
   isMissingPublishableKeyForCaretakerEdge,
   resolvePatientCaretakerAccessUrl,
 } from './patient-caretaker-edge-api';
-import { getAccessTokenFromSession } from '@abstrack/supabase';
-import { getMobileSupabaseClient } from './supabase-wiring';
+import type { Session } from '@abstrack/supabase';
+import {
+  getMobileAuthSessionSafe,
+  getMobileSupabaseClient,
+  hasUsableSupabaseAccessTokenForNetwork,
+} from './supabase-wiring';
 
 /** PostgREST duplicate key — profile row may have been created concurrently. */
 function isPostgresUniqueViolation(err: { code?: string } | null): boolean {
@@ -27,14 +31,26 @@ export type CompleteCaretakerInviteResult =
  */
 export async function completeCaretakerInviteAfterAuth(): Promise<CompleteCaretakerInviteResult> {
   const supabase = getMobileSupabaseClient();
-  const {
-    data: { user },
-    error: userErr,
-  } = await supabase.auth.getUser();
-  const { accessToken, error: tokenErr } =
-    await getAccessTokenFromSession(supabase);
+  let session: Session | null = null;
+  let sessionError: Error | null = null;
+  try {
+    const result = await getMobileAuthSessionSafe();
+    session = result.data.session;
+    sessionError = result.error;
+  } catch {
+    return {
+      ok: false,
+      message: 'No active session after opening the invite link.',
+    };
+  }
 
-  if (userErr || !user || tokenErr || !accessToken) {
+  const user = session?.user;
+  const accessToken =
+    session != null && hasUsableSupabaseAccessTokenForNetwork(session)
+      ? session.access_token.trim()
+      : null;
+
+  if (sessionError || !user?.id || !accessToken) {
     return {
       ok: false,
       message: 'No active session after opening the invite link.',
