@@ -589,10 +589,42 @@ export function practitionerSignOutEverywhere(): void {
 }
 
 /**
+ * Reads `user.id` from persisted Supabase auth JSON in browser storage without calling
+ * `getSession()` (avoids relying on an unverified `session.user` from the client API).
+ *
+ * @param supabase - Browser Supabase client.
+ * @returns Non-empty user id, or `null` when storage is unavailable or unreadable.
+ */
+async function readUserIdFromPersistedAuthStorage(
+  supabase: PractitionerBrowserClient,
+): Promise<string | null> {
+  const auth = supabase.auth as unknown as {
+    storage?: {
+      getItem: (key: string) => Promise<string | null> | string | null;
+    };
+    storageKey?: string;
+  };
+  const { storage, storageKey } = auth;
+  if (!storage?.getItem || !storageKey) {
+    return null;
+  }
+  try {
+    const raw = await storage.getItem(storageKey);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as { user?: { id?: unknown } };
+    const id = parsed.user?.id;
+    return typeof id === 'string' && id.trim() !== '' ? id.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Resolves the current user id for soft vs full sign-out when matching the MFA trust bundle.
- * Prefers verified {@link AbstrackSupabaseClient.auth.getUser}; on failure, best-effort
- * `getSession().session.user.id` so offline verification does not force full sign-out and
- * revoke the refresh token still held in the bundle.
+ * Prefers verified {@link AbstrackSupabaseClient.auth.getUser}; on failure, reads `user.id`
+ * from persisted auth storage when available, then `getSession()` only if storage is missing.
  *
  * @param supabase - Browser Supabase client.
  * @returns User id string, or `null` when none can be resolved.
@@ -606,9 +638,20 @@ async function resolveUserIdForMfaTrustSignOut(
     return id != null && id !== '' ? id : null;
   }
   console.warn(
-    'practitionerSignOut: getUser failed; using session user id for trust-bundle check',
+    'practitionerSignOut: getUser failed; reading user id from persisted auth storage for trust-bundle check',
     userError,
   );
+  const persistedId = await readUserIdFromPersistedAuthStorage(supabase);
+  if (persistedId != null) {
+    return persistedId;
+  }
+  const auth = supabase.auth as unknown as {
+    storage?: { getItem: (key: string) => unknown };
+    storageKey?: string;
+  };
+  if (auth.storage?.getItem && auth.storageKey) {
+    return null;
+  }
   try {
     const { data: sessionData, error: sessionError } =
       await supabase.auth.getSession();

@@ -841,13 +841,17 @@ describe('practitionerSignOut', () => {
     localStorage.clear();
   });
 
-  it('soft sign-out when getUser fails but session user id matches trust bundle', async () => {
+  it('soft sign-out when getUser fails but persisted auth user id matches trust bundle', async () => {
     localStorage.setItem(
       PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
       buildBundleJson(userId, Date.now() + 60_000),
     );
 
     const removeItem = jest.fn().mockResolvedValue(undefined);
+    const getItem = jest
+      .fn()
+      .mockResolvedValue(JSON.stringify(sessionForUser(userId)));
+    const getSession = jest.fn();
     const signOut = jest.fn().mockResolvedValue({ error: null });
     const supabase = {
       auth: {
@@ -855,11 +859,9 @@ describe('practitionerSignOut', () => {
           data: { user: null },
           error: { message: 'Network error', __isAuthError: true },
         }),
-        getSession: jest.fn().mockResolvedValue({
-          data: { session: sessionForUser(userId) },
-        }),
+        getSession,
         signOut,
-        storage: { removeItem },
+        storage: { getItem, removeItem },
         storageKey: 'sb-test-auth-token',
       },
     } as unknown as BrowserClient;
@@ -870,6 +872,8 @@ describe('practitionerSignOut', () => {
       localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
     ).not.toBeNull();
     expect(signOut).not.toHaveBeenCalled();
+    expect(getSession).not.toHaveBeenCalled();
+    expect(getItem).toHaveBeenCalledWith('sb-test-auth-token');
     expect(removeItem).toHaveBeenCalledWith('sb-test-auth-token');
   });
 
