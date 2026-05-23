@@ -27,6 +27,7 @@ import {
   parseSettingsTabId,
 } from '@/lib/settings-tabs';
 import { readPendingEmailChange } from '@/lib/pending-email-change';
+import { ensurePatientProfileRow } from '@abstrack/supabase';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
 import { webSignOutEverywhere } from '@/lib/web-sign-out-everywhere';
 
@@ -142,6 +143,12 @@ export function SettingsPage() {
     nameFormDirtyRef.current = false;
     setProfileLoading(true);
     setNameError(null);
+    const ensured = await ensurePatientProfileRow(supabase, userId);
+    if (!ensured.ok) {
+      setNameError('Unable to load your profile. Try again in a moment.');
+      setProfileLoading(false);
+      return;
+    }
     const { data, error } = await supabase
       .from('profiles')
       .select('display_name')

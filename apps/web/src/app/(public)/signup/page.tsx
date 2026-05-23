@@ -3,7 +3,10 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
-import { signUpWithEmailPassword } from '@abstrack/supabase';
+import {
+  signUpWithEmailPassword,
+  ensurePatientProfileRow,
+} from '@abstrack/supabase';
 import { USER_PASSWORD_SET_USER_METADATA_KEY } from '@/lib/user-password-sign-in';
 import { PUBLIC_PAGE_CENTER_CLASS } from '@/components/app-shell/public-page-layout-classes';
 
@@ -28,7 +31,7 @@ export default function SignupPage() {
 
     try {
       const supabase = createBrowserClient();
-      const { error: authError } = await signUpWithEmailPassword(
+      const { data, error: authError } = await signUpWithEmailPassword(
         supabase,
         email,
         password,
@@ -39,8 +42,16 @@ export default function SignupPage() {
 
       if (authError) {
         setError(authError.message);
+      } else if (data.session && data.user?.id) {
+        const ensured = await ensurePatientProfileRow(supabase, data.user.id);
+        if (!ensured.ok) {
+          setError(
+            'Account created, but we could not finish setting up your profile. Try signing in, or contact support.',
+          );
+          return;
+        }
+        router.push('/dashboard');
       } else {
-        // Redirect to dashboard on successful signup
         router.push('/dashboard');
       }
     } catch (err) {

@@ -1,7 +1,6 @@
 'use client';
 
 import {
-  ACCOUNT_ACTIONS_SURFACE_CLASS,
   AppShellWithSideNav,
   AppSideNav,
   AppTopNav,
@@ -13,6 +12,7 @@ import { usePathname } from 'next/navigation';
 import { forwardRef, type ReactNode } from 'react';
 
 import { ThemeMenu } from '@/components/theme/ThemeMenu';
+import { WebSignOutButton } from '@/components/auth/WebSignOutButton';
 import { WEB_APP_NAV_ITEMS } from '@/lib/app-nav-items';
 
 const WebNavLink = forwardRef<HTMLAnchorElement, AppSideNavLinkProps>(
@@ -65,13 +65,7 @@ export function AuthenticatedShell({
           email={email}
           themeMenu={<ThemeMenu />}
           showSidebarTrigger
-          actions={
-            <form action="/api/auth/logout" method="POST">
-              <button type="submit" className={ACCOUNT_ACTIONS_SURFACE_CLASS}>
-                Log out
-              </button>
-            </form>
-          }
+          actions={<WebSignOutButton />}
           mobileSheetTitle="Account"
           mobileSheetDescription="Signed-in account, sign out, and appearance settings."
           mobileMenuTriggerAriaLabel="Open account menu"

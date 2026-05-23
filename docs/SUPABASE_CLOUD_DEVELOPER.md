@@ -20,11 +20,11 @@ Follow **[AGENTS.md](../AGENTS.md)** (section **Correct flow for migrations and 
 
 ## Ground rules (read first)
 
-| Fact                                            | Implication                                                                                                               |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| **Canonical DB is Supabase Cloud**              | `db push` applies `supabase/migrations/` to your hosted project (CLI on your laptop **and/or** GitHub Actions on `main`). |
-| **`supabase db reset` is local-only**           | It only affects a **Docker** database from `supabase db start` (your machine or CI). It does **not** reset cloud.         |
-| **`gen types typescript --linked` reads cloud** | It does not “read” new SQL from git until that SQL has been applied to cloud via **`db push`**.                           |
+| Fact                                            | Implication                                                                                                                                                                                                        |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Canonical DB is Supabase Cloud**              | `db push` applies `supabase/migrations/` to your hosted project (CLI on your laptop **and/or** GitHub Actions on `main`).                                                                                          |
+| **`supabase db reset`** (no flags)              | Local Docker only (`supabase start`). Use **`supabase db reset --linked`** to wipe and re-apply migrations on the **linked cloud** project (see [CLI](https://supabase.com/docs/reference/cli/supabase-db-reset)). |
+| **`gen types typescript --linked` reads cloud** | It does not “read” new SQL from git until that SQL has been applied to cloud via **`db push`**.                                                                                                                    |
 
 ---
 
@@ -449,7 +449,7 @@ Repository secrets are documented under **[DEV_SETUP.md → PowerSync sync confi
 
    **Critical review-phase rule:** while Sarah is still iterating on Copilot/PR review feedback, assume migrations have **not** been pushed yet and **modify existing migration file(s) only**. **Do not create new migration files during review iterations** unless Sarah explicitly asks.
 
-3. **Never imply `supabase db reset` affects cloud.** Local Docker only (or CI-only).
+3. **Do not confuse reset targets:** plain **`supabase db reset`** is local Docker only; **`supabase db reset --linked`** resets the linked cloud project.
 
 4. **Say explicitly** when she must use **her terminal** (CLI login, link, `db push`, `gen types`) vs what CI does after merge.
 

@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
-import { signUpWithEmailPassword } from '@abstrack/supabase';
+import {
+  signUpWithEmailPassword,
+  ensurePatientProfileRow,
+} from '@abstrack/supabase';
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { AuthForm } from '../components/AuthForm';
 import {
@@ -39,6 +42,16 @@ export function SignupScreen({ onGoToLogin }: { onGoToLogin: () => void }) {
 
       if (authError) {
         setErrorMessage(mapAuthError(authError.message));
+      } else if (data.session && data.user?.id) {
+        const ensured = await ensurePatientProfileRow(
+          mobileSupabase,
+          data.user.id,
+        );
+        if (!ensured.ok) {
+          setErrorMessage(
+            'Account created, but we could not finish setting up your profile. Try signing in again.',
+          );
+        }
       } else if (!data.session) {
         setStatusMessage(
           'Account created. Check your email to confirm your account.',
