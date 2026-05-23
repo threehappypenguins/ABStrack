@@ -20,6 +20,10 @@ function redirectWithError(
  * cookies. Implicit auth (`#access_token=…` only) is rewritten to `/auth/callback/fragment` in
  * `src/proxy.ts` (middleware); this handler returns **400** if it receives a request
  * without `code` (e.g. direct hits without middleware).
+ *
+ * When {@link AbstrackSupabaseClient.auth.exchangeCodeForSession} fails but the request already
+ * has a valid session (common after email-change verification), redirects to `next` without an
+ * `error` query param and refreshes the session so JWT claims match the updated user.
  */
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get('code');
@@ -58,8 +62,19 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (error) {
+    const { error: exchangeError } =
+      await supabase.auth.exchangeCodeForSession(code);
+    if (exchangeError) {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+      if (user && !userError) {
+        // Email change and similar flows can verify server-side while the PKCE code is
+        // already consumed or unnecessary when the browser still holds a valid session.
+        await supabase.auth.refreshSession();
+        return response;
+      }
       return redirectWithError(
         request,
         redirectPath,

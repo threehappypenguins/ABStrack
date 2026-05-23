@@ -26,6 +26,7 @@ import {
   type SettingsTabId,
   parseSettingsTabId,
 } from '@/lib/settings-tabs';
+import { readPendingEmailChange } from '@/lib/pending-email-change';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
 import { webSignOutEverywhere } from '@/lib/web-sign-out-everywhere';
 
@@ -34,9 +35,12 @@ const SETTINGS_SURFACE_CLASS =
 
 const TAB_ORDER = SETTINGS_TAB_IDS;
 
+/** How long the name-save confirmation stays visible before reverting. */
+const NAME_SAVE_FEEDBACK_MS = 3_000;
+
 function tabClass(active: boolean): string {
   return active
-    ? 'inline-flex min-h-[44px] flex-1 items-center justify-center rounded-full bg-app-primary-soft px-4 py-2 text-sm font-semibold text-app-primary shadow-sm ring-1 ring-app-primary/25 dark:bg-app-primary-soft/28'
+    ? 'inline-flex min-h-[44px] flex-1 items-center justify-center rounded-full bg-app-tab-active-bg px-4 py-2 text-sm font-semibold text-app-tab-active-text shadow-sm ring-1 ring-app-tab-active-ring/25'
     : 'inline-flex min-h-[44px] flex-1 items-center justify-center rounded-full px-4 py-2 text-sm font-medium text-app-muted transition hover:bg-[var(--app-nav-hover-bg)] hover:text-app-ink';
 }
 
@@ -62,17 +66,28 @@ export function SettingsPage() {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [nameSubmitting, setNameSubmitting] = useState(false);
+  const [nameSavedVisible, setNameSavedVisible] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
+  const nameSavedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
   const [currentEmail, setCurrentEmail] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [emailSubmitting, setEmailSubmitting] = useState(false);
   const [emailError, setEmailError] = useState<string | null>(null);
-  const [emailStatus, setEmailStatus] = useState<string | null>(null);
+  const [pendingEmailChange, setPendingEmailChange] = useState<string | null>(
+    null,
+  );
+  const [showEmailChangeForm, setShowEmailChangeForm] = useState(true);
 
   const tabButtonRefs = useRef<
     Partial<Record<SettingsTabId, HTMLButtonElement>>
   >({});
+  /** Profile row already applied for this auth user (avoids reload on token refresh). */
+  const loadedProfileUserIdRef = useRef<string | null>(null);
+  /** True after the user edits name fields before save. */
+  const nameFormDirtyRef = useRef(false);
   const tabId = (tab: SettingsTabId) => `${formId}-settings-tab-${tab}`;
   const panelId = (tab: SettingsTabId) => `${formId}-settings-panel-${tab}`;
 
@@ -111,35 +126,107 @@ export function SettingsPage() {
   );
 
   const loadProfile = useCallback(async () => {
-    if (!session?.user?.id) {
+    const userId = session?.user?.id;
+    if (!userId) {
       setProfileLoading(false);
+      loadedProfileUserIdRef.current = null;
+      nameFormDirtyRef.current = false;
       return;
     }
+
+    const isInitialLoadForUser = loadedProfileUserIdRef.current !== userId;
+    if (!isInitialLoadForUser) {
+      return;
+    }
+
+    nameFormDirtyRef.current = false;
     setProfileLoading(true);
     setNameError(null);
     const { data, error } = await supabase
       .from('profiles')
       .select('display_name')
-      .eq('id', session.user.id)
+      .eq('id', userId)
       .maybeSingle();
     if (error) {
       setNameError('Unable to load your profile. Try again in a moment.');
       setProfileLoading(false);
       return;
     }
-    const names = splitDisplayNameIntoNameFields(data?.display_name);
-    setFirstName(names.firstName);
-    setLastName(names.lastName);
+    if (!nameFormDirtyRef.current) {
+      const names = splitDisplayNameIntoNameFields(data?.display_name);
+      setFirstName(names.firstName);
+      setLastName(names.lastName);
+    }
     setCurrentEmail(session.user.email ?? '');
+    loadedProfileUserIdRef.current = userId;
     setProfileLoading(false);
-  }, [session?.user?.id, session?.user?.email, supabase]);
+  }, [session?.user?.email, session?.user?.id, supabase]);
 
   useEffect(() => {
-    if (authLoading || !session) {
+    if (authLoading) {
       return;
     }
     void loadProfile();
-  }, [authLoading, session, loadProfile]);
+  }, [authLoading, loadProfile, session?.user?.id]);
+
+  useEffect(() => {
+    if (authLoading || !session?.user?.id) {
+      return;
+    }
+    setCurrentEmail(session.user.email ?? '');
+  }, [authLoading, session?.user?.email, session?.user?.id]);
+
+  useEffect(() => {
+    if (authLoading || !session?.user?.id) {
+      return;
+    }
+    void supabase.auth.getUser().then(({ data: { user } }) => {
+      const pending = readPendingEmailChange(user);
+      if (pending) {
+        setPendingEmailChange(pending);
+        setShowEmailChangeForm(false);
+      }
+    });
+  }, [authLoading, session?.user?.id, supabase]);
+
+  useEffect(() => {
+    if (!pendingEmailChange) {
+      return;
+    }
+    const normalizedCurrent = currentEmail.trim().toLowerCase();
+    if (
+      normalizedCurrent !== '' &&
+      normalizedCurrent === pendingEmailChange.trim().toLowerCase()
+    ) {
+      setPendingEmailChange(null);
+      setShowEmailChangeForm(true);
+    }
+  }, [currentEmail, pendingEmailChange]);
+
+  useEffect(() => {
+    return () => {
+      if (nameSavedTimeoutRef.current) {
+        clearTimeout(nameSavedTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const clearNameSaveFeedback = useCallback(() => {
+    if (nameSavedTimeoutRef.current) {
+      clearTimeout(nameSavedTimeoutRef.current);
+      nameSavedTimeoutRef.current = null;
+    }
+    setNameSavedVisible(false);
+  }, []);
+
+  const showNameSaveFeedback = useCallback(() => {
+    clearNameSaveFeedback();
+    setNameSavedVisible(true);
+    nameSavedTimeoutRef.current = setTimeout(() => {
+      setNameSavedVisible(false);
+      nameSavedTimeoutRef.current = null;
+    }, NAME_SAVE_FEEDBACK_MS);
+  }, [clearNameSaveFeedback]);
 
   const onNameSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -148,6 +235,7 @@ export function SettingsPage() {
     }
     setNameSubmitting(true);
     setNameError(null);
+    clearNameSaveFeedback();
     const displayName = combineNameFieldsIntoDisplayName({
       firstName,
       lastName,
@@ -162,6 +250,8 @@ export function SettingsPage() {
       announce('Unable to save your name.', { politeness: 'assertive' });
       return;
     }
+    nameFormDirtyRef.current = false;
+    showNameSaveFeedback();
     announce('Name saved.', { politeness: 'polite' });
   };
 
@@ -181,7 +271,6 @@ export function SettingsPage() {
     }
     setEmailSubmitting(true);
     setEmailError(null);
-    setEmailStatus(null);
     const nextPath = '/settings?tab=account';
     const emailRedirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(nextPath)}`;
     const { error } = await supabase.auth.updateUser(
@@ -194,10 +283,10 @@ export function SettingsPage() {
       announce(error.message, { politeness: 'assertive' });
       return;
     }
-    const msg =
-      'Confirmation email sent. Open the link in that message to finish changing your email.';
-    setEmailStatus(msg);
+    setPendingEmailChange(trimmed);
+    setShowEmailChangeForm(false);
     setNewEmail('');
+    const msg = `Confirmation email sent to ${trimmed}. Open the link in that message to finish changing your email.`;
     announce(msg, { politeness: 'polite' });
   };
 
@@ -338,7 +427,11 @@ export function SettingsPage() {
                       type="text"
                       autoComplete="given-name"
                       value={firstName}
-                      onChange={(e) => setFirstName(e.target.value)}
+                      onChange={(e) => {
+                        nameFormDirtyRef.current = true;
+                        clearNameSaveFeedback();
+                        setFirstName(e.target.value);
+                      }}
                       className="mt-1 block w-full min-h-[44px] rounded-md border border-app-border bg-app-bg px-3 py-2 text-app-ink shadow-sm focus:border-app-primary focus:outline-none focus:ring-2 focus:ring-app-ring"
                     />
                   </div>
@@ -354,7 +447,11 @@ export function SettingsPage() {
                       type="text"
                       autoComplete="family-name"
                       value={lastName}
-                      onChange={(e) => setLastName(e.target.value)}
+                      onChange={(e) => {
+                        nameFormDirtyRef.current = true;
+                        clearNameSaveFeedback();
+                        setLastName(e.target.value);
+                      }}
                       className="mt-1 block w-full min-h-[44px] rounded-md border border-app-border bg-app-bg px-3 py-2 text-app-ink shadow-sm focus:border-app-primary focus:outline-none focus:ring-2 focus:ring-app-ring"
                     />
                   </div>
@@ -370,9 +467,14 @@ export function SettingsPage() {
                     <button
                       type="submit"
                       disabled={nameSubmitting}
+                      aria-live="polite"
                       className="min-h-[44px] rounded-full bg-app-primary-solid px-5 text-sm font-semibold text-app-on-primary-solid shadow-sm transition hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      {nameSubmitting ? 'Saving…' : 'Save name'}
+                      {nameSubmitting
+                        ? 'Saving…'
+                        : nameSavedVisible
+                          ? 'Saved'
+                          : 'Save name'}
                     </button>
                   </div>
                 </form>
@@ -390,57 +492,119 @@ export function SettingsPage() {
                 Email
               </h2>
               <p className="mt-2 text-sm text-app-muted">
-                Current address:{' '}
-                <span className="font-medium text-app-ink">
-                  {currentEmail || 'Not set'}
-                </span>
-                . We will send a confirmation link to your new address before
-                the change takes effect.
+                {pendingEmailChange ? (
+                  <>
+                    Your sign-in email is still{' '}
+                    <span className="font-medium text-app-ink">
+                      {currentEmail || 'Not set'}
+                    </span>
+                    . Finish confirming{' '}
+                    <span className="font-medium text-app-ink">
+                      {pendingEmailChange}
+                    </span>{' '}
+                    using the link we emailed to that address.
+                  </>
+                ) : (
+                  <>
+                    Current address:{' '}
+                    <span className="font-medium text-app-ink">
+                      {currentEmail || 'Not set'}
+                    </span>
+                    . We will send a confirmation link to your new address
+                    before the change takes effect.
+                  </>
+                )}
               </p>
-              <form
-                className="mt-6 space-y-4"
-                onSubmit={(e) => {
-                  void onEmailSubmit(e);
-                }}
-                noValidate
-              >
-                <div className="space-y-2">
-                  <label
-                    htmlFor={`${formId}-new-email`}
-                    className="text-sm font-medium text-app-ink"
-                  >
-                    New email
-                  </label>
-                  <input
-                    id={`${formId}-new-email`}
-                    type="email"
-                    autoComplete="email"
-                    value={newEmail}
-                    onChange={(e) => setNewEmail(e.target.value)}
-                    className="mt-1 block w-full min-h-[44px] rounded-md border border-app-border bg-app-bg px-3 py-2 text-app-ink shadow-sm focus:border-app-primary focus:outline-none focus:ring-2 focus:ring-app-ring"
-                  />
-                </div>
-                {emailError ? (
-                  <p
-                    role="alert"
-                    className="text-sm text-red-700 dark:text-red-300"
-                  >
-                    {emailError}
-                  </p>
-                ) : null}
-                {emailStatus ? (
-                  <p className="text-sm text-app-muted" role="status">
-                    {emailStatus}
-                  </p>
-                ) : null}
-                <button
-                  type="submit"
-                  disabled={emailSubmitting}
-                  className="min-h-[44px] rounded-full bg-app-primary-solid px-5 text-sm font-semibold text-app-on-primary-solid shadow-sm transition hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-60"
+              {pendingEmailChange ? (
+                <div
+                  className="mt-6 space-y-4"
+                  role="status"
+                  aria-labelledby={`${formId}-email-pending-heading`}
                 >
-                  {emailSubmitting ? 'Sending…' : 'Send confirmation email'}
-                </button>
-              </form>
+                  <div className="rounded-xl border border-app-border/80 bg-app-bg p-4">
+                    <h3
+                      id={`${formId}-email-pending-heading`}
+                      className="text-sm font-semibold text-app-ink"
+                    >
+                      Email change pending
+                    </h3>
+                    <dl className="mt-3 space-y-2 text-sm">
+                      <div>
+                        <dt className="text-app-muted">Current address</dt>
+                        <dd className="font-medium text-app-ink">
+                          {currentEmail || 'Not set'}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-app-muted">Changing to</dt>
+                        <dd className="font-medium text-app-ink">
+                          {pendingEmailChange}
+                        </dd>
+                      </div>
+                    </dl>
+                    <p className="mt-3 text-sm text-app-muted">
+                      We sent a confirmation link to{' '}
+                      <span className="font-medium text-app-ink">
+                        {pendingEmailChange}
+                      </span>
+                      . Open that message to finish the change.
+                    </p>
+                  </div>
+                  {!showEmailChangeForm ? (
+                    <button
+                      type="button"
+                      className="min-h-[44px] rounded-full border border-app-border px-4 text-sm font-semibold text-app-ink shadow-sm transition hover:bg-[var(--app-nav-hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+                      onClick={() => {
+                        setShowEmailChangeForm(true);
+                        setEmailError(null);
+                      }}
+                    >
+                      Use a different address
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+              {!pendingEmailChange || showEmailChangeForm ? (
+                <form
+                  className="mt-6 space-y-4"
+                  onSubmit={(e) => {
+                    void onEmailSubmit(e);
+                  }}
+                  noValidate
+                >
+                  <div className="space-y-2">
+                    <label
+                      htmlFor={`${formId}-new-email`}
+                      className="text-sm font-medium text-app-ink"
+                    >
+                      New email
+                    </label>
+                    <input
+                      id={`${formId}-new-email`}
+                      type="email"
+                      autoComplete="email"
+                      value={newEmail}
+                      onChange={(e) => setNewEmail(e.target.value)}
+                      className="mt-1 block w-full min-h-[44px] rounded-md border border-app-border bg-app-bg px-3 py-2 text-app-ink shadow-sm focus:border-app-primary focus:outline-none focus:ring-2 focus:ring-app-ring"
+                    />
+                  </div>
+                  {emailError ? (
+                    <p
+                      role="alert"
+                      className="text-sm text-red-700 dark:text-red-300"
+                    >
+                      {emailError}
+                    </p>
+                  ) : null}
+                  <button
+                    type="submit"
+                    disabled={emailSubmitting}
+                    className="min-h-[44px] rounded-full bg-app-primary-solid px-5 text-sm font-semibold text-app-on-primary-solid shadow-sm transition hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {emailSubmitting ? 'Sending…' : 'Send confirmation email'}
+                  </button>
+                </form>
+              ) : null}
             </section>
 
             <section

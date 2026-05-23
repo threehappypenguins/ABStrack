@@ -97,6 +97,19 @@ describe('shouldToggleSidebarFromKeyboard', () => {
     expect(shouldToggleSidebarFromKeyboard(event)).toBe(false);
   });
 
+  it('ignores keydown events without a key value', () => {
+    vi.stubGlobal('navigator', {
+      platform: 'Win32',
+      userAgent: 'Windows',
+    });
+    const event = dispatchKey({ ctrlKey: true });
+    Object.defineProperty(event, 'key', {
+      configurable: true,
+      value: undefined,
+    });
+    expect(shouldToggleSidebarFromKeyboard(event)).toBe(false);
+  });
+
   it('ignores the shortcut without a modifier', () => {
     const event = dispatchKey({ key: 'b' });
     expect(shouldToggleSidebarFromKeyboard(event)).toBe(false);
