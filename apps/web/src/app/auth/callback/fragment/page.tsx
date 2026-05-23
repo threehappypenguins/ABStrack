@@ -7,7 +7,10 @@ import {
   AUTH_CALLBACK_VERIFICATION_FAILED_MESSAGE,
   getSafeAuthCallbackRedirectPath,
 } from '@/lib/auth/auth-callback-redirect';
-import { isSupabaseAuthApiError } from '@abstrack/supabase';
+import {
+  isAuthSessionMissingError,
+  isSupabaseAuthApiError,
+} from '@abstrack/supabase';
 import {
   isSupabaseBrowserConfigError,
   parseImplicitHashParams,
@@ -85,7 +88,10 @@ function AuthCallbackFragmentContent() {
           error: existingUserError,
         } = await supabase.auth.getUser();
         if (cancelled) return;
-        if (existingUserError) {
+        if (
+          existingUserError &&
+          !isAuthSessionMissingError(existingUserError)
+        ) {
           throw existingUserError;
         }
 
@@ -113,16 +119,33 @@ function AuthCallbackFragmentContent() {
           }
 
           if (access_token && refresh_token) {
-            const { error } = await supabase.auth.setSession({
+            const { error: setSessionError } = await supabase.auth.setSession({
               access_token,
               refresh_token,
             });
             if (cancelled) return;
-            if (error) {
+            if (setSessionError) {
               finishErr(AUTH_CALLBACK_INVALID_LINK_MESSAGE);
               return;
             }
-            finishOk();
+
+            const {
+              data: { user: userAfterSetSession },
+              error: userAfterSetSessionError,
+            } = await supabase.auth.getUser();
+            if (cancelled) return;
+            if (userAfterSetSessionError) {
+              if (isAuthSessionMissingError(userAfterSetSessionError)) {
+                finishErr(AUTH_CALLBACK_INVALID_LINK_MESSAGE);
+                return;
+              }
+              throw userAfterSetSessionError;
+            }
+            if (userAfterSetSession) {
+              finishOk();
+              return;
+            }
+            finishErr(AUTH_CALLBACK_INVALID_LINK_MESSAGE);
             return;
           }
         }
@@ -133,6 +156,10 @@ function AuthCallbackFragmentContent() {
         } = await supabase.auth.getUser();
         if (cancelled) return;
         if (afterDetectUserError) {
+          if (isAuthSessionMissingError(afterDetectUserError)) {
+            finishErr(AUTH_CALLBACK_INVALID_LINK_MESSAGE);
+            return;
+          }
           throw afterDetectUserError;
         }
 
@@ -144,16 +171,20 @@ function AuthCallbackFragmentContent() {
         finishErr(AUTH_CALLBACK_INVALID_LINK_MESSAGE);
       } catch (err) {
         if (cancelled) return;
+        if (isAuthSessionMissingError(err)) {
+          finishErr(AUTH_CALLBACK_INVALID_LINK_MESSAGE);
+          return;
+        }
         if (isSupabaseBrowserConfigError(err)) {
           setSurfaceError(err.message);
           return;
         }
-        if (isSupabaseAuthApiError(err)) {
+        if (isSupabaseAuthApiError(err) && !isAuthSessionMissingError(err)) {
           console.error(
             'Failed to verify user during auth callback fragment handling',
             err,
           );
-        } else {
+        } else if (!isAuthSessionMissingError(err)) {
           console.error(
             'Unexpected error during auth callback fragment handling',
             err,

@@ -30,6 +30,7 @@
 
 import {
   getVerifiedAuthSession,
+  isAuthSessionMissingError,
   type AbstrackSupabaseClient,
   type Session,
 } from '@abstrack/supabase';
@@ -438,7 +439,7 @@ async function finishFailedBundleRestore(
  *   password session was re-applied). The user typically remains signed in at AAL1; caller should
  *   continue MFA flow.
  * - **`signed_out`**: Auth state was cleared during failure handling (e.g. unsafe mismatch,
- *   `getSession` error before tokens were captured, or reversion to the password session failed).
+ *   missing session on pre-restore probes, or reversion to the password session failed).
  *   Caller must not assume a session.
  */
 export type TryRestoreTrustedMfaSessionResult =
@@ -455,7 +456,7 @@ export type TryRestoreTrustedMfaSessionResult =
  * Restore uses `auth.refreshSession({ refresh_token })` with the stored refresh token, not
  * `setSession({ access_token, refresh_token })` alone (see implementation comment).
  * On failure (revoked or expired tokens, **session user mismatch** after restore, assurance error,
- * **getSession error**, **missing session** after a successful `getSession()` call, or session not at
+ * **missing session** after a successful `getSession()` call, or session not at
  * **aal2**), clears the bundle and restores the pre-restore
  * password session (or signs out) so the client is not left authenticated as the wrong user. If the
  * **initial** `getSession()` user id does not match `userId`, clears the bundle and **signs out**
@@ -485,8 +486,11 @@ export async function tryRestoreTrustedMfaSession(
   const preUserResult = await supabase.auth.getUser();
   if (preUserResult.error) {
     clearMfaTrustBundle();
-    await revertToPreRestoreSession(supabase, null);
-    return { status: 'signed_out' };
+    if (isAuthSessionMissingError(preUserResult.error)) {
+      await supabase.auth.signOut();
+      return { status: 'signed_out' };
+    }
+    return { status: 'not_restored' };
   }
 
   if (preUserResult.data.user?.id !== userId) {
@@ -498,8 +502,11 @@ export async function tryRestoreTrustedMfaSession(
   const preSessionResult = await supabase.auth.getSession();
   if (preSessionResult.error) {
     clearMfaTrustBundle();
-    await revertToPreRestoreSession(supabase, null);
-    return { status: 'signed_out' };
+    if (isAuthSessionMissingError(preSessionResult.error)) {
+      await supabase.auth.signOut();
+      return { status: 'signed_out' };
+    }
+    return { status: 'not_restored' };
   }
 
   const preRestoreSession = preSessionResult.data.session;

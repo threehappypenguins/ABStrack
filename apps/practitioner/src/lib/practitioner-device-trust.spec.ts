@@ -452,7 +452,42 @@ describe('tryRestoreTrustedMfaSession', () => {
     expect(signOut).not.toHaveBeenCalled();
   });
 
-  it('clears the trust bundle and signs out when initial getSession fails', async () => {
+  it('returns not_restored when initial getUser fails transiently without signing out', async () => {
+    localStorage.setItem(
+      PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
+      buildBundleJson(userId, Date.now() + 60_000),
+    );
+
+    const refreshSession = jest.fn();
+    const signOut = jest.fn().mockResolvedValue({ error: null });
+
+    const supabase = {
+      auth: {
+        getUser: jest.fn().mockResolvedValue({
+          data: { user: null },
+          error: new Error('Failed to fetch'),
+        }),
+        refreshSession,
+        setSession: jest.fn(),
+        signOut,
+        getSession: jest.fn(),
+        mfa: {
+          getAuthenticatorAssuranceLevel: jest.fn(),
+        },
+      },
+    } as unknown as BrowserClient;
+
+    await expect(
+      tryRestoreTrustedMfaSession(supabase, userId),
+    ).resolves.toEqual({ status: 'not_restored' });
+    expect(
+      localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
+    ).toBeNull();
+    expect(refreshSession).not.toHaveBeenCalled();
+    expect(signOut).not.toHaveBeenCalled();
+  });
+
+  it('returns not_restored when initial getSession fails transiently without signing out', async () => {
     localStorage.setItem(
       PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY,
       buildBundleJson(userId, Date.now() + 60_000),
@@ -476,12 +511,12 @@ describe('tryRestoreTrustedMfaSession', () => {
 
     await expect(
       tryRestoreTrustedMfaSession(supabase, userId),
-    ).resolves.toEqual({ status: 'signed_out' });
+    ).resolves.toEqual({ status: 'not_restored' });
     expect(
       localStorage.getItem(PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY),
     ).toBeNull();
     expect(setSession).not.toHaveBeenCalled();
-    expect(signOut).toHaveBeenCalled();
+    expect(signOut).not.toHaveBeenCalled();
   });
 
   it('clears the trust bundle and reverts when refreshSession fails', async () => {
