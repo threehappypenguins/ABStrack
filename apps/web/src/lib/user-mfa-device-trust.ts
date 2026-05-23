@@ -20,10 +20,15 @@
  *
  * RLS and MFA fail-closed rules remain authoritative for PHI; this module is UX-only.
  *
- * **Deploy gate:** Token persistence and restore are **on by default** when the env var is unset or
- * blank. Set it to **`true` or `1`** (case-insensitive) to enable explicitly, or **`false` or `0`**
- * to disable (no writes; reads scrub any existing bundle key). **Any other non-empty value is
- * treated as disabled** (fail-closed) so typos do not silently keep the feature on.
+ * **Deploy gate (fail-closed):** Device trust is **off** unless **`NEXT_PUBLIC_USER_MFA_DEVICE_TRUST`**
+ * is explicitly **`true` or `1`** (case-insensitive). Unset, blank, **`false`**, **`0`**, or any other
+ * value keeps the feature disabled and scrubs any stored bundle on read.
+ *
+ * **Production builds:** When trust is explicitly enabled, **`NEXT_PUBLIC_USER_WEB_CSP_ENFORCE`**
+ * must also be **`true` at build time** so enforced CSP ships before localStorage token bundles
+ * are allowed. Pair with **`USER_WEB_CSP_ENFORCE=true`** on the server/build for the CSP header
+ * (see `apps/web/next.config.js`). Development may enable trust without enforced CSP for local MFA
+ * testing; CSP defaults to Report-Only.
  *
  * @module user-device-trust
  */
@@ -66,11 +71,12 @@ export function getTrustedUntilMsForDuration(
 /**
  * Whether user MFA “trusted device” (localStorage token bundle) is allowed for this build.
  *
- * **Parsing (fail-closed for non-whitelisted values):**
- * - Unset, `null`, or empty/whitespace → **enabled** (default user UX).
- * - `false` or `0` (case-insensitive) → **disabled**.
- * - `true` or `1` (case-insensitive) → **enabled**.
- * - Any other non-empty string (e.g. `yes`) → **disabled** — avoids treating typos as “on”.
+ * **Parsing (fail-closed):**
+ * - Unset, `null`, empty/whitespace, **`false`**, **`0`**, or any other value → **disabled**.
+ * - **`true` or `1`** (case-insensitive) → **enabled** when CSP rules below pass.
+ *
+ * **Production (`NODE_ENV === 'production'`):** trust requires **`NEXT_PUBLIC_USER_WEB_CSP_ENFORCE`**
+ * **`true` at build time** in addition to the trust flag.
  *
  * @returns Whether device trust reads/writes are allowed for this process.
  *
@@ -80,26 +86,33 @@ export function getTrustedUntilMsForDuration(
  * and incorrectly fall back to the “unset” default — so per-environment disable would not apply.
  */
 export function isUserMfaDeviceTrustEnabled(): boolean {
-  let raw: string | undefined;
+  let trustRaw: string | undefined;
+  let cspEnforceRaw: string | undefined;
   try {
-    raw =
-      typeof process !== 'undefined' && process.env != null
-        ? process.env.NEXT_PUBLIC_USER_MFA_DEVICE_TRUST
-        : undefined;
+    if (typeof process !== 'undefined' && process.env != null) {
+      trustRaw = process.env.NEXT_PUBLIC_USER_MFA_DEVICE_TRUST;
+      cspEnforceRaw = process.env.NEXT_PUBLIC_USER_WEB_CSP_ENFORCE;
+    }
   } catch {
     return false;
   }
-  if (raw == null || String(raw).trim() === '') {
-    return true;
-  }
-  const v = String(raw).trim().toLowerCase();
-  if (v === 'false' || v === '0') {
+  if (trustRaw == null || String(trustRaw).trim() === '') {
     return false;
   }
-  if (v === 'true' || v === '1') {
-    return true;
+  const trustFlag = String(trustRaw).trim().toLowerCase();
+  if (trustFlag !== 'true' && trustFlag !== '1') {
+    return false;
   }
-  return false;
+  const isProduction =
+    typeof process !== 'undefined' && process.env?.NODE_ENV === 'production';
+  if (isProduction) {
+    return (
+      String(cspEnforceRaw ?? '')
+        .trim()
+        .toLowerCase() === 'true'
+    );
+  }
+  return true;
 }
 
 /**
@@ -587,9 +600,10 @@ export async function tryRestoreTrustedMfaSession(
 
 /**
  * Full sign-out: clears the MFA trust bundle and browser `sb-*` auth storage, then POSTs to
- * `/api/auth/logout` so the server revokes refresh tokens and clears auth cookies. Prefer this on
- * shared machines, after credential compromise, or whenever all sessions must end. Navigation happens
- * via the redirect response (this function does not return in normal browsers).
+ * `/api/auth/logout?scope=global` so the server revokes refresh tokens on all devices and clears
+ * auth cookies. Prefer this on shared machines, after credential compromise, or whenever all
+ * sessions must end. Navigation happens via the redirect response (this function does not return
+ * in normal browsers).
  */
 export function userSignOutEverywhere(): void {
   if (typeof document === 'undefined') {
@@ -603,7 +617,7 @@ export function userSignOutEverywhere(): void {
   }
   const form = document.createElement('form');
   form.method = 'POST';
-  form.action = '/api/auth/logout';
+  form.action = '/api/auth/logout?scope=global';
   form.setAttribute('aria-hidden', 'true');
   form.style.display = 'none';
   document.body.appendChild(form);

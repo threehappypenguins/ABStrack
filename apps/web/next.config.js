@@ -1,6 +1,32 @@
 //@ts-check
 const path = require('path');
 const { composePlugins, withNx } = require('@nx/next');
+const {
+  buildUserWebCspDirectives,
+  normalizeCspHeaderValue,
+} = require('./csp-config.js');
+
+const isDev = process.env.NODE_ENV === 'development';
+const isProduction = process.env.NODE_ENV === 'production';
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const cspEnforce = process.env.USER_WEB_CSP_ENFORCE === 'true';
+
+const userWebCspHeaderValue = normalizeCspHeaderValue(
+  buildUserWebCspDirectives({
+    supabaseUrl,
+    isDev,
+    isProduction,
+  }),
+);
+
+const userWebCspHeaders = cspEnforce
+  ? [{ key: 'Content-Security-Policy', value: userWebCspHeaderValue }]
+  : [
+      {
+        key: 'Content-Security-Policy-Report-Only',
+        value: userWebCspHeaderValue,
+      },
+    ];
 
 /**
  * @type {import('@nx/next/plugins/with-nx').WithNxOptions}
@@ -42,6 +68,14 @@ const nextConfig = {
       '@abstrack/ui-web/sidebar': path.join(uiWebSrc, 'components/sidebar.tsx'),
     };
     return config;
+  },
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: userWebCspHeaders,
+      },
+    ];
   },
 };
 

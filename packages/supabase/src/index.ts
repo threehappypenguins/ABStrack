@@ -34,7 +34,9 @@ export {
 } from './lib/auth.js';
 export {
   ensurePatientProfileRow,
+  ensureProfileRow,
   isPostgresUniqueViolation,
+  type SelfServiceProfileRole,
 } from './lib/ensure-patient-profile.js';
 export {
   fetchProfileByUserId,
