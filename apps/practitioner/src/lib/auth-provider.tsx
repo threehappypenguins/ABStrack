@@ -3,6 +3,7 @@
 import {
   fetchProfileByUserId,
   getVerifiedAuthSession,
+  isAuthSessionMissingError,
   parseAbstrackAccessTokenClaims,
   resolvePractitionerAppGate,
   type AbstrackAccessTokenClaims,
@@ -123,7 +124,9 @@ async function loadVerifiedAuthSessionWithTimeout(
     } = raceResult;
 
     if (error) {
-      console.error('Failed to verify practitioner auth session', error);
+      if (!isAuthSessionMissingError(error)) {
+        console.error('Failed to verify practitioner auth session', error);
+      }
       if (isRefreshTokenFailure(error)) {
         await client.auth.signOut();
         return { action: 'clear' };
@@ -138,7 +141,9 @@ async function loadVerifiedAuthSessionWithTimeout(
     // Verified signed out (`getVerifiedAuthSession`: no user / no session, no error).
     return { action: 'clear' };
   } catch (error) {
-    console.error('Failed to verify practitioner auth session', error);
+    if (!isAuthSessionMissingError(error)) {
+      console.error('Failed to verify practitioner auth session', error);
+    }
     if (isRefreshTokenFailure(error)) {
       await client.auth.signOut();
       return { action: 'clear' };

@@ -1,5 +1,6 @@
 'use client';
 
+import { isAuthSessionMissingError } from '@abstrack/supabase';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import {
   type AuthProviderSession,
@@ -96,7 +97,9 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
         } = result;
 
         if (error) {
-          console.error('Failed to verify authenticated user', error);
+          if (!isAuthSessionMissingError(error)) {
+            console.error('Failed to verify authenticated user', error);
+          }
           if (isRefreshTokenFailure(error)) {
             await supabase.auth.signOut();
             if (mounted && generation === verifyGenerationRef.current) {
@@ -110,7 +113,9 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
           setSession(mapSupabaseUserToAuthContext(user));
         }
       } catch (error) {
-        console.error('Failed to verify authenticated user', error);
+        if (!isAuthSessionMissingError(error)) {
+          console.error('Failed to verify authenticated user', error);
+        }
         if (isRefreshTokenFailure(error)) {
           await supabase.auth.signOut();
           if (mounted && generation === verifyGenerationRef.current) {
