@@ -1,7 +1,26 @@
+import { getSameOriginLogoutPostFailure } from '@/lib/same-origin-logout-post';
 import { createServerClient } from '../../../../lib/supabase/server-client';
 import { NextRequest, NextResponse } from 'next/server';
 
+/**
+ * Signs out the current user-web session and clears auth cookies. Supports optional
+ * `?scope=global` to revoke refresh tokens on all devices.
+ *
+ * Rejects cross-site `POST` requests (same-origin / `Sec-Fetch-Site` / `Referer` checks) before
+ * mutating session state, to mitigate CSRF-driven logouts.
+ *
+ * @param request - Incoming request with current cookies.
+ * @returns Redirect to login, or **400** / **403** when same-origin validation fails.
+ */
 export async function POST(request: NextRequest) {
+  const csrfFailure = getSameOriginLogoutPostFailure(request);
+  if (csrfFailure) {
+    return NextResponse.json(
+      { error: csrfFailure.error },
+      { status: csrfFailure.status },
+    );
+  }
+
   const response = NextResponse.redirect(new URL('/login', request.url), 303);
 
   const supabase = await createServerClient({
@@ -20,6 +39,5 @@ export async function POST(request: NextRequest) {
 
   await supabase.auth.signOut(scope ? { scope } : undefined);
 
-  // Redirect to login page after logout
   return response;
 }

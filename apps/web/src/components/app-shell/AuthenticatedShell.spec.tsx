@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
+import { WEB_APP_NAV_ITEMS } from '@/lib/app-nav-items';
 import type { ReactNode } from 'react';
 
 const usePathnameMock = jest.fn(() => '/dashboard');
@@ -141,8 +142,18 @@ describe('AuthenticatedShell', () => {
       </AuthenticatedShell>,
     );
 
-    const settings = screen.getByRole('link', { name: 'Settings' });
-    expect(settings).toHaveAttribute('href', '/settings');
+    const nav = screen.getByRole('navigation', {
+      name: 'ABStrack application',
+    });
+    const navLinkLabels = within(nav)
+      .getAllByRole('link')
+      .map((link) => link.textContent?.trim());
+    expect(navLinkLabels).toEqual(WEB_APP_NAV_ITEMS.map((item) => item.label));
+    expect(navLinkLabels.at(-1)).toBe('Settings');
+    expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute(
+      'href',
+      '/settings',
+    );
     expect(
       screen.queryByRole('link', { name: 'Caretaker' }),
     ).not.toBeInTheDocument();
