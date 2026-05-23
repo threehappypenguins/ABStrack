@@ -14,12 +14,12 @@ import {
 import { createBrowserClient } from '@/lib/supabase/browser-client';
 import {
   AUTH_PASSWORD_MAX_LENGTH,
+  AUTH_PASSWORD_MIN_LENGTH,
   USER_PASSWORD_SET_USER_METADATA_KEY,
   buildRevokedPasswordPlaceholder,
+  getAuthPasswordValidationError,
   userHasPasswordSignIn,
 } from '@/lib/user-password-sign-in';
-
-const MIN_PASSWORD_LENGTH = 8;
 
 type TotpEnrollment = {
   id: string;
@@ -141,16 +141,9 @@ export function SettingsSecuritySection() {
     if (!session) {
       return;
     }
-    if (password.length < MIN_PASSWORD_LENGTH) {
-      setPasswordError(
-        `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`,
-      );
-      return;
-    }
-    if (password.length > AUTH_PASSWORD_MAX_LENGTH) {
-      setPasswordError(
-        `Password must be no more than ${AUTH_PASSWORD_MAX_LENGTH} characters.`,
-      );
+    const passwordValidationError = getAuthPasswordValidationError(password);
+    if (passwordValidationError) {
+      setPasswordError(passwordValidationError);
       return;
     }
     if (password !== confirmPassword) {
@@ -384,8 +377,8 @@ export function SettingsSecuritySection() {
           {hasPassword
             ? 'Update the password you use for email sign-in on web or mobile.'
             : 'You currently sign in with magic links from email. Add a password if you want email and password sign-in too.'}{' '}
-          Passwords must be {MIN_PASSWORD_LENGTH}–{AUTH_PASSWORD_MAX_LENGTH}{' '}
-          characters.
+          Passwords must be at least {AUTH_PASSWORD_MIN_LENGTH} characters and
+          no more than {AUTH_PASSWORD_MAX_LENGTH} bytes.
         </p>
         <form
           className="mt-6 space-y-4"

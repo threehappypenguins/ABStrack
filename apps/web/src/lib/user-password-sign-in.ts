@@ -22,8 +22,39 @@ export function userHasPasswordSignIn(
   return raw === true || raw === 'true';
 }
 
+/** Minimum password length enforced by GoTrue for sign-up / update flows. */
+export const AUTH_PASSWORD_MIN_LENGTH = 8;
+
 /** GoTrue/bcrypt rejects passwords longer than 72 bytes. */
 export const AUTH_PASSWORD_MAX_LENGTH = 72;
+
+/**
+ * UTF-8 byte length of a password (GoTrue/bcrypt limit is bytes, not JavaScript string length).
+ *
+ * @param password - Candidate password.
+ * @returns Encoded byte length.
+ */
+export function getAuthPasswordUtf8ByteLength(password: string): number {
+  return new TextEncoder().encode(password).length;
+}
+
+/**
+ * Client-side password rules before `auth.updateUser({ password })`.
+ *
+ * @param password - Candidate password.
+ * @returns User-visible error, or `null` when acceptable.
+ */
+export function getAuthPasswordValidationError(
+  password: string,
+): string | null {
+  if (password.length < AUTH_PASSWORD_MIN_LENGTH) {
+    return `Password must be at least ${AUTH_PASSWORD_MIN_LENGTH} characters.`;
+  }
+  if (getAuthPasswordUtf8ByteLength(password) > AUTH_PASSWORD_MAX_LENGTH) {
+    return `Password must be no more than ${AUTH_PASSWORD_MAX_LENGTH} bytes.`;
+  }
+  return null;
+}
 
 const REVOKED_PASSWORD_PREFIX = 'Abstrack-revoked-';
 const REVOKED_PASSWORD_SUFFIX = '!9';

@@ -10,9 +10,12 @@ import {
   AUTH_CALLBACK_VERIFICATION_FAILED_MESSAGE,
 } from '@/lib/auth/auth-callback-redirect';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
-import { USER_PASSWORD_SET_USER_METADATA_KEY } from '@/lib/user-password-sign-in';
-
-const MIN_PASSWORD_LENGTH = 8;
+import {
+  AUTH_PASSWORD_MAX_LENGTH,
+  AUTH_PASSWORD_MIN_LENGTH,
+  USER_PASSWORD_SET_USER_METADATA_KEY,
+  getAuthPasswordValidationError,
+} from '@/lib/user-password-sign-in';
 
 /**
  * Lets a signed-in user set or change their password (`updateUser`). Supports the post–caretaker-invite
@@ -112,8 +115,9 @@ export default function UpdatePasswordPage() {
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (password.length < MIN_PASSWORD_LENGTH) {
-      setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+    const passwordValidationError = getAuthPasswordValidationError(password);
+    if (passwordValidationError) {
+      setError(passwordValidationError);
       setStatus(null);
       return;
     }
@@ -227,6 +231,11 @@ export default function UpdatePasswordPage() {
           </div>
         ) : null}
 
+        <p className="mb-4 text-center text-sm text-app-muted">
+          Passwords must be at least {AUTH_PASSWORD_MIN_LENGTH} characters and
+          no more than {AUTH_PASSWORD_MAX_LENGTH} bytes.
+        </p>
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label
@@ -240,6 +249,7 @@ export default function UpdatePasswordPage() {
               type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
+              maxLength={AUTH_PASSWORD_MAX_LENGTH}
               required
               className="mt-1 block w-full rounded-md border border-app-border bg-app-bg px-3 py-2 text-app-ink shadow-sm focus:border-app-primary focus:outline-none focus:ring-2 focus:ring-app-ring"
               placeholder="••••••••"
@@ -260,6 +270,7 @@ export default function UpdatePasswordPage() {
               type="password"
               value={confirmPassword}
               onChange={(event) => setConfirmPassword(event.target.value)}
+              maxLength={AUTH_PASSWORD_MAX_LENGTH}
               required
               className="mt-1 block w-full rounded-md border border-app-border bg-app-bg px-3 py-2 text-app-ink shadow-sm focus:border-app-primary focus:outline-none focus:ring-2 focus:ring-app-ring"
               placeholder="••••••••"
