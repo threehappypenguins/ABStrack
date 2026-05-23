@@ -417,16 +417,16 @@ export function HomeScreen({
     try {
       const mobileSupabase = getMobileSupabaseClient();
       const {
-        data: { session },
-        error: sessionError,
-      } = await mobileSupabase.auth.getSession();
+        data: { user },
+        error: userError,
+      } = await mobileSupabase.auth.getUser();
 
-      if (sessionError || !session?.user) {
+      if (userError || !user) {
         if (isMountedRef.current) {
           setHealthCheck({
             success: false,
             message: 'Health check failed',
-            error: sessionError?.message ?? 'No authenticated user found',
+            error: userError?.message ?? 'No authenticated user found',
           });
         }
         return;

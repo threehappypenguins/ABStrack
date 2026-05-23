@@ -141,10 +141,130 @@ export function persistedSessionIdentityWithRedactedAccessJwt(
  *
  * @returns Same shape as `SupabaseClient.auth.getSession()`.
  */
-export async function getMobileAuthSessionSafe(): Promise<MobileAuthGetSessionResult> {
+export type GetMobileAuthSessionSafeOptions = {
+  /**
+   * When `false`, skips `auth.getUser()` and uses `session.user` from storage only (tokens still
+   * from `getSession()`). Use for callers that only need `access_token` (e.g. PowerSync JWT).
+   * Default `true`.
+   */
+  verifyUser?: boolean;
+};
+
+/** Cache key for {@link verifiedAuthUserCache} (refresh token preferred; rotates on refresh). */
+function sessionUserCacheKey(session: Session): string | null {
+  const refresh = session.refresh_token?.trim();
+  if (refresh && refresh.length > 0) {
+    return `rt:${refresh}`;
+  }
+  const access = session.access_token?.trim();
+  if (access && access.length > 0) {
+    return `at:${access}`;
+  }
+  return null;
+}
+
+let verifiedAuthUserCache: {
+  key: string;
+  user: NonNullable<Session['user']>;
+} | null = null;
+
+/**
+ * Clears the in-memory verified-user cache (e.g. after sign-out). New tokens get a fresh
+ * {@link client.auth.getUser} on the next {@link getMobileAuthSessionSafe} with `verifyUser: true`.
+ */
+export function clearMobileVerifiedAuthUserCache(): void {
+  verifiedAuthUserCache = null;
+}
+
+async function readPersistedUserForSession(
+  client: AbstrackSupabaseClient,
+  session: Session,
+): Promise<Session> {
+  if (session.user?.id) {
+    return session;
+  }
+  const storageKey = (client.auth as unknown as { storageKey?: string })
+    .storageKey;
+  if (!storageKey) {
+    return session;
+  }
+  try {
+    const raw = await mobileAuthStorage.getItem(storageKey);
+    if (!raw) {
+      return session;
+    }
+    const persisted = JSON.parse(raw) as Session;
+    if (persisted?.user?.id) {
+      return { ...session, user: persisted.user };
+    }
+  } catch {
+    // Best-effort offline identity only.
+  }
+  return session;
+}
+
+async function attachVerifiedUserToSession(
+  client: AbstrackSupabaseClient,
+  session: Session,
+  options?: GetMobileAuthSessionSafeOptions,
+): Promise<Session> {
+  if (options?.verifyUser === false) {
+    return readPersistedUserForSession(client, session);
+  }
+
+  const cacheKey = sessionUserCacheKey(session);
+  if (cacheKey && verifiedAuthUserCache?.key === cacheKey) {
+    return { ...session, user: verifiedAuthUserCache.user };
+  }
+
+  try {
+    const {
+      data: { user },
+      error,
+    } = await client.auth.getUser();
+    if (!error && user) {
+      if (cacheKey) {
+        verifiedAuthUserCache = { key: cacheKey, user };
+      }
+      return { ...session, user };
+    }
+  } catch {
+    // Offline: keep tokens from getSession but avoid reading session.user from that return value.
+  }
+
+  const withPersistedUser = await readPersistedUserForSession(client, session);
+  if (cacheKey && withPersistedUser.user?.id) {
+    verifiedAuthUserCache = {
+      key: cacheKey,
+      user: withPersistedUser.user,
+    };
+  }
+  return withPersistedUser;
+}
+
+/**
+ * @param options - Optional flags; see {@link GetMobileAuthSessionSafeOptions}.
+ * @returns Same shape as `SupabaseClient.auth.getSession()`.
+ */
+export async function getMobileAuthSessionSafe(
+  options?: GetMobileAuthSessionSafeOptions,
+): Promise<MobileAuthGetSessionResult> {
   const client = getMobileSupabaseClient();
   try {
-    return await client.auth.getSession();
+    const result = await client.auth.getSession();
+    if (result.error) {
+      return { data: { session: null }, error: result.error };
+    }
+    if (result.data.session) {
+      const session = await attachVerifiedUserToSession(
+        client,
+        result.data.session,
+        options,
+      );
+      return { data: { session }, error: null };
+    }
+    clearMobileVerifiedAuthUserCache();
+    return result;
   } catch (getSessionError) {
     const storageKey = (client.auth as unknown as { storageKey?: string })
       .storageKey;
@@ -178,14 +298,20 @@ export async function getMobileAuthSessionSafe(): Promise<MobileAuthGetSessionRe
         };
       }
       if (isPersistedSupabaseSessionAccessExpired(session)) {
-        return {
-          data: {
-            session: persistedSessionIdentityWithRedactedAccessJwt(session),
-          },
-          error: null,
-        };
+        const redacted = persistedSessionIdentityWithRedactedAccessJwt(session);
+        const withUser = await attachVerifiedUserToSession(
+          client,
+          redacted,
+          options,
+        );
+        return { data: { session: withUser }, error: null };
       }
-      return { data: { session }, error: null };
+      const withUser = await attachVerifiedUserToSession(
+        client,
+        session,
+        options,
+      );
+      return { data: { session: withUser }, error: null };
     } catch (persistedReadError) {
       return {
         data: { session: null },

@@ -107,16 +107,12 @@ export function useMobileAuthUserId(): string | null {
 
     const {
       data: { subscription },
-    } = client.auth.onAuthStateChange((event, session) => {
+    } = client.auth.onAuthStateChange((event, _session) => {
       if (event === 'SIGNED_OUT') {
         const generation = ++refreshGeneration;
         lastKnownUserIdRef.current = null;
         applyIfCurrent(generation, null);
         return;
-      }
-      const primed = session?.user?.id;
-      if (primed != null && primed !== '') {
-        lastKnownUserIdRef.current = primed;
       }
       refresh();
     });

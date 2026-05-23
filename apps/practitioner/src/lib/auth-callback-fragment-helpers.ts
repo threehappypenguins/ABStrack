@@ -1,3 +1,38 @@
+import { isAuthSessionMissingError } from '@abstrack/supabase';
+
+/**
+ * Result of interpreting `getUser()` during auth callback fragment handling.
+ */
+export type AuthCallbackGetUserProbe =
+  | { status: 'authenticated'; userId: string }
+  | { status: 'signed_out' }
+  | { status: 'verification_failed'; error: unknown };
+
+/**
+ * Maps `getUser()` to callback flow outcomes. `AuthSessionMissingError` is “signed out”
+ * (invalid link after hash handling), not a fatal verification error.
+ *
+ * @param user - `data.user` from `getUser()`.
+ * @param error - `error` from `getUser()`.
+ * @returns Probe result for the fragment callback handler.
+ */
+export function interpretAuthCallbackGetUserProbe(
+  user: { id?: string | null } | null | undefined,
+  error: unknown,
+): AuthCallbackGetUserProbe {
+  if (error) {
+    if (isAuthSessionMissingError(error)) {
+      return { status: 'signed_out' };
+    }
+    return { status: 'verification_failed', error };
+  }
+  const id = user?.id;
+  if (typeof id === 'string' && id.length > 0) {
+    return { status: 'authenticated', userId: id };
+  }
+  return { status: 'signed_out' };
+}
+
 /**
  * Parses Supabase Auth implicit-flow parameters from the URL hash
  * (`#access_token=…&refresh_token=…`). The fragment is never sent to the server.

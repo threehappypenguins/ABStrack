@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useId, useState } from 'react';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
+import { getAccessTokenFromSession } from '@abstrack/supabase';
 import { getSupabaseBrowserClient } from '@abstrack/supabase/browser';
 import { completePractitionerInviteAfterAuth } from '@/lib/practitioner-invite-complete';
 import { PRACTITIONER_INVITE_SET_PASSWORD_FROM } from '@/lib/practitioner-invite-join';
@@ -37,19 +38,18 @@ export default function PractitionerInviteJoinPage() {
       try {
         const supabase = getSupabaseBrowserClient();
         const {
-          data: { session },
-          error: sessionError,
-        } = await supabase.auth.getSession();
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
 
-        if (sessionError || !session?.user) {
+        if (userError || !user) {
           if (!cancelled) {
             setState({ kind: 'need_sign_in' });
           }
           return;
         }
 
-        const inviteIdRaw =
-          session.user.user_metadata?.abstrack_practitioner_invite_id;
+        const inviteIdRaw = user.user_metadata?.abstrack_practitioner_invite_id;
         const inviteId =
           typeof inviteIdRaw === 'string' && inviteIdRaw.trim().length > 0
             ? inviteIdRaw.trim()
@@ -59,12 +59,11 @@ export default function PractitionerInviteJoinPage() {
           const { data: profile } = await supabase
             .from('profiles')
             .select('app_role')
-            .eq('id', session.user.id)
+            .eq('id', user.id)
             .maybeSingle();
           if (!cancelled && profile?.app_role === 'practitioner') {
-            const passwordSignInEnabled = practitionerUserHasPasswordSignIn(
-              session.user,
-            );
+            const passwordSignInEnabled =
+              practitionerUserHasPasswordSignIn(user);
             setState({ kind: 'done', passwordSignInEnabled });
             announce(
               passwordSignInEnabled
@@ -78,7 +77,19 @@ export default function PractitionerInviteJoinPage() {
           return;
         }
 
-        const token = session.access_token?.trim() ?? '';
+        const { accessToken, error: tokenError } =
+          await getAccessTokenFromSession(supabase);
+        const token = accessToken ?? '';
+        if (tokenError) {
+          if (!cancelled) {
+            setState({
+              kind: 'error',
+              message:
+                'Unable to verify your session. Open the invite link from your email again.',
+            });
+          }
+          return;
+        }
         if (!token) {
           if (!cancelled) {
             setState({
@@ -117,10 +128,20 @@ export default function PractitionerInviteJoinPage() {
         }
 
         const {
-          data: { session: refreshedSession },
-        } = await supabase.auth.getSession();
+          data: { user: activeUser },
+          error: refreshedUserError,
+        } = await supabase.auth.getUser();
 
-        const activeUser = refreshedSession?.user ?? session.user;
+        if (refreshedUserError || !activeUser) {
+          if (!cancelled) {
+            setState({
+              kind: 'error',
+              message:
+                'Unable to verify your session after completing the invite. Open the invite link again.',
+            });
+          }
+          return;
+        }
 
         const { data: profile, error: profileErr } = await supabase
           .from('profiles')

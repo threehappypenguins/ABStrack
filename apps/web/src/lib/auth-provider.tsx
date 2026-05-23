@@ -1,9 +1,10 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState } from 'react';
+import { isAuthSessionMissingError } from '@abstrack/supabase';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import {
   type AuthProviderSession,
-  mapSupabaseSessionToAuthContext,
+  mapSupabaseUserToAuthContext,
 } from './auth-provider-session';
 import { createBrowserClient } from './supabase/browser-client';
 
@@ -19,14 +20,14 @@ export type AuthProviderProps = {
   /**
    * Server-hydrated session from the root layout. When provided (including `null`),
    * `loading` starts `false` so authenticated private routes can render app chrome on
-   * first paint without waiting for client `getSession`.
+   * first paint without waiting for client `getUser`.
    */
   initialSession?: AuthProviderSession | null;
 };
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-/** Avoid infinite loading if `getSession` never settles (e.g. bad refresh cookie edge cases). */
+/** Avoid infinite loading if `getUser` never settles (e.g. bad refresh cookie edge cases). */
 const SESSION_BOOTSTRAP_TIMEOUT_MS = 8_000;
 
 function isRefreshTokenFailure(error: unknown): boolean {
@@ -53,13 +54,15 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
     hasInitialSession ? initialSession : null,
   );
   const [loading, setLoading] = useState(!hasInitialSession);
+  /** Drops stale verify completions after newer auth events or unmount. */
+  const verifyGenerationRef = useRef(0);
 
   useEffect(() => {
     let mounted = true;
     const supabase = createBrowserClient();
 
-    // Get initial session and always clear loading, even on failure.
-    const initializeSession = async () => {
+    const syncVerifiedUser = async (): Promise<void> => {
+      const generation = ++verifyGenerationRef.current;
       let timeoutId: ReturnType<typeof setTimeout> | undefined;
       try {
         const timeoutPromise = new Promise<never>((_, reject) => {
@@ -68,11 +71,8 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
           }, SESSION_BOOTSTRAP_TIMEOUT_MS);
         });
 
-        const {
-          data: { session: nextSession },
-          error,
-        } = await Promise.race([
-          supabase.auth.getSession(),
+        const result = await Promise.race([
+          supabase.auth.getUser(),
           timeoutPromise,
         ]).catch(async (raceError: unknown) => {
           if (
@@ -80,54 +80,91 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
             raceError.message === 'session_bootstrap_timeout'
           ) {
             console.warn(
-              'Auth session bootstrap timed out; clearing local session',
+              'Auth user bootstrap timed out; keeping in-memory session',
             );
-            await supabase.auth.signOut();
-            return { data: { session: null }, error: null };
+            return null;
           }
           throw raceError;
         });
 
+        if (result === null) {
+          return;
+        }
+
+        const {
+          data: { user },
+          error,
+        } = result;
+
         if (error) {
-          console.error('Failed to load auth session', error);
+          if (isAuthSessionMissingError(error)) {
+            if (mounted && generation === verifyGenerationRef.current) {
+              setSession(null);
+            }
+            return;
+          }
+          console.error('Failed to verify authenticated user', error);
           if (isRefreshTokenFailure(error)) {
             await supabase.auth.signOut();
-          }
-          if (mounted) {
-            setSession(null);
+            if (mounted && generation === verifyGenerationRef.current) {
+              setSession(null);
+            }
           }
           return;
         }
 
-        if (mounted) {
-          setSession(mapSupabaseSessionToAuthContext(nextSession));
+        if (mounted && generation === verifyGenerationRef.current) {
+          setSession(mapSupabaseUserToAuthContext(user));
         }
       } catch (error) {
-        console.error('Failed to load auth session', error);
+        if (isAuthSessionMissingError(error)) {
+          if (mounted && generation === verifyGenerationRef.current) {
+            setSession(null);
+          }
+          return;
+        }
+        console.error('Failed to verify authenticated user', error);
         if (isRefreshTokenFailure(error)) {
           await supabase.auth.signOut();
+          if (mounted && generation === verifyGenerationRef.current) {
+            setSession(null);
+          }
         }
       } finally {
         if (timeoutId !== undefined) {
           clearTimeout(timeoutId);
         }
+      }
+    };
+
+    const initializeAuth = async () => {
+      try {
+        await syncVerifiedUser();
+      } finally {
         if (mounted) {
           setLoading(false);
         }
       }
     };
 
-    void initializeSession();
+    void initializeAuth();
 
-    // Listen for auth state changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(mapSupabaseSessionToAuthContext(session));
+    } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
+        verifyGenerationRef.current += 1;
+        if (mounted) {
+          setSession(null);
+        }
+        return;
+      }
+      void syncVerifiedUser();
     });
 
     return () => {
       mounted = false;
+      verifyGenerationRef.current += 1;
       subscription.unsubscribe();
     };
   }, []);

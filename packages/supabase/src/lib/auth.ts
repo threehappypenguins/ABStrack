@@ -1,3 +1,4 @@
+import type { Session, User } from '@supabase/supabase-js';
 import type { AbstrackSupabaseClient } from './supabase-client-type.js';
 
 export type { AbstrackSupabaseClient };
@@ -72,7 +73,110 @@ export async function getSession(client: AbstrackSupabaseClient) {
   return client.auth.getSession();
 }
 
-/** Prefer on the server when verifying identity (validates with Auth server). */
+/** Prefer when verifying identity (validates with the Auth server). */
 export async function getAuthUser(client: AbstrackSupabaseClient) {
   return client.auth.getUser();
+}
+
+/**
+ * True when `err` is a Supabase Auth API error from `getUser()` / `setSession()` (not a config throw).
+ *
+ * @param err - Value from `catch` or auth method `error`.
+ * @returns Whether `err` is tagged as a Supabase Auth API error (`__isAuthError`).
+ */
+export function isSupabaseAuthApiError(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    '__isAuthError' in err &&
+    (err as { __isAuthError?: boolean }).__isAuthError === true
+  );
+}
+
+/**
+ * True when `getUser()` failed because there is no session (e.g. after logout or before sign-in).
+ * Expected on public routes — not a verification failure.
+ *
+ * @param err - Value from `getUser()` `error`.
+ */
+export function isAuthSessionMissingError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') {
+    return false;
+  }
+  const e = err as { name?: string; message?: string };
+  return (
+    e.name === 'AuthSessionMissingError' ||
+    (typeof e.message === 'string' && /auth session missing/i.test(e.message))
+  );
+}
+
+/**
+ * Returns a trimmed access token from {@link getSession} without using `session.user`
+ * for identity (avoids Supabase insecure-user warnings).
+ *
+ * `getSession()` may refresh expired tokens over the network; this is not a guaranteed
+ * local-only storage read.
+ *
+ * @param client - Supabase client.
+ * @returns Access token or `null` when missing or on error.
+ */
+export async function getAccessTokenFromSession(
+  client: AbstrackSupabaseClient,
+): Promise<{ accessToken: string | null; error: Error | null }> {
+  const { data, error } = await client.auth.getSession();
+  if (error) {
+    return { accessToken: null, error };
+  }
+  const token = data.session?.access_token?.trim();
+  return {
+    accessToken: token && token.length > 0 ? token : null,
+    error: null,
+  };
+}
+
+/**
+ * Loads persisted session tokens and attaches a **verified** `user` from {@link getAuthUser}.
+ * Use instead of trusting `getSession().data.session.user` alone.
+ *
+ * @param client - Supabase client.
+ * @returns Verified user, session (with verified user), and any error. When `getUser()`
+ * succeeds but `getSession()` fails, returns the verified `user` with `session: null` and the
+ * session error (does not discard the verified user). {@link AuthSessionMissingError} from
+ * `getUser()` is treated as signed out (`error: null`), not a verification failure.
+ */
+export async function getVerifiedAuthSession(
+  client: AbstrackSupabaseClient,
+): Promise<{
+  data: { user: User | null; session: Session | null };
+  error: Error | null;
+}> {
+  const { data: userData, error: userError } = await getAuthUser(client);
+  if (userError) {
+    if (isAuthSessionMissingError(userError)) {
+      return { data: { user: null, session: null }, error: null };
+    }
+    return { data: { user: null, session: null }, error: userError };
+  }
+  const user = userData.user;
+  if (!user) {
+    return { data: { user: null, session: null }, error: null };
+  }
+
+  const { data: sessionData, error: sessionError } = await getSession(client);
+  if (sessionError) {
+    if (isAuthSessionMissingError(sessionError)) {
+      return { data: { user: null, session: null }, error: null };
+    }
+    return { data: { user, session: null }, error: sessionError };
+  }
+
+  const persisted = sessionData.session;
+  if (!persisted) {
+    return { data: { user, session: null }, error: null };
+  }
+
+  return {
+    data: { user, session: { ...persisted, user } },
+    error: null,
+  };
 }

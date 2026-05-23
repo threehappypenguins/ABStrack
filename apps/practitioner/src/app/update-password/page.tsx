@@ -4,6 +4,10 @@ import { getSupabaseBrowserClient } from '@abstrack/supabase/browser';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  AUTH_CALLBACK_INVALID_LINK_MESSAGE,
+  AUTH_CALLBACK_VERIFICATION_FAILED_MESSAGE,
+} from '@/lib/auth-callback-redirect';
 import { PRACTITIONER_INVITE_SET_PASSWORD_FROM } from '@/lib/practitioner-invite-join';
 import { PRACTITIONER_PASSWORD_SET_USER_METADATA_KEY } from '@/lib/practitioner-password-sign-in';
 
@@ -48,23 +52,36 @@ export default function PractitionerUpdatePasswordPage() {
 
       try {
         const {
-          data: { session },
-        } = await supabase.auth.getSession();
+          data: { user },
+          error: getUserError,
+        } = await supabase.auth.getUser();
 
-        if (!session && mounted && !errorParam) {
+        if (getUserError) {
+          console.error(
+            'Failed to verify user on practitioner update-password page',
+            getUserError,
+          );
+          if (mounted && !errorParam) {
+            setError(
+              fromParam === PRACTITIONER_INVITE_SET_PASSWORD_FROM
+                ? 'Unable to verify your session. Open your invite link again, or reload this page.'
+                : AUTH_CALLBACK_VERIFICATION_FAILED_MESSAGE,
+            );
+          }
+        } else if (!user && mounted && !errorParam) {
           setError(
             fromParam === PRACTITIONER_INVITE_SET_PASSWORD_FROM
               ? 'You must be signed in to create a password. Open your invite link again, then return here.'
-              : 'This sign-in link is invalid or expired. Request a new one.',
+              : AUTH_CALLBACK_INVALID_LINK_MESSAGE,
           );
         }
       } catch (sessionError) {
         console.error(sessionError);
-        if (mounted) {
+        if (mounted && !errorParam) {
           setError(
             fromParam === PRACTITIONER_INVITE_SET_PASSWORD_FROM
               ? 'Unable to verify your session. Open your invite link again, or reload this page.'
-              : 'Unable to validate sign-in link. Request a new one.',
+              : AUTH_CALLBACK_VERIFICATION_FAILED_MESSAGE,
           );
         }
       } finally {
@@ -115,14 +132,28 @@ export default function PractitionerUpdatePasswordPage() {
 
     try {
       const {
-        data: { session },
-      } = await supabase.auth.getSession();
+        data: { user },
+        error: getUserError,
+      } = await supabase.auth.getUser();
 
-      if (!session) {
+      if (getUserError) {
+        console.error(
+          'Failed to verify user before practitioner password update',
+          getUserError,
+        );
+        setError(
+          postInvite
+            ? 'Unable to verify your session. Open your invite link again, or reload this page.'
+            : AUTH_CALLBACK_VERIFICATION_FAILED_MESSAGE,
+        );
+        return;
+      }
+
+      if (!user) {
         setError(
           postInvite
             ? 'Your session expired. Open your invite link again, then return here to create a password.'
-            : 'This sign-in link is invalid or expired. Request a new one.',
+            : AUTH_CALLBACK_INVALID_LINK_MESSAGE,
         );
         return;
       }

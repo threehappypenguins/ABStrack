@@ -1,6 +1,7 @@
 import type { AbstrackSupabaseClient, Session } from '@abstrack/supabase';
 
 import {
+  clearMobileVerifiedAuthUserCache,
   getMobileAuthSessionSafe,
   hasUsableSupabaseAccessTokenForNetwork,
   isAuthSessionRecoveryFailure,
@@ -149,12 +150,106 @@ describe('getMobileAuthSessionSafe', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     jest.setSystemTime(nowSec * 1000);
+    clearMobileVerifiedAuthUserCache();
     jest.mocked(getMobileSupabaseClient).mockReset();
     jest.mocked(mobileAuthStorage.getItem).mockReset();
   });
 
   afterEach(() => {
     jest.useRealTimers();
+  });
+
+  it('reuses verified user cache for the same refresh token without a second getUser', async () => {
+    const verifiedUser = { id: 'verified-user', email: 'v@example.com' };
+    const getUser = jest.fn().mockResolvedValue({
+      data: { user: verifiedUser },
+      error: null,
+    });
+    const liveSession = {
+      access_token: jwtWithExp(nowSec + 3600),
+      refresh_token: 'same-refresh',
+      expires_in: 3600,
+      token_type: 'bearer',
+      user: { id: 'stale-from-getSession' },
+    } as Session;
+
+    jest.mocked(getMobileSupabaseClient).mockReturnValue({
+      auth: {
+        storageKey,
+        getSession: jest.fn().mockResolvedValue({
+          data: { session: liveSession },
+          error: null,
+        }),
+        getUser,
+      },
+    } as unknown as AbstrackSupabaseClient);
+
+    const first = await getMobileAuthSessionSafe();
+    const second = await getMobileAuthSessionSafe();
+
+    expect(getUser).toHaveBeenCalledTimes(1);
+    expect(first.data.session?.user).toEqual(verifiedUser);
+    expect(second.data.session?.user).toEqual(verifiedUser);
+    expect(second.data.session?.user?.id).toBe('verified-user');
+  });
+
+  it('skips getUser when verifyUser is false', async () => {
+    const getUser = jest.fn();
+    const liveSession = {
+      access_token: jwtWithExp(nowSec + 3600),
+      refresh_token: 'r1',
+      expires_in: 3600,
+      token_type: 'bearer',
+      user: { id: 'persisted-only' },
+    } as Session;
+
+    jest.mocked(getMobileSupabaseClient).mockReturnValue({
+      auth: {
+        storageKey,
+        getSession: jest.fn().mockResolvedValue({
+          data: { session: liveSession },
+          error: null,
+        }),
+        getUser,
+      },
+    } as unknown as AbstrackSupabaseClient);
+
+    const result = await getMobileAuthSessionSafe({ verifyUser: false });
+
+    expect(getUser).not.toHaveBeenCalled();
+    expect(result.data.session?.user?.id).toBe('persisted-only');
+  });
+
+  it('returns getSession error without calling getUser when getSession reports an error', async () => {
+    const getUser = jest.fn();
+    const sessionError = Object.assign(new Error('refresh failed'), {
+      __isAuthError: true as const,
+    });
+    const staleSession = {
+      access_token: jwtWithExp(nowSec + 3600),
+      refresh_token: 'r',
+      expires_in: 3600,
+      token_type: 'bearer',
+      user: { id: 'stale-user' },
+    } as Session;
+
+    jest.mocked(getMobileSupabaseClient).mockReturnValue({
+      auth: {
+        storageKey,
+        getSession: jest.fn().mockResolvedValue({
+          data: { session: staleSession },
+          error: sessionError,
+        }),
+        getUser,
+      },
+    } as unknown as AbstrackSupabaseClient);
+
+    await expect(getMobileAuthSessionSafe()).resolves.toEqual({
+      data: { session: null },
+      error: sessionError,
+    });
+    expect(getUser).not.toHaveBeenCalled();
+    expect(mobileAuthStorage.getItem).not.toHaveBeenCalled();
   });
 
   it('returns identity session with redacted access_token when persisted JWT exp is already past', async () => {

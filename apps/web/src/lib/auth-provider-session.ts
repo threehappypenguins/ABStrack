@@ -4,21 +4,22 @@ export type AuthProviderSession = {
 } | null;
 
 /**
- * Maps a Supabase session from the server client to {@link AuthProviderSession}.
+ * Maps a verified Supabase user from {@link AbstrackSupabaseClient.auth.getUser} to
+ * {@link AuthProviderSession}.
  *
- * @param session - Result of `supabase.auth.getSession()` on the server.
+ * @param user - Authenticated user from `getUser()`, or `null` when signed out.
  * @returns Context session or `null` when signed out.
  */
-export function mapSupabaseSessionToAuthContext(
-  session: { user: { id: string; email?: string | null } } | null,
+export function mapSupabaseUserToAuthContext(
+  user: { id: string; email?: string | null } | null | undefined,
 ): AuthProviderSession {
-  if (!session?.user?.id) {
+  if (!user?.id) {
     return null;
   }
   return {
     user: {
-      id: session.user.id,
-      email: session.user.email ?? undefined,
+      id: user.id,
+      email: user.email ?? undefined,
     },
   };
 }

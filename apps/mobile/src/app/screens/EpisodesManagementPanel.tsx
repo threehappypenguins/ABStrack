@@ -500,9 +500,7 @@ export function EpisodesManagementPanel({
     setLoadingMoreRecent(true);
     try {
       const client = getMobileSupabaseClient();
-      const {
-        data: { session },
-      } = await getMobileAuthSessionSafe();
+      await getMobileAuthSessionSafe();
       if (stale()) {
         return;
       }

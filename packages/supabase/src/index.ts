@@ -19,8 +19,12 @@ export {
   type NativeClientOptions,
 } from './lib/native-client.js';
 export {
+  getAccessTokenFromSession,
   getAuthUser,
   getSession,
+  getVerifiedAuthSession,
+  isAuthSessionMissingError,
+  isSupabaseAuthApiError,
   resetPasswordForEmail,
   signInWithEmailPassword,
   signOut,

@@ -4,8 +4,13 @@ import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   AUTH_CALLBACK_INVALID_LINK_MESSAGE,
+  AUTH_CALLBACK_VERIFICATION_FAILED_MESSAGE,
   getSafeAuthCallbackRedirectPath,
 } from '@/lib/auth/auth-callback-redirect';
+import {
+  isAuthSessionMissingError,
+  isSupabaseAuthApiError,
+} from '@abstrack/supabase';
 import {
   isSupabaseBrowserConfigError,
   parseImplicitHashParams,
@@ -79,10 +84,18 @@ function AuthCallbackFragmentContent() {
         const supabase = createBrowserClient();
 
         const {
-          data: { session: existing },
-        } = await supabase.auth.getSession();
+          data: { user: existingUser },
+          error: existingUserError,
+        } = await supabase.auth.getUser();
+        if (cancelled) return;
+        if (
+          existingUserError &&
+          !isAuthSessionMissingError(existingUserError)
+        ) {
+          throw existingUserError;
+        }
 
-        if (existing?.user) {
+        if (existingUser) {
           finishOk();
           return;
         }
@@ -106,25 +119,51 @@ function AuthCallbackFragmentContent() {
           }
 
           if (access_token && refresh_token) {
-            const { error } = await supabase.auth.setSession({
+            const { error: setSessionError } = await supabase.auth.setSession({
               access_token,
               refresh_token,
             });
             if (cancelled) return;
-            if (error) {
+            if (setSessionError) {
               finishErr(AUTH_CALLBACK_INVALID_LINK_MESSAGE);
               return;
             }
-            finishOk();
+
+            const {
+              data: { user: userAfterSetSession },
+              error: userAfterSetSessionError,
+            } = await supabase.auth.getUser();
+            if (cancelled) return;
+            if (userAfterSetSessionError) {
+              if (isAuthSessionMissingError(userAfterSetSessionError)) {
+                finishErr(AUTH_CALLBACK_INVALID_LINK_MESSAGE);
+                return;
+              }
+              throw userAfterSetSessionError;
+            }
+            if (userAfterSetSession) {
+              finishOk();
+              return;
+            }
+            finishErr(AUTH_CALLBACK_INVALID_LINK_MESSAGE);
             return;
           }
         }
 
         const {
-          data: { session: afterDetect },
-        } = await supabase.auth.getSession();
+          data: { user: afterDetectUser },
+          error: afterDetectUserError,
+        } = await supabase.auth.getUser();
+        if (cancelled) return;
+        if (afterDetectUserError) {
+          if (isAuthSessionMissingError(afterDetectUserError)) {
+            finishErr(AUTH_CALLBACK_INVALID_LINK_MESSAGE);
+            return;
+          }
+          throw afterDetectUserError;
+        }
 
-        if (afterDetect?.user) {
+        if (afterDetectUser) {
           finishOk();
           return;
         }
@@ -132,11 +171,26 @@ function AuthCallbackFragmentContent() {
         finishErr(AUTH_CALLBACK_INVALID_LINK_MESSAGE);
       } catch (err) {
         if (cancelled) return;
+        if (isAuthSessionMissingError(err)) {
+          finishErr(AUTH_CALLBACK_INVALID_LINK_MESSAGE);
+          return;
+        }
         if (isSupabaseBrowserConfigError(err)) {
           setSurfaceError(err.message);
           return;
         }
-        setSurfaceError(AUTH_CALLBACK_INVALID_LINK_MESSAGE);
+        if (isSupabaseAuthApiError(err) && !isAuthSessionMissingError(err)) {
+          console.error(
+            'Failed to verify user during auth callback fragment handling',
+            err,
+          );
+        } else if (!isAuthSessionMissingError(err)) {
+          console.error(
+            'Unexpected error during auth callback fragment handling',
+            err,
+          );
+        }
+        finishErr(AUTH_CALLBACK_VERIFICATION_FAILED_MESSAGE);
       }
     };
 

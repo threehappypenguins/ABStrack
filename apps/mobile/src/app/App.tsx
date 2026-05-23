@@ -19,8 +19,10 @@ import {
   isHttpsCaretakerJoinWithoutCodeUrl,
 } from '../lib/caretaker-invite-deep-link';
 import {
+  clearMobileVerifiedAuthUserCache,
   getMobileAuthSessionSafe,
   getMobileSupabaseClient,
+  isAuthSessionRecoveryFailure,
 } from '../lib/supabase-wiring';
 import { AppProviders } from './components/AppProviders';
 import { SyncHealthFooter } from './components/SyncHealthFooter';
@@ -165,6 +167,11 @@ function AppBootstrap() {
   const resumeRefreshInFlightRef = useRef(false);
   /** Prevents resume handler `setInitializing(false)` from racing cold start `bootstrap` `finally`. */
   const bootstrapCompleteRef = useRef(false);
+  /**
+   * Invalidates in-flight {@link getMobileAuthSessionSafe} completions from `onAuthStateChange`
+   * when a newer auth event (e.g. `SIGNED_OUT`) arrives before the promise resolves.
+   */
+  const authSessionReadGenerationRef = useRef(0);
 
   const stackScreenOptions = useMemo(
     () => ({
@@ -501,26 +508,42 @@ function AppBootstrap() {
 
     const {
       data: { subscription },
-    } = mobileSupabase.auth.onAuthStateChange((event, nextSession) => {
+    } = mobileSupabase.auth.onAuthStateChange((event) => {
       if (event === 'SIGNED_OUT') {
+        clearMobileVerifiedAuthUserCache();
+        authSessionReadGenerationRef.current += 1;
         authRouteRef.current = 'Login';
         recoveryFlowActiveRef.current = false;
         setAuthRoute('Login');
         setRecoveryFlowActive(false);
         setRecoveryError(null);
+        setSession(null);
+        return;
       }
 
-      if (
-        event === 'SIGNED_IN' ||
-        event === 'SIGNED_OUT' ||
-        event === 'TOKEN_REFRESHED'
-      ) {
-        setSession(nextSession ?? null);
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        const generation = ++authSessionReadGenerationRef.current;
+        void getMobileAuthSessionSafe().then(({ data, error }) => {
+          if (!mounted || generation !== authSessionReadGenerationRef.current) {
+            return;
+          }
+          if (error) {
+            if (!isAuthSessionRecoveryFailure(error)) {
+              console.warn(
+                'Auth state changed but session read failed; keeping in-memory session',
+                error,
+              );
+            }
+            return;
+          }
+          setSession(data.session ?? null);
+        });
       }
     });
 
     return () => {
       mounted = false;
+      authSessionReadGenerationRef.current += 1;
       subscription.unsubscribe();
       urlSubscription?.remove?.();
       appStateSubscription?.remove?.();

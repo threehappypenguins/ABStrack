@@ -28,7 +28,12 @@
  * @module practitioner-device-trust
  */
 
-import type { AbstrackSupabaseClient, Session } from '@abstrack/supabase';
+import {
+  getVerifiedAuthSession,
+  isAuthSessionMissingError,
+  type AbstrackSupabaseClient,
+  type Session,
+} from '@abstrack/supabase';
 
 type PractitionerBrowserClient = AbstrackSupabaseClient;
 
@@ -434,7 +439,7 @@ async function finishFailedBundleRestore(
  *   password session was re-applied). The user typically remains signed in at AAL1; caller should
  *   continue MFA flow.
  * - **`signed_out`**: Auth state was cleared during failure handling (e.g. unsafe mismatch,
- *   `getSession` error before tokens were captured, or reversion to the password session failed).
+ *   missing session on pre-restore probes, or reversion to the password session failed).
  *   Caller must not assume a session.
  */
 export type TryRestoreTrustedMfaSessionResult =
@@ -451,7 +456,7 @@ export type TryRestoreTrustedMfaSessionResult =
  * Restore uses `auth.refreshSession({ refresh_token })` with the stored refresh token, not
  * `setSession({ access_token, refresh_token })` alone (see implementation comment).
  * On failure (revoked or expired tokens, **session user mismatch** after restore, assurance error,
- * **getSession error**, **missing session** after a successful `getSession()` call, or session not at
+ * **missing session** after a successful `getSession()` call, or session not at
  * **aal2**), clears the bundle and restores the pre-restore
  * password session (or signs out) so the client is not left authenticated as the wrong user. If the
  * **initial** `getSession()` user id does not match `userId`, clears the bundle and **signs out**
@@ -478,16 +483,34 @@ export async function tryRestoreTrustedMfaSession(
     return { status: 'not_restored' };
   }
 
-  const preSessionResult = await supabase.auth.getSession();
-  if (preSessionResult.error) {
+  const preUserResult = await supabase.auth.getUser();
+  if (preUserResult.error) {
     clearMfaTrustBundle();
-    await revertToPreRestoreSession(supabase, null);
+    if (isAuthSessionMissingError(preUserResult.error)) {
+      await supabase.auth.signOut();
+      return { status: 'signed_out' };
+    }
+    return { status: 'not_restored' };
+  }
+
+  if (preUserResult.data.user?.id !== userId) {
+    clearMfaTrustBundle();
+    await supabase.auth.signOut();
     return { status: 'signed_out' };
   }
 
-  const preRestoreSession = preSessionResult.data.session;
+  const preSessionResult = await supabase.auth.getSession();
+  if (preSessionResult.error) {
+    clearMfaTrustBundle();
+    if (isAuthSessionMissingError(preSessionResult.error)) {
+      await supabase.auth.signOut();
+      return { status: 'signed_out' };
+    }
+    return { status: 'not_restored' };
+  }
 
-  if (preRestoreSession?.user?.id !== userId) {
+  const preRestoreSession = preSessionResult.data.session;
+  if (!preRestoreSession) {
     clearMfaTrustBundle();
     await supabase.auth.signOut();
     return { status: 'signed_out' };
@@ -519,10 +542,11 @@ export async function tryRestoreTrustedMfaSession(
     return finishFailedBundleRestore(supabase, preSessionTokens);
   }
 
-  const sessionAfterRefresh = refreshData.session;
+  const refreshedUserResult = await supabase.auth.getUser();
   if (
-    sessionAfterRefresh.user?.id == null ||
-    sessionAfterRefresh.user.id !== userId
+    refreshedUserResult.error ||
+    refreshedUserResult.data.user?.id == null ||
+    refreshedUserResult.data.user.id !== userId
   ) {
     return finishFailedBundleRestore(supabase, preSessionTokens);
   }
@@ -535,17 +559,13 @@ export async function tryRestoreTrustedMfaSession(
     return finishFailedBundleRestore(supabase, preSessionTokens);
   }
 
-  const finalSessionResult = await supabase.auth.getSession();
-  if (finalSessionResult.error) {
+  const { data: verified, error: verifiedError } =
+    await getVerifiedAuthSession(supabase);
+  if (verifiedError || verified.session == null) {
     return finishFailedBundleRestore(supabase, preSessionTokens);
   }
 
-  const session = finalSessionResult.data.session;
-  if (session == null) {
-    return finishFailedBundleRestore(supabase, preSessionTokens);
-  }
-
-  saveMfaTrustBundle(session, bundle.trustedUntilMs);
+  saveMfaTrustBundle(verified.session, bundle.trustedUntilMs);
 
   return { status: 'restored' };
 }
@@ -573,6 +593,83 @@ export function practitionerSignOutEverywhere(): void {
   form.style.display = 'none';
   document.body.appendChild(form);
   form.submit();
+}
+
+/**
+ * Reads `user.id` from persisted Supabase auth JSON in browser storage without calling
+ * `getSession()` (avoids relying on an unverified `session.user` from the client API).
+ *
+ * @param supabase - Browser Supabase client.
+ * @returns Non-empty user id, or `null` when storage is unavailable or unreadable.
+ */
+async function readUserIdFromPersistedAuthStorage(
+  supabase: PractitionerBrowserClient,
+): Promise<string | null> {
+  const auth = supabase.auth as unknown as {
+    storage?: {
+      getItem: (key: string) => Promise<string | null> | string | null;
+    };
+    storageKey?: string;
+  };
+  const { storage, storageKey } = auth;
+  if (!storage?.getItem || !storageKey) {
+    return null;
+  }
+  try {
+    const raw = await storage.getItem(storageKey);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as { user?: { id?: unknown } };
+    const id = parsed.user?.id;
+    return typeof id === 'string' && id.trim() !== '' ? id.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolves the current user id for soft vs full sign-out when matching the MFA trust bundle.
+ * Prefers verified {@link AbstrackSupabaseClient.auth.getUser}; on failure, reads `user.id`
+ * from persisted auth storage when available, then `getSession()` only if storage is missing.
+ *
+ * @param supabase - Browser Supabase client.
+ * @returns User id string, or `null` when none can be resolved.
+ */
+async function resolveUserIdForMfaTrustSignOut(
+  supabase: PractitionerBrowserClient,
+): Promise<string | null> {
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (!userError) {
+    const id = userData.user?.id;
+    return id != null && id !== '' ? id : null;
+  }
+  console.warn(
+    'practitionerSignOut: getUser failed; reading user id from persisted auth storage for trust-bundle check',
+    userError,
+  );
+  const persistedId = await readUserIdFromPersistedAuthStorage(supabase);
+  if (persistedId != null) {
+    return persistedId;
+  }
+  const auth = supabase.auth as unknown as {
+    storage?: { getItem: (key: string) => unknown };
+    storageKey?: string;
+  };
+  if (auth.storage?.getItem && auth.storageKey) {
+    return null;
+  }
+  try {
+    const { data: sessionData, error: sessionError } =
+      await supabase.auth.getSession();
+    if (sessionError) {
+      return null;
+    }
+    const id = sessionData.session?.user?.id;
+    return id != null && id !== '' ? id : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -625,13 +722,12 @@ async function clearBrowserSessionWithoutServerLogout(
 export async function practitionerSignOut(
   supabase: PractitionerBrowserClient,
 ): Promise<void> {
-  const { data: sessionData } = await supabase.auth.getSession();
-  const session = sessionData.session;
+  const userId = await resolveUserIdForMfaTrustSignOut(supabase);
   const bundle = readBundle();
   const trustActiveForUser =
-    session &&
-    bundle &&
-    bundle.userId === session.user.id &&
+    userId != null &&
+    bundle != null &&
+    bundle.userId === userId &&
     bundle.trustedUntilMs > Date.now();
 
   if (trustActiveForUser) {

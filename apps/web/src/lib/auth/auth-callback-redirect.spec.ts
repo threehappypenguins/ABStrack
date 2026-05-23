@@ -1,5 +1,6 @@
 import {
   AUTH_CALLBACK_INVALID_LINK_MESSAGE,
+  AUTH_CALLBACK_VERIFICATION_FAILED_MESSAGE,
   getSafeAuthCallbackRedirectPath,
 } from './auth-callback-redirect';
 
@@ -24,5 +25,13 @@ describe('getSafeAuthCallbackRedirectPath', () => {
 describe('AUTH_CALLBACK_INVALID_LINK_MESSAGE', () => {
   it('is a non-empty user-facing string', () => {
     expect(AUTH_CALLBACK_INVALID_LINK_MESSAGE.length).toBeGreaterThan(10);
+  });
+});
+
+describe('AUTH_CALLBACK_VERIFICATION_FAILED_MESSAGE', () => {
+  it('is a non-empty user-facing string', () => {
+    expect(AUTH_CALLBACK_VERIFICATION_FAILED_MESSAGE.length).toBeGreaterThan(
+      10,
+    );
   });
 });

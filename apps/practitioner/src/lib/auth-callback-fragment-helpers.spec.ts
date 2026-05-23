@@ -1,4 +1,39 @@
-import { parseImplicitHashParams } from './auth-callback-fragment-helpers';
+import {
+  interpretAuthCallbackGetUserProbe,
+  parseImplicitHashParams,
+} from './auth-callback-fragment-helpers';
+
+describe('interpretAuthCallbackGetUserProbe', () => {
+  it('treats AuthSessionMissingError as signed out (invalid link), not verification failed', () => {
+    const err = Object.assign(new Error('Auth session missing!'), {
+      name: 'AuthSessionMissingError',
+    });
+    expect(interpretAuthCallbackGetUserProbe(null, err)).toEqual({
+      status: 'signed_out',
+    });
+  });
+
+  it('treats other getUser errors as verification failed', () => {
+    const err = new Error('network');
+    expect(interpretAuthCallbackGetUserProbe(null, err)).toEqual({
+      status: 'verification_failed',
+      error: err,
+    });
+  });
+
+  it('returns authenticated when user id is present', () => {
+    expect(interpretAuthCallbackGetUserProbe({ id: 'user-1' }, null)).toEqual({
+      status: 'authenticated',
+      userId: 'user-1',
+    });
+  });
+
+  it('returns signed out when user is absent without error', () => {
+    expect(interpretAuthCallbackGetUserProbe(null, null)).toEqual({
+      status: 'signed_out',
+    });
+  });
+});
 
 describe('parseImplicitHashParams', () => {
   it('parses access_token and refresh_token from a typical invite hash', () => {

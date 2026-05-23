@@ -341,9 +341,9 @@ export default function LoginPage() {
         return;
       }
 
-      const afterRestoreSession = await supabase.auth.getSession();
-      if (afterRestoreSession.error) {
-        console.error(afterRestoreSession.error);
+      const afterRestoreUser = await supabase.auth.getUser();
+      if (afterRestoreUser.error) {
+        console.error(afterRestoreUser.error);
         resetToCredentials({
           clearPassword: true,
           message:
@@ -351,7 +351,7 @@ export default function LoginPage() {
         });
         return;
       }
-      if (afterRestoreSession.data.session?.user?.id == null) {
+      if (afterRestoreUser.data.user?.id == null) {
         resetToCredentials({
           clearPassword: true,
           message:
@@ -359,7 +359,7 @@ export default function LoginPage() {
         });
         return;
       }
-      if (afterRestoreSession.data.session.user.id !== user.id) {
+      if (afterRestoreUser.data.user.id !== user.id) {
         try {
           await supabase.auth.signOut();
           clearMfaTrustBundle();

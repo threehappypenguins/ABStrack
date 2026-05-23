@@ -1,22 +1,20 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
+import { isAuthSessionMissingError } from '@abstrack/supabase';
 import { AuthProvider, useAuth } from './auth-provider';
 
-const getSessionMock = jest.fn();
+const getUserMock = jest.fn();
 const signOutMock = jest.fn().mockResolvedValue({ error: null });
 const onAuthStateChangeMock = jest.fn();
 const unsubscribeMock = jest.fn();
 
 let authStateChangeHandler:
-  | ((
-      event: 'SIGNED_IN' | 'SIGNED_OUT' | 'TOKEN_REFRESHED',
-      session: { user: { id: string; email?: string } } | null,
-    ) => void)
+  | ((event: 'SIGNED_IN' | 'SIGNED_OUT' | 'TOKEN_REFRESHED') => void)
   | undefined;
 
 jest.mock('./supabase/browser-client', () => ({
   createBrowserClient: () => ({
     auth: {
-      getSession: (...args: unknown[]) => getSessionMock(...args),
+      getUser: (...args: unknown[]) => getUserMock(...args),
       signOut: (...args: unknown[]) => signOutMock(...args),
       onAuthStateChange: (handler: typeof authStateChangeHandler) => {
         authStateChangeHandler = handler;
@@ -74,8 +72,8 @@ describe('AuthProvider', () => {
     });
   });
 
-  it('transitions loading from true to false after initial session bootstrap', async () => {
-    getSessionMock.mockResolvedValue({ data: { session: null } });
+  it('transitions loading from true to false after initial user bootstrap', async () => {
+    getUserMock.mockResolvedValue({ data: { user: null } });
 
     render(
       <AuthProvider>
@@ -97,12 +95,18 @@ describe('AuthProvider', () => {
       });
     });
 
-    expect(getSessionMock).toHaveBeenCalledTimes(1);
+    expect(getUserMock).toHaveBeenCalledTimes(1);
     expect(onAuthStateChangeMock).toHaveBeenCalledTimes(1);
   });
 
   it('updates context session when auth state change events fire', async () => {
-    getSessionMock.mockResolvedValue({ data: { session: null } });
+    getUserMock
+      .mockResolvedValueOnce({ data: { user: null } })
+      .mockResolvedValueOnce({
+        data: {
+          user: { id: 'user-123', email: 'patient@example.com' },
+        },
+      });
 
     render(
       <AuthProvider>
@@ -114,12 +118,8 @@ describe('AuthProvider', () => {
       expect(readAuthState().loading).toBe(false);
     });
 
-    const nextSession = {
-      user: { id: 'user-123', email: 'patient@example.com' },
-    };
-
     act(() => {
-      authStateChangeHandler?.('SIGNED_IN', nextSession);
+      authStateChangeHandler?.('SIGNED_IN');
     });
 
     await waitFor(() => {
@@ -129,10 +129,12 @@ describe('AuthProvider', () => {
         email: 'patient@example.com',
       });
     });
+
+    expect(getUserMock).toHaveBeenCalledTimes(2);
   });
 
   it('unsubscribes from auth events on unmount', () => {
-    getSessionMock.mockResolvedValue({ data: { session: null } });
+    getUserMock.mockResolvedValue({ data: { user: null } });
 
     const { unmount } = render(
       <AuthProvider>
@@ -145,9 +147,157 @@ describe('AuthProvider', () => {
     expect(unsubscribeMock).toHaveBeenCalledTimes(1);
   });
 
+  it('preserves initialSession when getUser returns a transient error', async () => {
+    getUserMock.mockResolvedValue({
+      data: { user: null },
+      error: { message: 'Failed to fetch' },
+    });
+
+    render(
+      <AuthProvider
+        initialSession={{ user: { id: 'user-1', email: 'user@example.com' } }}
+      >
+        <AuthProbe />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => {
+      expect(getUserMock).toHaveBeenCalled();
+    });
+
+    expect(readAuthState()).toEqual({
+      loading: false,
+      userId: 'user-1',
+      email: 'user@example.com',
+    });
+    expect(signOutMock).not.toHaveBeenCalled();
+  });
+
+  it('preserves initialSession when getUser throws a transient error', async () => {
+    getUserMock.mockRejectedValue(new TypeError('Failed to fetch'));
+
+    render(
+      <AuthProvider
+        initialSession={{ user: { id: 'user-1', email: 'user@example.com' } }}
+      >
+        <AuthProbe />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => {
+      expect(getUserMock).toHaveBeenCalled();
+    });
+
+    expect(readAuthState()).toEqual({
+      loading: false,
+      userId: 'user-1',
+      email: 'user@example.com',
+    });
+    expect(signOutMock).not.toHaveBeenCalled();
+  });
+
+  it('does not restore session when SIGNED_OUT invalidates an in-flight SIGNED_IN verify', async () => {
+    type GetUserResult = Awaited<ReturnType<typeof getUserMock>>;
+    let resolveSlow: (value: GetUserResult) => void;
+    const slowGetUser = new Promise<GetUserResult>((resolve) => {
+      resolveSlow = resolve;
+    });
+
+    getUserMock
+      .mockResolvedValueOnce({ data: { user: null }, error: null })
+      .mockReturnValueOnce(slowGetUser)
+      .mockResolvedValue({ data: { user: null }, error: null });
+
+    render(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => {
+      expect(readAuthState().loading).toBe(false);
+    });
+
+    act(() => {
+      authStateChangeHandler?.('SIGNED_IN');
+    });
+    act(() => {
+      authStateChangeHandler?.('SIGNED_OUT');
+    });
+
+    expect(readAuthState().userId).toBeNull();
+
+    await act(async () => {
+      resolveSlow({
+        data: {
+          user: { id: 'stale-user', email: 'stale@example.com' },
+        },
+        error: null,
+      });
+      await slowGetUser;
+    });
+
+    expect(readAuthState().userId).toBeNull();
+  });
+
+  it('does not call getUser again on SIGNED_OUT', async () => {
+    getUserMock.mockResolvedValue({ data: { user: null }, error: null });
+
+    render(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => {
+      expect(readAuthState().loading).toBe(false);
+    });
+
+    expect(getUserMock).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      authStateChangeHandler?.('SIGNED_OUT');
+    });
+
+    expect(getUserMock).toHaveBeenCalledTimes(1);
+    expect(readAuthState().userId).toBeNull();
+  });
+
+  it('clears initialSession when getUser returns AuthSessionMissingError', async () => {
+    const missingError = Object.assign(new Error('Auth session missing!'), {
+      name: 'AuthSessionMissingError',
+      __isAuthError: true as const,
+    });
+    expect(isAuthSessionMissingError(missingError)).toBe(true);
+
+    getUserMock.mockResolvedValue({
+      data: { user: null },
+      error: missingError,
+    });
+
+    render(
+      <AuthProvider
+        initialSession={{ user: { id: 'user-1', email: 'user@example.com' } }}
+      >
+        <AuthProbe />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => {
+      expect(readAuthState().userId).toBeNull();
+    });
+
+    expect(readAuthState()).toEqual({
+      loading: false,
+      userId: null,
+      email: null,
+    });
+    expect(signOutMock).not.toHaveBeenCalled();
+  });
+
   it('clears invalid refresh tokens via signOut and still finishes loading', async () => {
-    getSessionMock.mockResolvedValue({
-      data: { session: null },
+    getUserMock.mockResolvedValue({
+      data: { user: null },
       error: {
         code: 'refresh_token_not_found',
         message: 'Invalid Refresh Token: Refresh Token Not Found',
