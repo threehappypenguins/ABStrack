@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
 import { signUpWithEmailPassword } from '@abstrack/supabase';
+import { USER_PASSWORD_SET_USER_METADATA_KEY } from '@/lib/user-password-sign-in';
 import { PUBLIC_PAGE_CENTER_CLASS } from '@/components/app-shell/public-page-layout-classes';
 
 export default function SignupPage() {
@@ -31,6 +32,9 @@ export default function SignupPage() {
         supabase,
         email,
         password,
+        {
+          data: { [USER_PASSWORD_SET_USER_METADATA_KEY]: true },
+        },
       );
 
       if (authError) {

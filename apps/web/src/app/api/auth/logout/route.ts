@@ -15,7 +15,10 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  await supabase.auth.signOut();
+  const scopeParam = request.nextUrl.searchParams.get('scope');
+  const scope = scopeParam === 'global' ? 'global' : undefined;
+
+  await supabase.auth.signOut(scope ? { scope } : undefined);
 
   // Redirect to login page after logout
   return response;

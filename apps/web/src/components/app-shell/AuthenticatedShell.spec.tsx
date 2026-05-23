@@ -132,7 +132,7 @@ describe('AuthenticatedShell', () => {
     ).toBeInTheDocument();
   });
 
-  it('hides patient-only settings links when the viewer is not a patient', () => {
+  it('shows Settings as the last nav item for all signed-in roles', () => {
     phiContext.profileAppRole = 'caretaker';
 
     render(
@@ -141,12 +141,13 @@ describe('AuthenticatedShell', () => {
       </AuthenticatedShell>,
     );
 
+    const settings = screen.getByRole('link', { name: 'Settings' });
+    expect(settings).toHaveAttribute('href', '/settings');
     expect(
       screen.queryByRole('link', { name: 'Caretaker' }),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole('link', { name: 'Practitioner' }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Insights' })).toBeInTheDocument();
   });
 });

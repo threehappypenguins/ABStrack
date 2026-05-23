@@ -11,7 +11,7 @@ describe('mapSupabaseUserToAuthContext', () => {
 
   it('maps user id and normalizes null email to undefined', () => {
     expect(mapSupabaseUserToAuthContext({ id: 'user-1', email: null })).toEqual(
-      { user: { id: 'user-1' } },
+      { user: { id: 'user-1', email: undefined, user_metadata: null } },
     );
 
     expect(
@@ -19,6 +19,12 @@ describe('mapSupabaseUserToAuthContext', () => {
         id: 'user-2',
         email: 'user@example.com',
       }),
-    ).toEqual({ user: { id: 'user-2', email: 'user@example.com' } });
+    ).toEqual({
+      user: {
+        id: 'user-2',
+        email: 'user@example.com',
+        user_metadata: null,
+      },
+    });
   });
 });

@@ -60,6 +60,7 @@ describe('logout route', () => {
 
     const request = {
       url: 'https://example.com/api/auth/logout',
+      nextUrl: new URL('https://example.com/api/auth/logout'),
       cookies: {
         getAll: jest.fn(() => [{ name: 'sb-access-token', value: 'token' }]),
       },
@@ -74,6 +75,7 @@ describe('logout route', () => {
       }),
     );
     expect(signOut).toHaveBeenCalledTimes(1);
+    expect(signOut).toHaveBeenCalledWith(undefined);
     expect(response).toEqual(
       expect.objectContaining({
         type: 'redirect',
@@ -86,5 +88,27 @@ describe('logout route', () => {
       '',
       expect.objectContaining({ maxAge: 0, path: '/' }),
     );
+  });
+
+  it('passes global scope to signOut when scope=global is in the query string', async () => {
+    const signOut = jest.fn(async () => undefined);
+
+    createServerClientMock.mockImplementation(() =>
+      Promise.resolve({
+        auth: { signOut },
+      } as unknown as ServerClient),
+    );
+
+    const request = {
+      url: 'https://example.com/api/auth/logout?scope=global',
+      nextUrl: new URL('https://example.com/api/auth/logout?scope=global'),
+      cookies: {
+        getAll: jest.fn(() => []),
+      },
+    } as unknown as Parameters<typeof POST>[0];
+
+    await POST(request);
+
+    expect(signOut).toHaveBeenCalledWith({ scope: 'global' });
   });
 });

@@ -10,7 +10,7 @@ import {
   AUTH_CALLBACK_VERIFICATION_FAILED_MESSAGE,
 } from '@/lib/auth/auth-callback-redirect';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
-import { updateUserPassword } from '@abstrack/supabase';
+import { USER_PASSWORD_SET_USER_METADATA_KEY } from '@/lib/user-password-sign-in';
 
 const MIN_PASSWORD_LENGTH = 8;
 
@@ -161,7 +161,10 @@ export default function UpdatePasswordPage() {
         return;
       }
 
-      const { error: authError } = await updateUserPassword(supabase, password);
+      const { error: authError } = await supabase.auth.updateUser({
+        password,
+        data: { [USER_PASSWORD_SET_USER_METADATA_KEY]: true },
+      });
       if (authError) {
         setError(authError.message);
         return;
