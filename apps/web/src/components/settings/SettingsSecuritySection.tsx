@@ -304,7 +304,9 @@ export function SettingsSecuritySection() {
         factorId: enrollment.id,
       });
       if (error && !isUnenrollAlreadyGoneError(error)) {
-        announce(mapMfaUnenrollErrorToUserMessage(error), {
+        const message = mapMfaUnenrollErrorToUserMessage(error);
+        setMfaStatusMessage(message);
+        announce(message, {
           politeness: 'assertive',
         });
         return;
@@ -314,6 +316,11 @@ export function SettingsSecuritySection() {
       setVerifyFailureMessage(null);
       await refreshMfaState();
       announce('Two-factor setup canceled.', { politeness: 'polite' });
+    } catch {
+      const message =
+        'Unable to cancel two-factor setup. Check your connection and try again.';
+      setMfaStatusMessage(message);
+      announce(message, { politeness: 'assertive' });
     } finally {
       setIsCanceling(false);
     }

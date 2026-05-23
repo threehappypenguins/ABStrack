@@ -101,6 +101,12 @@ export function SettingsPage() {
     );
   }, [profileAppRole]);
 
+  const activeTabNotVisible = !visibleTabs.includes(activeTab);
+  const displayTab = activeTabNotVisible
+    ? (visibleTabs[0] ?? 'account')
+    : activeTab;
+  const showTabResolutionLoading = phiContextLoading && activeTabNotVisible;
+
   useEffect(() => {
     if (phiContextLoading) {
       return;
@@ -376,9 +382,9 @@ export function SettingsPage() {
             role="tab"
             id={tabId(tab)}
             aria-controls={panelId(tab)}
-            aria-selected={activeTab === tab ? 'true' : 'false'}
-            tabIndex={activeTab === tab ? 0 : -1}
-            className={tabClass(activeTab === tab)}
+            aria-selected={displayTab === tab ? 'true' : 'false'}
+            tabIndex={displayTab === tab ? 0 : -1}
+            className={tabClass(displayTab === tab)}
             ref={(node) => {
               tabButtonRefs.current[tab] = node ?? undefined;
             }}
@@ -390,289 +396,299 @@ export function SettingsPage() {
         ))}
       </div>
 
-      <div
-        role="tabpanel"
-        id={panelId('account')}
-        aria-labelledby={tabId('account')}
-        hidden={activeTab !== 'account'}
-        tabIndex={0}
-        className="space-y-8 outline-none"
-      >
-        {activeTab === 'account' ? (
-          <>
-            <section
-              aria-labelledby={`${formId}-name-heading`}
-              className={SETTINGS_SURFACE_CLASS}
-            >
-              <h2
-                id={`${formId}-name-heading`}
-                className="text-lg font-semibold text-app-ink"
-              >
-                Name
-              </h2>
-              <p className="mt-2 text-sm text-app-muted">
-                Your name may appear when you share access with a caretaker or
-                practitioner.
-              </p>
-              {profileLoading ? (
-                <p className="mt-4 text-sm text-app-muted" role="status">
-                  Loading profile…
-                </p>
-              ) : (
-                <form
-                  className="mt-6 grid gap-4 sm:grid-cols-2"
-                  onSubmit={(e) => {
-                    void onNameSubmit(e);
-                  }}
-                  noValidate
+      {showTabResolutionLoading ? (
+        <p className="text-sm text-app-muted" role="status">
+          Loading settings…
+        </p>
+      ) : (
+        <>
+          <div
+            role="tabpanel"
+            id={panelId('account')}
+            aria-labelledby={tabId('account')}
+            hidden={displayTab !== 'account'}
+            tabIndex={0}
+            className="space-y-8 outline-none"
+          >
+            {displayTab === 'account' ? (
+              <>
+                <section
+                  aria-labelledby={`${formId}-name-heading`}
+                  className={SETTINGS_SURFACE_CLASS}
                 >
-                  <div className="space-y-2">
-                    <label
-                      htmlFor={`${formId}-first-name`}
-                      className="text-sm font-medium text-app-ink"
-                    >
-                      First name
-                    </label>
-                    <input
-                      id={`${formId}-first-name`}
-                      type="text"
-                      autoComplete="given-name"
-                      value={firstName}
-                      onChange={(e) => {
-                        nameFormDirtyRef.current = true;
-                        clearNameSaveFeedback();
-                        setFirstName(e.target.value);
-                      }}
-                      className="mt-1 block w-full min-h-[44px] rounded-md border border-app-border bg-app-bg px-3 py-2 text-app-ink shadow-sm focus:border-app-primary focus:outline-none focus:ring-2 focus:ring-app-ring"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label
-                      htmlFor={`${formId}-last-name`}
-                      className="text-sm font-medium text-app-ink"
-                    >
-                      Last name
-                    </label>
-                    <input
-                      id={`${formId}-last-name`}
-                      type="text"
-                      autoComplete="family-name"
-                      value={lastName}
-                      onChange={(e) => {
-                        nameFormDirtyRef.current = true;
-                        clearNameSaveFeedback();
-                        setLastName(e.target.value);
-                      }}
-                      className="mt-1 block w-full min-h-[44px] rounded-md border border-app-border bg-app-bg px-3 py-2 text-app-ink shadow-sm focus:border-app-primary focus:outline-none focus:ring-2 focus:ring-app-ring"
-                    />
-                  </div>
-                  {nameError ? (
-                    <p
-                      role="alert"
-                      className="sm:col-span-2 text-sm text-red-700 dark:text-red-300"
-                    >
-                      {nameError}
-                    </p>
-                  ) : null}
-                  <div className="sm:col-span-2">
-                    <button
-                      type="submit"
-                      disabled={nameSubmitting}
-                      aria-live="polite"
-                      className="min-h-[44px] rounded-full bg-app-primary-solid px-5 text-sm font-semibold text-app-on-primary-solid shadow-sm transition hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {nameSubmitting
-                        ? 'Saving…'
-                        : nameSavedVisible
-                          ? 'Saved'
-                          : 'Save name'}
-                    </button>
-                  </div>
-                </form>
-              )}
-            </section>
-
-            <section
-              aria-labelledby={`${formId}-email-heading`}
-              className={SETTINGS_SURFACE_CLASS}
-            >
-              <h2
-                id={`${formId}-email-heading`}
-                className="text-lg font-semibold text-app-ink"
-              >
-                Email
-              </h2>
-              <p className="mt-2 text-sm text-app-muted">
-                {pendingEmailChange ? (
-                  <>
-                    Your sign-in email is still{' '}
-                    <span className="font-medium text-app-ink">
-                      {currentEmail || 'Not set'}
-                    </span>
-                    . Finish confirming{' '}
-                    <span className="font-medium text-app-ink">
-                      {pendingEmailChange}
-                    </span>{' '}
-                    using the link we emailed to that address.
-                  </>
-                ) : (
-                  <>
-                    Current address:{' '}
-                    <span className="font-medium text-app-ink">
-                      {currentEmail || 'Not set'}
-                    </span>
-                    . We will send a confirmation link to your new address
-                    before the change takes effect.
-                  </>
-                )}
-              </p>
-              {pendingEmailChange ? (
-                <div
-                  className="mt-6 space-y-4"
-                  role="status"
-                  aria-labelledby={`${formId}-email-pending-heading`}
-                >
-                  <div className="rounded-xl border border-app-border/80 bg-app-bg p-4">
-                    <h3
-                      id={`${formId}-email-pending-heading`}
-                      className="text-sm font-semibold text-app-ink"
-                    >
-                      Email change pending
-                    </h3>
-                    <dl className="mt-3 space-y-2 text-sm">
-                      <div>
-                        <dt className="text-app-muted">Current address</dt>
-                        <dd className="font-medium text-app-ink">
-                          {currentEmail || 'Not set'}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt className="text-app-muted">Changing to</dt>
-                        <dd className="font-medium text-app-ink">
-                          {pendingEmailChange}
-                        </dd>
-                      </div>
-                    </dl>
-                    <p className="mt-3 text-sm text-app-muted">
-                      We sent a confirmation link to{' '}
-                      <span className="font-medium text-app-ink">
-                        {pendingEmailChange}
-                      </span>
-                      . Open that message to finish the change.
-                    </p>
-                  </div>
-                  {!showEmailChangeForm ? (
-                    <button
-                      type="button"
-                      className="min-h-[44px] rounded-full border border-app-border px-4 text-sm font-semibold text-app-ink shadow-sm transition hover:bg-[var(--app-nav-hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
-                      onClick={() => {
-                        setShowEmailChangeForm(true);
-                        setEmailError(null);
-                      }}
-                    >
-                      Use a different address
-                    </button>
-                  ) : null}
-                </div>
-              ) : null}
-              {!pendingEmailChange || showEmailChangeForm ? (
-                <form
-                  className="mt-6 space-y-4"
-                  onSubmit={(e) => {
-                    void onEmailSubmit(e);
-                  }}
-                  noValidate
-                >
-                  <div className="space-y-2">
-                    <label
-                      htmlFor={`${formId}-new-email`}
-                      className="text-sm font-medium text-app-ink"
-                    >
-                      New email
-                    </label>
-                    <input
-                      id={`${formId}-new-email`}
-                      type="email"
-                      autoComplete="email"
-                      value={newEmail}
-                      onChange={(e) => setNewEmail(e.target.value)}
-                      className="mt-1 block w-full min-h-[44px] rounded-md border border-app-border bg-app-bg px-3 py-2 text-app-ink shadow-sm focus:border-app-primary focus:outline-none focus:ring-2 focus:ring-app-ring"
-                    />
-                  </div>
-                  {emailError ? (
-                    <p
-                      role="alert"
-                      className="text-sm text-red-700 dark:text-red-300"
-                    >
-                      {emailError}
-                    </p>
-                  ) : null}
-                  <button
-                    type="submit"
-                    disabled={emailSubmitting}
-                    className="min-h-[44px] rounded-full bg-app-primary-solid px-5 text-sm font-semibold text-app-on-primary-solid shadow-sm transition hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-60"
+                  <h2
+                    id={`${formId}-name-heading`}
+                    className="text-lg font-semibold text-app-ink"
                   >
-                    {emailSubmitting ? 'Sending…' : 'Send confirmation email'}
+                    Name
+                  </h2>
+                  <p className="mt-2 text-sm text-app-muted">
+                    Your name may appear when you share access with a caretaker
+                    or practitioner.
+                  </p>
+                  {profileLoading ? (
+                    <p className="mt-4 text-sm text-app-muted" role="status">
+                      Loading profile…
+                    </p>
+                  ) : (
+                    <form
+                      className="mt-6 grid gap-4 sm:grid-cols-2"
+                      onSubmit={(e) => {
+                        void onNameSubmit(e);
+                      }}
+                      noValidate
+                    >
+                      <div className="space-y-2">
+                        <label
+                          htmlFor={`${formId}-first-name`}
+                          className="text-sm font-medium text-app-ink"
+                        >
+                          First name
+                        </label>
+                        <input
+                          id={`${formId}-first-name`}
+                          type="text"
+                          autoComplete="given-name"
+                          value={firstName}
+                          onChange={(e) => {
+                            nameFormDirtyRef.current = true;
+                            clearNameSaveFeedback();
+                            setFirstName(e.target.value);
+                          }}
+                          className="mt-1 block w-full min-h-[44px] rounded-md border border-app-border bg-app-bg px-3 py-2 text-app-ink shadow-sm focus:border-app-primary focus:outline-none focus:ring-2 focus:ring-app-ring"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label
+                          htmlFor={`${formId}-last-name`}
+                          className="text-sm font-medium text-app-ink"
+                        >
+                          Last name
+                        </label>
+                        <input
+                          id={`${formId}-last-name`}
+                          type="text"
+                          autoComplete="family-name"
+                          value={lastName}
+                          onChange={(e) => {
+                            nameFormDirtyRef.current = true;
+                            clearNameSaveFeedback();
+                            setLastName(e.target.value);
+                          }}
+                          className="mt-1 block w-full min-h-[44px] rounded-md border border-app-border bg-app-bg px-3 py-2 text-app-ink shadow-sm focus:border-app-primary focus:outline-none focus:ring-2 focus:ring-app-ring"
+                        />
+                      </div>
+                      {nameError ? (
+                        <p
+                          role="alert"
+                          className="sm:col-span-2 text-sm text-red-700 dark:text-red-300"
+                        >
+                          {nameError}
+                        </p>
+                      ) : null}
+                      <div className="sm:col-span-2">
+                        <button
+                          type="submit"
+                          disabled={nameSubmitting}
+                          aria-live="polite"
+                          className="min-h-[44px] rounded-full bg-app-primary-solid px-5 text-sm font-semibold text-app-on-primary-solid shadow-sm transition hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {nameSubmitting
+                            ? 'Saving…'
+                            : nameSavedVisible
+                              ? 'Saved'
+                              : 'Save name'}
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                </section>
+
+                <section
+                  aria-labelledby={`${formId}-email-heading`}
+                  className={SETTINGS_SURFACE_CLASS}
+                >
+                  <h2
+                    id={`${formId}-email-heading`}
+                    className="text-lg font-semibold text-app-ink"
+                  >
+                    Email
+                  </h2>
+                  <p className="mt-2 text-sm text-app-muted">
+                    {pendingEmailChange ? (
+                      <>
+                        Your sign-in email is still{' '}
+                        <span className="font-medium text-app-ink">
+                          {currentEmail || 'Not set'}
+                        </span>
+                        . Finish confirming{' '}
+                        <span className="font-medium text-app-ink">
+                          {pendingEmailChange}
+                        </span>{' '}
+                        using the link we emailed to that address.
+                      </>
+                    ) : (
+                      <>
+                        Current address:{' '}
+                        <span className="font-medium text-app-ink">
+                          {currentEmail || 'Not set'}
+                        </span>
+                        . We will send a confirmation link to your new address
+                        before the change takes effect.
+                      </>
+                    )}
+                  </p>
+                  {pendingEmailChange ? (
+                    <div
+                      className="mt-6 space-y-4"
+                      role="status"
+                      aria-labelledby={`${formId}-email-pending-heading`}
+                    >
+                      <div className="rounded-xl border border-app-border/80 bg-app-bg p-4">
+                        <h3
+                          id={`${formId}-email-pending-heading`}
+                          className="text-sm font-semibold text-app-ink"
+                        >
+                          Email change pending
+                        </h3>
+                        <dl className="mt-3 space-y-2 text-sm">
+                          <div>
+                            <dt className="text-app-muted">Current address</dt>
+                            <dd className="font-medium text-app-ink">
+                              {currentEmail || 'Not set'}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-app-muted">Changing to</dt>
+                            <dd className="font-medium text-app-ink">
+                              {pendingEmailChange}
+                            </dd>
+                          </div>
+                        </dl>
+                        <p className="mt-3 text-sm text-app-muted">
+                          We sent a confirmation link to{' '}
+                          <span className="font-medium text-app-ink">
+                            {pendingEmailChange}
+                          </span>
+                          . Open that message to finish the change.
+                        </p>
+                      </div>
+                      {!showEmailChangeForm ? (
+                        <button
+                          type="button"
+                          className="min-h-[44px] rounded-full border border-app-border px-4 text-sm font-semibold text-app-ink shadow-sm transition hover:bg-[var(--app-nav-hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+                          onClick={() => {
+                            setShowEmailChangeForm(true);
+                            setEmailError(null);
+                          }}
+                        >
+                          Use a different address
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {!pendingEmailChange || showEmailChangeForm ? (
+                    <form
+                      className="mt-6 space-y-4"
+                      onSubmit={(e) => {
+                        void onEmailSubmit(e);
+                      }}
+                      noValidate
+                    >
+                      <div className="space-y-2">
+                        <label
+                          htmlFor={`${formId}-new-email`}
+                          className="text-sm font-medium text-app-ink"
+                        >
+                          New email
+                        </label>
+                        <input
+                          id={`${formId}-new-email`}
+                          type="email"
+                          autoComplete="email"
+                          value={newEmail}
+                          onChange={(e) => setNewEmail(e.target.value)}
+                          className="mt-1 block w-full min-h-[44px] rounded-md border border-app-border bg-app-bg px-3 py-2 text-app-ink shadow-sm focus:border-app-primary focus:outline-none focus:ring-2 focus:ring-app-ring"
+                        />
+                      </div>
+                      {emailError ? (
+                        <p
+                          role="alert"
+                          className="text-sm text-red-700 dark:text-red-300"
+                        >
+                          {emailError}
+                        </p>
+                      ) : null}
+                      <button
+                        type="submit"
+                        disabled={emailSubmitting}
+                        className="min-h-[44px] rounded-full bg-app-primary-solid px-5 text-sm font-semibold text-app-on-primary-solid shadow-sm transition hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {emailSubmitting
+                          ? 'Sending…'
+                          : 'Send confirmation email'}
+                      </button>
+                    </form>
+                  ) : null}
+                </section>
+
+                <section
+                  aria-labelledby={`${formId}-sessions-heading`}
+                  className={SETTINGS_SURFACE_CLASS}
+                >
+                  <h2
+                    id={`${formId}-sessions-heading`}
+                    className="text-lg font-semibold text-app-ink"
+                  >
+                    Sessions
+                  </h2>
+                  <p className="mt-2 text-sm text-app-muted">
+                    Sign out on every device where you are signed in to
+                    ABStrack. Use this on a shared computer or if you think
+                    someone else may have access to your account.
+                  </p>
+                  <button
+                    type="button"
+                    className="mt-4 min-h-[44px] rounded-full bg-red-600 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg dark:bg-red-700 dark:hover:bg-red-600"
+                    onClick={() => setSignOutEverywhereOpen(true)}
+                  >
+                    Sign out everywhere
                   </button>
-                </form>
-              ) : null}
-            </section>
+                </section>
+              </>
+            ) : null}
+          </div>
 
-            <section
-              aria-labelledby={`${formId}-sessions-heading`}
-              className={SETTINGS_SURFACE_CLASS}
+          <div
+            role="tabpanel"
+            id={panelId('security')}
+            aria-labelledby={tabId('security')}
+            hidden={displayTab !== 'security'}
+            tabIndex={0}
+            className="outline-none"
+          >
+            {displayTab === 'security' ? <SettingsSecuritySection /> : null}
+          </div>
+
+          {profileAppRole === 'patient' ? (
+            <div
+              role="tabpanel"
+              id={panelId('invites')}
+              aria-labelledby={tabId('invites')}
+              hidden={displayTab !== 'invites'}
+              tabIndex={0}
+              className="space-y-12 outline-none"
             >
-              <h2
-                id={`${formId}-sessions-heading`}
-                className="text-lg font-semibold text-app-ink"
-              >
-                Sessions
-              </h2>
-              <p className="mt-2 text-sm text-app-muted">
-                Sign out on every device where you are signed in to ABStrack.
-                Use this on a shared computer or if you think someone else may
-                have access to your account.
-              </p>
-              <button
-                type="button"
-                className="mt-4 min-h-[44px] rounded-full bg-red-600 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg dark:bg-red-700 dark:hover:bg-red-600"
-                onClick={() => setSignOutEverywhereOpen(true)}
-              >
-                Sign out everywhere
-              </button>
-            </section>
-          </>
-        ) : null}
-      </div>
-
-      <div
-        role="tabpanel"
-        id={panelId('security')}
-        aria-labelledby={tabId('security')}
-        hidden={activeTab !== 'security'}
-        tabIndex={0}
-        className="outline-none"
-      >
-        {activeTab === 'security' ? <SettingsSecuritySection /> : null}
-      </div>
-
-      {profileAppRole === 'patient' ? (
-        <div
-          role="tabpanel"
-          id={panelId('invites')}
-          aria-labelledby={tabId('invites')}
-          hidden={activeTab !== 'invites'}
-          tabIndex={0}
-          className="space-y-12 outline-none"
-        >
-          {activeTab === 'invites' ? (
-            <>
-              <CaretakerAccessPage embedded />
-              <PractitionerAccessPage embedded />
-            </>
+              {displayTab === 'invites' ? (
+                <>
+                  <CaretakerAccessPage embedded />
+                  <PractitionerAccessPage embedded />
+                </>
+              ) : null}
+            </div>
           ) : null}
-        </div>
-      ) : null}
+        </>
+      )}
 
       <ConfirmDialog
         open={signOutEverywhereOpen}
