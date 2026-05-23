@@ -220,7 +220,7 @@ export default function CaretakerJoinPage() {
             href={`/update-password?from=${CARETAKER_INVITE_SET_PASSWORD_FROM}`}
             className="min-h-[44px] rounded-full bg-app-primary-solid px-5 py-3 text-center text-sm font-semibold text-app-on-primary-solid focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring"
           >
-            Create password (recommended)
+            Create password
           </Link>
           <Link
             href="/"
