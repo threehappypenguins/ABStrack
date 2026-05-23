@@ -120,7 +120,28 @@ describe('getAccessTokenFromSession', () => {
 });
 
 describe('getVerifiedAuthSession', () => {
-  it('returns null user and session when getUser fails', async () => {
+  it('returns signed out when getUser reports AuthSessionMissingError', async () => {
+    const missingError = Object.assign(new Error('Auth session missing!'), {
+      name: 'AuthSessionMissingError',
+    });
+    const client = createAuthMockClient({
+      getUser: async () => ({
+        data: { user: null },
+        error: missingError,
+      }),
+      getSession: async () => {
+        throw new Error('getSession should not run');
+      },
+    });
+
+    expect(await getVerifiedAuthSession(client)).toEqual({
+      data: { user: null, session: null },
+      error: null,
+    });
+    expect(client.auth.getSession).not.toHaveBeenCalled();
+  });
+
+  it('returns null user and session when getUser fails with a real error', async () => {
     const userError = new Error('getUser failed');
     const client = createAuthMockClient({
       getUser: async () => ({
@@ -157,6 +178,27 @@ describe('getVerifiedAuthSession', () => {
       error: null,
     });
     expect(client.auth.getSession).not.toHaveBeenCalled();
+  });
+
+  it('returns signed out when getSession reports AuthSessionMissingError', async () => {
+    const missingError = Object.assign(new Error('Auth session missing!'), {
+      name: 'AuthSessionMissingError',
+    });
+    const client = createAuthMockClient({
+      getUser: async () => ({
+        data: { user: verifiedUser },
+        error: null,
+      }),
+      getSession: async () => ({
+        data: { session: null },
+        error: missingError,
+      }),
+    });
+
+    expect(await getVerifiedAuthSession(client)).toEqual({
+      data: { user: null, session: null },
+      error: null,
+    });
   });
 
   it('keeps the verified user when getSession fails', async () => {

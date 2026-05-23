@@ -97,9 +97,13 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
         } = result;
 
         if (error) {
-          if (!isAuthSessionMissingError(error)) {
-            console.error('Failed to verify authenticated user', error);
+          if (isAuthSessionMissingError(error)) {
+            if (mounted && generation === verifyGenerationRef.current) {
+              setSession(null);
+            }
+            return;
           }
+          console.error('Failed to verify authenticated user', error);
           if (isRefreshTokenFailure(error)) {
             await supabase.auth.signOut();
             if (mounted && generation === verifyGenerationRef.current) {
@@ -113,9 +117,13 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
           setSession(mapSupabaseUserToAuthContext(user));
         }
       } catch (error) {
-        if (!isAuthSessionMissingError(error)) {
-          console.error('Failed to verify authenticated user', error);
+        if (isAuthSessionMissingError(error)) {
+          if (mounted && generation === verifyGenerationRef.current) {
+            setSession(null);
+          }
+          return;
         }
+        console.error('Failed to verify authenticated user', error);
         if (isRefreshTokenFailure(error)) {
           await supabase.auth.signOut();
           if (mounted && generation === verifyGenerationRef.current) {

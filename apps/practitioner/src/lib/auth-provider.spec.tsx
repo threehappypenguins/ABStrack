@@ -271,6 +271,55 @@ describe('AuthProvider', () => {
     expect(syncMfaTrustBundleAfterTokenRefreshMock).toHaveBeenCalledTimes(1);
   });
 
+  it('clears session when verify returns AuthSessionMissingError', async () => {
+    const session = makeSession('practitioner-1');
+    const missingError = Object.assign(new Error('Auth session missing!'), {
+      name: 'AuthSessionMissingError',
+    });
+
+    getVerifiedAuthSessionMock
+      .mockResolvedValueOnce({
+        data: { user: null, session: null },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { user: session.user, session },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { user: null, session: null },
+        error: missingError,
+      });
+
+    render(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => {
+      expect(readAuthState().loading).toBe(false);
+    });
+
+    act(() => {
+      authStateChangeHandler?.('SIGNED_IN');
+    });
+
+    await waitFor(() => {
+      expect(readAuthState().userId).toBe('practitioner-1');
+    });
+
+    act(() => {
+      authStateChangeHandler?.('TOKEN_REFRESHED');
+    });
+
+    await waitFor(() => {
+      expect(readAuthState().userId).toBeNull();
+    });
+
+    expect(signOutMock).not.toHaveBeenCalled();
+  });
+
   it('preserves session when verify returns a transient error', async () => {
     const session = makeSession('practitioner-1');
 

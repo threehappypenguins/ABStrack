@@ -1,4 +1,5 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
+import { isAuthSessionMissingError } from '@abstrack/supabase';
 import { AuthProvider, useAuth } from './auth-provider';
 
 const getUserMock = jest.fn();
@@ -260,6 +261,38 @@ describe('AuthProvider', () => {
 
     expect(getUserMock).toHaveBeenCalledTimes(1);
     expect(readAuthState().userId).toBeNull();
+  });
+
+  it('clears initialSession when getUser returns AuthSessionMissingError', async () => {
+    const missingError = Object.assign(new Error('Auth session missing!'), {
+      name: 'AuthSessionMissingError',
+      __isAuthError: true as const,
+    });
+    expect(isAuthSessionMissingError(missingError)).toBe(true);
+
+    getUserMock.mockResolvedValue({
+      data: { user: null },
+      error: missingError,
+    });
+
+    render(
+      <AuthProvider
+        initialSession={{ user: { id: 'user-1', email: 'user@example.com' } }}
+      >
+        <AuthProbe />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => {
+      expect(readAuthState().userId).toBeNull();
+    });
+
+    expect(readAuthState()).toEqual({
+      loading: false,
+      userId: null,
+      email: null,
+    });
+    expect(signOutMock).not.toHaveBeenCalled();
   });
 
   it('clears invalid refresh tokens via signOut and still finishes loading', async () => {
