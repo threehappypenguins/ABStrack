@@ -4,6 +4,34 @@ import type { AbstrackSupabaseClient } from './supabase-client-type.js';
 /** Roles a user may self-provision via signup or invite completion (not practitioner). */
 export type SelfServiceProfileRole = Extract<AppRole, 'patient' | 'caretaker'>;
 
+/** Result when {@link ensureProfileRow} cannot complete. */
+export type EnsureProfileRowFailure = {
+  ok: false;
+  /** Safe copy for UI; do not surface {@link cause} to end users. */
+  message: string;
+  /** Raw PostgREST/Postgres detail for logging or diagnostics. */
+  cause?: string;
+};
+
+/** @returns Outcome of ensuring a self-service profile row exists. */
+export type EnsureProfileRowResult = { ok: true } | EnsureProfileRowFailure;
+
+const PROFILE_READ_ERROR_MESSAGE =
+  'Unable to load your profile. Try again in a moment.';
+
+function profileInsertErrorMessage(appRole: SelfServiceProfileRole): string {
+  return appRole === 'caretaker'
+    ? 'Unable to create your caretaker profile. Try again or contact support.'
+    : 'Unable to create your profile. Try again or contact support.';
+}
+
+function postgrestErrorDetail(
+  err: { message?: string } | null,
+): string | undefined {
+  const trimmed = err?.message?.trim();
+  return trimmed === '' ? undefined : trimmed;
+}
+
 /** True when PostgREST reports a duplicate primary key (concurrent profile insert). */
 export function isPostgresUniqueViolation(
   err: { code?: string } | null | undefined,
@@ -26,7 +54,7 @@ export async function ensureProfileRow(
   client: AbstrackSupabaseClient,
   userId: string,
   appRole: SelfServiceProfileRole,
-): Promise<{ ok: true } | { ok: false; message: string }> {
+): Promise<EnsureProfileRowResult> {
   const trimmed = userId.trim();
   if (trimmed === '') {
     return { ok: false, message: 'Missing user id.' };
@@ -39,7 +67,11 @@ export async function ensureProfileRow(
     .maybeSingle();
 
   if (readErr) {
-    return { ok: false, message: readErr.message };
+    return {
+      ok: false,
+      message: PROFILE_READ_ERROR_MESSAGE,
+      cause: postgrestErrorDetail(readErr),
+    };
   }
   if (existing) {
     return { ok: true };
@@ -53,7 +85,11 @@ export async function ensureProfileRow(
   if (!insErr || isPostgresUniqueViolation(insErr)) {
     return { ok: true };
   }
-  return { ok: false, message: insErr.message };
+  return {
+    ok: false,
+    message: profileInsertErrorMessage(appRole),
+    cause: postgrestErrorDetail(insErr),
+  };
 }
 
 /**
@@ -66,6 +102,6 @@ export async function ensureProfileRow(
 export async function ensurePatientProfileRow(
   client: AbstrackSupabaseClient,
   userId: string,
-): Promise<{ ok: true } | { ok: false; message: string }> {
+): Promise<EnsureProfileRowResult> {
   return ensureProfileRow(client, userId, 'patient');
 }

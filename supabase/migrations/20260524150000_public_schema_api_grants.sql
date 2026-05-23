@@ -1,4 +1,4 @@
--- PostgREST roles need explicit table/sequence privileges on existing objects.
+-- PostgREST roles need explicit table privileges on existing objects.
 -- RLS enforces row access; missing GRANTs yield 403 (authenticated) or 42501 (service_role).
 --
 -- Fail-closed: no GRANT ALL, no ALTER DEFAULT PRIVILEGES (new tables stay closed until a
@@ -25,8 +25,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.profiles,
   public.practitioner_invites,
   public.caretaker_invites TO authenticated;
 
--- Sequences for serial/identity columns on the tables above (existing objects only).
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO authenticated;
+-- No GRANT ON SEQUENCE: tables above use uuid PRIMARY KEY DEFAULT gen_random_uuid() (no serial/identity).
 
 -- service_role: integration tests and Edge Functions (narrow table grants, not ALL).
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.profiles TO service_role;
@@ -48,8 +47,6 @@ GRANT SELECT, INSERT, UPDATE ON TABLE public.practitioner_access,
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.practitioner_invites,
   public.caretaker_invites TO service_role;
-
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO service_role;
 
 -- ---------------------------------------------------------------------------
 -- Restricted tables (must match 20260327130000_rls_policies.sql and 20260524130000_chart_snapshots.sql)

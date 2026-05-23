@@ -36,6 +36,8 @@ export {
   ensurePatientProfileRow,
   ensureProfileRow,
   isPostgresUniqueViolation,
+  type EnsureProfileRowFailure,
+  type EnsureProfileRowResult,
   type SelfServiceProfileRole,
 } from './lib/ensure-patient-profile.js';
 export {

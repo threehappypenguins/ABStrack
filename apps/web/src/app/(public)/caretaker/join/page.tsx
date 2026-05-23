@@ -88,11 +88,12 @@ export default function CaretakerJoinPage() {
           );
           if (!ensured.ok) {
             if (!cancelled) {
+              if (ensured.cause) {
+                console.error('ensureProfileRow failed', ensured.cause);
+              }
               setState({
                 kind: 'error',
-                message:
-                  ensured.message ||
-                  'Unable to create your caretaker profile. Try again or contact support.',
+                message: ensured.message,
               });
             }
             return;
