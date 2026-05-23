@@ -55,7 +55,8 @@ export function SettingsPage() {
   const formId = useId();
   const { announce } = useAnnounce();
   const { session, loading: authLoading } = useAuth();
-  const { profileAppRole } = useWebPhiSubjectUserContext();
+  const { profileAppRole, loading: phiContextLoading } =
+    useWebPhiSubjectUserContext();
   const supabase = useMemo(() => createBrowserClient(), []);
 
   const tabFromUrl = parseSettingsTabId(searchParams.get('tab'));
@@ -101,14 +102,17 @@ export function SettingsPage() {
   }, [profileAppRole]);
 
   useEffect(() => {
-    setActiveTab(tabFromUrl);
-  }, [tabFromUrl]);
-
-  useEffect(() => {
-    if (activeTab === 'invites' && profileAppRole !== 'patient') {
-      setActiveTab('account');
+    if (phiContextLoading) {
+      return;
     }
-  }, [activeTab, profileAppRole]);
+    const invitesVisible = profileAppRole === 'patient';
+    if (tabFromUrl === 'invites' && !invitesVisible) {
+      router.replace('/settings', { scroll: false });
+      setActiveTab('account');
+      return;
+    }
+    setActiveTab(tabFromUrl);
+  }, [tabFromUrl, profileAppRole, phiContextLoading, router]);
 
   const setTab = useCallback(
     (tab: SettingsTabId) => {

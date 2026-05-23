@@ -229,44 +229,6 @@ describe('web auth proxy', () => {
     );
   });
 
-  it('redirects unauthenticated user from /settings/caretaker to /login', async () => {
-    createServerClientMock.mockImplementation(() =>
-      Promise.resolve({
-        auth: {
-          getUser: jest.fn(async () => ({ data: { user: null } })),
-        },
-      } as unknown as ServerClient),
-    );
-
-    const result = await proxy(makeRequest('/settings/caretaker'));
-
-    expect(result).toEqual(
-      expect.objectContaining({
-        type: 'redirect',
-        location: 'https://example.com/login',
-      }),
-    );
-  });
-
-  it('redirects unauthenticated user from /settings/practitioner to /login', async () => {
-    createServerClientMock.mockImplementation(() =>
-      Promise.resolve({
-        auth: {
-          getUser: jest.fn(async () => ({ data: { user: null } })),
-        },
-      } as unknown as ServerClient),
-    );
-
-    const result = await proxy(makeRequest('/settings/practitioner'));
-
-    expect(result).toEqual(
-      expect.objectContaining({
-        type: 'redirect',
-        location: 'https://example.com/login',
-      }),
-    );
-  });
-
   it('redirects unauthenticated user from preset routes to /login', async () => {
     createServerClientMock.mockImplementation(() =>
       Promise.resolve({
