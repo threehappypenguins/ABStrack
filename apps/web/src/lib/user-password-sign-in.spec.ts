@@ -48,6 +48,20 @@ describe('clampAuthPasswordInput', () => {
       AUTH_PASSWORD_MAX_LENGTH,
     );
     expect(getAuthPasswordValidationError(clamped)).toBeNull();
+    expect(clamped).toBe('😀'.repeat(18));
+  });
+
+  it('drops whole astral symbols instead of leaving surrogate halves', () => {
+    const over = `${'a'.repeat(71)}😀`;
+    expect(getAuthPasswordUtf8ByteLength(over)).toBeGreaterThan(
+      AUTH_PASSWORD_MAX_LENGTH,
+    );
+
+    const clamped = clampAuthPasswordInput(over);
+
+    expect(clamped).toBe('a'.repeat(71));
+    expect(clamped).not.toContain('\uFFFD');
+    expect(getAuthPasswordUtf8ByteLength(clamped)).toBe(71);
   });
 });
 

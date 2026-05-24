@@ -41,8 +41,13 @@ export function getAuthPasswordUtf8ByteLength(password: string): number {
 /**
  * Keeps password input within {@link AUTH_PASSWORD_MAX_LENGTH} UTF-8 bytes.
  *
- * HTML `maxLength` counts UTF-16 code units, so emoji and other non-ASCII text can
- * exceed the GoTrue/bcrypt byte limit while still under `maxLength`.
+ * GoTrue hashes passwords with bcrypt, which only uses the first 72 bytes of the
+ * password ([Supabase password security](https://supabase.com/docs/guides/auth/password-security)).
+ * HTML `maxLength` counts UTF-16 code units, so emoji and other non-ASCII text can exceed
+ * the byte limit while still under `maxLength`.
+ *
+ * Truncation removes whole Unicode code points from the end (via {@link Array.from}),
+ * never lone UTF-16 surrogates.
  *
  * @param value - Raw input from a password field.
  * @returns Value truncated to the byte limit when needed.
@@ -51,14 +56,15 @@ export function clampAuthPasswordInput(value: string): string {
   if (getAuthPasswordUtf8ByteLength(value) <= AUTH_PASSWORD_MAX_LENGTH) {
     return value;
   }
-  let clamped = value;
-  while (
-    clamped.length > 0 &&
-    getAuthPasswordUtf8ByteLength(clamped) > AUTH_PASSWORD_MAX_LENGTH
-  ) {
-    clamped = clamped.slice(0, -1);
+  const codePoints = Array.from(value);
+  while (codePoints.length > 0) {
+    const candidate = codePoints.join('');
+    if (getAuthPasswordUtf8ByteLength(candidate) <= AUTH_PASSWORD_MAX_LENGTH) {
+      return candidate;
+    }
+    codePoints.pop();
   }
-  return clamped;
+  return '';
 }
 
 /**

@@ -8,8 +8,6 @@ import {
   ensurePatientProfileRow,
 } from '@abstrack/supabase';
 import {
-  AUTH_PASSWORD_MAX_LENGTH,
-  AUTH_PASSWORD_MIN_LENGTH,
   USER_PASSWORD_SET_USER_METADATA_KEY,
   clampAuthPasswordInput,
   getAuthPasswordValidationError,
@@ -87,11 +85,6 @@ export default function SignupPage() {
             {error}
           </div>
         )}
-
-        <p className="mb-4 text-center text-sm text-app-muted">
-          Passwords must be at least {AUTH_PASSWORD_MIN_LENGTH} characters and
-          no more than {AUTH_PASSWORD_MAX_LENGTH} bytes.
-        </p>
 
         <form onSubmit={handleSignup} className="space-y-4">
           <div>
