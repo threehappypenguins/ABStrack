@@ -4,9 +4,9 @@ import { getSameOriginLogoutPostFailure } from '@/lib/same-origin-logout-post';
 
 /**
  * Signs out the current practitioner session and clears auth cookies (full Supabase sign-out).
- * Revokes refresh tokens server-side; the MFA “trusted device” bundle in `localStorage` may be
- * stale until the next sign-in attempt clears it. Prefer the in-app Log out control for trust-aware
- * sign-out when available.
+ * Supports optional `?scope=global` to revoke refresh tokens on all devices. The MFA “trusted
+ * device” bundle in `localStorage` may be stale until the next sign-in attempt clears it. Prefer
+ * the in-app Log out control for trust-aware sign-out when available.
  *
  * Rejects cross-site `POST` requests (same-origin / `Sec-Fetch-Site` / `Referer` checks) before
  * mutating session state, to mitigate CSRF-driven logouts.
@@ -37,6 +37,10 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  await supabase.auth.signOut();
+  const scopeParam = request.nextUrl.searchParams.get('scope');
+  const scope = scopeParam === 'global' ? 'global' : undefined;
+
+  await supabase.auth.signOut(scope ? { scope } : undefined);
+
   return response;
 }

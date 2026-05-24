@@ -1091,6 +1091,9 @@ describe('practitionerSignOutEverywhere', () => {
       buildBundleJson(userId, Date.now() + 60_000),
     );
     localStorage.setItem('sb-proj-auth-token', '{"refresh":true}');
+    const appendChildSpy = jest
+      .spyOn(document.body, 'appendChild')
+      .mockImplementation((node) => node);
 
     practitionerSignOutEverywhere();
 
@@ -1099,6 +1102,10 @@ describe('practitionerSignOutEverywhere', () => {
     ).toBeNull();
     expect(localStorage.getItem('sb-proj-auth-token')).toBeNull();
     expect(submitSpy).toHaveBeenCalledTimes(1);
+    const form = appendChildSpy.mock.calls[0]?.[0] as HTMLFormElement;
+    expect(form.action).toContain('/api/auth/logout?scope=global');
+
+    appendChildSpy.mockRestore();
   });
 });
 

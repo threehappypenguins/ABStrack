@@ -34,7 +34,8 @@ type AuthStateChangeEvent = Parameters<
 interface AuthContextType {
   session: Session | null;
   /**
-   * True while initial auth is resolving or, when signed in, while the profile row is loading.
+   * True while initial auth is resolving or, when signed in, while the profile row is loading
+   * for the first time for this user. Token rotation alone must not set this (see profile effect).
    */
   loading: boolean;
   /** Own profile row: undefined = not loaded yet; null = no row or load failed without error object. */
@@ -349,12 +350,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [
-    session?.user?.id,
-    session?.access_token,
-    pendingInviteMetadataId,
-    supabase,
-  ]);
+  }, [session?.user?.id, pendingInviteMetadataId, supabase]);
 
   const value = useMemo(
     () => ({

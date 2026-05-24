@@ -47,11 +47,8 @@ function renderPage() {
 
 function expectPractitionerSignOutButton() {
   expect(screen.getByTestId('practitioner-sign-out')).toBeTruthy();
-  expect(screen.getByTestId('practitioner-sign-out-everywhere')).toBeTruthy();
   expect(screen.getByRole('button', { name: /^Log out$/i })).toBeTruthy();
-  expect(
-    screen.getByRole('button', { name: /^Sign out everywhere$/i }),
-  ).toBeTruthy();
+  expect(screen.queryByTestId('practitioner-sign-out-everywhere')).toBeNull();
 }
 
 const patientProfileRow: PractitionerSupabaseProfilesRow = {

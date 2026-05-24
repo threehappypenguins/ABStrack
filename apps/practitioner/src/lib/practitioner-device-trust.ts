@@ -35,6 +35,8 @@ import {
   type Session,
 } from '@abstrack/supabase';
 
+import { markPractitionerSignOutPending } from './practitioner-sign-out-pending';
+
 type PractitionerBrowserClient = AbstrackSupabaseClient;
 
 /**
@@ -332,6 +334,25 @@ export function saveMfaTrustBundle(
  * @param supabase - Browser Supabase client.
  * @param session - Session from the auth callback (null clears nothing).
  */
+/**
+ * Refreshes the browser session and syncs the MFA trust bundle when tokens rotate.
+ *
+ * @param supabase - Browser Supabase client.
+ * @returns Refresh error when `refreshSession` fails.
+ */
+export async function refreshPractitionerSessionAndSyncMfaTrustBundle(
+  supabase: PractitionerBrowserClient,
+): Promise<{ error: Error | null }> {
+  const { data, error } = await supabase.auth.refreshSession();
+  if (error) {
+    return { error };
+  }
+  if (data.session) {
+    await syncMfaTrustBundleAfterTokenRefresh(supabase, data.session);
+  }
+  return { error: null };
+}
+
 export async function syncMfaTrustBundleAfterTokenRefresh(
   supabase: PractitionerBrowserClient,
   session: Session | null,
@@ -580,6 +601,7 @@ export function practitionerSignOutEverywhere(): void {
   if (typeof document === 'undefined') {
     return;
   }
+  markPractitionerSignOutPending();
   clearMfaTrustBundle();
   try {
     clearSupabaseBrowserAuthStorage();
@@ -588,7 +610,7 @@ export function practitionerSignOutEverywhere(): void {
   }
   const form = document.createElement('form');
   form.method = 'POST';
-  form.action = '/api/auth/logout';
+  form.action = '/api/auth/logout?scope=global';
   form.setAttribute('aria-hidden', 'true');
   form.style.display = 'none';
   document.body.appendChild(form);
@@ -722,6 +744,7 @@ async function clearBrowserSessionWithoutServerLogout(
 export async function practitionerSignOut(
   supabase: PractitionerBrowserClient,
 ): Promise<void> {
+  markPractitionerSignOutPending();
   const userId = await resolveUserIdForMfaTrustSignOut(supabase);
   const bundle = readBundle();
   const trustActiveForUser =

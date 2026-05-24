@@ -17,5 +17,6 @@ describe('isPublicPractitionerPath', () => {
     expect(isPublicPractitionerPath('/')).toBe(false);
     expect(isPublicPractitionerPath('/patients')).toBe(false);
     expect(isPublicPractitionerPath('/patients/abc')).toBe(false);
+    expect(isPublicPractitionerPath('/settings')).toBe(false);
   });
 });

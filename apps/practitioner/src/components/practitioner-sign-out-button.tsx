@@ -4,11 +4,11 @@ import { getSupabaseBrowserClient } from '@abstrack/supabase/browser';
 import { useAnnounce } from '@abstrack/ui/a11y-web';
 import { ACCOUNT_ACTIONS_SURFACE_CLASS } from '@abstrack/ui-web';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { practitionerSignOut } from '@/lib/practitioner-device-trust';
 import {
-  isPractitionerMfaDeviceTrustActive,
-  practitionerSignOut,
-  practitionerSignOutEverywhere,
-} from '@/lib/practitioner-device-trust';
+  clearPractitionerSignOutPending,
+  markPractitionerSignOutPending,
+} from '@/lib/practitioner-sign-out-pending';
 
 export type PractitionerSignOutButtonProps = {
   /** Visible button label for the default (session-aware) sign-out. */
@@ -21,13 +21,11 @@ export type PractitionerSignOutButtonProps = {
 };
 
 /**
- * Practitioner sign-out: default action respects MFA device trust (soft local clear) when active;
- * secondary action performs full server sign-out via `POST /api/auth/logout`. Primary and secondary
- * buttons share {@link ACCOUNT_ACTIONS_SURFACE_CLASS} with user web top nav; pass `className` on the
- * primary control only to override.
+ * Practitioner sign-out: respects MFA device trust (soft local clear) when active, otherwise
+ * performs a full `signOut()`. Full sign-out on all devices lives in Settings.
  *
  * @param props - Labels and styling.
- * @returns Accessible sign-out controls and optional trust explanation.
+ * @returns Accessible sign-out control.
  */
 export function PractitionerSignOutButton({
   label = 'Log out',
@@ -37,11 +35,8 @@ export function PractitionerSignOutButton({
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const { announce } = useAnnounce();
   const [signingOut, setSigningOut] = useState(false);
-  /** True after choosing full server sign-out until navigation completes. */
-  const [signingOutEverywhere, setSigningOutEverywhere] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
-  const [trustActive, setTrustActive] = useState(false);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -50,48 +45,17 @@ export function PractitionerSignOutButton({
     };
   }, []);
 
-  useEffect(() => {
-    const sync = async () => {
-      try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (!mountedRef.current) {
-          return;
-        }
-        setTrustActive(isPractitionerMfaDeviceTrustActive(user?.id));
-      } catch (syncError) {
-        console.error(
-          'Practitioner sign-out button: session sync failed',
-          syncError,
-        );
-        if (!mountedRef.current) {
-          return;
-        }
-        setTrustActive(false);
-      }
-    };
-
-    void sync();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(() => {
-      void sync();
-    });
-
-    return () => subscription.unsubscribe();
-  }, [supabase]);
-
   const handleLocalSignOut = () => {
     if (signingOut) {
       return;
     }
     setError(null);
     setSigningOut(true);
+    markPractitionerSignOutPending();
     void practitionerSignOut(supabase)
       .catch((err: unknown) => {
         console.error('Practitioner sign out failed', err);
+        clearPractitionerSignOutPending();
         if (!mountedRef.current) {
           return;
         }
@@ -109,55 +73,18 @@ export function PractitionerSignOutButton({
       });
   };
 
-  const handleSignOutEverywhere = () => {
-    if (signingOut || signingOutEverywhere) {
-      return;
-    }
-    setError(null);
-    setSigningOutEverywhere(true);
-    announce('Signing out from all sessions.', { politeness: 'polite' });
-    practitionerSignOutEverywhere();
-  };
-
-  const busy = signingOut || signingOutEverywhere;
-
   return (
     <div className="inline-flex max-w-full flex-col gap-2">
-      {trustActive ? (
-        <p
-          id="practitioner-sign-out-trust-hint"
-          className="max-w-prose text-xs text-app-muted"
-        >
-          Device trust is on: &quot;{label}&quot; clears this browser session
-          without revoking the saved trust token so you can skip TOTP on the
-          next sign-in here. On a shared computer, use Sign out everywhere.
-        </p>
-      ) : null}
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          data-testid="practitioner-sign-out"
-          className={primaryClassName}
-          disabled={busy}
-          {...(busy ? { 'aria-busy': true as const } : {})}
-          aria-describedby={
-            trustActive ? 'practitioner-sign-out-trust-hint' : undefined
-          }
-          onClick={handleLocalSignOut}
-        >
-          {busy ? 'Signing out…' : label}
-        </button>
-        <button
-          type="button"
-          data-testid="practitioner-sign-out-everywhere"
-          className={ACCOUNT_ACTIONS_SURFACE_CLASS}
-          disabled={busy}
-          {...(signingOutEverywhere ? { 'aria-busy': true as const } : {})}
-          onClick={handleSignOutEverywhere}
-        >
-          {signingOutEverywhere ? 'Signing out…' : 'Sign out everywhere'}
-        </button>
-      </div>
+      <button
+        type="button"
+        data-testid="practitioner-sign-out"
+        className={primaryClassName}
+        disabled={signingOut}
+        {...(signingOut ? { 'aria-busy': true as const } : {})}
+        onClick={handleLocalSignOut}
+      >
+        {signingOut ? 'Signing out…' : label}
+      </button>
       {error ? (
         <p
           role="alert"

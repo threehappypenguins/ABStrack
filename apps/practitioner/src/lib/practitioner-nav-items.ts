@@ -14,4 +14,9 @@ export const PRACTITIONER_APP_NAV_ITEMS: AppSideNavItem[] = [
     label: 'Patients',
     match: (path) => path === '/patients' || path.startsWith('/patients/'),
   },
+  {
+    href: '/settings',
+    label: 'Settings',
+    match: (path) => path === '/settings' || path.startsWith('/settings/'),
+  },
 ];

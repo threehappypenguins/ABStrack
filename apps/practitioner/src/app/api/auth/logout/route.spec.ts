@@ -52,17 +52,24 @@ describe('POST /api/auth/logout', () => {
   });
 
   it('redirects and signs out when Origin matches', async () => {
+    const signOut = jest.fn().mockResolvedValue(undefined);
+    mockedCreate.mockReturnValue({
+      auth: { signOut },
+    } as never);
+
     const request = {
       url: 'https://practitioner.example.com/api/auth/logout',
       headers: new Headers({
         Origin: 'https://practitioner.example.com',
       }),
       cookies: { getAll: jest.fn(() => []) },
+      nextUrl: { searchParams: new URLSearchParams() },
     } as unknown as NextRequest;
 
     const response = await POST(request);
 
     expect(mockedCreate).toHaveBeenCalled();
+    expect(signOut).toHaveBeenCalledWith(undefined);
     expect(response).toEqual(
       expect.objectContaining({
         type: 'redirect',
@@ -70,5 +77,25 @@ describe('POST /api/auth/logout', () => {
         location: expect.stringContaining('/login'),
       }),
     );
+  });
+
+  it('passes global scope when requested', async () => {
+    const signOut = jest.fn().mockResolvedValue(undefined);
+    mockedCreate.mockReturnValue({
+      auth: { signOut },
+    } as never);
+
+    const request = {
+      url: 'https://practitioner.example.com/api/auth/logout?scope=global',
+      headers: new Headers({
+        Origin: 'https://practitioner.example.com',
+      }),
+      cookies: { getAll: jest.fn(() => []) },
+      nextUrl: { searchParams: new URLSearchParams('scope=global') },
+    } as unknown as NextRequest;
+
+    await POST(request);
+
+    expect(signOut).toHaveBeenCalledWith({ scope: 'global' });
   });
 });
