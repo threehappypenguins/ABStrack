@@ -76,7 +76,7 @@ DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW
-  EXECUTE PROCEDURE public.handle_new_user ();
+  EXECUTE FUNCTION public.handle_new_user ();
 
 -- Backfill profiles for auth users created before this migration.
 INSERT INTO public.profiles (id, app_role)

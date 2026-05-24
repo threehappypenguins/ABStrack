@@ -14,6 +14,7 @@ import {
   AUTH_PASSWORD_MAX_LENGTH,
   AUTH_PASSWORD_MIN_LENGTH,
   USER_PASSWORD_SET_USER_METADATA_KEY,
+  clampAuthPasswordInput,
   getAuthPasswordValidationError,
 } from '@/lib/user-password-sign-in';
 
@@ -248,8 +249,9 @@ export default function UpdatePasswordPage() {
               id="password"
               type="password"
               value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              maxLength={AUTH_PASSWORD_MAX_LENGTH}
+              onChange={(event) =>
+                setPassword(clampAuthPasswordInput(event.target.value))
+              }
               required
               className="mt-1 block w-full rounded-md border border-app-border bg-app-bg px-3 py-2 text-app-ink shadow-sm focus:border-app-primary focus:outline-none focus:ring-2 focus:ring-app-ring"
               placeholder="••••••••"
@@ -269,8 +271,9 @@ export default function UpdatePasswordPage() {
               id="confirmPassword"
               type="password"
               value={confirmPassword}
-              onChange={(event) => setConfirmPassword(event.target.value)}
-              maxLength={AUTH_PASSWORD_MAX_LENGTH}
+              onChange={(event) =>
+                setConfirmPassword(clampAuthPasswordInput(event.target.value))
+              }
               required
               className="mt-1 block w-full rounded-md border border-app-border bg-app-bg px-3 py-2 text-app-ink shadow-sm focus:border-app-primary focus:outline-none focus:ring-2 focus:ring-app-ring"
               placeholder="••••••••"

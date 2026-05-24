@@ -39,6 +39,29 @@ export function getAuthPasswordUtf8ByteLength(password: string): number {
 }
 
 /**
+ * Keeps password input within {@link AUTH_PASSWORD_MAX_LENGTH} UTF-8 bytes.
+ *
+ * HTML `maxLength` counts UTF-16 code units, so emoji and other non-ASCII text can
+ * exceed the GoTrue/bcrypt byte limit while still under `maxLength`.
+ *
+ * @param value - Raw input from a password field.
+ * @returns Value truncated to the byte limit when needed.
+ */
+export function clampAuthPasswordInput(value: string): string {
+  if (getAuthPasswordUtf8ByteLength(value) <= AUTH_PASSWORD_MAX_LENGTH) {
+    return value;
+  }
+  let clamped = value;
+  while (
+    clamped.length > 0 &&
+    getAuthPasswordUtf8ByteLength(clamped) > AUTH_PASSWORD_MAX_LENGTH
+  ) {
+    clamped = clamped.slice(0, -1);
+  }
+  return clamped;
+}
+
+/**
  * Client-side password rules before `auth.updateUser({ password })`.
  *
  * @param password - Candidate password.

@@ -17,6 +17,7 @@ import {
   AUTH_PASSWORD_MIN_LENGTH,
   USER_PASSWORD_SET_USER_METADATA_KEY,
   buildRevokedPasswordPlaceholder,
+  clampAuthPasswordInput,
   getAuthPasswordValidationError,
   userHasPasswordSignIn,
 } from '@/lib/user-password-sign-in';
@@ -405,9 +406,10 @@ export function SettingsSecuritySection() {
               id={`${formId}-new-password`}
               type="password"
               autoComplete="new-password"
-              maxLength={AUTH_PASSWORD_MAX_LENGTH}
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) =>
+                setPassword(clampAuthPasswordInput(e.target.value))
+              }
               className="mt-1 block w-full min-h-[44px] rounded-md border border-app-border bg-app-bg px-3 py-2 text-app-ink shadow-sm focus:border-app-primary focus:outline-none focus:ring-2 focus:ring-app-ring"
             />
           </div>
@@ -422,9 +424,10 @@ export function SettingsSecuritySection() {
               id={`${formId}-confirm-password`}
               type="password"
               autoComplete="new-password"
-              maxLength={AUTH_PASSWORD_MAX_LENGTH}
               value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
+              onChange={(e) =>
+                setConfirmPassword(clampAuthPasswordInput(e.target.value))
+              }
               className="mt-1 block w-full min-h-[44px] rounded-md border border-app-border bg-app-bg px-3 py-2 text-app-ink shadow-sm focus:border-app-primary focus:outline-none focus:ring-2 focus:ring-app-ring"
             />
           </div>

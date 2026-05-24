@@ -3,6 +3,7 @@ import {
   AUTH_PASSWORD_MIN_LENGTH,
   USER_PASSWORD_SET_USER_METADATA_KEY,
   buildRevokedPasswordPlaceholder,
+  clampAuthPasswordInput,
   getAuthPasswordUtf8ByteLength,
   getAuthPasswordValidationError,
   userHasPasswordSignIn,
@@ -32,6 +33,21 @@ describe('getAuthPasswordUtf8ByteLength', () => {
     expect(getAuthPasswordUtf8ByteLength('a'.repeat(72))).toBe(72);
     expect(getAuthPasswordUtf8ByteLength('é')).toBe(2);
     expect(getAuthPasswordUtf8ByteLength('😀')).toBe(4);
+  });
+});
+
+describe('clampAuthPasswordInput', () => {
+  it('passes through values within the UTF-8 byte limit', () => {
+    expect(clampAuthPasswordInput('a'.repeat(72))).toBe('a'.repeat(72));
+    expect(clampAuthPasswordInput('😀'.repeat(18))).toBe('😀'.repeat(18));
+  });
+
+  it('truncates values that exceed 72 UTF-8 bytes', () => {
+    const clamped = clampAuthPasswordInput('😀'.repeat(19));
+    expect(getAuthPasswordUtf8ByteLength(clamped)).toBeLessThanOrEqual(
+      AUTH_PASSWORD_MAX_LENGTH,
+    );
+    expect(getAuthPasswordValidationError(clamped)).toBeNull();
   });
 });
 
