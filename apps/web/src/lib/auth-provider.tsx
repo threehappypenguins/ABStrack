@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import type { AbstrackSupabaseClient } from '@abstrack/supabase';
 import {
   type AuthProviderSession,
   mapSupabaseUserToAuthContext,
@@ -21,6 +22,8 @@ export type { AuthProviderSession } from './auth-provider-session';
 interface AuthContextType {
   session: AuthProviderSession;
   loading: boolean;
+  /** Shared browser Supabase client (single `onAuthStateChange` / MFA trust-bundle sync). */
+  supabase: AbstrackSupabaseClient;
 }
 
 export type AuthProviderProps = {
@@ -181,7 +184,7 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
   }, [supabase]);
 
   return (
-    <AuthContext.Provider value={{ session, loading }}>
+    <AuthContext.Provider value={{ session, loading, supabase }}>
       {children}
     </AuthContext.Provider>
   );

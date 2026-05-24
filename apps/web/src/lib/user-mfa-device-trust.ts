@@ -400,6 +400,29 @@ export async function syncMfaTrustBundleAfterTokenRefresh(
   saveMfaTrustBundle(session, bundle.trustedUntilMs);
 }
 
+/**
+ * Refreshes the browser session and syncs the MFA trust bundle when refresh tokens rotate.
+ *
+ * Prefer the {@link AuthProvider} `supabase` client so `onAuthStateChange('TOKEN_REFRESHED')`
+ * also runs; this helper explicitly syncs the bundle for call sites that refresh after
+ * `updateUser` (password change/revoke).
+ *
+ * @param supabase - Browser Supabase client (should be the AuthProvider instance).
+ * @returns Refresh error when `auth.refreshSession` fails.
+ */
+export async function refreshBrowserSessionAndSyncMfaTrustBundle(
+  supabase: UserBrowserClient,
+): Promise<{ error: Error | null }> {
+  const { data, error } = await supabase.auth.refreshSession();
+  if (error) {
+    return { error };
+  }
+  if (data.session) {
+    await syncMfaTrustBundleAfterTokenRefresh(supabase, data.session);
+  }
+  return { error: null };
+}
+
 export function clearMfaTrustBundle(): void {
   if (typeof window === 'undefined') {
     return;

@@ -1,7 +1,7 @@
 'use client';
 
 import { useAnnounce } from '@abstrack/ui/a11y-web';
-import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useState } from 'react';
 import { ConfirmDialog } from '@/components/symptom-presets/ConfirmDialog';
 import { useAuth } from '@/lib/auth-provider';
 import {
@@ -11,7 +11,7 @@ import {
   mapMfaVerifyErrorToUserMessage,
   normalizeTotpCode,
 } from '@/lib/mfa-user-messages';
-import { createBrowserClient } from '@/lib/supabase/browser-client';
+import { refreshBrowserSessionAndSyncMfaTrustBundle } from '@/lib/user-mfa-device-trust';
 import {
   AUTH_PASSWORD_MAX_LENGTH,
   AUTH_PASSWORD_MIN_LENGTH,
@@ -72,8 +72,7 @@ const SETTINGS_SURFACE_CLASS =
 export function SettingsSecuritySection() {
   const formId = useId();
   const { announce } = useAnnounce();
-  const { session, loading: authLoading } = useAuth();
-  const supabase = useMemo(() => createBrowserClient(), []);
+  const { session, loading: authLoading, supabase } = useAuth();
 
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -165,7 +164,11 @@ export function SettingsSecuritySection() {
       }
       setPassword('');
       setConfirmPassword('');
-      await supabase.auth.refreshSession();
+      const { error: refreshError } =
+        await refreshBrowserSessionAndSyncMfaTrustBundle(supabase);
+      if (refreshError) {
+        console.error('refreshSession after password update', refreshError);
+      }
       const msg = hasPassword
         ? 'Password updated.'
         : 'Password added. You can sign in with your email and password on web or mobile.';
@@ -197,7 +200,11 @@ export function SettingsSecuritySection() {
       }
       setPassword('');
       setConfirmPassword('');
-      await supabase.auth.refreshSession();
+      const { error: refreshError } =
+        await refreshBrowserSessionAndSyncMfaTrustBundle(supabase);
+      if (refreshError) {
+        console.error('refreshSession after password revoke', refreshError);
+      }
       announce(
         'Password sign-in disabled. Use magic links from email to sign in on supported apps.',
         { politeness: 'polite' },
