@@ -18,7 +18,7 @@ import {
   mapMfaVerifyErrorToUserMessage,
   normalizeTotpCode,
 } from '@/lib/mfa-user-messages';
-import { createBrowserClient } from '@/lib/supabase/browser-client';
+import { useAuth } from '@/lib/auth-provider';
 import {
   clearMfaTrustBundle,
   getTrustedUntilMsForDuration,
@@ -60,7 +60,7 @@ export function UserLoginForm() {
   const formId = useId();
   const router = useRouter();
   const { announce } = useAnnounce();
-  const supabase = useMemo(() => createBrowserClient(), []);
+  const { supabase } = useAuth();
   const deviceTrustFeatureEnabled = useMemo(
     () => isUserMfaDeviceTrustEnabled(),
     [],

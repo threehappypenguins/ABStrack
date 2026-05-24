@@ -19,17 +19,21 @@ const verifyMock = jest.fn();
 const getUserMock = jest.fn();
 const signOutMock = jest.fn();
 
-jest.mock('../../lib/supabase/browser-client', () => ({
-  createBrowserClient: () => ({
-    auth: {
-      getUser: (...args: unknown[]) => getUserMock(...args),
-      signOut: (...args: unknown[]) => signOutMock(...args),
-      mfa: {
-        listFactors: (...args: unknown[]) => listFactorsMock(...args),
-        getAuthenticatorAssuranceLevel: (...args: unknown[]) =>
-          getAuthenticatorAssuranceLevelMock(...args),
-        challenge: (...args: unknown[]) => challengeMock(...args),
-        verify: (...args: unknown[]) => verifyMock(...args),
+jest.mock('../../lib/auth-provider', () => ({
+  useAuth: () => ({
+    session: null,
+    loading: false,
+    supabase: {
+      auth: {
+        getUser: (...args: unknown[]) => getUserMock(...args),
+        signOut: (...args: unknown[]) => signOutMock(...args),
+        mfa: {
+          listFactors: (...args: unknown[]) => listFactorsMock(...args),
+          getAuthenticatorAssuranceLevel: (...args: unknown[]) =>
+            getAuthenticatorAssuranceLevelMock(...args),
+          challenge: (...args: unknown[]) => challengeMock(...args),
+          verify: (...args: unknown[]) => verifyMock(...args),
+        },
       },
     },
   }),

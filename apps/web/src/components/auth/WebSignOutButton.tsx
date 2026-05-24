@@ -1,8 +1,8 @@
 'use client';
 
 import { ACCOUNT_ACTIONS_SURFACE_CLASS } from '@abstrack/ui-web';
-import { useMemo, useState } from 'react';
-import { createBrowserClient } from '@/lib/supabase/browser-client';
+import { useState } from 'react';
+import { useAuth } from '@/lib/auth-provider';
 import { userSignOut } from '@/lib/user-mfa-device-trust';
 
 /**
@@ -12,7 +12,7 @@ import { userSignOut } from '@/lib/user-mfa-device-trust';
  * @returns Log out button for the authenticated shell.
  */
 export function WebSignOutButton() {
-  const supabase = useMemo(() => createBrowserClient(), []);
+  const { supabase } = useAuth();
   const [loading, setLoading] = useState(false);
 
   return (

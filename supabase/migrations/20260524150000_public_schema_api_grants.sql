@@ -23,8 +23,8 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.profiles,
   public.caretaker_access,
   public.practitioner_observation_notes TO authenticated;
 
--- caretaker_invites / practitioner_invites: service_role + Edge Functions only (no authenticated
--- policies in 20260510120000 / 20260515180000). Do not grant PostgREST table access here.
+-- caretaker_invites / practitioner_invites: no authenticated grants (no authenticated RLS
+-- policies in 20260510120000 / 20260515180000). service_role grants for Edge Functions follow.
 
 -- No GRANT ON SEQUENCE: tables above use uuid PRIMARY KEY DEFAULT gen_random_uuid() (no serial/identity).
 
@@ -46,6 +46,7 @@ GRANT SELECT ON TABLE public.symptom_presets,
 GRANT SELECT, INSERT, UPDATE ON TABLE public.practitioner_access,
   public.caretaker_access TO service_role;
 
+-- Invite tables: service_role only (see comment above; not granted to authenticated).
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.practitioner_invites,
   public.caretaker_invites TO service_role;
 

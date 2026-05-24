@@ -38,6 +38,14 @@ jest.mock('../../lib/patient/use-web-phi-subject-user-context', () => ({
   useWebPhiSubjectUserContext: () => phiContext,
 }));
 
+jest.mock('../../lib/auth-provider', () => ({
+  useAuth: () => ({
+    session: { user: { id: 'user-1', email: 'test@example.com' } },
+    loading: false,
+    supabase: { auth: { signOut: jest.fn() } },
+  }),
+}));
+
 jest.mock('../theme/ThemeMenu', () => ({
   ThemeMenu: () => <button type="button">Theme</button>,
 }));

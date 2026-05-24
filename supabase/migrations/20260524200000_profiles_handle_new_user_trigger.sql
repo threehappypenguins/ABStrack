@@ -30,6 +30,8 @@ BEGIN
 END;
 $$;
 
+COMMENT ON FUNCTION public.profiles_enforce_app_role () IS 'Blocks practitioner self-signup and arbitrary app_role changes unless session is trusted (service_role / postgres). On INSERT, also allows practitioner when transaction-local abstrack.provisioning_profile_from_auth is true (set only by public.handle_new_user during auth.users provisioning).';
+
 CREATE OR REPLACE FUNCTION public.handle_new_user ()
   RETURNS TRIGGER
   LANGUAGE plpgsql

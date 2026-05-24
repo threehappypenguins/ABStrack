@@ -27,7 +27,6 @@ import {
   parseSettingsTabId,
 } from '@/lib/settings-tabs';
 import { readPendingEmailChange } from '@/lib/pending-email-change';
-import { createBrowserClient } from '@/lib/supabase/browser-client';
 import { webSignOutEverywhere } from '@/lib/web-sign-out-everywhere';
 
 const SETTINGS_SURFACE_CLASS =
@@ -54,10 +53,9 @@ export function SettingsPage() {
   const searchParams = useSearchParams();
   const formId = useId();
   const { announce } = useAnnounce();
-  const { session, loading: authLoading } = useAuth();
+  const { session, loading: authLoading, supabase } = useAuth();
   const { profileAppRole, loading: phiContextLoading } =
     useWebPhiSubjectUserContext();
-  const supabase = useMemo(() => createBrowserClient(), []);
 
   const tabFromUrl = parseSettingsTabId(searchParams.get('tab'));
   const [activeTab, setActiveTab] = useState<SettingsTabId>(tabFromUrl);
