@@ -46,25 +46,24 @@ export function getAuthPasswordUtf8ByteLength(password: string): number {
  * HTML `maxLength` counts UTF-16 code units, so emoji and other non-ASCII text can exceed
  * the byte limit while still under `maxLength`.
  *
- * Truncation removes whole Unicode code points from the end (via {@link Array.from}),
- * never lone UTF-16 surrogates.
+ * Truncation keeps a prefix of whole Unicode code points ({@link String} iteration),
+ * never lone UTF-16 surrogates. Runs in one pass over the input.
  *
  * @param value - Raw input from a password field.
  * @returns Value truncated to the byte limit when needed.
  */
 export function clampAuthPasswordInput(value: string): string {
-  if (getAuthPasswordUtf8ByteLength(value) <= AUTH_PASSWORD_MAX_LENGTH) {
-    return value;
-  }
-  const codePoints = Array.from(value);
-  while (codePoints.length > 0) {
-    const candidate = codePoints.join('');
-    if (getAuthPasswordUtf8ByteLength(candidate) <= AUTH_PASSWORD_MAX_LENGTH) {
-      return candidate;
+  let byteLength = 0;
+  let result = '';
+  for (const char of value) {
+    const charBytes = getAuthPasswordUtf8ByteLength(char);
+    if (byteLength + charBytes > AUTH_PASSWORD_MAX_LENGTH) {
+      break;
     }
-    codePoints.pop();
+    byteLength += charBytes;
+    result += char;
   }
-  return '';
+  return result;
 }
 
 /**
