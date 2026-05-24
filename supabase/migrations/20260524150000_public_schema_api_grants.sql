@@ -21,9 +21,10 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.profiles,
   public.episode_media,
   public.practitioner_access,
   public.caretaker_access,
-  public.practitioner_observation_notes,
-  public.practitioner_invites,
-  public.caretaker_invites TO authenticated;
+  public.practitioner_observation_notes TO authenticated;
+
+-- caretaker_invites / practitioner_invites: service_role + Edge Functions only (no authenticated
+-- policies in 20260510120000 / 20260515180000). Do not grant PostgREST table access here.
 
 -- No GRANT ON SEQUENCE: tables above use uuid PRIMARY KEY DEFAULT gen_random_uuid() (no serial/identity).
 
