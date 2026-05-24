@@ -5,11 +5,12 @@ import { SettingsPage } from '@/components/settings/SettingsPage';
 export const metadata: Metadata = {
   title: 'Settings | ABStrack',
   description:
-    'Account, security, and invite settings for your ABStrack patient account.',
+    'Account and security settings for patients and caretakers on ABStrack user web. Patients can manage caretaker and practitioner invites.',
 };
 
 /**
- * Settings hub: account profile, security, and patient invite management.
+ * Settings hub for user web: account and security for patients and caretakers;
+ * invite management for patients only (not the practitioner app).
  *
  * @returns Settings page wrapped in Suspense for search-param tabs.
  */

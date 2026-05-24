@@ -30,7 +30,7 @@
  * (see `apps/web/next.config.js`). Development may enable trust without enforced CSP for local MFA
  * testing; CSP defaults to Report-Only.
  *
- * @module user-device-trust
+ * @module user-mfa-device-trust
  */
 
 import {
