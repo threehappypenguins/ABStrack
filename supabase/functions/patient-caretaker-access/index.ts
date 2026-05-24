@@ -516,7 +516,7 @@ async function sendCaretakerInviteEmailAndStamp(
   const { error: invMailErr } = await admin.auth.admin.inviteUserByEmail(
     normalizedTarget,
     {
-      data: { abstrack_caretaker_invite_id: inviteId },
+      data: { abstrack_caretaker_invite_id: inviteId, app_role: 'caretaker' },
       redirectTo,
     },
   );
