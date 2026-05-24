@@ -9,6 +9,7 @@ import {
   fetchPatientCaretakerAccessFinalize,
 } from '@/lib/patient/caretaker-edge-client';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
+import { ensureProfileRow } from '@abstrack/supabase';
 
 type JoinState =
   | { kind: 'loading' }
@@ -17,11 +18,6 @@ type JoinState =
   | { kind: 'wrong_role'; message: string }
   | { kind: 'error'; message: string }
   | { kind: 'done' };
-
-/** True when PostgREST reports a duplicate key (concurrent profile insert). */
-function isPostgresUniqueViolation(err: { code?: string } | null): boolean {
-  return err?.code === '23505';
-}
 
 /**
  * Post-invite landing: after the caretaker accepts the Supabase email link, the session may need a
@@ -83,51 +79,44 @@ export default function CaretakerJoinPage() {
           return;
         }
 
+        let appRole = profile?.app_role;
         if (!profile) {
-          const { error: insErr } = await supabase.from('profiles').insert({
-            id: user.id,
-            app_role: 'caretaker',
-          });
-          if (insErr) {
-            if (isPostgresUniqueViolation(insErr)) {
-              const { data: afterRace, error: raceReadErr } = await supabase
-                .from('profiles')
-                .select('app_role')
-                .eq('id', user.id)
-                .maybeSingle();
-              if (raceReadErr || !afterRace) {
-                if (!cancelled) {
-                  setState({
-                    kind: 'error',
-                    message:
-                      'Unable to verify your profile after sign-up. Try again in a moment.',
-                  });
-                }
-                return;
+          const ensured = await ensureProfileRow(
+            supabase,
+            user.id,
+            'caretaker',
+          );
+          if (!ensured.ok) {
+            if (!cancelled) {
+              if (ensured.cause) {
+                console.error('ensureProfileRow failed', ensured.cause);
               }
-              if (afterRace.app_role !== 'caretaker') {
-                if (!cancelled) {
-                  setState({
-                    kind: 'wrong_role',
-                    message:
-                      'This invite is for a caretaker account, but your profile is not set to caretaker. Use the account your patient invited, or contact support.',
-                  });
-                }
-                return;
-              }
-            } else {
-              if (!cancelled) {
-                setState({
-                  kind: 'error',
-                  message:
-                    insErr.message ||
-                    'Unable to create your caretaker profile. Try again or contact support.',
-                });
-              }
-              return;
+              setState({
+                kind: 'error',
+                message: ensured.message,
+              });
             }
+            return;
           }
-        } else if (profile.app_role !== 'caretaker') {
+          const { data: afterEnsure, error: afterEnsureErr } = await supabase
+            .from('profiles')
+            .select('app_role')
+            .eq('id', user.id)
+            .maybeSingle();
+          if (afterEnsureErr || !afterEnsure) {
+            if (!cancelled) {
+              setState({
+                kind: 'error',
+                message:
+                  'Unable to verify your profile after sign-up. Try again in a moment.',
+              });
+            }
+            return;
+          }
+          appRole = afterEnsure.app_role;
+        }
+
+        if (appRole !== 'caretaker') {
           if (!cancelled) {
             setState({
               kind: 'wrong_role',
@@ -220,7 +209,7 @@ export default function CaretakerJoinPage() {
             href={`/update-password?from=${CARETAKER_INVITE_SET_PASSWORD_FROM}`}
             className="min-h-[44px] rounded-full bg-app-primary-solid px-5 py-3 text-center text-sm font-semibold text-app-on-primary-solid focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring"
           >
-            Create password (recommended)
+            Create password
           </Link>
           <Link
             href="/"

@@ -33,6 +33,14 @@ export {
   updatePassword,
 } from './lib/auth.js';
 export {
+  ensurePatientProfileRow,
+  ensureProfileRow,
+  isPostgresUniqueViolation,
+  type EnsureProfileRowFailure,
+  type EnsureProfileRowResult,
+  type SelfServiceProfileRole,
+} from './lib/ensure-patient-profile.js';
+export {
   fetchProfileByUserId,
   healthCheckProfilesLimit1,
 } from './lib/queries.js';

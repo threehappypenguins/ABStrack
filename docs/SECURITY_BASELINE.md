@@ -118,6 +118,20 @@ This document summarizes the repository security posture, points to implementati
 - Preferred direction: **redesign** to server-managed device trust (opaque HttpOnly cookie + server validation, or short-lived scoped tokens exchanged only server-side)—not implemented in the current client-only bundle.
 - Status: **interim** client implementation; **RLS and MFA rules remain authoritative** for PHI—this path is not an additional server-side authorization layer.
 
+#### User web “trusted device” (browser storage — disabled by default)
+
+- Intent: optional patient/caretaker UX to skip TOTP on a later email/password sign-in within a chosen window (30 days or 1 year), after explicit opt-in post–MFA verification on [`UserLoginForm`](../apps/web/src/components/auth/UserLoginForm.tsx).
+- Implementation: [`apps/web/src/lib/user-mfa-device-trust.ts`](../apps/web/src/lib/user-mfa-device-trust.ts) — same **localStorage token bundle** risk as practitioner (see above).
+- **Deploy gate:** **`NEXT_PUBLIC_USER_MFA_DEVICE_TRUST=true` only** (unset/false → feature off). **Production** builds also require **`NEXT_PUBLIC_USER_WEB_CSP_ENFORCE=true`** at build time before trust is enabled.
+- Status: **off by default** until CSP is staged and both flags are set for a release.
+
+#### User web Content-Security-Policy (staged)
+
+- Intent: reduce XSS impact on user web (including optional trusted-device tokens) with **Report-Only first**, then enforce — same staged model as practitioner, separate config.
+- Implementation: [`apps/web/next.config.js`](../apps/web/next.config.js), [`apps/web/csp-config.js`](../apps/web/csp-config.js).
+- **Phase A (default):** `Content-Security-Policy-Report-Only`.
+- **Phase B:** set **`USER_WEB_CSP_ENFORCE=true`** at build/deploy time and **`NEXT_PUBLIC_USER_WEB_CSP_ENFORCE=true`** when enabling MFA device trust in production.
+
 #### Practitioner Content-Security-Policy (staged)
 
 - Intent: reduce XSS impact on the practitioner surface (including optional trusted-device tokens in `localStorage`) with a **strict, staged** CSP: report violations first, then enforce when noise is acceptable.
@@ -191,6 +205,8 @@ Core implementation artifacts:
 - `apps/mobile/src/app/screens/UpdatePasswordScreen.tsx`
 - `apps/web/src/lib/auth-provider.tsx`
 - `apps/web/src/app/dashboard/page.tsx`
+- `apps/web/src/lib/user-mfa-device-trust.ts` (user web trusted-device UX; **disabled by default**; see “User web trusted device” above)
+- `apps/web/next.config.js`, `apps/web/csp-config.js` (user web CSP; see “User web Content-Security-Policy” above)
 - `apps/practitioner/src/lib/practitioner-device-trust.ts` (trusted-device UX; see XSS warning in file and subsection above)
 - `apps/practitioner/next.config.js`, `apps/practitioner/csp-config.js` (practitioner CSP; see “Practitioner Content-Security-Policy” above)
 

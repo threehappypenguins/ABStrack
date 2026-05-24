@@ -24,7 +24,7 @@ describe('isPublicWebPath', () => {
     expect(isPublicWebPath('/dashboard')).toBe(false);
     expect(isPublicWebPath('/manage')).toBe(false);
     expect(isPublicWebPath('/insights')).toBe(false);
-    expect(isPublicWebPath('/settings/caretaker')).toBe(false);
+    expect(isPublicWebPath('/settings')).toBe(false);
   });
 
   it('returns false for lookalike paths that do not match a prefix boundary', () => {

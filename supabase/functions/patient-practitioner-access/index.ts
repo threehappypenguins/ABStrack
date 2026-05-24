@@ -532,7 +532,10 @@ async function sendPractitionerInviteEmailAndStamp(
   const { error: invMailErr } = await admin.auth.admin.inviteUserByEmail(
     normalizedTarget,
     {
-      data: { abstrack_practitioner_invite_id: inviteId },
+      data: {
+        abstrack_practitioner_invite_id: inviteId,
+        app_role: 'practitioner',
+      },
       redirectTo,
     },
   );

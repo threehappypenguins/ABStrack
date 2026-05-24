@@ -629,7 +629,7 @@ export function ManageRecordsPage() {
 
   const tabClass = (s: ManageSegment) =>
     segment === s
-      ? 'inline-flex min-h-[44px] flex-1 items-center justify-center rounded-full bg-app-primary-soft px-4 py-2 text-sm font-semibold text-app-primary shadow-sm ring-1 ring-app-primary/25 dark:bg-app-primary-soft/28'
+      ? 'inline-flex min-h-[44px] flex-1 items-center justify-center rounded-full bg-app-tab-active-bg px-4 py-2 text-sm font-semibold text-app-tab-active-text shadow-sm ring-1 ring-app-tab-active-ring/25'
       : 'inline-flex min-h-[44px] flex-1 items-center justify-center rounded-full px-4 py-2 text-sm font-medium text-app-muted transition hover:bg-[var(--app-nav-hover-bg)] hover:text-app-ink';
   const tabButtonRefs = useRef<
     Partial<Record<ManageSegment, HTMLButtonElement>>

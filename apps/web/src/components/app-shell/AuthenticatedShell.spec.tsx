@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
+import { WEB_APP_NAV_ITEMS } from '@/lib/app-nav-items';
 import type { ReactNode } from 'react';
 
 const usePathnameMock = jest.fn(() => '/dashboard');
@@ -35,6 +36,14 @@ jest.mock('next/navigation', () => ({
 
 jest.mock('../../lib/patient/use-web-phi-subject-user-context', () => ({
   useWebPhiSubjectUserContext: () => phiContext,
+}));
+
+jest.mock('../../lib/auth-provider', () => ({
+  useAuth: () => ({
+    session: { user: { id: 'user-1', email: 'test@example.com' } },
+    loading: false,
+    supabase: { auth: { signOut: jest.fn() } },
+  }),
 }));
 
 jest.mock('../theme/ThemeMenu', () => ({
@@ -132,7 +141,7 @@ describe('AuthenticatedShell', () => {
     ).toBeInTheDocument();
   });
 
-  it('hides patient-only settings links when the viewer is not a patient', () => {
+  it('shows Settings as the last nav item for all signed-in roles', () => {
     phiContext.profileAppRole = 'caretaker';
 
     render(
@@ -141,12 +150,23 @@ describe('AuthenticatedShell', () => {
       </AuthenticatedShell>,
     );
 
+    const nav = screen.getByRole('navigation', {
+      name: 'ABStrack application',
+    });
+    const navLinkLabels = within(nav)
+      .getAllByRole('link')
+      .map((link) => link.textContent?.trim());
+    expect(navLinkLabels).toEqual(WEB_APP_NAV_ITEMS.map((item) => item.label));
+    expect(navLinkLabels.at(-1)).toBe('Settings');
+    expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute(
+      'href',
+      '/settings',
+    );
     expect(
       screen.queryByRole('link', { name: 'Caretaker' }),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole('link', { name: 'Practitioner' }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Insights' })).toBeInTheDocument();
   });
 });

@@ -1,11 +1,20 @@
 'use client';
 
 import { isAuthSessionMissingError } from '@abstrack/supabase';
-import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import type { AbstrackSupabaseClient } from '@abstrack/supabase';
 import {
   type AuthProviderSession,
   mapSupabaseUserToAuthContext,
 } from './auth-provider-session';
+import { syncMfaTrustBundleAfterTokenRefresh } from './user-mfa-device-trust';
 import { createBrowserClient } from './supabase/browser-client';
 
 export type { AuthProviderSession } from './auth-provider-session';
@@ -13,6 +22,8 @@ export type { AuthProviderSession } from './auth-provider-session';
 interface AuthContextType {
   session: AuthProviderSession;
   loading: boolean;
+  /** Shared browser Supabase client (single `onAuthStateChange` / MFA trust-bundle sync). */
+  supabase: AbstrackSupabaseClient;
 }
 
 export type AuthProviderProps = {
@@ -50,6 +61,7 @@ function isRefreshTokenFailure(error: unknown): boolean {
 
 export function AuthProvider({ children, initialSession }: AuthProviderProps) {
   const hasInitialSession = initialSession !== undefined;
+  const supabase = useMemo(() => createBrowserClient(), []);
   const [session, setSession] = useState<AuthProviderSession>(
     hasInitialSession ? initialSession : null,
   );
@@ -59,7 +71,6 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
 
   useEffect(() => {
     let mounted = true;
-    const supabase = createBrowserClient();
 
     const syncVerifiedUser = async (): Promise<void> => {
       const generation = ++verifyGenerationRef.current;
@@ -151,13 +162,16 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event) => {
+    } = supabase.auth.onAuthStateChange((event, authSession) => {
       if (event === 'SIGNED_OUT') {
         verifyGenerationRef.current += 1;
         if (mounted) {
           setSession(null);
         }
         return;
+      }
+      if (event === 'TOKEN_REFRESHED' && authSession != null) {
+        void syncMfaTrustBundleAfterTokenRefresh(supabase, authSession);
       }
       void syncVerifiedUser();
     });
@@ -167,10 +181,10 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
       verifyGenerationRef.current += 1;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [supabase]);
 
   return (
-    <AuthContext.Provider value={{ session, loading }}>
+    <AuthContext.Provider value={{ session, loading, supabase }}>
       {children}
     </AuthContext.Provider>
   );

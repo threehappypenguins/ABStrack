@@ -118,7 +118,8 @@ export function shouldToggleSidebarFromKeyboard(event: KeyboardEvent): boolean {
   if (event.repeat) {
     return false;
   }
-  if (event.key.toLowerCase() !== SIDEBAR_KEYBOARD_SHORTCUT) {
+  const key = event.key;
+  if (!key || key.toLowerCase() !== SIDEBAR_KEYBOARD_SHORTCUT) {
     return false;
   }
   const isMac = isMacLikePlatform();

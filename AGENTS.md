@@ -33,7 +33,7 @@ Sarah alone decides when schema hits cloud, when history is rewritten, and when 
 
 Details: **[docs/SUPABASE_CLOUD_DEVELOPER.md](docs/SUPABASE_CLOUD_DEVELOPER.md)**.
 
-- **`supabase db reset`** is **local Docker only** (or CI-only), not cloud.
+- **`supabase db reset`** (no flags) is **local Docker only** (`supabase start`). **`supabase db reset --linked`** resets the **linked cloud** project per [Supabase CLI](https://supabase.com/docs/reference/cli/supabase-db-reset).
 - **`database.types.ts` is not auto-committed** by any bot.
 
 ### Correct flow for migrations and database.types.ts (agents: follow this)

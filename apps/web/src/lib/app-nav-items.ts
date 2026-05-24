@@ -40,16 +40,8 @@ export const WEB_APP_NAV_ITEMS: AppSideNavItem[] = [
       path.startsWith('/presets/episode-templates/'),
   },
   {
-    href: '/settings/caretaker',
-    label: 'Caretaker',
-    match: (path) =>
-      path === '/settings/caretaker' || path.startsWith('/settings/caretaker/'),
-  },
-  {
-    href: '/settings/practitioner',
-    label: 'Practitioner',
-    match: (path) =>
-      path === '/settings/practitioner' ||
-      path.startsWith('/settings/practitioner/'),
+    href: '/settings',
+    label: 'Settings',
+    match: (path) => path === '/settings' || path.startsWith('/settings/'),
   },
 ];

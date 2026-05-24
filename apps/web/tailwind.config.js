@@ -51,6 +51,9 @@ module.exports = {
           'on-primary-solid':
             'rgb(var(--app-primary-on-solid) / <alpha-value>)',
           'primary-soft': 'rgb(var(--app-primary-soft) / <alpha-value>)',
+          'tab-active-bg': 'rgb(var(--app-tab-active-bg) / <alpha-value>)',
+          'tab-active-text': 'rgb(var(--app-tab-active-text) / <alpha-value>)',
+          'tab-active-ring': 'rgb(var(--app-tab-active-ring) / <alpha-value>)',
           ring: 'rgb(var(--app-ring) / <alpha-value>)',
         },
       },

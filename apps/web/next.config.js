@@ -1,6 +1,73 @@
 //@ts-check
 const path = require('path');
 const { composePlugins, withNx } = require('@nx/next');
+const {
+  buildUserWebCspDirectives,
+  normalizeCspHeaderValue,
+} = require('./csp-config.js');
+
+const isDev = process.env.NODE_ENV === 'development';
+const isProduction = process.env.NODE_ENV === 'production';
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const cspEnforce = process.env.USER_WEB_CSP_ENFORCE === 'true';
+
+/**
+ * @param {string | undefined} raw
+ * @returns {boolean}
+ */
+function isExplicitTruthyEnvValue(raw) {
+  if (raw == null || String(raw).trim() === '') {
+    return false;
+  }
+  const flag = String(raw).trim().toLowerCase();
+  return flag === 'true' || flag === '1';
+}
+
+/**
+ * Fail closed when a production build would enable MFA device trust in the client bundle
+ * (`NEXT_PUBLIC_*` flags) but ship Report-Only CSP headers (`USER_WEB_CSP_ENFORCE` unset).
+ */
+function assertProductionMfaDeviceTrustRequiresEnforcedCsp() {
+  if (!isProduction) {
+    return;
+  }
+
+  const clientTrustWouldEnable =
+    isExplicitTruthyEnvValue(process.env.NEXT_PUBLIC_USER_MFA_DEVICE_TRUST) &&
+    isExplicitTruthyEnvValue(process.env.NEXT_PUBLIC_USER_WEB_CSP_ENFORCE);
+
+  if (!clientTrustWouldEnable) {
+    return;
+  }
+
+  if (process.env.USER_WEB_CSP_ENFORCE !== 'true') {
+    throw new Error(
+      'Production build misconfiguration: MFA device trust is enabled in the client bundle ' +
+        '(NEXT_PUBLIC_USER_MFA_DEVICE_TRUST and NEXT_PUBLIC_USER_WEB_CSP_ENFORCE) but USER_WEB_CSP_ENFORCE is not "true". ' +
+        'Device trust stores session tokens in localStorage and requires enforced Content-Security-Policy headers. ' +
+        'Set USER_WEB_CSP_ENFORCE=true at build/deploy time, or unset NEXT_PUBLIC_USER_WEB_CSP_ENFORCE until Phase B CSP.',
+    );
+  }
+}
+
+assertProductionMfaDeviceTrustRequiresEnforcedCsp();
+
+const userWebCspHeaderValue = normalizeCspHeaderValue(
+  buildUserWebCspDirectives({
+    supabaseUrl,
+    isDev,
+    isProduction,
+  }),
+);
+
+const userWebCspHeaders = cspEnforce
+  ? [{ key: 'Content-Security-Policy', value: userWebCspHeaderValue }]
+  : [
+      {
+        key: 'Content-Security-Policy-Report-Only',
+        value: userWebCspHeaderValue,
+      },
+    ];
 
 /**
  * @type {import('@nx/next/plugins/with-nx').WithNxOptions}
@@ -42,6 +109,14 @@ const nextConfig = {
       '@abstrack/ui-web/sidebar': path.join(uiWebSrc, 'components/sidebar.tsx'),
     };
     return config;
+  },
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: userWebCspHeaders,
+      },
+    ];
   },
 };
 

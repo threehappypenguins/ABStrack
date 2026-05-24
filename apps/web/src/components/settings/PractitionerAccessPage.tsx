@@ -34,9 +34,15 @@ function formatInviteExpiry(iso: string): string {
  * (read-only access after invite acceptance; TOTP required only when they enable password sign-in;
  * PRD §8). Grants and revokes go through the `patient-practitioner-access` Edge Function.
  *
+ * @param props - Optional layout variant for the consolidated settings page.
  * @returns Settings page content.
  */
-export function PractitionerAccessPage() {
+export function PractitionerAccessPage({
+  embedded = false,
+}: {
+  /** When true, omits standalone page chrome (back link and top-level heading). */
+  embedded?: boolean;
+}) {
   const { announce } = useAnnounce();
   const { session, loading: authLoading } = useAuth();
   const formId = useId();
@@ -338,27 +344,40 @@ export function PractitionerAccessPage() {
     'Practitioner account';
 
   return (
-    <div className="w-full space-y-8">
-      <div>
-        <Link
-          href="/dashboard"
-          className="text-sm font-medium text-app-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
-        >
-          ← Back to dashboard
-        </Link>
-        <h1 className="mt-4 text-2xl font-bold tracking-tight text-app-ink">
-          Practitioner access
-        </h1>
-        <p className="mt-2 text-sm text-app-muted">
-          Enter your clinician&apos;s email to send an invitation. They accept
-          it on the separate ABStrack practitioner web app (not this patient
-          app), usually via the email link. They can read your shared health
-          data while access stays active. Two-factor authentication is required
-          only if they set a password for email sign-in; magic-link sign-in
-          alone does not require it. Revoking stops future reads; it does not
-          erase data they may already have viewed (PRD §8).
-        </p>
-      </div>
+    <div className={embedded ? 'w-full space-y-6' : 'w-full space-y-8'}>
+      {embedded ? (
+        <div>
+          <h2 className="text-lg font-semibold text-app-ink">
+            Practitioner access
+          </h2>
+          <p className="mt-2 text-sm text-app-muted">
+            Invite clinicians who use the separate practitioner web app. They
+            accept the email link there. Two-factor authentication is required
+            only if they set a password for email sign-in.
+          </p>
+        </div>
+      ) : (
+        <div>
+          <Link
+            href="/dashboard"
+            className="text-sm font-medium text-app-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+          >
+            ← Back to dashboard
+          </Link>
+          <h1 className="mt-4 text-2xl font-bold tracking-tight text-app-ink">
+            Practitioner access
+          </h1>
+          <p className="mt-2 text-sm text-app-muted">
+            Enter your clinician&apos;s email to send an invitation. They accept
+            it on the separate ABStrack practitioner web app (not this patient
+            app), usually via the email link. They can read your shared health
+            data while access stays active. Two-factor authentication is
+            required only if they set a password for email sign-in; magic-link
+            sign-in alone does not require it. Revoking stops future reads; it
+            does not erase data they may already have viewed (PRD §8).
+          </p>
+        </div>
+      )}
 
       {loadError ? (
         <p className="text-sm text-red-700 dark:text-red-300" role="alert">

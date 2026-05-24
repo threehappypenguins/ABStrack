@@ -1,6 +1,10 @@
 /** Session shape exposed to client components via {@link useAuth}. */
 export type AuthProviderSession = {
-  user: { id: string; email?: string };
+  user: {
+    id: string;
+    email?: string;
+    user_metadata?: Record<string, unknown> | null;
+  };
 } | null;
 
 /**
@@ -11,7 +15,14 @@ export type AuthProviderSession = {
  * @returns Context session or `null` when signed out.
  */
 export function mapSupabaseUserToAuthContext(
-  user: { id: string; email?: string | null } | null | undefined,
+  user:
+    | {
+        id: string;
+        email?: string | null;
+        user_metadata?: Record<string, unknown> | null;
+      }
+    | null
+    | undefined,
 ): AuthProviderSession {
   if (!user?.id) {
     return null;
@@ -20,6 +31,7 @@ export function mapSupabaseUserToAuthContext(
     user: {
       id: user.id,
       email: user.email ?? undefined,
+      user_metadata: user.user_metadata ?? null,
     },
   };
 }

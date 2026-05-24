@@ -80,11 +80,46 @@ describe('auth callback route', () => {
     );
   });
 
+  it('redirects successfully when code exchange fails but an existing session is valid', async () => {
+    const refreshSession = jest.fn(async () => ({
+      data: { session: {} },
+      error: null,
+    }));
+    createServerClientMock.mockResolvedValue({
+      auth: {
+        exchangeCodeForSession: jest.fn(async () => ({
+          error: { message: 'invalid grant' },
+        })),
+        getUser: jest.fn(async () => ({
+          data: { user: { id: 'user-1' } },
+          error: null,
+        })),
+        refreshSession,
+      },
+    } as unknown as ServerClient);
+
+    const response = await GET(
+      makeRequest(
+        'https://example.com/auth/callback?code=abc&next=/settings?tab=account',
+      ),
+    );
+    const redirectUrl = new URL(response.location);
+
+    expect(refreshSession).toHaveBeenCalled();
+    expect(redirectUrl.pathname).toBe('/settings');
+    expect(redirectUrl.searchParams.get('tab')).toBe('account');
+    expect(redirectUrl.searchParams.get('error')).toBeNull();
+  });
+
   it('redirects with an error when session exchange fails', async () => {
     createServerClientMock.mockResolvedValue({
       auth: {
         exchangeCodeForSession: jest.fn(async () => ({
           error: { message: 'invalid grant' },
+        })),
+        getUser: jest.fn(async () => ({
+          data: { user: null },
+          error: null,
         })),
       },
     } as unknown as ServerClient);

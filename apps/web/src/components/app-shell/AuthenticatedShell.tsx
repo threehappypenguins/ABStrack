@@ -1,7 +1,6 @@
 'use client';
 
 import {
-  ACCOUNT_ACTIONS_SURFACE_CLASS,
   AppShellWithSideNav,
   AppSideNav,
   AppTopNav,
@@ -10,11 +9,11 @@ import {
 } from '@abstrack/ui-web';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { forwardRef, useMemo, type ReactNode } from 'react';
+import { forwardRef, type ReactNode } from 'react';
 
 import { ThemeMenu } from '@/components/theme/ThemeMenu';
+import { WebSignOutButton } from '@/components/auth/WebSignOutButton';
 import { WEB_APP_NAV_ITEMS } from '@/lib/app-nav-items';
-import { useWebPhiSubjectUserContext } from '@/lib/patient/use-web-phi-subject-user-context';
 
 const WebNavLink = forwardRef<HTMLAnchorElement, AppSideNavLinkProps>(
   ({ href, children, ...rest }, ref) => (
@@ -34,8 +33,8 @@ export type AuthenticatedShellProps = {
 /**
  * Authenticated app chrome: skip link, full-width top bar, side navigation (shadcn/ui sidebar),
  * and a centered main column. Surfaces use CSS variables so light/dark tracks the theme toggle.
- * Patient-only Caretaker and Practitioner settings links follow
- * {@link useWebPhiSubjectUserContext} (`profileAppRole === 'patient'`).
+ * Caretaker and practitioner invite management lives under Settings → Invites
+ * (patient accounts only).
  *
  * @param props - Props.
  * @returns Shell layout wrapping page content.
@@ -45,17 +44,6 @@ export function AuthenticatedShell({
   email,
 }: AuthenticatedShellProps) {
   const pathname = usePathname() ?? '/';
-  const { profileAppRole } = useWebPhiSubjectUserContext();
-  const navItems = useMemo(() => {
-    if (profileAppRole !== 'patient') {
-      return WEB_APP_NAV_ITEMS.filter(
-        (item) =>
-          item.href !== '/settings/caretaker' &&
-          item.href !== '/settings/practitioner',
-      );
-    }
-    return WEB_APP_NAV_ITEMS;
-  }, [profileAppRole]);
 
   return (
     <AppShellWithSideNav
@@ -77,13 +65,7 @@ export function AuthenticatedShell({
           email={email}
           themeMenu={<ThemeMenu />}
           showSidebarTrigger
-          actions={
-            <form action="/api/auth/logout" method="POST">
-              <button type="submit" className={ACCOUNT_ACTIONS_SURFACE_CLASS}>
-                Log out
-              </button>
-            </form>
-          }
+          actions={<WebSignOutButton />}
           mobileSheetTitle="Account"
           mobileSheetDescription="Signed-in account, sign out, and appearance settings."
           mobileMenuTriggerAriaLabel="Open account menu"
@@ -92,7 +74,7 @@ export function AuthenticatedShell({
       sideNav={
         <AppSideNav
           pathname={pathname}
-          items={navItems}
+          items={WEB_APP_NAV_ITEMS}
           LinkComponent={WebNavLink}
           accessibilityLabel="ABStrack application"
         />

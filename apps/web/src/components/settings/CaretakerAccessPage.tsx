@@ -34,9 +34,15 @@ function formatInviteExpiry(iso: string): string {
  * reflects PRD §7 (caretaker ≈ patient capabilities for impaired-use scenarios; distinct from
  * practitioner).
  *
+ * @param props - Optional layout variant for the consolidated settings page.
  * @returns Settings page content.
  */
-export function CaretakerAccessPage() {
+export function CaretakerAccessPage({
+  embedded = false,
+}: {
+  /** When true, omits standalone page chrome (back link and top-level heading). */
+  embedded?: boolean;
+}) {
   const { announce } = useAnnounce();
   const { session, loading: authLoading } = useAuth();
   const formId = useId();
@@ -266,27 +272,40 @@ export function CaretakerAccessPage() {
   }
 
   return (
-    <div className="w-full space-y-8">
-      <div>
-        <Link
-          href="/dashboard"
-          className="text-sm font-medium text-app-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
-        >
-          ← Back to dashboard
-        </Link>
-        <h1 className="mt-4 text-2xl font-bold tracking-tight text-app-ink">
-          Caretaker access
-        </h1>
-        <p className="mt-2 text-sm text-app-muted">
-          A caretaker signs in with his or her own ABStrack account and uses the
-          same logging flows as you, with matching data access, once the invite
-          completes. Invite links open the ABStrack mobile app when tapped on a
-          phone (mobile-first), and the same link completes caretaker sign-up on
-          user web when opened in a browser. This is separate from a healthcare
-          practitioner: the practitioner web app is read-only and does not
-          replace you in patient flows.
-        </p>
-      </div>
+    <div className={embedded ? 'w-full space-y-6' : 'w-full space-y-8'}>
+      {embedded ? (
+        <div>
+          <h2 className="text-lg font-semibold text-app-ink">
+            Caretaker access
+          </h2>
+          <p className="mt-2 text-sm text-app-muted">
+            A caretaker signs in with his or her own ABStrack account and uses
+            the same logging flows as you once the invite completes. Invite
+            links open the mobile app on a phone, or user web in a browser.
+          </p>
+        </div>
+      ) : (
+        <div>
+          <Link
+            href="/dashboard"
+            className="text-sm font-medium text-app-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
+          >
+            ← Back to dashboard
+          </Link>
+          <h1 className="mt-4 text-2xl font-bold tracking-tight text-app-ink">
+            Caretaker access
+          </h1>
+          <p className="mt-2 text-sm text-app-muted">
+            A caretaker signs in with his or her own ABStrack account and uses
+            the same logging flows as you, with matching data access, once the
+            invite completes. Invite links open the ABStrack mobile app when
+            tapped on a phone (mobile-first), and the same link completes
+            caretaker sign-up on user web when opened in a browser. This is
+            separate from a healthcare practitioner: the practitioner web app is
+            read-only and does not replace you in patient flows.
+          </p>
+        </div>
+      )}
 
       {loadError ? (
         <p className="text-sm text-red-700 dark:text-red-300" role="alert">

@@ -3,7 +3,15 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createBrowserClient } from '@/lib/supabase/browser-client';
-import { signUpWithEmailPassword } from '@abstrack/supabase';
+import {
+  signUpWithEmailPassword,
+  ensurePatientProfileRow,
+} from '@abstrack/supabase';
+import {
+  USER_PASSWORD_SET_USER_METADATA_KEY,
+  clampAuthPasswordInput,
+  getAuthPasswordValidationError,
+} from '@/lib/user-password-sign-in';
 import { PUBLIC_PAGE_CENTER_CLASS } from '@/components/app-shell/public-page-layout-classes';
 
 export default function SignupPage() {
@@ -19,6 +27,13 @@ export default function SignupPage() {
     setError(null);
     setLoading(true);
 
+    const passwordValidationError = getAuthPasswordValidationError(password);
+    if (passwordValidationError) {
+      setError(passwordValidationError);
+      setLoading(false);
+      return;
+    }
+
     if (password !== confirmPassword) {
       setError('Passwords do not match');
       setLoading(false);
@@ -27,16 +42,27 @@ export default function SignupPage() {
 
     try {
       const supabase = createBrowserClient();
-      const { error: authError } = await signUpWithEmailPassword(
+      const { data, error: authError } = await signUpWithEmailPassword(
         supabase,
         email,
         password,
+        {
+          data: { [USER_PASSWORD_SET_USER_METADATA_KEY]: true },
+        },
       );
 
       if (authError) {
         setError(authError.message);
+      } else if (data.session && data.user?.id) {
+        const ensured = await ensurePatientProfileRow(supabase, data.user.id);
+        if (!ensured.ok) {
+          setError(
+            'Account created, but we could not finish setting up your profile. Try signing in, or contact support.',
+          );
+          return;
+        }
+        router.push('/dashboard');
       } else {
-        // Redirect to dashboard on successful signup
         router.push('/dashboard');
       }
     } catch (err) {
@@ -90,7 +116,9 @@ export default function SignupPage() {
               id="password"
               type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) =>
+                setPassword(clampAuthPasswordInput(e.target.value))
+              }
               required
               className="mt-1 block w-full rounded-md border border-app-border bg-app-bg px-3 py-2 text-app-ink shadow-sm focus:border-app-primary focus:outline-none focus:ring-2 focus:ring-app-ring"
               placeholder="••••••••"
@@ -108,7 +136,9 @@ export default function SignupPage() {
               id="confirmPassword"
               type="password"
               value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
+              onChange={(e) =>
+                setConfirmPassword(clampAuthPasswordInput(e.target.value))
+              }
               required
               className="mt-1 block w-full rounded-md border border-app-border bg-app-bg px-3 py-2 text-app-ink shadow-sm focus:border-app-primary focus:outline-none focus:ring-2 focus:ring-app-ring"
               placeholder="••••••••"
