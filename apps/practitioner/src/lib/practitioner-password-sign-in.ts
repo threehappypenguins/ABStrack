@@ -17,5 +17,85 @@ export function practitionerUserHasPasswordSignIn(
 ): boolean {
   const raw =
     user?.user_metadata?.[PRACTITIONER_PASSWORD_SET_USER_METADATA_KEY];
+  if (raw === false || raw === 'false') {
+    return false;
+  }
   return raw === true || raw === 'true';
+}
+
+/** Minimum password length enforced by GoTrue for sign-up / update flows. */
+export const AUTH_PASSWORD_MIN_LENGTH = 8;
+
+/** GoTrue/bcrypt rejects passwords longer than 72 bytes. */
+export const AUTH_PASSWORD_MAX_LENGTH = 72;
+
+/**
+ * UTF-8 byte length of a password (GoTrue/bcrypt limit is bytes, not JavaScript string length).
+ *
+ * @param password - Candidate password.
+ * @returns Encoded byte length.
+ */
+export function getAuthPasswordUtf8ByteLength(password: string): number {
+  return new TextEncoder().encode(password).length;
+}
+
+/**
+ * Keeps password input within {@link AUTH_PASSWORD_MAX_LENGTH} UTF-8 bytes.
+ *
+ * @param value - Raw input from a password field.
+ * @returns Value truncated to the byte limit when needed.
+ */
+export function clampAuthPasswordInput(value: string): string {
+  let byteLength = 0;
+  let result = '';
+  for (const char of value) {
+    const charBytes = getAuthPasswordUtf8ByteLength(char);
+    if (byteLength + charBytes > AUTH_PASSWORD_MAX_LENGTH) {
+      break;
+    }
+    byteLength += charBytes;
+    result += char;
+  }
+  return result;
+}
+
+/**
+ * Client-side password rules before `auth.updateUser({ password })`.
+ *
+ * @param password - Candidate password.
+ * @returns User-visible error, or `null` when acceptable.
+ */
+export function getAuthPasswordValidationError(
+  password: string,
+): string | null {
+  if (password.length < AUTH_PASSWORD_MIN_LENGTH) {
+    return `Password must be at least ${AUTH_PASSWORD_MIN_LENGTH} characters.`;
+  }
+  if (getAuthPasswordUtf8ByteLength(password) > AUTH_PASSWORD_MAX_LENGTH) {
+    return `Password must be no more than ${AUTH_PASSWORD_MAX_LENGTH} bytes.`;
+  }
+  return null;
+}
+
+const REVOKED_PASSWORD_PREFIX = 'Abstrack-revoked-';
+const REVOKED_PASSWORD_SUFFIX = '!9';
+
+/**
+ * Builds a cryptographically random password for revoking user-chosen credentials
+ * while keeping the account active for magic-link sign-in.
+ *
+ * @returns A password string suitable for `updateUser({ password })`.
+ */
+export function buildRevokedPasswordPlaceholder(): string {
+  const fixedLength =
+    REVOKED_PASSWORD_PREFIX.length + REVOKED_PASSWORD_SUFFIX.length;
+  const maxRandomChars = AUTH_PASSWORD_MAX_LENGTH - fixedLength;
+  const randomByteCount = Math.floor(maxRandomChars / 2);
+
+  const bytes = new Uint8Array(randomByteCount);
+  crypto.getRandomValues(bytes);
+  const segment = Array.from(bytes, (b) =>
+    b.toString(16).padStart(2, '0'),
+  ).join('');
+  return `${REVOKED_PASSWORD_PREFIX}${segment}${REVOKED_PASSWORD_SUFFIX}`;
 }

@@ -18,6 +18,10 @@
     --app-primary-on-solid: 255 255 255;
     --app-primary-soft: 219 234 254;
     --app-ring: 37 99 235;
+    /* Segmented tab lists (Settings): active pill bg + label must meet contrast in both themes. */
+    --app-tab-active-bg: 219 234 254;
+    --app-tab-active-text: 29 78 216;
+    --app-tab-active-ring: 29 78 216;
     --app-header-bg: rgba(255, 255, 255, 0.92);
     --app-sidebar-bg: rgba(255, 255, 255, 0.94);
     --app-header-border: rgba(226, 232, 240, 0.95);
@@ -46,6 +50,9 @@
     --app-primary-on-solid: 255 255 255;
     --app-primary-soft: 37 99 235;
     --app-ring: 147 197 253;
+    --app-tab-active-bg: 30 58 138;
+    --app-tab-active-text: 219 234 254;
+    --app-tab-active-ring: 147 197 253;
     --app-header-bg: rgba(15, 23, 42, 0.92);
     --app-sidebar-bg: rgba(15, 23, 42, 0.94);
     --app-header-border: rgba(51, 65, 85, 0.95);
@@ -76,6 +83,9 @@
       --app-primary-on-solid: 255 255 255;
       --app-primary-soft: 219 234 254;
       --app-ring: 30 64 175;
+      --app-tab-active-bg: 219 234 254;
+      --app-tab-active-text: 30 64 175;
+      --app-tab-active-ring: 30 64 175;
       --app-header-bg: rgba(255, 255, 255, 1);
       --app-sidebar-bg: rgba(255, 255, 255, 1);
       --app-header-border: rgba(15, 23, 42, 0.85);
@@ -98,6 +108,9 @@
       --app-primary-on-solid: 255 255 255;
       --app-primary-soft: 30 64 175;
       --app-ring: 250 204 21;
+      --app-tab-active-bg: 255 255 255;
+      --app-tab-active-text: 0 0 0;
+      --app-tab-active-ring: 250 204 21;
       --app-header-bg: rgba(0, 0, 0, 1);
       --app-sidebar-bg: rgba(0, 0, 0, 1);
       --app-header-border: rgba(255, 255, 255, 0.9);

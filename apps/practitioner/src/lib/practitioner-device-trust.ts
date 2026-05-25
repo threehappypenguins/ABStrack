@@ -35,6 +35,8 @@ import {
   type Session,
 } from '@abstrack/supabase';
 
+import { markPractitionerSignOutPending } from './practitioner-sign-out-pending';
+
 type PractitionerBrowserClient = AbstrackSupabaseClient;
 
 /**
@@ -319,6 +321,29 @@ export function saveMfaTrustBundle(
 }
 
 /**
+ * Refreshes the browser session and syncs the MFA trust bundle when refresh tokens rotate.
+ *
+ * Use after `updateUser` (password change/revoke) so the trust bundle stays aligned with rotated
+ * tokens; {@link syncMfaTrustBundleAfterTokenRefresh} also runs from `onAuthStateChange`
+ * when `event === 'TOKEN_REFRESHED'`.
+ *
+ * @param supabase - Browser Supabase client.
+ * @returns Refresh error when `refreshSession` fails.
+ */
+export async function refreshPractitionerSessionAndSyncMfaTrustBundle(
+  supabase: PractitionerBrowserClient,
+): Promise<{ error: Error | null }> {
+  const { data, error } = await supabase.auth.refreshSession();
+  if (error) {
+    return { error };
+  }
+  if (data.session) {
+    await syncMfaTrustBundleAfterTokenRefresh(supabase, data.session);
+  }
+  return { error: null };
+}
+
+/**
  * Call from `onAuthStateChange` when `event === 'TOKEN_REFRESHED'`. Supabase **rotates refresh tokens**; the bundle written at MFA
  * verify time would otherwise go stale, so the next sign-in’s {@link tryRestoreTrustedMfaSession}
  * would fail and clear storage. Only updates the bundle when a trust row still exists for this user,
@@ -580,6 +605,7 @@ export function practitionerSignOutEverywhere(): void {
   if (typeof document === 'undefined') {
     return;
   }
+  markPractitionerSignOutPending();
   clearMfaTrustBundle();
   try {
     clearSupabaseBrowserAuthStorage();
@@ -588,7 +614,7 @@ export function practitionerSignOutEverywhere(): void {
   }
   const form = document.createElement('form');
   form.method = 'POST';
-  form.action = '/api/auth/logout';
+  form.action = '/api/auth/logout?scope=global';
   form.setAttribute('aria-hidden', 'true');
   form.style.display = 'none';
   document.body.appendChild(form);
@@ -722,6 +748,7 @@ async function clearBrowserSessionWithoutServerLogout(
 export async function practitionerSignOut(
   supabase: PractitionerBrowserClient,
 ): Promise<void> {
+  markPractitionerSignOutPending();
   const userId = await resolveUserIdForMfaTrustSignOut(supabase);
   const bundle = readBundle();
   const trustActiveForUser =

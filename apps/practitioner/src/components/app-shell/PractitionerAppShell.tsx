@@ -46,7 +46,9 @@ export function PractitionerAppShell({ children }: PractitionerAppShellProps) {
     return <>{children}</>;
   }
 
-  if (loading || !session) {
+  // Keep sidebar/top nav mounted whenever a session exists. Profile reloads after token
+  // refresh must not strip chrome (user web never flips `loading` after bootstrap).
+  if (!session) {
     const minHeightClass = loading
       ? 'min-h-svh'
       : 'min-h-[calc(100svh-4.5rem)]';
@@ -86,7 +88,7 @@ export function PractitionerAppShell({ children }: PractitionerAppShellProps) {
           actions={<PractitionerSignOutButton />}
           sidebarTriggerAriaLabel="Open practitioner navigation menu"
           mobileSheetTitle="Account"
-          mobileSheetDescription="Signed-in account, sign out, and appearance settings."
+          mobileSheetDescription="Signed-in account, log out, and appearance settings."
           mobileMenuTriggerAriaLabel="Open account menu"
         />
       }

@@ -461,4 +461,55 @@ describe('AuthProvider', () => {
 
     expect(signOutMock).toHaveBeenCalled();
   });
+
+  it('does not set loading when TOKEN_REFRESHED rotates access_token after profile is loaded', async () => {
+    const session = makeSession('practitioner-1');
+    const rotatedSession = {
+      ...session,
+      access_token: 'rotated-access-token',
+    };
+
+    getVerifiedAuthSessionMock
+      .mockResolvedValueOnce({
+        data: { user: null, session: null },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { user: session.user, session },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { user: rotatedSession.user, session: rotatedSession },
+        error: null,
+      });
+
+    render(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => {
+      expect(readAuthState().loading).toBe(false);
+    });
+
+    act(() => {
+      authStateChangeHandler?.('SIGNED_IN');
+    });
+
+    await waitFor(() => {
+      expect(readAuthState().userId).toBe('practitioner-1');
+    });
+
+    act(() => {
+      authStateChangeHandler?.('TOKEN_REFRESHED');
+    });
+
+    await waitFor(() => {
+      expect(getVerifiedAuthSessionMock).toHaveBeenCalledTimes(3);
+    });
+
+    expect(readAuthState().loading).toBe(false);
+    expect(readAuthState().userId).toBe('practitioner-1');
+  });
 });
