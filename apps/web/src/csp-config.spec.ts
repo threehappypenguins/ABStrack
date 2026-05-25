@@ -76,6 +76,9 @@ connect-src 'self' https://abc.supabase.co wss://abc.supabase.co`;
     expect(value).toMatch(
       /img-src[^;]*https:\/\/tools\.applemediaservices\.com/,
     );
+    expect(value).toMatch(
+      /img-src[^;]*https:\/\/toolbox\.marketingtools\.apple\.com/,
+    );
     expect(value).toMatch(/media-src[^;]*https:\/\/abc\.supabase\.co/);
     expect(value).toContain('upgrade-insecure-requests');
   });

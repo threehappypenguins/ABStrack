@@ -18,7 +18,7 @@ const fontWordmark = Inter({
 const PLAY_STORE_BADGE_SRC =
   'https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png';
 const APP_STORE_BADGE_SRC =
-  'https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/en-us?size=250x83';
+  'https://toolbox.marketingtools.apple.com/api/badges/download-on-the-app-store/black/en-us?size=250x83';
 
 /** Fixed frame so Play and App Store art align with identical padding and visual weight. */
 const STORE_BADGE_FRAME_CLASS =
