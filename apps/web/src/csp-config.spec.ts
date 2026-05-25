@@ -72,6 +72,10 @@ connect-src 'self' https://abc.supabase.co wss://abc.supabase.co`;
     expect(value).toContain('img-src');
     expect(value).toContain('media-src');
     expect(value).toMatch(/img-src[^;]*https:\/\/abc\.supabase\.co/);
+    expect(value).toMatch(/img-src[^;]*https:\/\/play\.google\.com/);
+    expect(value).toMatch(
+      /img-src[^;]*https:\/\/tools\.applemediaservices\.com/,
+    );
     expect(value).toMatch(/media-src[^;]*https:\/\/abc\.supabase\.co/);
     expect(value).toContain('upgrade-insecure-requests');
   });

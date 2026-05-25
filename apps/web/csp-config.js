@@ -78,6 +78,8 @@ function buildUserWebCspDirectives(opts) {
   const connectSrc = Array.from(connectParts).join(' ');
 
   const imgParts = new Set(["'self'", 'blob:', 'data:']);
+  imgParts.add('https://play.google.com');
+  imgParts.add('https://tools.applemediaservices.com');
   const mediaParts = new Set(["'self'", 'blob:']);
   if (origins) {
     imgParts.add(origins.httpOrigin);
