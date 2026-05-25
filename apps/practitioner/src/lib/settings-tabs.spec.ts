@@ -8,5 +8,6 @@ describe('settings-tabs', () => {
 
   it('parses security tab', () => {
     expect(parsePractitionerSettingsTabId('security')).toBe('security');
+    expect(parsePractitionerSettingsTabId('account')).toBe('account');
   });
 });

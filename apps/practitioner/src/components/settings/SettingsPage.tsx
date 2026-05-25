@@ -61,7 +61,9 @@ export function SettingsPage() {
   const [activeTab, setActiveTab] =
     useState<PractitionerSettingsTabId>(tabFromUrl);
   const [signOutEverywhereOpen, setSignOutEverywhereOpen] = useState(false);
-  const [securitySectionMounted, setSecuritySectionMounted] = useState(false);
+  const [securitySectionMounted, setSecuritySectionMounted] = useState(
+    tabFromUrl === 'security',
+  );
 
   const [profileLoading, setProfileLoading] = useState(true);
   const [title, setTitle] = useState('');
@@ -190,11 +192,11 @@ export function SettingsPage() {
   }, [session?.user?.email, session?.user?.id, supabase]);
 
   useEffect(() => {
-    if (authLoading) {
+    if (authLoading || activeTab !== 'account') {
       return;
     }
     void loadProfile();
-  }, [authLoading, loadProfile, session?.user?.id]);
+  }, [activeTab, authLoading, loadProfile, session?.user?.id]);
 
   useEffect(() => {
     if (authLoading || !session?.user?.id) {
@@ -308,6 +310,9 @@ export function SettingsPage() {
       nameFormDirtyRef.current = false;
       showNameSaveFeedback();
       announce('Name saved.', { politeness: 'polite' });
+    } catch {
+      setNameError('Unable to save your name. Try again.');
+      announce('Unable to save your name.', { politeness: 'assertive' });
     } finally {
       setNameSubmitting(false);
     }
@@ -331,21 +336,28 @@ export function SettingsPage() {
     setEmailError(null);
     const nextPath = '/settings?tab=account';
     const emailRedirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(nextPath)}`;
-    const { error } = await supabase.auth.updateUser(
-      { email: trimmed },
-      { emailRedirectTo },
-    );
-    setEmailSubmitting(false);
-    if (error) {
-      setEmailError(error.message);
-      announce(error.message, { politeness: 'assertive' });
-      return;
+    try {
+      const { error } = await supabase.auth.updateUser(
+        { email: trimmed },
+        { emailRedirectTo },
+      );
+      if (error) {
+        setEmailError(error.message);
+        announce(error.message, { politeness: 'assertive' });
+        return;
+      }
+      setPendingEmailChange(trimmed);
+      setShowEmailChangeForm(false);
+      setNewEmail('');
+      const msg = `Confirmation email sent to ${trimmed}. Open the link in that message to finish changing your email.`;
+      announce(msg, { politeness: 'polite' });
+    } catch {
+      const msg = 'Unable to send the confirmation email. Try again.';
+      setEmailError(msg);
+      announce(msg, { politeness: 'assertive' });
+    } finally {
+      setEmailSubmitting(false);
     }
-    setPendingEmailChange(trimmed);
-    setShowEmailChangeForm(false);
-    setNewEmail('');
-    const msg = `Confirmation email sent to ${trimmed}. Open the link in that message to finish changing your email.`;
-    announce(msg, { politeness: 'polite' });
   };
 
   const onTabKeyDown = useCallback(
