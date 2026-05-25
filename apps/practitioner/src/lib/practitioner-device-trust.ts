@@ -321,21 +321,11 @@ export function saveMfaTrustBundle(
 }
 
 /**
- * Call from `onAuthStateChange` when `event === 'TOKEN_REFRESHED'`. Supabase **rotates refresh tokens**; the bundle written at MFA
- * verify time would otherwise go stale, so the next sign-in’s {@link tryRestoreTrustedMfaSession}
- * would fail and clear storage. Only updates the bundle when a trust row still exists for this user,
- * the window has not expired, and **MFA assurance is AAL2** — so password-only (AAL1) sessions never
- * overwrite a prior AAL2 bundle.
+ * Refreshes the browser session and syncs the MFA trust bundle when refresh tokens rotate.
  *
- * **`readBundle()` does not drop expired rows** (only validates shape). If the stored bundle’s
- * trust window has ended, or its `userId` does not match the refreshed session, clears the bundle so
- * stale secrets are not retained until another code path runs.
- *
- * @param supabase - Browser Supabase client.
- * @param session - Session from the auth callback (null clears nothing).
- */
-/**
- * Refreshes the browser session and syncs the MFA trust bundle when tokens rotate.
+ * Use after `updateUser` (password change/revoke) so the trust bundle stays aligned with rotated
+ * tokens; {@link syncMfaTrustBundleAfterTokenRefresh} also runs from `onAuthStateChange`
+ * when `event === 'TOKEN_REFRESHED'`.
  *
  * @param supabase - Browser Supabase client.
  * @returns Refresh error when `refreshSession` fails.
@@ -353,6 +343,20 @@ export async function refreshPractitionerSessionAndSyncMfaTrustBundle(
   return { error: null };
 }
 
+/**
+ * Call from `onAuthStateChange` when `event === 'TOKEN_REFRESHED'`. Supabase **rotates refresh tokens**; the bundle written at MFA
+ * verify time would otherwise go stale, so the next sign-in’s {@link tryRestoreTrustedMfaSession}
+ * would fail and clear storage. Only updates the bundle when a trust row still exists for this user,
+ * the window has not expired, and **MFA assurance is AAL2** — so password-only (AAL1) sessions never
+ * overwrite a prior AAL2 bundle.
+ *
+ * **`readBundle()` does not drop expired rows** (only validates shape). If the stored bundle’s
+ * trust window has ended, or its `userId` does not match the refreshed session, clears the bundle so
+ * stale secrets are not retained until another code path runs.
+ *
+ * @param supabase - Browser Supabase client.
+ * @param session - Session from the auth callback (null clears nothing).
+ */
 export async function syncMfaTrustBundleAfterTokenRefresh(
   supabase: PractitionerBrowserClient,
   session: Session | null,

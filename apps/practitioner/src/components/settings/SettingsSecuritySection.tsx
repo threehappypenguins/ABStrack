@@ -158,6 +158,7 @@ export function SettingsSecuritySection() {
       setPasswordSavedVisible(true);
       passwordSavedTimeoutRef.current = setTimeout(() => {
         setPasswordSavedVisible(false);
+        setPasswordSuccessMessage(null);
         passwordSavedTimeoutRef.current = null;
       }, PASSWORD_SAVE_FEEDBACK_MS);
     },
