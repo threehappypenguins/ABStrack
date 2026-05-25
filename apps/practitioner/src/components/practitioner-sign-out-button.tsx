@@ -5,10 +5,7 @@ import { useAnnounce } from '@abstrack/ui/a11y-web';
 import { ACCOUNT_ACTIONS_SURFACE_CLASS } from '@abstrack/ui-web';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { practitionerSignOut } from '@/lib/practitioner-device-trust';
-import {
-  clearPractitionerSignOutPending,
-  markPractitionerSignOutPending,
-} from '@/lib/practitioner-sign-out-pending';
+import { clearPractitionerSignOutPending } from '@/lib/practitioner-sign-out-pending';
 
 export type PractitionerSignOutButtonProps = {
   /** Visible button label for the default (session-aware) sign-out. */
@@ -51,7 +48,6 @@ export function PractitionerSignOutButton({
     }
     setError(null);
     setSigningOut(true);
-    markPractitionerSignOutPending();
     void practitionerSignOut(supabase)
       .catch((err: unknown) => {
         console.error('Practitioner sign out failed', err);

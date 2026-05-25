@@ -269,27 +269,48 @@ export function SettingsPage() {
       lastName,
     });
     const trimmedTitle = title.trim();
-    const [{ error: profileError }, { error: metadataError }] =
-      await Promise.all([
-        supabase
-          .from('profiles')
-          .update({ display_name: displayName })
-          .eq('id', session.user.id),
-        supabase.auth.updateUser({
+    const previousTitle = readPractitionerTitleFromUserMetadata(session.user);
+
+    try {
+      const { error: metadataError } = await supabase.auth.updateUser({
+        data: {
+          [PRACTITIONER_TITLE_USER_METADATA_KEY]: trimmedTitle || null,
+        },
+      });
+      if (metadataError) {
+        setNameError('Unable to save your name. Try again.');
+        announce('Unable to save your name.', { politeness: 'assertive' });
+        return;
+      }
+
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({ display_name: displayName })
+        .eq('id', session.user.id);
+
+      if (profileError) {
+        const { error: rollbackError } = await supabase.auth.updateUser({
           data: {
-            [PRACTITIONER_TITLE_USER_METADATA_KEY]: trimmedTitle || null,
+            [PRACTITIONER_TITLE_USER_METADATA_KEY]: previousTitle || null,
           },
-        }),
-      ]);
-    setNameSubmitting(false);
-    if (profileError || metadataError) {
-      setNameError('Unable to save your name. Try again.');
-      announce('Unable to save your name.', { politeness: 'assertive' });
-      return;
+        });
+        if (rollbackError) {
+          console.error(
+            'Failed to roll back practitioner title metadata after profile update failed',
+            rollbackError,
+          );
+        }
+        setNameError('Unable to save your name. Try again.');
+        announce('Unable to save your name.', { politeness: 'assertive' });
+        return;
+      }
+
+      nameFormDirtyRef.current = false;
+      showNameSaveFeedback();
+      announce('Name saved.', { politeness: 'polite' });
+    } finally {
+      setNameSubmitting(false);
     }
-    nameFormDirtyRef.current = false;
-    showNameSaveFeedback();
-    announce('Name saved.', { politeness: 'polite' });
   };
 
   const onEmailSubmit = async (event: React.FormEvent) => {
