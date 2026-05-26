@@ -77,7 +77,14 @@ function formatEpisodeTypeLabel(episodeType: EpisodeType): string {
   return episodeType === 'ABS' ? 'ABS' : 'Other / vomiting';
 }
 
-function formatCompactDate(date: Date, timeZone: string): string {
+function formatCalendarDate(date: Date): string {
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+  }).format(date);
+}
+
+function formatCompactDateInTimeZone(date: Date, timeZone: string): string {
   return new Intl.DateTimeFormat(undefined, {
     timeZone,
     month: 'short',
@@ -85,11 +92,8 @@ function formatCompactDate(date: Date, timeZone: string): string {
   }).format(date);
 }
 
-function formatRangeLabel(range: InsightDateRange, timeZone: string): string {
-  return `${formatCompactDate(range.from, timeZone)} to ${formatCompactDate(
-    range.to,
-    timeZone,
-  )}`;
+function formatRangeLabel(range: InsightDateRange): string {
+  return `${formatCalendarDate(range.from)} to ${formatCalendarDate(range.to)}`;
 }
 
 function toStartOfWeek(date: Date): Date {
@@ -152,7 +156,7 @@ function buildHeatmapCells(
     weeks.push({
       weekKey: key,
       weekStart: new Date(cursor),
-      label: formatCompactDate(cursor, timeZone),
+      label: formatCalendarDate(cursor),
       count: countsByWeek.get(key) ?? 0,
     });
     cursor.setDate(cursor.getDate() + 7);
@@ -310,7 +314,7 @@ function deriveClusterCallout(
     return null;
   }
 
-  const weekLabel = formatCompactDate(
+  const weekLabel = formatCompactDateInTimeZone(
     new Date(busiestWeek.weekStart),
     timeZone,
   );
@@ -436,9 +440,7 @@ export function InsightsSummarySection({
         >
           Overview
         </h2>
-        <p className="text-sm text-app-muted">
-          {formatRangeLabel(dateRange, timeZone)}
-        </p>
+        <p className="text-sm text-app-muted">{formatRangeLabel(dateRange)}</p>
       </div>
 
       {loading ? (
@@ -580,7 +582,6 @@ export function InsightsSummarySection({
               role="img"
               aria-label={`Episode calendar from ${formatRangeLabel(
                 dateRange,
-                timeZone,
               )}. ${formatEpisodeTypeLabel('Other')} episodes appear in ${
                 otherHeatmap.filter((cell) => cell.count > 0).length
               } weeks. ABS episodes appear in ${

@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { InsightsSummarySection } from './InsightsSummarySection.js';
 
 describe('InsightsSummarySection', () => {
@@ -86,5 +86,51 @@ describe('InsightsSummarySection', () => {
     expect(
       screen.getByText('No episode or symptom data in this date range yet.'),
     ).toBeInTheDocument();
+  });
+
+  it('formats the selected period label using local calendar dates', () => {
+    const originalDateTimeFormat = Intl.DateTimeFormat;
+    function dateTimeFormatMock(
+      this: Intl.DateTimeFormat,
+      locales?: string | string[],
+      options?: Intl.DateTimeFormatOptions,
+    ) {
+      return new originalDateTimeFormat(locales, options);
+    }
+    const dateTimeFormatSpy = vi
+      .spyOn(Intl, 'DateTimeFormat')
+      .mockImplementation(dateTimeFormatMock as typeof Intl.DateTimeFormat);
+
+    try {
+      render(
+        <InsightsSummarySection
+          dateRange={dateRange}
+          timeZone="Pacific/Auckland"
+          summary={{
+            total_episode_count: 0,
+            abs_episode_count: 0,
+            other_episode_count: 0,
+            average_episodes_per_week: 0,
+            longest_episode_free_streak_days: 31,
+            current_episode_free_streak_days: 31,
+            average_episode_duration_hours: null,
+          }}
+          weekCounts={[]}
+          symptomFrequencies={[]}
+          startHourDistribution={[]}
+        />,
+      );
+
+      expect(
+        dateTimeFormatSpy.mock.calls.some(
+          ([, options]) =>
+            options?.month === 'short' &&
+            options?.day === 'numeric' &&
+            !('timeZone' in options),
+        ),
+      ).toBe(true);
+    } finally {
+      dateTimeFormatSpy.mockRestore();
+    }
   });
 });
