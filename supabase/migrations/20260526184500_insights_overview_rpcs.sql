@@ -22,6 +22,7 @@ SET search_path = pg_catalog, public
 AS $$
 DECLARE
   tz text;
+  range_day_count integer;
 BEGIN
   tz := nullif(trim(p_timezone), '');
 
@@ -46,6 +47,17 @@ BEGIN
 
   IF p_from >= p_to THEN
     RAISE EXCEPTION 'get_episode_summary: p_from must be less than p_to (p_to is exclusive)'
+      USING ERRCODE = '22023';
+  END IF;
+
+  range_day_count := (
+    ((p_to AT TIME ZONE tz) - interval '1 microsecond')::date
+    - (p_from AT TIME ZONE tz)::date
+    + 1
+  )::integer;
+
+  IF range_day_count > 730 THEN
+    RAISE EXCEPTION 'get_episode_summary: selected range must be 730 days or fewer'
       USING ERRCODE = '22023';
   END IF;
 
@@ -202,6 +214,7 @@ SET search_path = pg_catalog, public
 AS $$
 DECLARE
   tz text;
+  range_day_count integer;
 BEGIN
   tz := nullif(trim(p_timezone), '');
 
@@ -226,6 +239,17 @@ BEGIN
 
   IF p_from >= p_to THEN
     RAISE EXCEPTION 'get_episode_week_counts: p_from must be less than p_to (p_to is exclusive)'
+      USING ERRCODE = '22023';
+  END IF;
+
+  range_day_count := (
+    ((p_to AT TIME ZONE tz) - interval '1 microsecond')::date
+    - (p_from AT TIME ZONE tz)::date
+    + 1
+  )::integer;
+
+  IF range_day_count > 730 THEN
+    RAISE EXCEPTION 'get_episode_week_counts: selected range must be 730 days or fewer'
       USING ERRCODE = '22023';
   END IF;
 
@@ -272,6 +296,7 @@ SET search_path = pg_catalog, public
 AS $$
 DECLARE
   tz text;
+  range_day_count integer;
 BEGIN
   tz := nullif(trim(p_timezone), '');
 
@@ -296,6 +321,17 @@ BEGIN
 
   IF p_from >= p_to THEN
     RAISE EXCEPTION 'get_episode_start_hour_distribution: p_from must be less than p_to (p_to is exclusive)'
+      USING ERRCODE = '22023';
+  END IF;
+
+  range_day_count := (
+    ((p_to AT TIME ZONE tz) - interval '1 microsecond')::date
+    - (p_from AT TIME ZONE tz)::date
+    + 1
+  )::integer;
+
+  IF range_day_count > 730 THEN
+    RAISE EXCEPTION 'get_episode_start_hour_distribution: selected range must be 730 days or fewer'
       USING ERRCODE = '22023';
   END IF;
 
@@ -343,6 +379,11 @@ BEGIN
 
   IF p_from >= p_to THEN
     RAISE EXCEPTION 'get_symptom_frequency: p_from must be less than p_to (p_to is exclusive)'
+      USING ERRCODE = '22023';
+  END IF;
+
+  IF ((p_to::date - p_from::date))::integer > 730 THEN
+    RAISE EXCEPTION 'get_symptom_frequency: selected range must be 730 days or fewer'
       USING ERRCODE = '22023';
   END IF;
 
