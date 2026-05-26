@@ -1,89 +1,96 @@
 # ABStrack
 
-<a alt="Nx logo" href="https://nx.dev" target="_blank" rel="noreferrer"><img src="https://raw.githubusercontent.com/nrwl/nx/master/images/nx-logo.png" width="45"></a>
+ABStrack is an open-source, privacy-first health tracking platform for people living with Auto-Brewery Syndrome (ABS). It is designed to help patients document episodes, symptoms, health markers, food intake, and media evidence, while giving caretakers and authorized healthcare practitioners access to the data they need.
 
-✨ Your new, shiny [Nx workspace](https://nx.dev) is almost ready ✨.
+This repository is an Nx monorepo containing the patient mobile app, supplementary user web app, practitioner web app, and shared packages.
 
-[Learn more about this workspace setup and its capabilities](https://nx.dev/nx-api/js?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) or run `npx nx graph` to visually explore what was created. Now, let's get you up to speed!
+## Product overview
 
-## Finish your CI setup
+- Patients and caretakers are mobile-first: `apps/mobile` is the primary experience.
+- User web in `apps/web` supports supplementary patient and caretaker flows.
+- Practitioners use the dedicated web app in `apps/practitioner`.
+- Data is backed by Supabase, with PowerSync used for mobile offline replication.
+- Accessibility is a core product requirement, especially for episode logging during cognitive impairment.
 
-[Click here to finish setting up your workspace!](https://cloud.nx.app/connect/QV2DELukSN)
+## Workspace layout
 
-## Generate a library
-
-```sh
-npx nx g @nx/js:lib packages/pkg1 --publishable --importPath=@my-org/pkg1
+```text
+ABStrack/
+|- apps/
+|  |- mobile/          # Expo / React Native app for patients and caretakers
+|  |- web/             # Next.js user web app
+|  |- practitioner/    # Next.js practitioner web app
+|  |- web-e2e/         # Playwright tests for user web
+|  `- practitioner-e2e/ # Playwright tests for practitioner web
+|- packages/
+|  |- supabase/        # Shared Supabase clients, auth helpers, typed queries
+|  |- powersync/       # PowerSync sync config and helpers
+|  |- types/           # Shared domain types
+|  |- ui/              # Shared cross-platform UI components
+|  `- ui-web/          # Shared web-only UI helpers/components
+|- docs/               # Product, setup, accessibility, security, and roadmap docs
+`- supabase/           # Migrations and Edge Functions
 ```
 
-## Run tasks
+## Tech stack
 
-To build the library use:
+- `Nx` + `pnpm` monorepo
+- `Next.js` for the web apps
+- `Expo` + `React Native` for mobile
+- `Supabase` for auth, Postgres, storage, and Edge Functions
+- `PowerSync` for offline-first mobile sync
+- `Tailwind CSS` / `NativeWind` for styling
 
-```sh
-npx nx build pkg1
+## Quick start
+
+1. Install dependencies:
+
+```bash
+pnpm install --frozen-lockfile
 ```
 
-To run any task with Nx use:
+2. Create local env files from the template and fill in real values:
 
-```sh
-npx nx <target> <project-name>
+```bash
+cp .env.example apps/web/.env.local
+cp .env.example apps/practitioner/.env.local
+cp .env.example apps/mobile/.env
 ```
 
-These targets are either [inferred automatically](https://nx.dev/concepts/inferred-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) or defined in the `project.json` or `package.json` files.
+3. Start the apps you need:
 
-[More about running tasks in the docs &raquo;](https://nx.dev/features/run-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Versioning and releasing
-
-To version and release the library use
-
-```
-npx nx release
+```bash
+pnpm web
+pnpm practitioner
+pnpm mobile
 ```
 
-Pass `--dry-run` to see what would happen without actually releasing the library.
+4. Run workspace checks:
 
-[Learn more about Nx release &raquo;](https://nx.dev/features/manage-releases?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Keep TypeScript project references up to date
-
-Nx automatically updates TypeScript [project references](https://www.typescriptlang.org/docs/handbook/project-references.html) in `tsconfig.json` files to ensure they remain accurate based on your project dependencies (`import` or `require` statements). This sync is automatically done when running tasks such as `build` or `typecheck`, which require updated references to function correctly.
-
-To manually trigger the process to sync the project graph dependencies information to the TypeScript project references, run the following command:
-
-```sh
-npx nx sync
+```bash
+pnpm validate
 ```
 
-You can enforce that the TypeScript project references are always in the correct state when running in CI by adding a step to your CI job configuration that runs the following command:
+For the full setup process, environment variable details, Supabase CLI workflow, and mobile development notes, see [`docs/DEV_SETUP.md`](docs/DEV_SETUP.md).
 
-```sh
-npx nx sync:check
-```
+## Documentation
 
-[Learn more about nx sync](https://nx.dev/reference/nx-commands#sync)
+- [`docs/PRD.md`](docs/PRD.md) - product requirements and architecture
+- [`docs/DEV_SETUP.md`](docs/DEV_SETUP.md) - local development setup
+- [`docs/SUPABASE_CLOUD_DEVELOPER.md`](docs/SUPABASE_CLOUD_DEVELOPER.md) - Supabase Cloud workflow, migrations, and type generation
+- [`docs/A11Y.md`](docs/A11Y.md) - accessibility conventions and expectations
+- [`docs/SECURITY_BASELINE.md`](docs/SECURITY_BASELINE.md) - security baseline and implementation notes
+- [`docs/ROADMAP.md`](docs/ROADMAP.md) - development roadmap and milestones
+- [`docs/CHARTS_VERIFICATION.md`](docs/CHARTS_VERIFICATION.md) - chart verification guidance
+- [`docs/AUTH_CLAIM_CONTRACT.md`](docs/AUTH_CLAIM_CONTRACT.md) - auth/session claim expectations
+- [`docs/EPISODE_DELETION_POLICY.md`](docs/EPISODE_DELETION_POLICY.md) - episode deletion rules
 
-[Learn more about Nx on CI](https://nx.dev/ci/intro/ci-with-nx#ready-get-started-with-your-provider?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+## Notes for contributors
 
-## Install Nx Console
+- This repo uses current Supabase publishable and secret API keys, not legacy anon/service-role env names.
+- Mobile development requires a development build or native run flow; do not rely on Expo Go for this app.
+- Database schema changes should be made through `supabase/migrations/`, with the full workflow documented in [`docs/SUPABASE_CLOUD_DEVELOPER.md`](docs/SUPABASE_CLOUD_DEVELOPER.md).
 
-Nx Console is an editor extension that enriches your developer experience. It lets you run tasks, generate code, and improves code autocompletion in your IDE. It is available for VSCode and IntelliJ.
+## License
 
-[Install Nx Console &raquo;](https://nx.dev/getting-started/editor-setup?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Useful links
-
-Learn more:
-
-- [Learn more about this workspace setup](https://nx.dev/nx-api/js?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Learn about Nx on CI](https://nx.dev/ci/intro/ci-with-nx?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Releasing Packages with Nx release](https://nx.dev/features/manage-releases?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [What are Nx plugins?](https://nx.dev/concepts/nx-plugins?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-And join the Nx community:
-
-- [Discord](https://go.nx.dev/community)
-- [Follow us on X](https://twitter.com/nxdevtools) or [LinkedIn](https://www.linkedin.com/company/nrwl)
-- [Our Youtube channel](https://www.youtube.com/@nxdevtools)
-- [Our blog](https://nx.dev/blog?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+MIT
