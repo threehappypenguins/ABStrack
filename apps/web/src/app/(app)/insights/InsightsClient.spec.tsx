@@ -710,6 +710,33 @@ describe('InsightsClient', () => {
     });
 
     await waitFor(() => {
+      expect(getEpisodeSummaryMock).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          p_from: SHARED_SNAPSHOT.date_from,
+          p_to: SHARED_SNAPSHOT.date_to,
+          p_timezone: 'America/New_York',
+        }),
+      );
+    });
+    expect(getEpisodeWeekCountsMock).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        p_from: SHARED_SNAPSHOT.date_from,
+        p_to: SHARED_SNAPSHOT.date_to,
+        p_timezone: 'America/New_York',
+      }),
+    );
+    expect(getEpisodeStartHourDistributionMock).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        p_from: SHARED_SNAPSHOT.date_from,
+        p_to: SHARED_SNAPSHOT.date_to,
+        p_timezone: 'America/New_York',
+      }),
+    );
+
+    await waitFor(() => {
       expect(markChartSnapshotSeenMock).toHaveBeenCalledWith(
         expect.anything(),
         SHARED_SNAPSHOT_ID,

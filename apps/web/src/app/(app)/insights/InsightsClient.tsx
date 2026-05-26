@@ -312,7 +312,10 @@ export function InsightsClient() {
 
     const requestedUserId = phiSubjectUserId;
     const generation = ++overviewLoadGenRef.current;
-    const { p_from, p_to } = insightDateRangeToRpcBounds(dateRange);
+    const rpcOverride = chartRpcBoundsOverrideRef.current;
+    const { p_from, p_to } =
+      rpcOverride ?? insightDateRangeToRpcBounds(dateRange);
+    const overviewTimeZone = rpcOverride?.p_timezone ?? activeChartTimeZone;
     setOverviewLoading(true);
     setOverviewError(null);
 
@@ -327,13 +330,13 @@ export function InsightsClient() {
         p_user_id: requestedUserId,
         p_from,
         p_to,
-        p_timezone: chartTimeZone,
+        p_timezone: overviewTimeZone,
       }),
       getEpisodeWeekCounts(supabase, {
         p_user_id: requestedUserId,
         p_from,
         p_to,
-        p_timezone: chartTimeZone,
+        p_timezone: overviewTimeZone,
       }),
       getSymptomFrequency(supabase, {
         p_user_id: requestedUserId,
@@ -344,7 +347,7 @@ export function InsightsClient() {
         p_user_id: requestedUserId,
         p_from,
         p_to,
-        p_timezone: chartTimeZone,
+        p_timezone: overviewTimeZone,
       }),
     ]);
 
@@ -385,7 +388,7 @@ export function InsightsClient() {
     setOverviewWeekCounts(weekCountsResult.data);
     setOverviewSymptomFrequencies(symptomFrequencyResult.data);
     setOverviewStartHourDistribution(startHourDistributionResult.data);
-  }, [announce, chartTimeZone, dateRange, phiSubjectUserId]);
+  }, [activeChartTimeZone, announce, dateRange, phiSubjectUserId]);
 
   useEffect(() => {
     if (viewingOwnInsights && phiScopeReady) {
@@ -669,7 +672,7 @@ export function InsightsClient() {
       {phiScopeReady ? (
         <InsightsSummarySection
           dateRange={dateRange}
-          timeZone={chartTimeZone}
+          timeZone={activeChartTimeZone}
           summary={overviewSummary}
           weekCounts={overviewWeekCounts}
           symptomFrequencies={overviewSymptomFrequencies}
