@@ -938,17 +938,21 @@ export function SettingsScreen() {
 
     try {
       const { error } = await signOut(mobileSupabase);
-      if (error) {
+      if (isMountedRef.current && error) {
         setSignOutError(mapAuthError(error.message));
       }
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : 'Unexpected authentication error';
-      setSignOutError(mapAuthError(message));
+      if (isMountedRef.current) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Unexpected authentication error';
+        setSignOutError(mapAuthError(message));
+      }
     } finally {
-      setSignOutBusy(false);
+      if (isMountedRef.current) {
+        setSignOutBusy(false);
+      }
     }
   };
 
