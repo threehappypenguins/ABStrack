@@ -82,8 +82,9 @@ export function HomeScreen({
   const [networkResumeLoading, setNetworkResumeLoading] = useState(false);
   /**
    * True when the last network-resume attempt bailed before calling Supabase because NetInfo
-   * reported explicit offline. While PowerSync is configured but the replica is not mirror-ready,
-   * we must not treat a null resume row as authoritative (empty replica + no fetch).
+   * did not confirm usable internet (`false` or `null`). While PowerSync is configured but the
+   * replica is not mirror-ready, we must not treat a null resume row as authoritative
+   * (empty replica + no fetch).
    */
   const [networkResumeSkippedOffline, setNetworkResumeSkippedOffline] =
     useState(false);
@@ -159,7 +160,7 @@ export function HomeScreen({
         return;
       }
       const connected = await fetchMobileDeviceIsConnected();
-      if (connected === false) {
+      if (connected !== true) {
         if (!stale()) {
           setNetworkResumeSkippedOffline(true);
           setNetworkResumeLoading(false);
@@ -233,7 +234,7 @@ export function HomeScreen({
       }
 
       const connected = await fetchMobileDeviceIsConnected();
-      if (connected === false) {
+      if (connected !== true) {
         if (!stale()) {
           setRecentEpisodes([]);
           setRecentEpisodesLoading(false);
@@ -532,7 +533,9 @@ export function HomeScreen({
         !psEpisodeSnap.completedLoading &&
         recentEpisodesDisplay.length === 0
       ) {
-        return `Could not read recent episodes from this device. ${psEpisodeSnap.completedQueryError.message}`;
+        return `Could not read recent episodes from this device. ${userFacingSyncHealthBridgeOrClientError(
+          psEpisodeSnap.completedQueryError,
+        )}`;
       }
       return null;
     }
@@ -542,7 +545,7 @@ export function HomeScreen({
         : 'Showing recent episodes saved on this device.';
     }
     if (recentEpisodesSkippedOffline) {
-      return 'Connect to load recent episodes.';
+      return 'Connect or wait for network reachability to load recent episodes.';
     }
     return recentEpisodesError;
   }, [

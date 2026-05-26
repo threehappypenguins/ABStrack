@@ -860,15 +860,18 @@ describe('mobile auth state sync', () => {
         onSelect?.(1);
       });
 
-    const { findByText, findByLabelText } = render(<App />);
+    try {
+      const { findByText, findByLabelText } = render(<App />);
 
-    await findByText('Episode logging');
-    fireEvent.press(await findByLabelText('Open app menu'));
+      await findByText('Episode logging');
+      fireEvent.press(await findByLabelText('Open app menu'));
 
-    expect(
-      await findByLabelText('Require re-authentication on app open'),
-    ).toBeTruthy();
-    actionSheetSpy.mockRestore();
+      expect(
+        await findByLabelText('Require re-authentication on app open'),
+      ).toBeTruthy();
+    } finally {
+      actionSheetSpy.mockRestore();
+    }
   });
 
   test('enforces re-auth when app returns to foreground and preference is enabled', async () => {
