@@ -5,10 +5,12 @@ import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
 import type { ActiveEpisodeHomeSummary } from '../components/episode-flow/EpisodeStartHomeCta';
+import { AppSecondaryMenuButton } from '../components/AppSecondaryMenuButton';
 import { HomeScreen } from '../screens/HomeScreen';
-import { ManageScreen } from '../screens/ManageScreen';
+import { InsightsScreen } from '../screens/InsightsScreen';
 import { EpisodeTemplatesNavigator } from './EpisodeTemplatesNavigator';
 import { HealthMarkerPresetsNavigator } from './HealthMarkerPresetsNavigator';
 import { SymptomPresetsNavigator } from './SymptomPresetsNavigator';
@@ -20,13 +22,14 @@ import type { MainStackParamList, MainTabParamList } from './types';
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
 /**
- * Home tab lives under {@link MainStackParamList} `MainTabs`; opens stack `Settings`.
+ * Bottom tabs live under {@link MainStackParamList} `MainTabs`; stack screens such as `Manage` and
+ * `Settings` are opened from tab roots via the parent native stack.
  * Invariant: tab navigator is always nested in that stack — missing parent is a programmer error.
  *
- * @param navigation - Home tab navigation object.
+ * @param navigation - Any main-tab navigation object.
  */
-function navigateFromHomeTabToSettings(
-  navigation: BottomTabNavigationProp<MainTabParamList, 'Home'>,
+function navigateFromTabToSettings(
+  navigation: BottomTabNavigationProp<MainTabParamList>,
 ) {
   const stackNavigation =
     navigation.getParent<NativeStackNavigationProp<MainStackParamList>>();
@@ -36,6 +39,20 @@ function navigateFromHomeTabToSettings(
     );
   }
   stackNavigation.navigate('Settings');
+}
+
+function navigateFromTabToManage(
+  navigation: BottomTabNavigationProp<MainTabParamList>,
+  params?: MainStackParamList['Manage'],
+) {
+  const stackNavigation =
+    navigation.getParent<NativeStackNavigationProp<MainStackParamList>>();
+  if (stackNavigation == null) {
+    throw new Error(
+      'MainTabNavigator: expected native stack parent (MainStack) to open Manage.',
+    );
+  }
+  stackNavigation.navigate('Manage', params);
 }
 
 function navigateFromHomeTabToEpisodeStart(
@@ -131,8 +148,18 @@ function HomeTab() {
     useNavigation<BottomTabNavigationProp<MainTabParamList, 'Home'>>();
   return (
     <HomeScreen
-      onGoToSettings={() => {
-        navigateFromHomeTabToSettings(navigation);
+      headerAction={
+        <AppSecondaryMenuButton
+          onGoToManage={() => {
+            navigateFromTabToManage(navigation);
+          }}
+          onGoToSettings={() => {
+            navigateFromTabToSettings(navigation);
+          }}
+        />
+      }
+      onGoToManageEpisodes={() => {
+        navigateFromTabToManage(navigation, { initialSegment: 'episodes' });
       }}
       onGoToFoodDiary={() => {
         navigateFromHomeTabToFoodDiary(navigation);
@@ -151,6 +178,30 @@ function HomeTab() {
 }
 
 /**
+ * Placeholder Insights tab until the mobile charting experience ships.
+ *
+ * @returns Insights tab UI.
+ */
+function InsightsTab() {
+  const navigation =
+    useNavigation<BottomTabNavigationProp<MainTabParamList, 'Insights'>>();
+  return (
+    <InsightsScreen
+      headerAction={
+        <AppSecondaryMenuButton
+          onGoToManage={() => {
+            navigateFromTabToManage(navigation);
+          }}
+          onGoToSettings={() => {
+            navigateFromTabToSettings(navigation);
+          }}
+        />
+      }
+    />
+  );
+}
+
+/**
  * Primary signed-in navigation: home plus preset entry points with a bottom tab bar sized for
  * comfortable touch targets.
  *
@@ -158,6 +209,9 @@ function HomeTab() {
  */
 export function MainTabNavigator() {
   const { colors } = useAppTheme();
+  const { bottom } = useSafeAreaInsets();
+  const tabBarBottomPadding = 6 + bottom;
+  const tabBarMinHeight = COMFORTABLE_TOUCH_TARGET_DP + 28 + bottom;
 
   return (
     <EpisodeTemplatesDraftProvider>
@@ -170,8 +224,8 @@ export function MainTabNavigator() {
           tabBarShowLabel: true,
           tabBarStyle: {
             paddingTop: 4,
-            paddingBottom: 6,
-            minHeight: COMFORTABLE_TOUCH_TARGET_DP + 28,
+            paddingBottom: tabBarBottomPadding,
+            minHeight: tabBarMinHeight,
             backgroundColor: colors.surface,
             borderTopColor: colors.border,
             borderTopWidth: StyleSheet.hairlineWidth,
@@ -194,6 +248,15 @@ export function MainTabNavigator() {
             tabBarLabel: 'Home',
             tabBarAccessibilityLabel: 'Home',
             tabBarIcon: tabBarIonIcon('home-outline'),
+          }}
+        />
+        <Tab.Screen
+          name="Insights"
+          component={InsightsTab}
+          options={{
+            tabBarLabel: 'Insights',
+            tabBarAccessibilityLabel: 'Insights',
+            tabBarIcon: tabBarIonIcon('stats-chart-outline'),
           }}
         />
         <Tab.Screen
@@ -221,15 +284,6 @@ export function MainTabNavigator() {
             tabBarLabel: 'Templates',
             tabBarAccessibilityLabel: 'Episode templates',
             tabBarIcon: tabBarIonIcon('layers-outline'),
-          }}
-        />
-        <Tab.Screen
-          name="Manage"
-          component={ManageScreen}
-          options={{
-            tabBarLabel: 'Manage',
-            tabBarAccessibilityLabel: 'Manage records',
-            tabBarIcon: tabBarIonIcon('albums-outline'),
           }}
         />
       </Tab.Navigator>

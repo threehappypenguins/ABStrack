@@ -34,6 +34,7 @@ import { EpisodeStartScreen } from './screens/EpisodeStartScreen';
 import { FoodDiaryEntryScreen } from './screens/FoodDiaryEntryScreen';
 import { StandaloneHealthMarkersScreen } from './screens/StandaloneHealthMarkersScreen';
 import { HealthMarkerPromptScreen } from './screens/HealthMarkerPromptScreen';
+import { ManageScreen } from './screens/ManageScreen';
 import { SymptomPromptScreen } from './screens/SymptomPromptScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { SignupScreen } from './screens/SignupScreen';
@@ -708,6 +709,11 @@ function AppBootstrap() {
                     title: 'Health markers',
                     headerBackTitle: 'Home',
                   }}
+                />
+                <MainStack.Screen
+                  name="Manage"
+                  component={ManageScreen}
+                  options={{ title: 'Manage' }}
                 />
                 <MainStack.Screen
                   name="Settings"

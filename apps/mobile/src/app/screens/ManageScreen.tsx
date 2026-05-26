@@ -21,7 +21,6 @@ import {
   useNavigation,
   useRoute,
 } from '@react-navigation/native';
-import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { FoodDiaryEntryRow, HealthMarkerRow } from '@abstrack/types';
@@ -40,7 +39,7 @@ import {
 import { getMobileSupabaseClient } from '../../lib/supabase-wiring';
 import { useMobilePhiSubjectUserContext } from '../../lib/auth/use-mobile-phi-subject-user-context';
 import { ScreenShell } from '../components/ScreenShell';
-import type { MainStackParamList, MainTabParamList } from '../navigation/types';
+import type { MainStackParamList } from '../navigation/types';
 import { useAppTheme } from '../theme/AppThemeContext';
 import { nw } from '../theme/app-nativewind-classes';
 import {
@@ -116,19 +115,12 @@ function healthMarkerValueLine(row: HealthMarkerRow): string {
 /**
  * Consolidated management: episodes, standalone health markers, and standalone food diary rows.
  *
- * @returns Manage tab root screen.
+ * @returns Manage screen content.
  */
 export function ManageScreen() {
-  const tabNavigation =
-    useNavigation<BottomTabNavigationProp<MainTabParamList, 'Manage'>>();
-  const stackNavigation =
-    tabNavigation.getParent<NativeStackNavigationProp<MainStackParamList>>();
-  if (!stackNavigation) {
-    throw new Error(
-      'ManageScreen: expected native stack parent for episode flows.',
-    );
-  }
-  const route = useRoute<RouteProp<MainTabParamList, 'Manage'>>();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<MainStackParamList, 'Manage'>>();
+  const route = useRoute<RouteProp<MainStackParamList, 'Manage'>>();
   const initialSegment = route.params?.initialSegment;
   const { colors } = useAppTheme();
 
@@ -154,8 +146,8 @@ export function ManageScreen() {
     }
     setSegment(requested);
     // Consume one-shot deep-link params so subsequent navigations can retarget segment.
-    tabNavigation.setParams({ initialSegment: undefined });
-  }, [initialSegment, tabNavigation]);
+    navigation.setParams({ initialSegment: undefined });
+  }, [initialSegment, navigation]);
 
   const episodeDateBounds = useMemo(() => {
     if (!filterDay) {
@@ -310,7 +302,7 @@ export function ManageScreen() {
         <View className="min-h-0 flex-1">
           {segment === 'episodes' ? (
             <EpisodesManagementPanel
-              navigation={stackNavigation as EpisodesManagementNav}
+              navigation={navigation as EpisodesManagementNav}
               variant="embedded"
               endedAtOrAfter={episodeDateBounds.endedAtOrAfter}
               endedAtOrBefore={episodeDateBounds.endedAtOrBefore}

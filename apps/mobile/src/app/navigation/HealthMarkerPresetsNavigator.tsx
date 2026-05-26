@@ -1,10 +1,18 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import { useNavigation } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { AppSecondaryMenuButton } from '../components/AppSecondaryMenuButton';
 import { HealthMarkerPresetCreateScreen } from '../screens/HealthMarkerPresetCreateScreen';
 import { HealthMarkerPresetEditorScreen } from '../screens/HealthMarkerPresetEditorScreen';
 import { HealthMarkerPresetListScreen } from '../screens/HealthMarkerPresetListScreen';
 import { useAppTheme } from '../theme/AppThemeContext';
-import type { HealthMarkerPresetsStackParamList } from './types';
+import type {
+  HealthMarkerPresetsStackParamList,
+  MainStackParamList,
+  MainTabParamList,
+} from './types';
 
 const Stack = createNativeStackNavigator<HealthMarkerPresetsStackParamList>();
 
@@ -15,6 +23,25 @@ const Stack = createNativeStackNavigator<HealthMarkerPresetsStackParamList>();
  */
 export function HealthMarkerPresetsNavigator() {
   const { colors } = useAppTheme();
+  const tabNavigation =
+    useNavigation<
+      BottomTabNavigationProp<MainTabParamList, 'HealthMarkerPresets'>
+    >();
+  const stackNavigation =
+    tabNavigation.getParent<NativeStackNavigationProp<MainStackParamList>>();
+  if (stackNavigation == null) {
+    throw new Error(
+      'HealthMarkerPresetsNavigator: expected native stack parent for app menu.',
+    );
+  }
+
+  const openManage = useCallback(() => {
+    stackNavigation.navigate('Manage');
+  }, [stackNavigation]);
+
+  const openSettings = useCallback(() => {
+    stackNavigation.navigate('Settings');
+  }, [stackNavigation]);
 
   const screenOptions = useMemo(
     () => ({
@@ -26,12 +53,25 @@ export function HealthMarkerPresetsNavigator() {
     [colors],
   );
 
+  const listScreenOptions = useMemo(
+    () => ({
+      title: 'Health marker presets',
+      headerRight: () => (
+        <AppSecondaryMenuButton
+          onGoToManage={openManage}
+          onGoToSettings={openSettings}
+        />
+      ),
+    }),
+    [openManage, openSettings],
+  );
+
   return (
     <Stack.Navigator screenOptions={screenOptions}>
       <Stack.Screen
         name="HealthMarkerPresetList"
         component={HealthMarkerPresetListScreen}
-        options={{ title: 'Health marker presets' }}
+        options={listScreenOptions}
       />
       <Stack.Screen
         name="HealthMarkerPresetCreate"

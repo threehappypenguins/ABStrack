@@ -2,7 +2,7 @@ import * as React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import NetInfo from '@react-native-community/netinfo';
 import type { NetInfoState } from '@react-native-community/netinfo';
-import { AppState, Linking } from 'react-native';
+import { ActionSheetIOS, AppState, Linking } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import type { AbstrackSupabaseClient, Session } from '@abstrack/supabase';
 
@@ -219,7 +219,7 @@ describe('mobile auth state sync', () => {
     });
 
     await waitFor(() => {
-      expect(getByText('Welcome to ABStrack')).toBeTruthy();
+      expect(getByText('Episode logging')).toBeTruthy();
     });
 
     await act(async () => {
@@ -264,7 +264,7 @@ describe('mobile auth state sync', () => {
     });
 
     await waitFor(() => {
-      expect(getByText('Welcome to ABStrack')).toBeTruthy();
+      expect(getByText('Episode logging')).toBeTruthy();
     });
 
     await act(async () => {
@@ -273,7 +273,7 @@ describe('mobile auth state sync', () => {
 
     await waitFor(() => {
       expect(getByText('Login')).toBeTruthy();
-      expect(queryByText('Welcome to ABStrack')).toBeNull();
+      expect(queryByText('Episode logging')).toBeNull();
     });
   });
 
@@ -568,7 +568,7 @@ describe('mobile auth state sync', () => {
 
     const { findByText } = render(<App />);
 
-    expect(await findByText('You are signed in.')).toBeTruthy();
+    expect(await findByText('Episode logging')).toBeTruthy();
     expect(signOut).not.toHaveBeenCalled();
   });
 
@@ -697,7 +697,7 @@ describe('mobile auth state sync', () => {
     try {
       const { findByText, findByLabelText, findByTestId } = render(<App />);
 
-      expect(await findByText('Welcome to ABStrack')).toBeTruthy();
+      expect(await findByText('Episode logging')).toBeTruthy();
 
       fireEvent.press(await findByLabelText('Symptom presets'));
       expect(await findByTestId('symptom-preset-list-screen')).toBeTruthy();
@@ -809,7 +809,7 @@ describe('mobile auth state sync', () => {
         <App />,
       );
 
-      await findByText('Welcome to ABStrack');
+      await findByText('Episode logging');
 
       // Wait for Home to leave the active-episode probe spinner, then the start CTA (not resume).
       await waitFor(() => {
@@ -854,15 +854,21 @@ describe('mobile auth state sync', () => {
 
     jest.mocked(SecureStore.getItemAsync).mockResolvedValue('false');
     jest.mocked(getMobileSupabaseClient).mockReturnValue(mockClient);
+    const actionSheetSpy = jest
+      .spyOn(ActionSheetIOS, 'showActionSheetWithOptions')
+      .mockImplementation((_options, onSelect) => {
+        onSelect?.(1);
+      });
 
     const { findByText, findByLabelText } = render(<App />);
 
-    const settingsButton = await findByText('Settings');
-    fireEvent.press(settingsButton);
+    await findByText('Episode logging');
+    fireEvent.press(await findByLabelText('Open app menu'));
 
     expect(
       await findByLabelText('Require re-authentication on app open'),
     ).toBeTruthy();
+    actionSheetSpy.mockRestore();
   });
 
   test('enforces re-auth when app returns to foreground and preference is enabled', async () => {
@@ -922,7 +928,7 @@ describe('mobile auth state sync', () => {
 
     const { findByText } = render(<App />);
 
-    expect(await findByText('You are signed in.')).toBeTruthy();
+    expect(await findByText('Episode logging')).toBeTruthy();
     expect(signOut).not.toHaveBeenCalled();
 
     await act(async () => {
@@ -1018,7 +1024,7 @@ describe('mobile auth state sync', () => {
 
     const { findByText } = render(<App />);
 
-    expect(await findByText('You are signed in.')).toBeTruthy();
+    expect(await findByText('Episode logging')).toBeTruthy();
     expect(signOut).not.toHaveBeenCalled();
 
     await act(async () => {
@@ -1153,7 +1159,7 @@ describe('mobile auth state sync', () => {
 
     const { findByText } = render(<App />);
 
-    expect(await findByText('You are signed in.')).toBeTruthy();
+    expect(await findByText('Episode logging')).toBeTruthy();
     expect(signOut).not.toHaveBeenCalled();
     expect(warnSpy).toHaveBeenCalled();
 
@@ -1197,7 +1203,7 @@ describe('mobile auth state sync', () => {
 
     const { findByText } = render(<App />);
 
-    expect(await findByText('You are signed in.')).toBeTruthy();
+    expect(await findByText('Episode logging')).toBeTruthy();
     expect(warnSpy).toHaveBeenCalled();
 
     warnSpy.mockRestore();

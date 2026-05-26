@@ -88,7 +88,7 @@ export type EpisodesManagementPanelProps = {
   navigation: EpisodesManagementNav;
   /**
    * `standalone`: full screen with {@link ScreenShell} and page title (tests / legacy).
-   * `embedded`: body only for the Manage tab.
+   * `embedded`: body only for the Manage screen.
    */
   variant?: 'standalone' | 'embedded';
   /** Inclusive lower bound on `ended_at` for completed history (ISO timestamptz). */

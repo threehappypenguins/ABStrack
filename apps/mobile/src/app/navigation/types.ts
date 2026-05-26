@@ -25,18 +25,17 @@ export type EpisodeTemplatesStackParamList = {
   EpisodeTemplateEdit: { templateId: string };
 };
 
-/** Optional deep-link into the Manage tab (e.g. Settings shortcut). */
-export type ManageTabParams = {
+/** Optional deep-link into the Manage screen (e.g. Home / Settings shortcut). */
+export type ManageScreenParams = {
   initialSegment?: 'episodes' | 'health' | 'food';
 };
 
 export type MainTabParamList = {
   Home: undefined;
+  Insights: undefined;
   SymptomPresets: undefined;
   HealthMarkerPresets: undefined;
   EpisodeTemplates: undefined;
-  /** Episodes, standalone health markers, and standalone food diary management. */
-  Manage: ManageTabParams | undefined;
 };
 
 export type MainStackParamList = {
@@ -67,5 +66,7 @@ export type MainStackParamList = {
   };
   /** Log vitals from a preset without an episode (`episode_id` null on saved rows). */
   StandaloneHealthMarkers: undefined;
+  /** Episodes, standalone health markers, and standalone food diary management. */
+  Manage: ManageScreenParams | undefined;
   Settings: undefined;
 };
