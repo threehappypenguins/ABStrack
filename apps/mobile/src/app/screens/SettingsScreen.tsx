@@ -12,10 +12,12 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { announce } from '@abstrack/ui/native';
+import { signOut } from '@abstrack/supabase';
 import {
   getRequireReauthOnOpenPreference,
   setRequireReauthOnOpenPreference,
 } from '../reauth-preference';
+import { mapAuthError } from '../auth-helpers';
 import { ScreenShell } from '../components/ScreenShell';
 import {
   formatPowerSyncReplicaDiagnosticsMessage,
@@ -46,7 +48,10 @@ import {
   isMissingPublishableKeyForPractitionerEdge,
   resolvePatientPractitionerAccessUrl,
 } from '../../lib/patient-practitioner-edge-api';
-import { getMobileAuthSessionSafe } from '../../lib/supabase-wiring';
+import {
+  getMobileAuthSessionSafe,
+  getMobileSupabaseClient,
+} from '../../lib/supabase-wiring';
 
 const THEME_OPTIONS: {
   value: ThemePreference;
@@ -101,6 +106,11 @@ type PractitionerPendingInviteDto = {
 
 const caretakerInputClassName = `min-h-[52px] rounded-lg px-3 py-2.5 text-base ${nw.input}`;
 
+/**
+ * User settings, account actions, and caretaker / practitioner access management for mobile.
+ *
+ * @returns Settings content.
+ */
 export function SettingsScreen() {
   const navigation =
     useNavigation<NativeStackNavigationProp<MainStackParamList>>();
@@ -115,6 +125,8 @@ export function SettingsScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [themeError, setThemeError] = useState<string | null>(null);
   const [themeSaving, setThemeSaving] = useState(false);
+  const [signOutBusy, setSignOutBusy] = useState(false);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
   const powerSyncBridge = usePowerSyncBridgeState();
   const [powerSyncDiagBusy, setPowerSyncDiagBusy] = useState(false);
   const [caretakerGrant, setCaretakerGrant] = useState<
@@ -919,6 +931,31 @@ export function SettingsScreen() {
     }
   };
 
+  const handleSignOut = async () => {
+    const mobileSupabase = getMobileSupabaseClient();
+    setSignOutBusy(true);
+    setSignOutError(null);
+
+    try {
+      const { error } = await signOut(mobileSupabase);
+      if (isMountedRef.current && error) {
+        setSignOutError(mapAuthError(error.message));
+      }
+    } catch (error) {
+      if (isMountedRef.current) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Unexpected authentication error';
+        setSignOutError(mapAuthError(message));
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setSignOutBusy(false);
+      }
+    }
+  };
+
   return (
     <ScreenShell contentAlign="stretch">
       <ScrollView
@@ -986,12 +1023,9 @@ export function SettingsScreen() {
 
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Open manage tab on episodes"
+            accessibilityLabel="Open Manage episodes"
             onPress={() =>
-              navigation.navigate('MainTabs', {
-                screen: 'Manage',
-                params: { initialSegment: 'episodes' },
-              })
+              navigation.navigate('Manage', { initialSegment: 'episodes' })
             }
             className={`min-h-[52px] justify-center rounded-xl border border-app-border bg-app-surface px-4 py-3 dark:border-app-border-dark dark:bg-app-surface-dark`}
           >
@@ -999,10 +1033,43 @@ export function SettingsScreen() {
               Manage episodes
             </Text>
             <Text className={`mt-0.5 text-sm ${nw.textMuted}`}>
-              Open the Manage tab to review episode history and resume an
-              in-progress episode.
+              Open Manage to review episode history and resume an in-progress
+              episode.
             </Text>
           </Pressable>
+
+          <View className="my-2 h-px bg-app-border dark:bg-app-border-dark" />
+
+          <View className="gap-2" accessibilityLabel="Account">
+            <Text className={`text-base font-semibold ${nw.textInk}`}>
+              Account
+            </Text>
+            <Text className={`text-base ${nw.textMuted}`}>
+              Sign out of this device when you are finished.
+            </Text>
+            {signOutError ? (
+              <Text
+                className={`text-sm ${nw.textError}`}
+                accessibilityRole="alert"
+              >
+                {signOutError}
+              </Text>
+            ) : null}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={signOutBusy ? 'Signing out...' : 'Sign out'}
+              accessibilityState={{ disabled: signOutBusy }}
+              disabled={signOutBusy}
+              onPress={() => void handleSignOut()}
+              className={`min-h-[52px] items-center justify-center rounded-xl px-4 ${nw.btnPrimary} ${signOutBusy ? 'opacity-60' : ''}`}
+            >
+              <Text
+                className={`text-center text-base font-semibold ${nw.textOnPrimary}`}
+              >
+                {signOutBusy ? 'Signing out...' : 'Sign out'}
+              </Text>
+            </Pressable>
+          </View>
 
           <View className="my-2 h-px bg-app-border dark:bg-app-border-dark" />
 

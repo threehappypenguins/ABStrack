@@ -5,87 +5,97 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import {
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  Text,
-  View,
-} from 'react-native';
+import { RefreshControl, ScrollView, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import type { EpisodeRow } from '@abstrack/types';
 import {
   getActiveEpisodeForUser,
-  healthCheckProfilesLimit1,
-  signOut,
+  listCompletedEpisodesForUser,
 } from '@abstrack/supabase';
 import { useMobilePhiSubjectUserContext } from '../../lib/auth/use-mobile-phi-subject-user-context';
-import { PowerSyncActiveEpisodeSubscription } from '../../lib/powersync/PowerSyncActiveEpisodeSubscription';
+import { fetchMobileDeviceIsConnected } from '../../lib/network/mobile-device-netinfo';
+import {
+  PowerSyncEpisodeReadSubscriptions,
+  type PowerSyncEpisodeReadSnapshots,
+} from '../../lib/powersync/PowerSyncEpisodeReadSubscriptions';
 import {
   powerSyncOfflineReplicaReadsEnabled,
   powerSyncReplicaSqliteReady,
   usePowerSyncBridgeState,
 } from '../../lib/powersync/PowerSyncSessionBridge';
 import { usePullToResyncPowerSync } from '../../lib/powersync/use-pull-to-resync-powersync';
-import { fetchMobileDeviceIsConnected } from '../../lib/network/mobile-device-netinfo';
-import { useMobileDeviceNetworkConnected } from '../../lib/network/use-mobile-device-network-connected';
 import {
   getMobileAuthSessionSafe,
   getMobileSupabaseClient,
 } from '../../lib/supabase-wiring';
-import { mapAuthError } from '../auth-helpers';
+import { AppNavigationShell } from '../components/AppNavigationShell';
+import { HomeDashboardActionCard } from '../components/HomeDashboardActionCard';
+import { HomeRecentEpisodesCard } from '../components/HomeRecentEpisodesCard';
 import {
   EpisodeStartHomeCta,
   episodeRowToActiveHomeSummary,
   type ActiveEpisodeHomeSummary,
 } from '../components/episode-flow/EpisodeStartHomeCta';
-import { AppNavigationShell } from '../components/AppNavigationShell';
 import { userFacingSyncHealthBridgeOrClientError } from '../components/sync-health-footer-user-messages';
 import { useAppTheme } from '../theme/AppThemeContext';
 import { nw } from '../theme/app-nativewind-classes';
 
-interface HealthCheckResult {
-  success: boolean;
-  message: string;
-  error?: string;
-}
+const HOME_RECENT_EPISODES_LIMIT = 3;
+
+const EMPTY_POWER_SYNC_EPISODE_SNAP: PowerSyncEpisodeReadSnapshots = {
+  activeEpisode: null,
+  activeLoading: false,
+  activeQueryError: undefined,
+  completedEpisodes: [],
+  completedLoading: false,
+  completedQueryError: undefined,
+};
 
 type HomeScreenProps = {
-  onGoToSettings: () => void;
+  headerAction?: React.ReactNode;
+  onGoToManageEpisodes: () => void;
   onGoToFoodDiary: () => void;
   onGoToStandaloneHealthMarkers: () => void;
   onStartEpisode: () => void;
   onResumeEpisode: (episode: ActiveEpisodeHomeSummary) => void;
 };
 
+/**
+ * Mobile dashboard surface for the signed-in user: episode logging, standalone logging shortcuts,
+ * and a short recent-episodes preview.
+ *
+ * @param props - Header action plus primary Home navigation callbacks.
+ * @returns Home dashboard content.
+ */
 export function HomeScreen({
-  onGoToSettings,
+  headerAction,
+  onGoToManageEpisodes,
   onGoToFoodDiary,
   onGoToStandaloneHealthMarkers,
   onStartEpisode,
   onResumeEpisode,
 }: HomeScreenProps) {
   const { colors } = useAppTheme();
-  const isTestEnv =
-    typeof process !== 'undefined' && process.env.NODE_ENV === 'test';
-  const showHealthCheck = __DEV__ && !isTestEnv;
-  const isMountedRef = useRef(true);
-  const [signOutBusy, setSignOutBusy] = useState(false);
-  const [signOutError, setSignOutError] = useState<string | null>(null);
-  const [healthCheck, setHealthCheck] = useState<HealthCheckResult | null>(
-    null,
-  );
   /** When `EXPO_PUBLIC_POWERSYNC_URL` is unset only: online Supabase resume row (see README). */
   const [networkResumeEpisode, setNetworkResumeEpisode] =
     useState<ActiveEpisodeHomeSummary | null>(null);
   const [networkResumeLoading, setNetworkResumeLoading] = useState(false);
   /**
    * True when the last network-resume attempt bailed before calling Supabase because NetInfo
-   * reported explicit offline. While PowerSync is configured but the replica is not mirror-ready,
-   * we must not treat a null resume row as authoritative (empty replica + no fetch).
+   * did not confirm usable internet (`false` or `null`). While PowerSync is configured but the
+   * replica is not mirror-ready, we must not treat a null resume row as authoritative
+   * (empty replica + no fetch).
    */
   const [networkResumeSkippedOffline, setNetworkResumeSkippedOffline] =
     useState(false);
+  const [recentEpisodes, setRecentEpisodes] = useState<EpisodeRow[]>([]);
+  const [recentEpisodesLoading, setRecentEpisodesLoading] = useState(false);
+  const [recentEpisodesError, setRecentEpisodesError] = useState<string | null>(
+    null,
+  );
+  const [recentEpisodesSkippedOffline, setRecentEpisodesSkippedOffline] =
+    useState(false);
+  const isMountedRef = useRef(true);
 
   const {
     authUserId,
@@ -94,32 +104,35 @@ export function HomeScreen({
     errorMessage: phiSubjectError,
     refresh: refreshPhiSubject,
   } = useMobilePhiSubjectUserContext();
-  const { isConnected: deviceNetConnected } = useMobileDeviceNetworkConnected();
   const psBridge = usePowerSyncBridgeState();
   const replicaMirrorHomeReads = useMemo(
     () => powerSyncOfflineReplicaReadsEnabled(psBridge),
     [psBridge],
   );
-  const [psEpisodeSnap, setPsEpisodeSnap] = useState<{
-    episode: EpisodeRow | null;
-    isLoading: boolean;
-    error: Error | undefined;
-  }>({ episode: null, isLoading: false, error: undefined });
+  const [psEpisodeSnap, setPsEpisodeSnap] =
+    useState<PowerSyncEpisodeReadSnapshots>(EMPTY_POWER_SYNC_EPISODE_SNAP);
 
   useEffect(() => {
-    if (!psBridge.database) {
-      setPsEpisodeSnap({
-        episode: null,
-        isLoading: false,
-        error: undefined,
-      });
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!psBridge.database || !psBridge.localSqliteInitialized) {
+      setPsEpisodeSnap(EMPTY_POWER_SYNC_EPISODE_SNAP);
     }
-  }, [psBridge.database]);
+  }, [psBridge.database, psBridge.localSqliteInitialized]);
 
   useEffect(() => {
     setNetworkResumeEpisode(null);
     setNetworkResumeLoading(false);
     setNetworkResumeSkippedOffline(false);
+    setRecentEpisodes([]);
+    setRecentEpisodesLoading(false);
+    setRecentEpisodesError(null);
+    setRecentEpisodesSkippedOffline(false);
   }, [phiSubjectUserId]);
 
   useEffect(() => {
@@ -127,6 +140,10 @@ export function HomeScreen({
       setNetworkResumeEpisode(null);
       setNetworkResumeLoading(false);
       setNetworkResumeSkippedOffline(false);
+      setRecentEpisodes([]);
+      setRecentEpisodesLoading(false);
+      setRecentEpisodesError(null);
+      setRecentEpisodesSkippedOffline(false);
     }
   }, [replicaMirrorHomeReads]);
 
@@ -135,7 +152,8 @@ export function HomeScreen({
       cancel?: { cancelled: boolean },
       options?: { bypassReplicaMirrorGate?: boolean },
     ) => {
-      const stale = () => cancel?.cancelled === true;
+      const stale = () =>
+        cancel?.cancelled === true || isMountedRef.current === false;
       if (!phiSubjectUserId) {
         if (!stale()) {
           setNetworkResumeLoading(false);
@@ -151,7 +169,7 @@ export function HomeScreen({
         return;
       }
       const connected = await fetchMobileDeviceIsConnected();
-      if (connected === false) {
+      if (connected !== true) {
         if (!stale()) {
           setNetworkResumeSkippedOffline(true);
           setNetworkResumeLoading(false);
@@ -160,8 +178,8 @@ export function HomeScreen({
       }
       if (!stale()) {
         setNetworkResumeSkippedOffline(false);
+        setNetworkResumeLoading(true);
       }
-      setNetworkResumeLoading(true);
       try {
         const mobileSupabase = getMobileSupabaseClient();
         const {
@@ -202,9 +220,99 @@ export function HomeScreen({
     [phiSubjectUserId, replicaMirrorHomeReads],
   );
 
+  const loadRecentEpisodes = useCallback(
+    async (cancel?: { cancelled: boolean }) => {
+      const stale = () =>
+        cancel?.cancelled === true || isMountedRef.current === false;
+      if (!phiSubjectUserId) {
+        if (!stale()) {
+          setRecentEpisodes([]);
+          setRecentEpisodesLoading(false);
+          setRecentEpisodesError(null);
+          setRecentEpisodesSkippedOffline(false);
+        }
+        return;
+      }
+      if (replicaMirrorHomeReads) {
+        if (!stale()) {
+          setRecentEpisodes([]);
+          setRecentEpisodesLoading(false);
+          setRecentEpisodesError(null);
+          setRecentEpisodesSkippedOffline(false);
+        }
+        return;
+      }
+
+      const connected = await fetchMobileDeviceIsConnected();
+      if (connected !== true) {
+        if (!stale()) {
+          setRecentEpisodes([]);
+          setRecentEpisodesLoading(false);
+          setRecentEpisodesError(null);
+          setRecentEpisodesSkippedOffline(true);
+        }
+        return;
+      }
+
+      if (!stale()) {
+        setRecentEpisodesLoading(true);
+        setRecentEpisodesError(null);
+        setRecentEpisodesSkippedOffline(false);
+      }
+
+      try {
+        const {
+          data: { session },
+          error: sessionError,
+        } = await getMobileAuthSessionSafe();
+        if (stale()) {
+          return;
+        }
+        if (sessionError || !session?.user?.id) {
+          setRecentEpisodes([]);
+          return;
+        }
+
+        const mobileSupabase = getMobileSupabaseClient();
+        const result = await listCompletedEpisodesForUser(
+          mobileSupabase,
+          phiSubjectUserId,
+          {
+            limit: HOME_RECENT_EPISODES_LIMIT,
+            offset: 0,
+          },
+        );
+        if (stale()) {
+          return;
+        }
+        if (!result.ok) {
+          setRecentEpisodes([]);
+          setRecentEpisodesError(result.error.message);
+          return;
+        }
+        setRecentEpisodes(result.data);
+        setRecentEpisodesError(null);
+      } catch {
+        if (!stale()) {
+          setRecentEpisodes([]);
+          setRecentEpisodesError('Unable to load recent episodes.');
+        }
+      } finally {
+        if (!stale()) {
+          setRecentEpisodesLoading(false);
+        }
+      }
+    },
+    [phiSubjectUserId, replicaMirrorHomeReads],
+  );
+
   /** When the watched SQLite query fails, fetch Supabase resume as a fallback (same user, online). */
   useEffect(() => {
-    if (!phiSubjectUserId || !replicaMirrorHomeReads || !psEpisodeSnap.error) {
+    if (
+      !phiSubjectUserId ||
+      !replicaMirrorHomeReads ||
+      !psEpisodeSnap.activeQueryError
+    ) {
       return;
     }
     const cancel = { cancelled: false };
@@ -215,63 +323,56 @@ export function HomeScreen({
   }, [
     phiSubjectUserId,
     replicaMirrorHomeReads,
-    psEpisodeSnap.error,
+    psEpisodeSnap.activeQueryError,
     loadNetworkResumeEpisode,
   ]);
 
   /** Drop stale online fallback once local reads work again. */
   useEffect(() => {
-    if (!replicaMirrorHomeReads || psEpisodeSnap.error) {
+    if (!replicaMirrorHomeReads || psEpisodeSnap.activeQueryError) {
       return;
     }
     setNetworkResumeEpisode(null);
     setNetworkResumeLoading(false);
     setNetworkResumeSkippedOffline(false);
-  }, [replicaMirrorHomeReads, psEpisodeSnap.error]);
+  }, [replicaMirrorHomeReads, psEpisodeSnap.activeQueryError]);
 
   const loadNetworkResumeEpisodeRef = useRef(loadNetworkResumeEpisode);
   loadNetworkResumeEpisodeRef.current = loadNetworkResumeEpisode;
-  const psEpisodeQueryErrorRef = useRef<Error | undefined>(undefined);
-  psEpisodeQueryErrorRef.current = psEpisodeSnap.error;
-  const runDevHealthCheckRef = useRef<() => Promise<void>>(() =>
-    Promise.resolve(),
-  );
+  const loadRecentEpisodesRef = useRef(loadRecentEpisodes);
+  loadRecentEpisodesRef.current = loadRecentEpisodes;
+  const psActiveEpisodeQueryErrorRef = useRef<Error | undefined>(undefined);
+  psActiveEpisodeQueryErrorRef.current = psEpisodeSnap.activeQueryError;
 
   const { refreshing: syncPullRefreshing, onRefresh: onSyncPullRefresh } =
     usePullToResyncPowerSync(() => {
       void loadNetworkResumeEpisodeRef.current(undefined, {
-        bypassReplicaMirrorGate: Boolean(psEpisodeQueryErrorRef.current),
+        bypassReplicaMirrorGate: Boolean(psActiveEpisodeQueryErrorRef.current),
       });
-      void runDevHealthCheckRef.current();
+      void loadRecentEpisodesRef.current();
       refreshPhiSubject();
     });
 
   useFocusEffect(
     useCallback(() => {
-      if (showHealthCheck) {
-        void runDevHealthCheckRef.current();
-      }
-      if (!authUserId) {
-        return;
-      }
-      const bypass = replicaMirrorHomeReads && Boolean(psEpisodeSnap.error);
-      if (replicaMirrorHomeReads && !bypass) {
-        return;
-      }
       const cancel = { cancelled: false };
-      void loadNetworkResumeEpisode(
-        cancel,
-        bypass ? { bypassReplicaMirrorGate: true } : undefined,
-      );
+      const bypass =
+        replicaMirrorHomeReads && Boolean(psEpisodeSnap.activeQueryError);
+      if (!replicaMirrorHomeReads || bypass) {
+        void loadNetworkResumeEpisode(
+          cancel,
+          bypass ? { bypassReplicaMirrorGate: true } : undefined,
+        );
+      }
+      void loadRecentEpisodes(cancel);
       return () => {
         cancel.cancelled = true;
       };
     }, [
-      showHealthCheck,
       loadNetworkResumeEpisode,
+      loadRecentEpisodes,
       replicaMirrorHomeReads,
-      authUserId,
-      psEpisodeSnap.error,
+      psEpisodeSnap.activeQueryError,
     ]),
   );
 
@@ -279,18 +380,21 @@ export function HomeScreen({
     if (replicaMirrorHomeReads) {
       return;
     }
+    const cancel = { cancelled: false };
     const supabase = getMobileSupabaseClient();
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
-        void loadNetworkResumeEpisode();
+        void loadNetworkResumeEpisode(cancel);
+        void loadRecentEpisodes(cancel);
       }
     });
     return () => {
+      cancel.cancelled = true;
       subscription.unsubscribe();
     };
-  }, [loadNetworkResumeEpisode, replicaMirrorHomeReads]);
+  }, [loadNetworkResumeEpisode, loadRecentEpisodes, replicaMirrorHomeReads]);
 
   /**
    * Episode CTA loading: with PowerSync configured, wait on SQLite **only** while init/connect may
@@ -330,7 +434,7 @@ export function HomeScreen({
         return true;
       }
       if (replicaMirrorHomeReads) {
-        if (psEpisodeSnap.error) {
+        if (psEpisodeSnap.activeQueryError) {
           return networkResumeLoading || networkResumeSkippedOffline;
         }
         return !psBridge.firstSyncCompleted && psBridge.syncConnecting;
@@ -357,7 +461,7 @@ export function HomeScreen({
     psBridge.syncConnecting,
     psBridge.syncError,
     replicaMirrorHomeReads,
-    psEpisodeSnap.error,
+    psEpisodeSnap.activeQueryError,
     networkResumeLoading,
     networkResumeSkippedOffline,
   ]);
@@ -367,10 +471,10 @@ export function HomeScreen({
       return null;
     }
     if (replicaMirrorHomeReads) {
-      if (psEpisodeSnap.error) {
+      if (psEpisodeSnap.activeQueryError) {
         return networkResumeEpisode;
       }
-      const row = psEpisodeSnap.episode;
+      const row = psEpisodeSnap.activeEpisode;
       if (!row) {
         return null;
       }
@@ -378,141 +482,112 @@ export function HomeScreen({
     }
     if (
       powerSyncReplicaSqliteReady(psBridge) &&
-      !psEpisodeSnap.error &&
+      !psEpisodeSnap.activeQueryError &&
       networkResumeEpisode == null &&
-      psEpisodeSnap.episode != null
+      psEpisodeSnap.activeEpisode != null
     ) {
-      return episodeRowToActiveHomeSummary(psEpisodeSnap.episode);
+      return episodeRowToActiveHomeSummary(psEpisodeSnap.activeEpisode);
     }
     return networkResumeEpisode;
   }, [
     phiSubjectUserId,
     phiSubjectError,
     replicaMirrorHomeReads,
-    psEpisodeSnap.episode,
-    psEpisodeSnap.error,
+    psEpisodeSnap.activeEpisode,
+    psEpisodeSnap.activeQueryError,
     networkResumeEpisode,
     psBridge,
   ]);
 
   const activeEpisodeQueryError = useMemo(() => {
-    if (!replicaMirrorHomeReads || !psEpisodeSnap.error) {
+    if (!replicaMirrorHomeReads || !psEpisodeSnap.activeQueryError) {
       return null;
     }
     if (activeEpisodeLoading || homeActiveEpisode) {
       return null;
     }
-    return `Could not read episode status from the copy stored on this device. ${userFacingSyncHealthBridgeOrClientError(psEpisodeSnap.error)}`;
+    return `Could not read episode status from the copy stored on this device. ${userFacingSyncHealthBridgeOrClientError(
+      psEpisodeSnap.activeQueryError,
+    )}`;
   }, [
     replicaMirrorHomeReads,
-    psEpisodeSnap.error,
+    psEpisodeSnap.activeQueryError,
     activeEpisodeLoading,
     homeActiveEpisode,
   ]);
 
-  const runDevHealthCheck = useCallback(async () => {
-    if (!showHealthCheck) {
-      return;
+  const recentEpisodesFromDevice = useMemo(() => {
+    return psEpisodeSnap.completedEpisodes.slice(0, HOME_RECENT_EPISODES_LIMIT);
+  }, [psEpisodeSnap.completedEpisodes]);
+
+  const showRecentDeviceFallback =
+    !replicaMirrorHomeReads &&
+    (recentEpisodesError != null || recentEpisodesSkippedOffline) &&
+    !psEpisodeSnap.completedQueryError &&
+    recentEpisodesFromDevice.length > 0;
+
+  const recentEpisodesDisplay = showRecentDeviceFallback
+    ? recentEpisodesFromDevice
+    : replicaMirrorHomeReads
+      ? recentEpisodesFromDevice
+      : recentEpisodes;
+
+  const recentEpisodesCardLoading = replicaMirrorHomeReads
+    ? psEpisodeSnap.completedLoading
+    : recentEpisodesLoading;
+
+  const recentEpisodesFeedback = useMemo(() => {
+    if (replicaMirrorHomeReads) {
+      if (
+        psEpisodeSnap.completedQueryError &&
+        !psEpisodeSnap.completedLoading &&
+        recentEpisodesDisplay.length === 0
+      ) {
+        return {
+          message: `Could not read recent episodes from this device. ${userFacingSyncHealthBridgeOrClientError(
+            psEpisodeSnap.completedQueryError,
+          )}`,
+          tone: 'error' as const,
+        };
+      }
+      return { message: null, tone: null };
     }
-    try {
-      const mobileSupabase = getMobileSupabaseClient();
-      const {
-        data: { user },
-        error: userError,
-      } = await mobileSupabase.auth.getUser();
-
-      if (userError || !user) {
-        if (isMountedRef.current) {
-          setHealthCheck({
-            success: false,
-            message: 'Health check failed',
-            error: userError?.message ?? 'No authenticated user found',
-          });
-        }
-        return;
-      }
-
-      const result = await healthCheckProfilesLimit1(mobileSupabase);
-
-      if (result.error) {
-        if (isMountedRef.current) {
-          setHealthCheck({
-            success: false,
-            message: 'Health check failed',
-            error: result.error.message,
-          });
-        }
-      } else {
-        if (isMountedRef.current) {
-          setHealthCheck({
-            success: true,
-            message:
-              'Health check passed: authenticated user found and profiles query executed without API error (empty rows may still indicate no profile or restrictive RLS).',
-          });
-        }
-      }
-    } catch (err) {
-      // getSession may still attempt a token refresh offline; suppress network errors silently.
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      const isNetworkError =
-        message.includes('Network request failed') ||
-        message.includes('Failed to fetch');
-      if (isMountedRef.current && !isNetworkError) {
-        setHealthCheck({
-          success: false,
-          message: 'Health check error',
-          error: message,
-        });
-      }
-    }
-  }, [showHealthCheck]);
-
-  runDevHealthCheckRef.current = runDevHealthCheck;
-
-  useEffect(() => {
-    isMountedRef.current = true;
-
-    if (!showHealthCheck) {
-      return () => {
-        isMountedRef.current = false;
+    if (showRecentDeviceFallback) {
+      return {
+        message: recentEpisodesSkippedOffline
+          ? 'Showing recent episodes saved on this device while you are offline.'
+          : 'Showing recent episodes saved on this device.',
+        tone: 'info' as const,
       };
     }
-
-    void runDevHealthCheck();
-
-    return () => {
-      isMountedRef.current = false;
-    };
-  }, [showHealthCheck, deviceNetConnected, runDevHealthCheck]);
-
-  const handleSignOut = async () => {
-    const mobileSupabase = getMobileSupabaseClient();
-    setSignOutBusy(true);
-    setSignOutError(null);
-
-    try {
-      const { error } = await signOut(mobileSupabase);
-
-      if (error) {
-        setSignOutError(mapAuthError(error.message));
-      }
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : 'Unexpected authentication error';
-      setSignOutError(mapAuthError(message));
-    } finally {
-      setSignOutBusy(false);
+    if (recentEpisodesSkippedOffline) {
+      return {
+        message:
+          'Connect or wait for network reachability to load recent episodes.',
+        tone: 'error' as const,
+      };
     }
-  };
+    return {
+      message: recentEpisodesError,
+      tone: recentEpisodesError ? ('error' as const) : null,
+    };
+  }, [
+    psEpisodeSnap.completedLoading,
+    psEpisodeSnap.completedQueryError,
+    recentEpisodesDisplay.length,
+    recentEpisodesError,
+    recentEpisodesSkippedOffline,
+    replicaMirrorHomeReads,
+    showRecentDeviceFallback,
+  ]);
 
   return (
-    <AppNavigationShell title="Home">
+    <AppNavigationShell title="Home" headerAction={headerAction}>
       {powerSyncReplicaSqliteReady(psBridge) ? (
-        <PowerSyncActiveEpisodeSubscription
+        <PowerSyncEpisodeReadSubscriptions
           userId={phiSubjectError ? null : phiSubjectUserId}
-          onChange={setPsEpisodeSnap}
+          completedEpisodesFetchLimit={HOME_RECENT_EPISODES_LIMIT}
+          onSnapshots={setPsEpisodeSnap}
         />
       ) : null}
       <ScrollView
@@ -521,7 +596,6 @@ export function HomeScreen({
           flexGrow: 1,
           padding: 16,
           paddingBottom: 24,
-          justifyContent: 'flex-start',
         }}
         keyboardShouldPersistTaps="handled"
         refreshControl={
@@ -535,7 +609,7 @@ export function HomeScreen({
       >
         {phiSubjectError ? (
           <View
-            className={`mb-3 rounded-xl border border-app-border bg-app-surface p-4 dark:border-app-border-dark dark:bg-app-surface-dark`}
+            className={`mb-4 rounded-xl border border-app-border bg-app-surface p-4 dark:border-app-border-dark dark:bg-app-surface-dark`}
             accessibilityRole="alert"
           >
             <Text className={`text-base font-semibold ${nw.textInk}`}>
@@ -546,6 +620,7 @@ export function HomeScreen({
             </Text>
           </View>
         ) : null}
+
         <EpisodeStartHomeCta
           onStartEpisode={onStartEpisode}
           onResumeEpisode={onResumeEpisode}
@@ -554,123 +629,29 @@ export function HomeScreen({
           activeEpisodeQueryError={activeEpisodeQueryError}
         />
 
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Add food diary entry"
-          onPress={onGoToFoodDiary}
-          className={`mb-1 min-h-[48px] justify-center rounded-xl border border-app-border bg-app-surface px-4 py-3 dark:border-app-border-dark dark:bg-app-surface-dark`}
-        >
-          <Text
-            className={`text-center text-base font-semibold ${nw.textPrimary}`}
-            maxFontSizeMultiplier={2}
-          >
-            Food diary
-          </Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Log health markers without an episode"
+        <HomeDashboardActionCard
+          heading="Health markers"
+          description="Log vitals and wellness markers outside an episode using your saved presets."
+          ctaLabel="Log health markers"
+          ctaAccessibilityLabel="Log health markers without an episode"
           onPress={onGoToStandaloneHealthMarkers}
-          className={`mb-1 min-h-[48px] justify-center rounded-xl border border-app-border bg-app-surface px-4 py-3 dark:border-app-border-dark dark:bg-app-surface-dark`}
-        >
-          <Text
-            className={`text-center text-base font-semibold ${nw.textPrimary}`}
-            maxFontSizeMultiplier={2}
-          >
-            Health markers
-          </Text>
-        </Pressable>
+        />
 
-        <View className={`gap-3 rounded-xl p-4 ${nw.card} ${nw.cardShadow}`}>
-          <Text
-            className={`text-[22px] font-semibold ${nw.textInk}`}
-            testID="main-home-title"
-          >
-            Welcome to ABStrack
-          </Text>
+        <HomeDashboardActionCard
+          heading="Food diary"
+          description="Record meals and notes on their own, or link them later to an episode."
+          ctaLabel="Add a food diary entry"
+          ctaAccessibilityLabel="Add a food diary entry"
+          onPress={onGoToFoodDiary}
+        />
 
-          {showHealthCheck && healthCheck && (
-            <View
-              className={`my-3 rounded-lg p-3 ${
-                healthCheck.success
-                  ? nw.healthSuccessPanel
-                  : nw.healthFailurePanel
-              }`}
-            >
-              <Text
-                className={`mb-1 text-sm font-semibold ${
-                  healthCheck.success
-                    ? nw.healthSuccessTitle
-                    : nw.healthFailureTitle
-                }`}
-              >
-                {healthCheck.success
-                  ? '✓ Health Check Passed'
-                  : '✗ Health Check Failed'}
-              </Text>
-              <Text
-                className={`text-xs ${
-                  healthCheck.success
-                    ? nw.healthSuccessBody
-                    : nw.healthFailureBody
-                }`}
-              >
-                {healthCheck.message}
-              </Text>
-              {healthCheck.error && (
-                <Text
-                  className={`mt-2 font-mono text-[10px] ${
-                    healthCheck.success
-                      ? nw.healthSuccessBody
-                      : nw.healthFailureBody
-                  }`}
-                >
-                  Error: {healthCheck.error}
-                </Text>
-              )}
-            </View>
-          )}
-
-          <Text className={`text-base ${nw.textMuted}`}>
-            You are signed in.
-          </Text>
-          {signOutError ? (
-            <Text
-              className={`text-sm ${nw.textError}`}
-              accessibilityRole="alert"
-            >
-              {signOutError}
-            </Text>
-          ) : null}
-          <View className="h-2" />
-
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Go to settings"
-            onPress={onGoToSettings}
-            className={`min-h-[52px] items-center justify-center rounded-[10px] px-4 ${nw.btnSecondary}`}
-          >
-            <Text
-              className={`text-center text-[17px] font-semibold ${nw.textPrimary}`}
-            >
-              Settings
-            </Text>
-          </Pressable>
-
-          <View className="h-2" />
-
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={signOutBusy ? 'Signing out...' : 'Sign out'}
-            onPress={handleSignOut}
-            disabled={signOutBusy}
-            className={`min-h-[52px] items-center justify-center rounded-[10px] px-4 ${nw.btnPrimary} ${signOutBusy ? 'opacity-60' : ''}`}
-          >
-            <Text className={`text-lg font-bold ${nw.textOnPrimary}`}>
-              {signOutBusy ? 'Signing out...' : 'Sign out'}
-            </Text>
-          </Pressable>
-        </View>
+        <HomeRecentEpisodesCard
+          episodes={recentEpisodesDisplay}
+          loading={recentEpisodesCardLoading}
+          message={recentEpisodesFeedback.message}
+          messageTone={recentEpisodesFeedback.tone ?? undefined}
+          onViewAllEpisodes={onGoToManageEpisodes}
+        />
       </ScrollView>
     </AppNavigationShell>
   );

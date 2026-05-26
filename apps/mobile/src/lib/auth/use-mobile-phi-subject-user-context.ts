@@ -30,8 +30,8 @@ export type MobilePhiSubjectUserContextState = {
  * In-flight {@link resolveMobilePhiSubjectUserContext} results are ignored when a **new** resolve
  * starts (each `runResolve` call increments a generation counter first) or when the hook
  * **unmounts** (a final increment drops any still-pending completion). Replica readiness
- * (`database` + `localSqliteInitialized`) and `authUserId` changes recreate `runResolve` and
- * re-run the primary effect, which invokes it again; the first-sync effect may invoke it once when
+ * (`database` + `localSqliteInitialized`) recreates `runResolve`, and `authUserId` changes re-run
+ * the primary effect so resolution happens again; the first-sync effect may invoke it once when
  * `firstSyncCompleted` becomes true. Each new resolve clears `phiSubjectUserId` and `profileAppRole` before
  * awaiting the resolver so consumers that do not gate every read on `loading` cannot briefly use a
  * stale PHI subject after an account switch or replica re-scope. Resolution still runs when `authUserId` is null: on cold starts where
@@ -86,7 +86,7 @@ export function useMobilePhiSubjectUserContext(): MobilePhiSubjectUserContextSta
     setPhiSubjectUserId(result.data.phiSubjectUserId);
     setProfileAppRole(result.data.profileAppRole);
     setErrorMessage(null);
-  }, [authUserId, dbForPhi]);
+  }, [dbForPhi]);
 
   /**
    * Invalidate in-flight resolves only on real unmount. Do not bump `genRef` from other effect
@@ -102,7 +102,7 @@ export function useMobilePhiSubjectUserContext(): MobilePhiSubjectUserContextSta
 
   useEffect(() => {
     void runResolve();
-  }, [runResolve]);
+  }, [authUserId, runResolve]);
 
   const firstSyncHandledRef = useRef(false);
   useEffect(() => {

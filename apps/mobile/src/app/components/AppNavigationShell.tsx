@@ -1,5 +1,5 @@
 import React from 'react';
-import { Text } from 'react-native';
+import { Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NavigationShell } from '@abstrack/ui/native';
 import { useAppTheme } from '../theme/AppThemeContext';
@@ -8,6 +8,8 @@ import { nw } from '../theme/app-nativewind-classes';
 export type AppNavigationShellProps = {
   /** Visible screen title; header semantics come from {@link NavigationShell}'s header container. */
   title: string;
+  /** Optional trailing header action, such as the authenticated menu button. */
+  headerAction?: React.ReactNode;
   children: React.ReactNode;
 };
 
@@ -21,6 +23,7 @@ export type AppNavigationShellProps = {
  */
 export function AppNavigationShell({
   title,
+  headerAction,
   children,
 }: AppNavigationShellProps) {
   const { colors } = useAppTheme();
@@ -38,12 +41,16 @@ export function AppNavigationShell({
         }}
         mainStyle={{ flex: 1, backgroundColor: colors.bg }}
         header={
-          <Text
-            className={`text-xl font-semibold ${nw.textInk}`}
-            maxFontSizeMultiplier={2}
-          >
-            {title}
-          </Text>
+          <View className="flex-row items-center justify-between gap-3">
+            <Text
+              className={`min-w-0 flex-1 text-xl font-semibold ${nw.textInk}`}
+              maxFontSizeMultiplier={2}
+              numberOfLines={1}
+            >
+              {title}
+            </Text>
+            {headerAction ? <View>{headerAction}</View> : null}
+          </View>
         }
       >
         {children}
