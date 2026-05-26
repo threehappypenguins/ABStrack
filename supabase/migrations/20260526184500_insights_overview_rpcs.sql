@@ -76,7 +76,10 @@ BEGIN
         rb.range_start_date
       ) AS overlap_start_date,
       LEAST(
-        coalesce((e.ended_at AT TIME ZONE tz)::date, rb.range_end_date),
+        coalesce(
+          ((e.ended_at AT TIME ZONE tz) - interval '1 microsecond')::date,
+          rb.range_end_date
+        ),
         rb.range_end_date
       ) AS overlap_end_date
     FROM public.episodes e
