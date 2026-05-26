@@ -1023,7 +1023,7 @@ export function SettingsScreen() {
 
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Open Manage on episodes"
+            accessibilityLabel="Open Manage episodes"
             onPress={() =>
               navigation.navigate('Manage', { initialSegment: 'episodes' })
             }

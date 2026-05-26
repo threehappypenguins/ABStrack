@@ -30,6 +30,8 @@ export type HomeRecentEpisodesCardProps = {
   loading: boolean;
   /** Error or status message when the preview cannot be fully loaded. */
   message: string | null;
+  /** Visual + accessibility treatment for the optional message. */
+  messageTone?: 'info' | 'error';
   /** Opens the full Manage episodes screen. */
   onViewAllEpisodes: () => void;
 };
@@ -44,6 +46,7 @@ export function HomeRecentEpisodesCard({
   episodes,
   loading,
   message,
+  messageTone = 'error',
   onViewAllEpisodes,
 }: HomeRecentEpisodesCardProps) {
   const { colors } = useAppTheme();
@@ -71,10 +74,8 @@ export function HomeRecentEpisodesCard({
 
       {!loading && message ? (
         <Text
-          className={`text-sm ${message.startsWith('Showing ') ? nw.textMuted : nw.textError}`}
-          accessibilityRole={
-            message.startsWith('Showing ') ? undefined : 'alert'
-          }
+          className={`text-sm ${messageTone === 'info' ? nw.textMuted : nw.textError}`}
+          accessibilityRole={messageTone === 'error' ? 'alert' : undefined}
         >
           {message}
         </Text>

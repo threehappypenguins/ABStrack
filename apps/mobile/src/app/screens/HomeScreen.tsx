@@ -526,28 +526,41 @@ export function HomeScreen({
     ? psEpisodeSnap.completedLoading
     : recentEpisodesLoading;
 
-  const recentEpisodesMessage = useMemo(() => {
+  const recentEpisodesFeedback = useMemo(() => {
     if (replicaMirrorHomeReads) {
       if (
         psEpisodeSnap.completedQueryError &&
         !psEpisodeSnap.completedLoading &&
         recentEpisodesDisplay.length === 0
       ) {
-        return `Could not read recent episodes from this device. ${userFacingSyncHealthBridgeOrClientError(
-          psEpisodeSnap.completedQueryError,
-        )}`;
+        return {
+          message: `Could not read recent episodes from this device. ${userFacingSyncHealthBridgeOrClientError(
+            psEpisodeSnap.completedQueryError,
+          )}`,
+          tone: 'error' as const,
+        };
       }
-      return null;
+      return { message: null, tone: null };
     }
     if (showRecentDeviceFallback) {
-      return recentEpisodesSkippedOffline
-        ? 'Showing recent episodes saved on this device while you are offline.'
-        : 'Showing recent episodes saved on this device.';
+      return {
+        message: recentEpisodesSkippedOffline
+          ? 'Showing recent episodes saved on this device while you are offline.'
+          : 'Showing recent episodes saved on this device.',
+        tone: 'info' as const,
+      };
     }
     if (recentEpisodesSkippedOffline) {
-      return 'Connect or wait for network reachability to load recent episodes.';
+      return {
+        message:
+          'Connect or wait for network reachability to load recent episodes.',
+        tone: 'error' as const,
+      };
     }
-    return recentEpisodesError;
+    return {
+      message: recentEpisodesError,
+      tone: recentEpisodesError ? ('error' as const) : null,
+    };
   }, [
     psEpisodeSnap.completedLoading,
     psEpisodeSnap.completedQueryError,
@@ -625,7 +638,8 @@ export function HomeScreen({
         <HomeRecentEpisodesCard
           episodes={recentEpisodesDisplay}
           loading={recentEpisodesCardLoading}
-          message={recentEpisodesMessage}
+          message={recentEpisodesFeedback.message}
+          messageTone={recentEpisodesFeedback.tone ?? undefined}
           onViewAllEpisodes={onGoToManageEpisodes}
         />
       </ScrollView>
