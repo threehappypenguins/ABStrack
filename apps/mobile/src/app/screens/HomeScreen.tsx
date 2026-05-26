@@ -330,7 +330,6 @@ export function HomeScreen({
   loadNetworkResumeEpisodeRef.current = loadNetworkResumeEpisode;
   const loadRecentEpisodesRef = useRef(loadRecentEpisodes);
   loadRecentEpisodesRef.current = loadRecentEpisodes;
-  const authStateLoadCancelRef = useRef<{ cancelled: boolean } | null>(null);
   const psActiveEpisodeQueryErrorRef = useRef<Error | undefined>(undefined);
   psActiveEpisodeQueryErrorRef.current = psEpisodeSnap.activeQueryError;
 
@@ -371,7 +370,6 @@ export function HomeScreen({
       return;
     }
     const cancel = { cancelled: false };
-    authStateLoadCancelRef.current = cancel;
     const supabase = getMobileSupabaseClient();
     const {
       data: { subscription },
@@ -383,9 +381,6 @@ export function HomeScreen({
     });
     return () => {
       cancel.cancelled = true;
-      if (authStateLoadCancelRef.current === cancel) {
-        authStateLoadCancelRef.current = null;
-      }
       subscription.unsubscribe();
     };
   }, [loadNetworkResumeEpisode, loadRecentEpisodes, replicaMirrorHomeReads]);
