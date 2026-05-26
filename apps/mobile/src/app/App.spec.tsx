@@ -2,7 +2,7 @@ import * as React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import NetInfo from '@react-native-community/netinfo';
 import type { NetInfoState } from '@react-native-community/netinfo';
-import { ActionSheetIOS, AppState, Linking } from 'react-native';
+import { AppState, Linking } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import type { AbstrackSupabaseClient, Session } from '@abstrack/supabase';
 
@@ -19,6 +19,8 @@ import * as mobileNetinfo from '../lib/network/mobile-device-netinfo';
 type MobileAuthGetSessionResult = Awaited<
   ReturnType<typeof getMobileAuthSessionSafe>
 >;
+
+const mockShowActionSheetWithOptions = jest.fn();
 
 jest.mock('@abstrack/supabase', () => {
   const actual =
@@ -54,6 +56,15 @@ jest.mock('../lib/caretaker-invite-complete', () => ({
   completeCaretakerInviteAfterAuth: jest.fn(async () => ({ ok: true })),
 }));
 
+jest.mock('@expo/react-native-action-sheet', () => ({
+  __esModule: true,
+  ActionSheetProvider: ({ children }: { children: React.ReactNode }) =>
+    children,
+  useActionSheet: () => ({
+    showActionSheetWithOptions: mockShowActionSheetWithOptions,
+  }),
+}));
+
 const ENV_KEYS = [
   'EXPO_PUBLIC_SUPABASE_URL',
   'EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
@@ -77,6 +88,7 @@ const makeMockClient = () => ({
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockShowActionSheetWithOptions.mockReset();
 
   for (const key of ENV_KEYS) {
     snapshot[key] = process.env[key];
@@ -854,24 +866,18 @@ describe('mobile auth state sync', () => {
 
     jest.mocked(SecureStore.getItemAsync).mockResolvedValue('false');
     jest.mocked(getMobileSupabaseClient).mockReturnValue(mockClient);
-    const actionSheetSpy = jest
-      .spyOn(ActionSheetIOS, 'showActionSheetWithOptions')
-      .mockImplementation((_options, onSelect) => {
-        onSelect?.(1);
-      });
+    mockShowActionSheetWithOptions.mockImplementation((_options, onSelect) => {
+      onSelect?.(1);
+    });
 
-    try {
-      const { findByText, findByLabelText } = render(<App />);
+    const { findByText, findByLabelText } = render(<App />);
 
-      await findByText('Episode logging');
-      fireEvent.press(await findByLabelText('Open app menu'));
+    await findByText('Episode logging');
+    fireEvent.press(await findByLabelText('Open app menu'));
 
-      expect(
-        await findByLabelText('Require re-authentication on app open'),
-      ).toBeTruthy();
-    } finally {
-      actionSheetSpy.mockRestore();
-    }
+    expect(
+      await findByLabelText('Require re-authentication on app open'),
+    ).toBeTruthy();
   });
 
   test('enforces re-auth when app returns to foreground and preference is enabled', async () => {
