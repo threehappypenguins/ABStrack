@@ -15,7 +15,7 @@ function episodeSummaryLine(
 function formatInstant(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) {
-    return iso.trim() === '' ? '-' : iso;
+    return iso.trim() === '' ? '—' : iso;
   }
   return date.toLocaleString(undefined, {
     dateStyle: 'medium',
@@ -101,14 +101,14 @@ export function HomeRecentEpisodesCard({
                 {episodeSummaryLine(episode)}
               </Text>
               <Text className={`mt-2 text-sm ${nw.textMuted}`}>
-                Ended {episode.ended_at ? formatInstant(episode.ended_at) : '-'}
+                Ended {episode.ended_at ? formatInstant(episode.ended_at) : '—'}
               </Text>
               <Text className={`text-sm ${nw.textMuted}`}>
                 Duration{' '}
                 {formatEpisodeDurationSimple(
                   episode.started_at,
                   episode.ended_at,
-                ) ?? '-'}
+                ) ?? '—'}
               </Text>
             </View>
           ))}

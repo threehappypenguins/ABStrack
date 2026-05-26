@@ -169,8 +169,8 @@ export function HomeScreen({
       }
       if (!stale()) {
         setNetworkResumeSkippedOffline(false);
+        setNetworkResumeLoading(true);
       }
-      setNetworkResumeLoading(true);
       try {
         const mobileSupabase = getMobileSupabaseClient();
         const {
