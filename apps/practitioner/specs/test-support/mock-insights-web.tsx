@@ -114,3 +114,21 @@ export function InsightDateRangePicker({
 export function InsightComposedChart() {
   return <div data-testid="composed-chart" />;
 }
+
+export function InsightsSummarySection({
+  summary,
+  loading,
+  error,
+}: {
+  summary: { total_episode_count: number } | null;
+  loading?: boolean;
+  error?: string | null;
+}) {
+  return (
+    <div data-testid="insights-summary-section">
+      {loading ? <p role="status">Overview loading</p> : null}
+      {error ? <p role="alert">{error}</p> : null}
+      <p>{summary?.total_episode_count ?? 0} overview episodes</p>
+    </div>
+  );
+}

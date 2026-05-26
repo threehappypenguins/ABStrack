@@ -27,6 +27,14 @@ export {
   type InsightComposedChartProps,
 } from './lib/InsightComposedChart.js';
 export {
+  InsightsSummarySection,
+  type InsightsStartHourDistributionRow,
+  type InsightsSummaryMetrics,
+  type InsightsSummarySectionProps,
+  type InsightsSymptomFrequencyRow,
+  type InsightsWeekCountRow,
+} from './lib/InsightsSummarySection.js';
+export {
   pivotChartSeriesBucketRows,
   type ChartSeriesBucketRowInput,
 } from './lib/insight-composed-chart-utils.js';

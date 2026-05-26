@@ -15,7 +15,11 @@ import type {
 } from '@abstrack/ui';
 import {
   getChartSeries,
+  getEpisodeStartHourDistribution,
+  getEpisodeSummary,
+  getEpisodeWeekCounts,
   getUserChartManifest,
+  getSymptomFrequency,
   listUnseenChartSnapshotsForPatient,
   markChartSnapshotSeen,
 } from '@abstrack/supabase';
@@ -67,6 +71,10 @@ jest.mock('../../../lib/supabase/browser-client', () => ({
 jest.mock('@abstrack/supabase', () => ({
   getUserChartManifest: jest.fn(),
   getChartSeries: jest.fn(),
+  getEpisodeSummary: jest.fn(),
+  getEpisodeWeekCounts: jest.fn(),
+  getSymptomFrequency: jest.fn(),
+  getEpisodeStartHourDistribution: jest.fn(),
   listUnseenChartSnapshotsForPatient: jest.fn(),
   markChartSnapshotSeen: jest.fn(),
 }));
@@ -177,6 +185,21 @@ jest.mock('@abstrack/ui', () => {
         {loading ? <p role="status">Chart loading</p> : null}
       </div>
     ),
+    InsightsSummarySection: ({
+      summary,
+      loading,
+      error,
+    }: {
+      summary: { total_episode_count: number } | null;
+      loading: boolean;
+      error?: string | null;
+    }) => (
+      <div data-testid="insights-summary-section">
+        {loading ? <p role="status">Overview loading</p> : null}
+        {error ? <p role="alert">{error}</p> : null}
+        <p>{summary?.total_episode_count ?? 0} overview episodes</p>
+      </div>
+    ),
   };
 });
 
@@ -186,6 +209,19 @@ const getUserChartManifestMock = getUserChartManifest as jest.MockedFunction<
 const getChartSeriesMock = getChartSeries as jest.MockedFunction<
   typeof getChartSeries
 >;
+const getEpisodeSummaryMock = getEpisodeSummary as jest.MockedFunction<
+  typeof getEpisodeSummary
+>;
+const getEpisodeWeekCountsMock = getEpisodeWeekCounts as jest.MockedFunction<
+  typeof getEpisodeWeekCounts
+>;
+const getSymptomFrequencyMock = getSymptomFrequency as jest.MockedFunction<
+  typeof getSymptomFrequency
+>;
+const getEpisodeStartHourDistributionMock =
+  getEpisodeStartHourDistribution as jest.MockedFunction<
+    typeof getEpisodeStartHourDistribution
+  >;
 const listUnseenChartSnapshotsForPatientMock =
   listUnseenChartSnapshotsForPatient as jest.MockedFunction<
     typeof listUnseenChartSnapshotsForPatient
@@ -254,6 +290,30 @@ describe('InsightsClient', () => {
         },
       ],
     });
+    getEpisodeSummaryMock.mockResolvedValue({
+      ok: true,
+      data: {
+        total_episode_count: 5,
+        abs_episode_count: 1,
+        other_episode_count: 4,
+        average_episodes_per_week: 1.2,
+        longest_episode_free_streak_days: 6,
+        current_episode_free_streak_days: 2,
+        average_episode_duration_hours: 10.4,
+      },
+    });
+    getEpisodeWeekCountsMock.mockResolvedValue({
+      ok: true,
+      data: [],
+    });
+    getSymptomFrequencyMock.mockResolvedValue({
+      ok: true,
+      data: [],
+    });
+    getEpisodeStartHourDistributionMock.mockResolvedValue({
+      ok: true,
+      data: [],
+    });
     listUnseenChartSnapshotsForPatientMock.mockResolvedValue({
       ok: true,
       data: [],
@@ -283,6 +343,9 @@ describe('InsightsClient', () => {
 
     renderInsights();
 
+    expect(
+      await screen.findByTestId('insights-summary-section'),
+    ).toBeInTheDocument();
     expect(
       await screen.findByText(
         'No data to chart yet. Log some episodes or health markers to get started.',
@@ -316,7 +379,9 @@ describe('InsightsClient', () => {
         'No data to chart yet. Log some episodes or health markers to get started.',
       ),
     ).toBeInTheDocument();
-    expect(screen.queryByTestId('date-range-picker')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Select first series' }),
+    ).not.toBeInTheDocument();
     expect(getChartSeriesMock).not.toHaveBeenCalled();
   });
 

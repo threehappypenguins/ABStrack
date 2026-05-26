@@ -12,9 +12,17 @@ import { chartManifestSeriesDisplayLabel } from '@abstrack/types';
 import {
   CHART_SNAPSHOT_PRACTITIONER_NOTE_MAX_LENGTH,
   getChartSeries,
+  getEpisodeStartHourDistribution,
+  getEpisodeSummary,
+  getEpisodeWeekCounts,
   getUserChartManifest,
+  getSymptomFrequency,
   shareChartSnapshot,
   type AbstrackSupabaseClient,
+  type EpisodeStartHourDistributionRow,
+  type EpisodeSummaryRow,
+  type EpisodeWeekCountRow,
+  type SymptomFrequencyRow,
   type UserChartManifestSeries,
 } from '@abstrack/supabase';
 import {
@@ -22,6 +30,7 @@ import {
   InsightDateRangePicker,
   filterChartableManifestRows,
   InsightSeriesPicker,
+  InsightsSummarySection,
   pivotChartSeriesBucketRows,
   reconcileSelectedSeriesWithManifest,
   type ChartManifestRow,
@@ -82,6 +91,7 @@ export function PractitionerPatientInsightsPanel({
   supabase,
 }: PractitionerPatientInsightsPanelProps) {
   const { announce } = useAnnounce();
+  const dateRangeHeadingId = useId();
   const filtersHeadingId = useId();
   const chartOptionsHeadingId = useId();
   const bucketGroupId = useId();
@@ -108,12 +118,25 @@ export function PractitionerPatientInsightsPanel({
     ReturnType<typeof pivotChartSeriesBucketRows>
   >([]);
   const [chartError, setChartError] = useState<string | null>(null);
+  const [overviewLoading, setOverviewLoading] = useState(false);
+  const [overviewError, setOverviewError] = useState<string | null>(null);
+  const [overviewSummary, setOverviewSummary] =
+    useState<EpisodeSummaryRow | null>(null);
+  const [overviewWeekCounts, setOverviewWeekCounts] = useState<
+    EpisodeWeekCountRow[]
+  >([]);
+  const [overviewSymptomFrequencies, setOverviewSymptomFrequencies] = useState<
+    SymptomFrequencyRow[]
+  >([]);
+  const [overviewStartHourDistribution, setOverviewStartHourDistribution] =
+    useState<EpisodeStartHourDistributionRow[]>([]);
 
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [shareNote, setShareNote] = useState('');
 
   const manifestLoadGenRef = useRef(0);
   const chartLoadGenRef = useRef(0);
+  const overviewLoadGenRef = useRef(0);
   const patientUserIdRef = useRef(patientUserId);
   patientUserIdRef.current = patientUserId;
   const selectionOwnerUserIdRef = useRef<string | null>(null);
@@ -121,6 +144,7 @@ export function PractitionerPatientInsightsPanel({
   const invalidateInsightsLoads = useCallback(() => {
     manifestLoadGenRef.current += 1;
     chartLoadGenRef.current += 1;
+    overviewLoadGenRef.current += 1;
   }, []);
 
   const resetInsightsPatientState = useCallback(() => {
@@ -129,6 +153,12 @@ export function PractitionerPatientInsightsPanel({
     setChartLoading(false);
     setChartRows([]);
     setChartError(null);
+    setOverviewLoading(false);
+    setOverviewError(null);
+    setOverviewSummary(null);
+    setOverviewWeekCounts([]);
+    setOverviewSymptomFrequencies([]);
+    setOverviewStartHourDistribution([]);
     setShareDialogOpen(false);
     setShareNote('');
   }, []);
@@ -196,6 +226,83 @@ export function PractitionerPatientInsightsPanel({
     announce('Chart options loaded.', { politeness: 'polite' });
   }, [announce, patientUserId, supabase]);
 
+  const loadOverview = useCallback(async () => {
+    const requestedUserId = patientUserId;
+    const generation = ++overviewLoadGenRef.current;
+    const { p_from, p_to } = insightDateRangeToRpcBounds(dateRange);
+    setOverviewLoading(true);
+    setOverviewError(null);
+
+    const [
+      summaryResult,
+      weekCountsResult,
+      symptomFrequencyResult,
+      startHourDistributionResult,
+    ] = await Promise.all([
+      getEpisodeSummary(supabase, {
+        p_user_id: requestedUserId,
+        p_from,
+        p_to,
+        p_timezone: chartTimeZone,
+      }),
+      getEpisodeWeekCounts(supabase, {
+        p_user_id: requestedUserId,
+        p_from,
+        p_to,
+        p_timezone: chartTimeZone,
+      }),
+      getSymptomFrequency(supabase, {
+        p_user_id: requestedUserId,
+        p_from,
+        p_to,
+      }),
+      getEpisodeStartHourDistribution(supabase, {
+        p_user_id: requestedUserId,
+        p_from,
+        p_to,
+        p_timezone: chartTimeZone,
+      }),
+    ]);
+
+    if (
+      generation !== overviewLoadGenRef.current ||
+      requestedUserId !== patientUserIdRef.current
+    ) {
+      return;
+    }
+
+    setOverviewLoading(false);
+
+    if (
+      !summaryResult.ok ||
+      !weekCountsResult.ok ||
+      !symptomFrequencyResult.ok ||
+      !startHourDistributionResult.ok
+    ) {
+      const message =
+        (!summaryResult.ok && summaryResult.error.message) ||
+        (!weekCountsResult.ok && weekCountsResult.error.message) ||
+        (!symptomFrequencyResult.ok && symptomFrequencyResult.error.message) ||
+        (!startHourDistributionResult.ok &&
+          startHourDistributionResult.error.message) ||
+        'Unknown error.';
+      setOverviewSummary(null);
+      setOverviewWeekCounts([]);
+      setOverviewSymptomFrequencies([]);
+      setOverviewStartHourDistribution([]);
+      setOverviewError(message);
+      announce(`Could not load overview insights. ${message}`, {
+        politeness: 'assertive',
+      });
+      return;
+    }
+
+    setOverviewSummary(summaryResult.data);
+    setOverviewWeekCounts(weekCountsResult.data);
+    setOverviewSymptomFrequencies(symptomFrequencyResult.data);
+    setOverviewStartHourDistribution(startHourDistributionResult.data);
+  }, [announce, chartTimeZone, dateRange, patientUserId, supabase]);
+
   useEffect(() => {
     invalidateInsightsLoads();
     resetInsightsPatientState();
@@ -210,6 +317,14 @@ export function PractitionerPatientInsightsPanel({
     patientUserId,
     resetInsightsPatientState,
   ]);
+
+  useEffect(() => {
+    void loadOverview();
+
+    return () => {
+      overviewLoadGenRef.current += 1;
+    };
+  }, [loadOverview]);
 
   const loadChartSeries = useCallback(async () => {
     if (series.length === 0) {
@@ -332,122 +447,162 @@ export function PractitionerPatientInsightsPanel({
 
   return (
     <div className="space-y-8">
-      {manifestLoading ? (
-        <p className="text-sm text-app-muted" role="status">
-          Loading chart options…
+      <section
+        aria-labelledby={dateRangeHeadingId}
+        className="rounded-2xl border border-app-border/90 bg-app-surface p-6 shadow-soft ring-1 ring-[color:var(--app-ring-slate)] sm:p-8"
+      >
+        <h2
+          id={dateRangeHeadingId}
+          className="text-lg font-semibold text-app-ink"
+        >
+          Time period
+        </h2>
+        <p className="mt-1 text-sm text-app-muted">
+          The patient overview and custom chart stay aligned to this selected
+          range.
         </p>
-      ) : null}
+        <div className="mt-6">
+          <InsightDateRangePicker value={dateRange} onChange={setDateRange} />
+        </div>
+      </section>
 
-      {manifestError ? (
-        <p className="text-sm text-red-700 dark:text-red-300" role="alert">
-          {manifestError}
-        </p>
-      ) : null}
+      <InsightsSummarySection
+        dateRange={dateRange}
+        timeZone={chartTimeZone}
+        summary={overviewSummary}
+        weekCounts={overviewWeekCounts}
+        symptomFrequencies={overviewSymptomFrequencies}
+        startHourDistribution={overviewStartHourDistribution}
+        loading={overviewLoading}
+        error={overviewError}
+      />
 
-      {manifestIsEmpty ? (
-        <p className="text-sm text-app-muted" role="status">
-          {EMPTY_MANIFEST_MESSAGE}
-        </p>
-      ) : null}
-
-      {!manifestLoading && !manifestError && chartableManifest.length > 0 ? (
-        <section aria-labelledby={filtersHeadingId} className="space-y-6">
-          <h2 id={filtersHeadingId} className="sr-only">
-            Chart filters
-          </h2>
-
-          <div
-            className="space-y-6 rounded-2xl border border-app-border/90 bg-app-surface p-6 shadow-soft ring-1 ring-[color:var(--app-ring-slate)] sm:p-8"
-            aria-labelledby={chartOptionsHeadingId}
+      <section aria-labelledby={filtersHeadingId} className="space-y-6">
+        <div className="space-y-1">
+          <h2
+            id={filtersHeadingId}
+            className="text-xl font-semibold tracking-tight text-app-ink"
           >
-            <h3
-              id={chartOptionsHeadingId}
-              className="text-lg font-semibold text-app-ink"
-            >
-              What to chart
-            </h3>
-            <InsightSeriesPicker
-              manifest={manifest}
-              value={series}
-              onChange={handleSeriesChange}
-            />
-            <InsightDateRangePicker value={dateRange} onChange={setDateRange} />
-          </div>
+            Custom exploration
+          </h2>
+          <p className="text-sm text-app-muted">
+            Drill into a trend from the overview, then share the chart view you
+            want the patient to notice.
+          </p>
+        </div>
 
-          {showChartSection ? (
-            <section
-              aria-labelledby="practitioner-insights-chart-heading"
-              className="space-y-4 rounded-2xl border border-app-border/90 bg-app-surface p-6 shadow-soft ring-1 ring-[color:var(--app-ring-slate)] sm:p-8"
+        {manifestLoading ? (
+          <p className="text-sm text-app-muted" role="status">
+            Loading chart options…
+          </p>
+        ) : null}
+
+        {manifestError ? (
+          <p className="text-sm text-red-700 dark:text-red-300" role="alert">
+            {manifestError}
+          </p>
+        ) : null}
+
+        {manifestIsEmpty ? (
+          <p className="text-sm text-app-muted" role="status">
+            {EMPTY_MANIFEST_MESSAGE}
+          </p>
+        ) : null}
+
+        {!manifestLoading && !manifestError && chartableManifest.length > 0 ? (
+          <>
+            <div
+              className="space-y-6 rounded-2xl border border-app-border/90 bg-app-surface p-6 shadow-soft ring-1 ring-[color:var(--app-ring-slate)] sm:p-8"
+              aria-labelledby={chartOptionsHeadingId}
             >
               <h3
-                id="practitioner-insights-chart-heading"
+                id={chartOptionsHeadingId}
                 className="text-lg font-semibold text-app-ink"
               >
-                Chart
+                Choose data series
               </h3>
+              <InsightSeriesPicker
+                manifest={manifest}
+                value={series}
+                onChange={handleSeriesChange}
+              />
+            </div>
 
-              <div
-                role="group"
-                aria-labelledby={bucketGroupId}
-                className="flex flex-wrap gap-2"
+            {showChartSection ? (
+              <section
+                aria-labelledby="practitioner-insights-chart-heading"
+                className="space-y-4 rounded-2xl border border-app-border/90 bg-app-surface p-6 shadow-soft ring-1 ring-[color:var(--app-ring-slate)] sm:p-8"
               >
-                <span id={bucketGroupId} className="sr-only">
-                  Group chart by
-                </span>
-                {BUCKET_OPTIONS.map(({ value, label }) => {
-                  const selected = bucket === value;
-                  return (
-                    <button
-                      key={value}
-                      type="button"
-                      aria-pressed={selected}
-                      className={
-                        selected
-                          ? 'inline-flex min-h-11 items-center justify-center rounded-lg border border-app-border bg-app-primary-solid px-4 text-base font-semibold text-app-on-primary-solid shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg'
-                          : 'inline-flex min-h-11 items-center justify-center rounded-lg border border-app-border bg-app-surface px-4 text-base font-semibold text-app-ink shadow-sm transition hover:bg-[var(--app-nav-hover-bg)] outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg'
-                      }
-                      onClick={() => setBucket(value)}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {chartError ? (
-                <p
-                  className="text-sm text-red-700 dark:text-red-300"
-                  role="alert"
+                <h3
+                  id="practitioner-insights-chart-heading"
+                  className="text-lg font-semibold text-app-ink"
                 >
-                  {chartError}
-                </p>
-              ) : (
-                <InsightComposedChart
-                  series={series}
-                  data={chartRows}
-                  bucket={bucket}
-                  loading={chartLoading}
-                  summary={chartSummary}
-                  patientTimeZone={chartTimeZone}
-                  showPatientTimeZoneNote
-                  patientTimeZoneNoteUsesPatientLocal={false}
-                />
-              )}
+                  Explore chart
+                </h3>
 
-              <div className="pt-2">
-                <button
-                  type="button"
-                  className="inline-flex min-h-11 items-center justify-center rounded-lg border border-app-border bg-app-surface px-4 text-base font-semibold text-app-ink shadow-sm transition hover:bg-[var(--app-nav-hover-bg)] outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={chartLoading || Boolean(chartError)}
-                  onClick={() => setShareDialogOpen(true)}
+                <div
+                  role="group"
+                  aria-labelledby={bucketGroupId}
+                  className="flex flex-wrap gap-2"
                 >
-                  Share with patient
-                </button>
-              </div>
-            </section>
-          ) : null}
-        </section>
-      ) : null}
+                  <span id={bucketGroupId} className="sr-only">
+                    Group chart by
+                  </span>
+                  {BUCKET_OPTIONS.map(({ value, label }) => {
+                    const selected = bucket === value;
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        aria-pressed={selected ? 'true' : 'false'}
+                        className={
+                          selected
+                            ? 'inline-flex min-h-11 items-center justify-center rounded-lg border border-app-border bg-app-primary-solid px-4 text-base font-semibold text-app-on-primary-solid shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg'
+                            : 'inline-flex min-h-11 items-center justify-center rounded-lg border border-app-border bg-app-surface px-4 text-base font-semibold text-app-ink shadow-sm transition hover:bg-[var(--app-nav-hover-bg)] outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg'
+                        }
+                        onClick={() => setBucket(value)}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {chartError ? (
+                  <p
+                    className="text-sm text-red-700 dark:text-red-300"
+                    role="alert"
+                  >
+                    {chartError}
+                  </p>
+                ) : (
+                  <InsightComposedChart
+                    series={series}
+                    data={chartRows}
+                    bucket={bucket}
+                    loading={chartLoading}
+                    summary={chartSummary}
+                    patientTimeZone={chartTimeZone}
+                    showPatientTimeZoneNote
+                    patientTimeZoneNoteUsesPatientLocal={false}
+                  />
+                )}
+
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    className="inline-flex min-h-11 items-center justify-center rounded-lg border border-app-border bg-app-surface px-4 text-base font-semibold text-app-ink shadow-sm transition hover:bg-[var(--app-nav-hover-bg)] outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={chartLoading || Boolean(chartError)}
+                    onClick={() => setShareDialogOpen(true)}
+                  >
+                    Share with patient
+                  </button>
+                </div>
+              </section>
+            ) : null}
+          </>
+        ) : null}
+      </section>
 
       <ConfirmDialog
         open={shareDialogOpen}

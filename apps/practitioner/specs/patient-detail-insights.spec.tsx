@@ -11,7 +11,11 @@ import type { ChartManifestRow } from '@abstrack/ui/insights-web';
 import {
   CHART_SNAPSHOT_PRACTITIONER_NOTE_MAX_LENGTH,
   getChartSeries,
+  getEpisodeStartHourDistribution,
+  getEpisodeSummary,
+  getEpisodeWeekCounts,
   getUserChartManifest,
+  getSymptomFrequency,
   shareChartSnapshot,
 } from '@abstrack/supabase';
 import { PractitionerPatientDetailPage } from '../src/app/patients/[patientId]/practitioner-patient-detail-page';
@@ -67,6 +71,10 @@ jest.mock('@abstrack/supabase', () => {
       listPractitionerObservationNotesForPatient(...args),
     getUserChartManifest: jest.fn(),
     getChartSeries: jest.fn(),
+    getEpisodeSummary: jest.fn(),
+    getEpisodeWeekCounts: jest.fn(),
+    getSymptomFrequency: jest.fn(),
+    getEpisodeStartHourDistribution: jest.fn(),
     shareChartSnapshot: jest.fn(),
   };
 });
@@ -77,6 +85,19 @@ const getUserChartManifestMock = getUserChartManifest as jest.MockedFunction<
 const getChartSeriesMock = getChartSeries as jest.MockedFunction<
   typeof getChartSeries
 >;
+const getEpisodeSummaryMock = getEpisodeSummary as jest.MockedFunction<
+  typeof getEpisodeSummary
+>;
+const getEpisodeWeekCountsMock = getEpisodeWeekCounts as jest.MockedFunction<
+  typeof getEpisodeWeekCounts
+>;
+const getSymptomFrequencyMock = getSymptomFrequency as jest.MockedFunction<
+  typeof getSymptomFrequency
+>;
+const getEpisodeStartHourDistributionMock =
+  getEpisodeStartHourDistribution as jest.MockedFunction<
+    typeof getEpisodeStartHourDistribution
+  >;
 const shareChartSnapshotMock = shareChartSnapshot as jest.MockedFunction<
   typeof shareChartSnapshot
 >;
@@ -168,6 +189,30 @@ describe('PractitionerPatientDetailPage insights tab', () => {
         },
       ],
     });
+    getEpisodeSummaryMock.mockResolvedValue({
+      ok: true,
+      data: {
+        total_episode_count: 5,
+        abs_episode_count: 1,
+        other_episode_count: 4,
+        average_episodes_per_week: 1.2,
+        longest_episode_free_streak_days: 6,
+        current_episode_free_streak_days: 2,
+        average_episode_duration_hours: 10.4,
+      },
+    });
+    getEpisodeWeekCountsMock.mockResolvedValue({
+      ok: true,
+      data: [],
+    });
+    getSymptomFrequencyMock.mockResolvedValue({
+      ok: true,
+      data: [],
+    });
+    getEpisodeStartHourDistributionMock.mockResolvedValue({
+      ok: true,
+      data: [],
+    });
     shareChartSnapshotMock.mockResolvedValue({ ok: true, data: SNAPSHOT_ID });
   });
 
@@ -176,11 +221,22 @@ describe('PractitionerPatientDetailPage insights tab', () => {
     await screen.findByText('Alex Kim');
     await openInsightsTab();
 
+    expect(
+      await screen.findByTestId('insights-summary-section'),
+    ).toBeInTheDocument();
     await waitFor(() =>
       expect(getUserChartManifestMock).toHaveBeenCalledWith(
         expect.anything(),
         PATIENT_ID,
       ),
+    );
+    expect(getEpisodeSummaryMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ p_user_id: PATIENT_ID }),
+    );
+    expect(getEpisodeWeekCountsMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ p_user_id: PATIENT_ID }),
     );
     expect(getUserChartManifestMock).not.toHaveBeenCalledWith(
       expect.anything(),

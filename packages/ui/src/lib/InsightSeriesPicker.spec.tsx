@@ -177,17 +177,31 @@ describe('InsightSeriesPicker', () => {
     });
 
     expect(
-      within(slotThree).queryByRole('option', { name: 'Heart rate' }),
+      within(slotThree).queryByRole('option', { name: /Heart rate/i }),
     ).not.toBeInTheDocument();
     expect(
-      within(slotThree).queryByRole('option', { name: 'Brain fog' }),
+      within(slotThree).queryByRole('option', { name: /Brain fog/i }),
     ).not.toBeInTheDocument();
     expect(
-      within(slotThree).getByRole('option', { name: 'Vomiting' }),
+      within(slotThree).getByRole('option', { name: /Vomiting/i }),
     ).toBeInTheDocument();
     expect(
       within(slotThree).getByRole('option', { name: /Blood pressure/i }),
     ).toBeInTheDocument();
+  });
+
+  it('shows observation counts and observed date range in series options', () => {
+    render(<ControlledPicker />);
+
+    const option = within(
+      screen.getByLabelText('Data series 1', { selector: 'select' }),
+    ).getByRole('option', {
+      name: /Blood glucose/i,
+    });
+
+    expect(option.textContent).toContain('Blood glucose (mmol/L)');
+    expect(option.textContent).toContain('5 obs');
+    expect(option.textContent).toContain('to');
   });
 
   it('hides extra slots when the parent clears value externally', () => {

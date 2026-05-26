@@ -130,6 +130,43 @@ function findManifestRow(
   return manifest.find((row) => row.series_id === seriesId);
 }
 
+function formatObservationRange(
+  firstObservedAt: string,
+  lastObservedAt: string,
+): string {
+  const first = new Date(firstObservedAt);
+  const last = new Date(lastObservedAt);
+  if (Number.isNaN(first.getTime()) || Number.isNaN(last.getTime())) {
+    return 'Date range unavailable';
+  }
+
+  const sameYear = first.getFullYear() === last.getFullYear();
+  const start = first.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    ...(sameYear ? {} : { year: 'numeric' }),
+  });
+  const end = last.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+
+  return `${start} to ${end}`;
+}
+
+function manifestOptionLabel(row: ChartableManifestRow): string {
+  const seriesLabel = row.unit ? `${row.label} (${row.unit})` : row.label;
+  const observationLabel = `${row.observation_count.toLocaleString()} obs`;
+  const rangeLabel = formatObservationRange(
+    row.first_observed_at,
+    row.last_observed_at,
+  );
+  return [seriesLabel, observationLabel, rangeLabel]
+    .filter(Boolean)
+    .join(' · ');
+}
+
 /**
  * Accessible label for the slot remove/clear control.
  * Slot 1 clears in place; slots 2–3 remove the slot from view.
@@ -380,8 +417,7 @@ export function InsightSeriesPicker({
                   <option value="">Select a series…</option>
                   {slotOptions.map((option) => (
                     <option key={option.series_id} value={option.series_id}>
-                      {option.label}
-                      {option.unit ? ` (${option.unit})` : ''}
+                      {manifestOptionLabel(option)}
                     </option>
                   ))}
                 </PickerSelect>
