@@ -95,6 +95,7 @@ export function HomeScreen({
   );
   const [recentEpisodesSkippedOffline, setRecentEpisodesSkippedOffline] =
     useState(false);
+  const isMountedRef = useRef(true);
 
   const {
     authUserId,
@@ -110,6 +111,13 @@ export function HomeScreen({
   );
   const [psEpisodeSnap, setPsEpisodeSnap] =
     useState<PowerSyncEpisodeReadSnapshots>(EMPTY_POWER_SYNC_EPISODE_SNAP);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!psBridge.database || !psBridge.localSqliteInitialized) {
@@ -144,7 +152,8 @@ export function HomeScreen({
       cancel?: { cancelled: boolean },
       options?: { bypassReplicaMirrorGate?: boolean },
     ) => {
-      const stale = () => cancel?.cancelled === true;
+      const stale = () =>
+        cancel?.cancelled === true || isMountedRef.current === false;
       if (!phiSubjectUserId) {
         if (!stale()) {
           setNetworkResumeLoading(false);
@@ -213,7 +222,8 @@ export function HomeScreen({
 
   const loadRecentEpisodes = useCallback(
     async (cancel?: { cancelled: boolean }) => {
-      const stale = () => cancel?.cancelled === true;
+      const stale = () =>
+        cancel?.cancelled === true || isMountedRef.current === false;
       if (!phiSubjectUserId) {
         if (!stale()) {
           setRecentEpisodes([]);
