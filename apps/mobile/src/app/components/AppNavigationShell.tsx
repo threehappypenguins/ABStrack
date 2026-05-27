@@ -30,8 +30,8 @@ export function AppNavigationShell({
   const { colors } = useAppTheme();
 
   return (
-    <SafeAreaView className="flex-1" edges={['top', 'left', 'right']}>
-      <AppGridBackground>
+    <AppGridBackground>
+      <SafeAreaView className="flex-1" edges={['top', 'left', 'right']}>
         <NavigationShell
           style={{ flex: 1, backgroundColor: 'transparent' }}
           headerStyle={{
@@ -54,7 +54,7 @@ export function AppNavigationShell({
         >
           {children}
         </NavigationShell>
-      </AppGridBackground>
-    </SafeAreaView>
+      </SafeAreaView>
+    </AppGridBackground>
   );
 }

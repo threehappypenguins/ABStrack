@@ -49,6 +49,9 @@ export function AppGridBackground({
   const { colorScheme, colors } = useAppTheme();
   const tokens =
     colorScheme === 'dark' ? darkBackgroundTokens : lightBackgroundTokens;
+  const instanceId = React.useId().replace(/[^a-zA-Z0-9_-]/g, '');
+  const gradientId = `app-grid-gradient-${instanceId}`;
+  const patternId = `app-grid-pattern-${instanceId}`;
 
   return (
     <View style={[styles.root, { backgroundColor: colors.bg }, style]}>
@@ -60,19 +63,13 @@ export function AppGridBackground({
       >
         <Svg width="100%" height="100%" preserveAspectRatio="none">
           <Defs>
-            <LinearGradient
-              id="app-grid-gradient"
-              x1="0%"
-              y1="0%"
-              x2="0%"
-              y2="100%"
-            >
+            <LinearGradient id={gradientId} x1="0%" y1="0%" x2="0%" y2="100%">
               <Stop offset="0%" stopColor={tokens.gradientStart} />
               <Stop offset="45%" stopColor={tokens.gradientMiddle} />
               <Stop offset="100%" stopColor={tokens.gradientEnd} />
             </LinearGradient>
             <Pattern
-              id="app-grid-pattern"
+              id={patternId}
               patternUnits="userSpaceOnUse"
               width={GRID_TILE_WIDTH}
               height={GRID_TILE_HEIGHT}
@@ -91,14 +88,14 @@ export function AppGridBackground({
             y="0"
             width="100%"
             height="100%"
-            fill="url(#app-grid-gradient)"
+            fill={`url(#${gradientId})`}
           />
           <Rect
             x="0"
             y="0"
             width="100%"
             height="100%"
-            fill="url(#app-grid-pattern)"
+            fill={`url(#${patternId})`}
           />
         </Svg>
       </View>

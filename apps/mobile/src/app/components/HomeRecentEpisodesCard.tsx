@@ -92,6 +92,9 @@ export function HomeRecentEpisodesCard({
 
       {!loading && episodes.length > 0 ? (
         <View className="gap-3" accessibilityRole="list">
+          {/* TODO(#218): Restore the per-item list role once the mobile accessibility
+              tooling follow-up lands and we can reintroduce the supported RN role
+              prop/value pair instead of the removed invalid cast. */}
           {episodes.map((episode) => (
             <View
               key={episode.id}

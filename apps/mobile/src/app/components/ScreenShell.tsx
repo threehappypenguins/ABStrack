@@ -32,8 +32,11 @@ export function ScreenShell({
   const stretch = contentAlign === 'stretch';
 
   return (
-    <SafeAreaView className="flex-1" edges={['top', 'left', 'right', 'bottom']}>
-      <AppGridBackground>
+    <AppGridBackground>
+      <SafeAreaView
+        className="flex-1"
+        edges={['top', 'left', 'right', 'bottom']}
+      >
         <View className={`flex-1 p-4 ${stretch ? '' : 'justify-center'}`}>
           <View
             className={`gap-3 rounded-xl p-4 ${stretch ? 'min-h-0 w-full flex-1' : ''} ${nw.card} ${nw.cardShadow}`}
@@ -41,7 +44,7 @@ export function ScreenShell({
             {children}
           </View>
         </View>
-      </AppGridBackground>
-    </SafeAreaView>
+      </SafeAreaView>
+    </AppGridBackground>
   );
 }
