@@ -666,6 +666,7 @@ export function EpisodeStartScreen() {
         {!blockingActiveEpisode ? (
           <AsyncScreenContainer
             status={status}
+            withBackground={false}
             loadingAccessibilityLabel={
               submitting ? 'Starting episode' : 'Loading episode templates'
             }

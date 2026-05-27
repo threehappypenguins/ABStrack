@@ -2,6 +2,7 @@ import React from 'react';
 import { View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { nw } from '../theme/app-nativewind-classes';
+import { AppGridBackground } from './AppGridBackground';
 
 export type ScreenShellContentAlign = 'center' | 'stretch';
 
@@ -31,15 +32,19 @@ export function ScreenShell({
   const stretch = contentAlign === 'stretch';
 
   return (
-    <SafeAreaView
-      className={`flex-1 p-4 ${stretch ? '' : 'justify-center'} ${nw.screenBg}`}
-      edges={['top', 'left', 'right', 'bottom']}
-    >
-      <View
-        className={`gap-3 rounded-xl p-4 ${stretch ? 'min-h-0 w-full flex-1' : ''} ${nw.card} ${nw.cardShadow}`}
+    <AppGridBackground>
+      <SafeAreaView
+        className="flex-1"
+        edges={['top', 'left', 'right', 'bottom']}
       >
-        {children}
-      </View>
-    </SafeAreaView>
+        <View className={`flex-1 p-4 ${stretch ? '' : 'justify-center'}`}>
+          <View
+            className={`gap-3 rounded-xl p-4 ${stretch ? 'min-h-0 w-full flex-1' : ''} ${nw.card} ${nw.cardShadow}`}
+          >
+            {children}
+          </View>
+        </View>
+      </SafeAreaView>
+    </AppGridBackground>
   );
 }

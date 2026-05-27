@@ -15,6 +15,7 @@ import { announce } from '@abstrack/ui/native';
 import { COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
 import { useSymptomPresetEditor } from '../../lib/symptom-presets/use-symptom-preset-editor';
 import { AsyncScreenContainer } from '../components/AsyncScreenContainer';
+import { AppGridBackground } from '../components/AppGridBackground';
 import { SymptomLineCard } from '../components/symptom-presets/SymptomLineCard';
 import { SymptomResponseTypePicker } from '../components/symptom-presets/SymptomResponseTypePicker';
 import type { SymptomPresetsStackParamList } from '../navigation/types';
@@ -322,70 +323,72 @@ export function SymptomPresetEditorScreen() {
         }}
         accessibilityViewIsModal
       >
-        <SafeAreaView
-          className={`flex-1 ${nw.screenBg}`}
-          edges={['top', 'left', 'right', 'bottom']}
-        >
-          <View
-            className="flex-row items-center justify-between border-b px-4 py-3"
-            style={{
-              borderColor: colors.border,
-              minHeight: COMFORTABLE_TOUCH_TARGET_DP,
-            }}
+        <AppGridBackground>
+          <SafeAreaView
+            className="flex-1"
+            edges={['top', 'left', 'right', 'bottom']}
           >
-            <Text
-              className={`flex-1 text-lg font-semibold ${nw.textInk}`}
-              maxFontSizeMultiplier={2}
-            >
-              Pick a suggestion
-            </Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Close suggestions"
-              onPress={() => {
-                setSuggestionsOpen(false);
-              }}
-              hitSlop={12}
+            <View
+              className="flex-row items-center justify-between border-b px-4 py-3"
               style={{
-                minWidth: COMFORTABLE_TOUCH_TARGET_DP,
+                borderColor: colors.border,
                 minHeight: COMFORTABLE_TOUCH_TARGET_DP,
-                alignItems: 'center',
-                justifyContent: 'center',
               }}
             >
-              <Text className={`text-[17px] font-semibold ${nw.textPrimary}`}>
-                Done
+              <Text
+                className={`flex-1 text-lg font-semibold ${nw.textInk}`}
+                maxFontSizeMultiplier={2}
+              >
+                Pick a suggestion
               </Text>
-            </Pressable>
-          </View>
-          <ScrollView
-            className="flex-1 px-4 pt-3"
-            contentContainerStyle={{ paddingBottom: 32 }}
-            keyboardShouldPersistTaps="handled"
-          >
-            {ALL_ABS_SYMPTOM_SUGGESTIONS.map((suggestion) => (
               <Pressable
-                key={suggestion}
                 accessibilityRole="button"
-                accessibilityLabel={`Use suggestion ${suggestion}`}
+                accessibilityLabel="Close suggestions"
                 onPress={() => {
-                  setNewSymptomName(suggestion);
-                  announce(`Filled symptom name: ${suggestion}`);
                   setSuggestionsOpen(false);
                 }}
-                className={`mb-3 rounded-xl border px-4 py-4 active:opacity-90 ${nw.card}`}
-                style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP + 8 }}
+                hitSlop={12}
+                style={{
+                  minWidth: COMFORTABLE_TOUCH_TARGET_DP,
+                  minHeight: COMFORTABLE_TOUCH_TARGET_DP,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
               >
-                <Text
-                  className={`text-[17px] ${nw.textInk}`}
-                  maxFontSizeMultiplier={2}
-                >
-                  {suggestion}
+                <Text className={`text-[17px] font-semibold ${nw.textPrimary}`}>
+                  Done
                 </Text>
               </Pressable>
-            ))}
-          </ScrollView>
-        </SafeAreaView>
+            </View>
+            <ScrollView
+              className="flex-1 px-4 pt-3"
+              contentContainerStyle={{ paddingBottom: 32 }}
+              keyboardShouldPersistTaps="handled"
+            >
+              {ALL_ABS_SYMPTOM_SUGGESTIONS.map((suggestion) => (
+                <Pressable
+                  key={suggestion}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Use suggestion ${suggestion}`}
+                  onPress={() => {
+                    setNewSymptomName(suggestion);
+                    announce(`Filled symptom name: ${suggestion}`);
+                    setSuggestionsOpen(false);
+                  }}
+                  className={`mb-3 rounded-xl border px-4 py-4 active:opacity-90 ${nw.card}`}
+                  style={{ minHeight: COMFORTABLE_TOUCH_TARGET_DP + 8 }}
+                >
+                  <Text
+                    className={`text-[17px] ${nw.textInk}`}
+                    maxFontSizeMultiplier={2}
+                  >
+                    {suggestion}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </SafeAreaView>
+        </AppGridBackground>
       </Modal>
     </AsyncScreenContainer>
   );

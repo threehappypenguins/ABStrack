@@ -23,13 +23,6 @@ function formatInstant(iso: string): string {
   });
 }
 
-// React Native docs support `listitem`, but this repo's current types/linting still lag behind.
-// Remove this cast once the accessibility tooling catches up and accepts the role directly.
-const ACCESSIBILITY_ROLE_LISTITEM =
-  'listitem' as unknown as React.ComponentProps<
-    typeof View
-  >['accessibilityRole'];
-
 export type HomeRecentEpisodesCardProps = {
   /** Recent ended episodes to preview. */
   episodes: EpisodeRow[];
@@ -99,11 +92,13 @@ export function HomeRecentEpisodesCard({
 
       {!loading && episodes.length > 0 ? (
         <View className="gap-3" accessibilityRole="list">
+          {/* TODO(#218): Restore the per-item list role once the mobile accessibility
+              tooling follow-up lands and we can reintroduce the supported RN role
+              prop/value pair instead of the removed invalid cast. */}
           {episodes.map((episode) => (
             <View
               key={episode.id}
               className={`rounded-xl border px-4 py-3 ${nw.card}`}
-              accessibilityRole={ACCESSIBILITY_ROLE_LISTITEM}
             >
               <Text className={`text-base font-semibold ${nw.textInk}`}>
                 {episodeSummaryLine(episode)}

@@ -5,6 +5,7 @@ import { useActionSheet } from '@expo/react-native-action-sheet';
 import { Ionicons } from '@expo/vector-icons';
 import { announce } from '@abstrack/ui/native';
 import { COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
+import { buildThemedActionSheetOptions } from '../../lib/build-themed-action-sheet-options';
 import { useAppTheme } from '../../theme/AppThemeContext';
 import { nw } from '../../theme/app-nativewind-classes';
 
@@ -40,7 +41,7 @@ export function PresetOptionSheetField({
   disabled = false,
   hint = 'Tap to see a list of choices.',
 }: PresetOptionSheetFieldProps) {
-  const { colors } = useAppTheme();
+  const { colorScheme, colors } = useAppTheme();
   const insets = useSafeAreaInsets();
   const { showActionSheetWithOptions } = useActionSheet();
 
@@ -67,15 +68,18 @@ export function PresetOptionSheetField({
       Platform.OS === 'android' ? Math.max(insets.bottom, 24) : 0;
 
     showActionSheetWithOptions(
-      {
+      buildThemedActionSheetOptions({
         title: label,
         message: hint,
         options: sheetOptions,
         cancelButtonIndex,
-        ...(androidBottomPad > 0
-          ? { containerStyle: { paddingBottom: androidBottomPad } }
-          : {}),
-      },
+        colors,
+        colorScheme,
+        containerStyle:
+          androidBottomPad > 0
+            ? { paddingBottom: androidBottomPad }
+            : undefined,
+      }),
       (selectedIndex?: number) => {
         if (selectedIndex == null || selectedIndex === cancelButtonIndex) {
           return;
@@ -87,6 +91,8 @@ export function PresetOptionSheetField({
       },
     );
   }, [
+    colorScheme,
+    colors,
     disabled,
     hint,
     insets.bottom,

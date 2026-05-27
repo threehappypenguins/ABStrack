@@ -1395,6 +1395,7 @@ export function HealthMarkerPromptScreen() {
         ) : (
           <AsyncScreenContainer
             status={status}
+            withBackground={false}
             loadingAccessibilityLabel="Loading health marker list"
             errorTitle="Could not load health markers"
             errorMessage={errorMessage ?? undefined}

@@ -5,6 +5,7 @@ import { useActionSheet } from '@expo/react-native-action-sheet';
 import { Ionicons } from '@expo/vector-icons';
 import { COMFORTABLE_TOUCH_TARGET_DP } from '@abstrack/ui/native';
 import { useAppTheme } from '../theme/AppThemeContext';
+import { buildThemedActionSheetOptions } from '../lib/build-themed-action-sheet-options';
 
 export type AppSecondaryMenuButtonProps = {
   /** Opens the standalone Manage screen. */
@@ -23,7 +24,7 @@ export function AppSecondaryMenuButton({
   onGoToManage,
   onGoToSettings,
 }: AppSecondaryMenuButtonProps) {
-  const { colors } = useAppTheme();
+  const { colorScheme, colors } = useAppTheme();
   const insets = useSafeAreaInsets();
   const { showActionSheetWithOptions } = useActionSheet();
 
@@ -34,14 +35,17 @@ export function AppSecondaryMenuButton({
       Platform.OS === 'android' ? Math.max(insets.bottom, 24) : 0;
 
     showActionSheetWithOptions(
-      {
+      buildThemedActionSheetOptions({
         title: 'Menu',
         options,
         cancelButtonIndex,
-        ...(androidBottomPad > 0
-          ? { containerStyle: { paddingBottom: androidBottomPad } }
-          : {}),
-      },
+        colors,
+        colorScheme,
+        containerStyle:
+          androidBottomPad > 0
+            ? { paddingBottom: androidBottomPad }
+            : undefined,
+      }),
       (selectedIndex?: number) => {
         if (selectedIndex === 0) {
           onGoToManage();
@@ -52,7 +56,14 @@ export function AppSecondaryMenuButton({
         }
       },
     );
-  }, [insets.bottom, onGoToManage, onGoToSettings, showActionSheetWithOptions]);
+  }, [
+    colorScheme,
+    colors,
+    insets.bottom,
+    onGoToManage,
+    onGoToSettings,
+    showActionSheetWithOptions,
+  ]);
 
   return (
     <Pressable
