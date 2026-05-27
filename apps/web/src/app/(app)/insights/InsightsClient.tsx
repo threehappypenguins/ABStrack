@@ -13,8 +13,13 @@ import {
   getChartSeries,
   getUserChartManifest,
   listUnseenChartSnapshotsForPatient,
+  loadEpisodeInsightsOverview,
   markChartSnapshotSeen,
   type ChartSnapshotRow,
+  type EpisodeStartHourDistributionRow,
+  type EpisodeSummaryRow,
+  type EpisodeWeekCountRow,
+  type SymptomFrequencyRow,
   type UserChartManifestSeries,
 } from '@abstrack/supabase';
 import {
@@ -22,6 +27,7 @@ import {
   InsightDateRangePicker,
   filterChartableManifestRows,
   InsightSeriesPicker,
+  InsightsSummarySection,
   pivotChartSeriesBucketRows,
   reconcileSelectedSeriesWithManifest,
   type ChartManifestRow,
@@ -73,6 +79,7 @@ function manifestToChartRows(
  */
 export function InsightsClient() {
   const { announce } = useAnnounce();
+  const dateRangeHeadingId = useId();
   const filtersHeadingId = useId();
   const chartOptionsHeadingId = useId();
   const bucketGroupId = useId();
@@ -113,6 +120,18 @@ export function InsightsClient() {
     ReturnType<typeof pivotChartSeriesBucketRows>
   >([]);
   const [chartError, setChartError] = useState<string | null>(null);
+  const [overviewLoading, setOverviewLoading] = useState(false);
+  const [overviewError, setOverviewError] = useState<string | null>(null);
+  const [overviewSummary, setOverviewSummary] =
+    useState<EpisodeSummaryRow | null>(null);
+  const [overviewWeekCounts, setOverviewWeekCounts] = useState<
+    EpisodeWeekCountRow[]
+  >([]);
+  const [overviewSymptomFrequencies, setOverviewSymptomFrequencies] = useState<
+    SymptomFrequencyRow[]
+  >([]);
+  const [overviewStartHourDistribution, setOverviewStartHourDistribution] =
+    useState<EpisodeStartHourDistributionRow[]>([]);
 
   const [unseenSnapshots, setUnseenSnapshots] = useState<ChartSnapshotRow[]>(
     [],
@@ -125,6 +144,7 @@ export function InsightsClient() {
 
   const manifestLoadGenRef = useRef(0);
   const chartLoadGenRef = useRef(0);
+  const overviewLoadGenRef = useRef(0);
   const unseenSnapshotsLoadGenRef = useRef(0);
   const pendingSeenSnapshotIdRef = useRef<string | null>(null);
   /** Snapshot RPC bounds + timezone; set synchronously before series state updates. */
@@ -142,6 +162,7 @@ export function InsightsClient() {
   const invalidateInsightsLoads = useCallback(() => {
     manifestLoadGenRef.current += 1;
     chartLoadGenRef.current += 1;
+    overviewLoadGenRef.current += 1;
   }, []);
 
   const resetInsightsPatientState = useCallback(() => {
@@ -154,6 +175,12 @@ export function InsightsClient() {
     setChartError(null);
     setSharedSnapshotNote(null);
     setSharedSnapshotChartTimeZone(null);
+    setOverviewLoading(false);
+    setOverviewError(null);
+    setOverviewSummary(null);
+    setOverviewWeekCounts([]);
+    setOverviewSymptomFrequencies([]);
+    setOverviewStartHourDistribution([]);
   }, []);
 
   const handleSeriesChange = useCallback(
@@ -275,6 +302,56 @@ export function InsightsClient() {
     announce('Chart options loaded.', { politeness: 'polite' });
   }, [announce, phiSubjectUserId]);
 
+  const loadOverview = useCallback(async () => {
+    if (phiSubjectUserId == null) {
+      return;
+    }
+
+    const requestedUserId = phiSubjectUserId;
+    const generation = ++overviewLoadGenRef.current;
+    const rpcOverride = chartRpcBoundsOverrideRef.current;
+    const { p_from, p_to } =
+      rpcOverride ?? insightDateRangeToRpcBounds(dateRange);
+    const overviewTimeZone = rpcOverride?.p_timezone ?? activeChartTimeZone;
+    setOverviewLoading(true);
+    setOverviewError(null);
+
+    const supabase = createBrowserClient();
+    const overviewResult = await loadEpisodeInsightsOverview(supabase, {
+      p_user_id: requestedUserId,
+      p_from,
+      p_to,
+      p_timezone: overviewTimeZone,
+    });
+
+    if (
+      generation !== overviewLoadGenRef.current ||
+      requestedUserId !== phiSubjectUserIdRef.current
+    ) {
+      return;
+    }
+
+    setOverviewLoading(false);
+
+    if (!overviewResult.ok) {
+      const message = overviewResult.error.message || 'Unknown error.';
+      setOverviewSummary(null);
+      setOverviewWeekCounts([]);
+      setOverviewSymptomFrequencies([]);
+      setOverviewStartHourDistribution([]);
+      setOverviewError(message);
+      announce(`Could not load overview insights. ${message}`, {
+        politeness: 'assertive',
+      });
+      return;
+    }
+
+    setOverviewSummary(overviewResult.data.summary);
+    setOverviewWeekCounts(overviewResult.data.weekCounts);
+    setOverviewSymptomFrequencies(overviewResult.data.symptomFrequencies);
+    setOverviewStartHourDistribution(overviewResult.data.startHourDistribution);
+  }, [activeChartTimeZone, announce, dateRange, phiSubjectUserId]);
+
   useEffect(() => {
     if (viewingOwnInsights && phiScopeReady) {
       void loadUnseenSnapshots();
@@ -314,6 +391,40 @@ export function InsightsClient() {
     phiSubjectUserId,
     resetInsightsPatientState,
   ]);
+
+  useEffect(() => {
+    overviewLoadGenRef.current += 1;
+
+    if (phiScopeLoading) {
+      setOverviewLoading(true);
+      setOverviewError(null);
+      setOverviewSummary(null);
+      setOverviewWeekCounts([]);
+      setOverviewSymptomFrequencies([]);
+      setOverviewStartHourDistribution([]);
+      return () => {
+        overviewLoadGenRef.current += 1;
+      };
+    }
+
+    if (phiSubjectUserId == null || phiScopeError) {
+      setOverviewLoading(false);
+      setOverviewError(null);
+      setOverviewSummary(null);
+      setOverviewWeekCounts([]);
+      setOverviewSymptomFrequencies([]);
+      setOverviewStartHourDistribution([]);
+      return () => {
+        overviewLoadGenRef.current += 1;
+      };
+    }
+
+    void loadOverview();
+
+    return () => {
+      overviewLoadGenRef.current += 1;
+    };
+  }, [loadOverview, phiScopeError, phiScopeLoading, phiSubjectUserId]);
 
   const loadChartSeries = useCallback(async () => {
     if (phiSubjectUserId == null || series.length === 0) {
@@ -496,134 +607,180 @@ export function InsightsClient() {
         </div>
       ) : null}
 
-      {manifestLoading ? (
-        <p className="text-sm text-app-muted" role="status">
-          Loading chart options…
-        </p>
-      ) : null}
-
-      {manifestError ? (
-        <p className="text-sm text-red-700 dark:text-red-300" role="alert">
-          {manifestError}
-        </p>
-      ) : null}
-
-      {manifestIsEmpty ? (
-        <p className="text-sm text-app-muted" role="status">
-          {EMPTY_MANIFEST_MESSAGE}
-        </p>
-      ) : null}
-
-      {phiScopeReady &&
-      !manifestLoading &&
-      !manifestError &&
-      chartableManifest.length > 0 ? (
-        <section aria-labelledby={filtersHeadingId} className="space-y-6">
-          <h2 id={filtersHeadingId} className="sr-only">
-            Chart filters
-          </h2>
-
-          <div
-            className="space-y-6 rounded-2xl border border-app-border/90 bg-app-surface p-6 shadow-soft ring-1 ring-[color:var(--app-ring-slate)] sm:p-8"
-            aria-labelledby={chartOptionsHeadingId}
+      {phiScopeReady ? (
+        <section
+          aria-labelledby={dateRangeHeadingId}
+          className="rounded-2xl border border-app-border/90 bg-app-surface p-6 shadow-soft ring-1 ring-[color:var(--app-ring-slate)] sm:p-8"
+        >
+          <h2
+            id={dateRangeHeadingId}
+            className="text-lg font-semibold text-app-ink"
           >
-            <h3
-              id={chartOptionsHeadingId}
-              className="text-lg font-semibold text-app-ink"
-            >
-              What to chart
-            </h3>
-            <InsightSeriesPicker
-              manifest={manifest}
-              value={series}
-              onChange={handleSeriesChange}
-            />
+            Time period
+          </h2>
+          <p className="mt-1 text-sm text-app-muted">
+            The overview and custom chart below stay in sync with this selected
+            range.
+          </p>
+          <div className="mt-6">
             <InsightDateRangePicker
               value={dateRange}
               onChange={handleDateRangeChange}
             />
           </div>
+        </section>
+      ) : null}
 
-          {showChartSection ? (
-            <section
-              aria-labelledby="insights-chart-heading"
-              className="space-y-4 rounded-2xl border border-app-border/90 bg-app-surface p-6 shadow-soft ring-1 ring-[color:var(--app-ring-slate)] sm:p-8"
+      {phiScopeReady ? (
+        <InsightsSummarySection
+          dateRange={dateRange}
+          timeZone={activeChartTimeZone}
+          summary={overviewSummary}
+          weekCounts={overviewWeekCounts}
+          symptomFrequencies={overviewSymptomFrequencies}
+          startHourDistribution={overviewStartHourDistribution}
+          loading={overviewLoading}
+          error={overviewError}
+        />
+      ) : null}
+
+      {phiScopeReady ? (
+        <section aria-labelledby={filtersHeadingId} className="space-y-6">
+          <div className="space-y-1">
+            <h2
+              id={filtersHeadingId}
+              className="text-xl font-semibold tracking-tight text-app-ink"
             >
-              <h3
-                id="insights-chart-heading"
-                className="text-lg font-semibold text-app-ink"
-              >
-                Chart
-              </h3>
+              Custom exploration
+            </h2>
+            <p className="text-sm text-app-muted">
+              Use the chart builder to dig into a pattern from the overview or a
+              chart your practitioner shared.
+            </p>
+          </div>
 
-              {sharedSnapshotNote ? (
-                <div
-                  className="rounded-lg border border-app-border bg-app-bg/80 px-4 py-3 text-sm text-app-ink"
-                  role="note"
-                >
-                  <p className="font-medium text-app-ink">
-                    Note from your practitioner
-                  </p>
-                  <p className="mt-1 whitespace-pre-wrap text-app-muted">
-                    {sharedSnapshotNote}
-                  </p>
-                </div>
-              ) : null}
+          {manifestLoading ? (
+            <p className="text-sm text-app-muted" role="status">
+              Loading chart options…
+            </p>
+          ) : null}
 
+          {manifestError ? (
+            <p className="text-sm text-red-700 dark:text-red-300" role="alert">
+              {manifestError}
+            </p>
+          ) : null}
+
+          {manifestIsEmpty ? (
+            <p className="text-sm text-app-muted" role="status">
+              {EMPTY_MANIFEST_MESSAGE}
+            </p>
+          ) : null}
+
+          {!manifestLoading &&
+          !manifestError &&
+          chartableManifest.length > 0 ? (
+            <>
               <div
-                role="group"
-                aria-labelledby={bucketGroupId}
-                className="flex flex-wrap gap-2"
+                className="space-y-6 rounded-2xl border border-app-border/90 bg-app-surface p-6 shadow-soft ring-1 ring-[color:var(--app-ring-slate)] sm:p-8"
+                aria-labelledby={chartOptionsHeadingId}
               >
-                <span id={bucketGroupId} className="sr-only">
-                  Group chart by
-                </span>
-                {BUCKET_OPTIONS.map(({ value, label }) => {
-                  const selected = bucket === value;
-                  return (
-                    <button
-                      key={value}
-                      type="button"
-                      aria-pressed={selected}
-                      className={
-                        selected
-                          ? 'inline-flex min-h-11 items-center justify-center rounded-lg border border-app-border bg-app-primary-solid px-4 text-base font-semibold text-app-on-primary-solid shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg'
-                          : 'inline-flex min-h-11 items-center justify-center rounded-lg border border-app-border bg-app-surface px-4 text-base font-semibold text-app-ink shadow-sm transition hover:bg-[var(--app-nav-hover-bg)] outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg'
-                      }
-                      onClick={() => handleBucketChange(value)}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
+                <h3
+                  id={chartOptionsHeadingId}
+                  className="text-lg font-semibold text-app-ink"
+                >
+                  Choose data series
+                </h3>
+                <InsightSeriesPicker
+                  manifest={manifest}
+                  value={series}
+                  onChange={handleSeriesChange}
+                  timeZone={activeChartTimeZone}
+                />
               </div>
 
-              {chartError ? (
-                <p
-                  className="text-sm text-red-700 dark:text-red-300"
-                  role="alert"
+              {showChartSection ? (
+                <section
+                  aria-labelledby="insights-chart-heading"
+                  className="space-y-4 rounded-2xl border border-app-border/90 bg-app-surface p-6 shadow-soft ring-1 ring-[color:var(--app-ring-slate)] sm:p-8"
                 >
-                  {chartError}
-                </p>
-              ) : (
-                <InsightComposedChart
-                  series={series}
-                  data={chartRows}
-                  bucket={bucket}
-                  loading={chartLoading}
-                  summary={chartSummary}
-                  patientTimeZone={activeChartTimeZone}
-                  showPatientTimeZoneNote={
-                    showPatientTimeZoneNote || showSharedChartTimeZoneNote
-                  }
-                  patientTimeZoneNoteVariant={
-                    showSharedChartTimeZoneNote
-                      ? 'practitionerShared'
-                      : 'browser'
-                  }
-                />
-              )}
-            </section>
+                  <h3
+                    id="insights-chart-heading"
+                    className="text-lg font-semibold text-app-ink"
+                  >
+                    Explore chart
+                  </h3>
+
+                  {sharedSnapshotNote ? (
+                    <div
+                      className="rounded-lg border border-app-border bg-app-bg/80 px-4 py-3 text-sm text-app-ink"
+                      role="note"
+                    >
+                      <p className="font-medium text-app-ink">
+                        Note from your practitioner
+                      </p>
+                      <p className="mt-1 whitespace-pre-wrap text-app-muted">
+                        {sharedSnapshotNote}
+                      </p>
+                    </div>
+                  ) : null}
+
+                  <div
+                    role="group"
+                    aria-labelledby={bucketGroupId}
+                    className="flex flex-wrap gap-2"
+                  >
+                    <span id={bucketGroupId} className="sr-only">
+                      Group chart by
+                    </span>
+                    {BUCKET_OPTIONS.map(({ value, label }) => {
+                      const selected = bucket === value;
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          aria-pressed={selected ? 'true' : 'false'}
+                          className={
+                            selected
+                              ? 'inline-flex min-h-11 items-center justify-center rounded-lg border border-app-border bg-app-primary-solid px-4 text-base font-semibold text-app-on-primary-solid shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg'
+                              : 'inline-flex min-h-11 items-center justify-center rounded-lg border border-app-border bg-app-surface px-4 text-base font-semibold text-app-ink shadow-sm transition hover:bg-[var(--app-nav-hover-bg)] outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg'
+                          }
+                          onClick={() => handleBucketChange(value)}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {chartError ? (
+                    <p
+                      className="text-sm text-red-700 dark:text-red-300"
+                      role="alert"
+                    >
+                      {chartError}
+                    </p>
+                  ) : (
+                    <InsightComposedChart
+                      series={series}
+                      data={chartRows}
+                      bucket={bucket}
+                      loading={chartLoading}
+                      summary={chartSummary}
+                      patientTimeZone={activeChartTimeZone}
+                      showPatientTimeZoneNote={
+                        showPatientTimeZoneNote || showSharedChartTimeZoneNote
+                      }
+                      patientTimeZoneNoteVariant={
+                        showSharedChartTimeZoneNote
+                          ? 'practitionerShared'
+                          : 'browser'
+                      }
+                    />
+                  )}
+                </section>
+              ) : null}
+            </>
           ) : null}
         </section>
       ) : null}

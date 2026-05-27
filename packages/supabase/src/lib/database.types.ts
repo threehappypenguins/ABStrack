@@ -787,6 +787,61 @@ export type Database = {
           value_min: number
         }[]
       }
+      get_episode_start_hour_distribution: {
+        Args: {
+          p_from: string
+          p_timezone: string
+          p_to: string
+          p_user_id: string
+        }
+        Returns: {
+          episode_count: number
+          episode_type: string
+          hour_of_day: number
+        }[]
+      }
+      get_episode_summary: {
+        Args: {
+          p_from: string
+          p_timezone: string
+          p_to: string
+          p_user_id: string
+        }
+        Returns: {
+          abs_episode_count: number
+          average_episode_duration_hours: number
+          average_episodes_per_week: number
+          current_episode_free_streak_days: number
+          longest_episode_free_streak_days: number
+          other_episode_count: number
+          total_episode_count: number
+        }[]
+      }
+      get_episode_week_counts: {
+        Args: {
+          p_from: string
+          p_timezone: string
+          p_to: string
+          p_user_id: string
+        }
+        Returns: {
+          episode_count: number
+          episode_type: string
+          week_start: string
+        }[]
+      }
+      get_symptom_frequency: {
+        Args: {
+          p_from: string
+          p_timezone: string
+          p_to: string
+          p_user_id: string
+        }
+        Returns: {
+          occurrence_count: number
+          symptom_name: string
+        }[]
+      }
       get_user_chart_manifest: {
         Args: { p_user_id: string }
         Returns: {

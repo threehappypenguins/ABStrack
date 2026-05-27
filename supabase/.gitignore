@@ -1,6 +1,7 @@
 # Supabase
 .branches
 .temp
+seed_temp.sql
 
 # dotenvx
 .env.keys

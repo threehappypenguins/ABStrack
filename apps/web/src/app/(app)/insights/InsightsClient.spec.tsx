@@ -17,6 +17,7 @@ import {
   getChartSeries,
   getUserChartManifest,
   listUnseenChartSnapshotsForPatient,
+  loadEpisodeInsightsOverview,
   markChartSnapshotSeen,
 } from '@abstrack/supabase';
 import {
@@ -67,6 +68,7 @@ jest.mock('../../../lib/supabase/browser-client', () => ({
 jest.mock('@abstrack/supabase', () => ({
   getUserChartManifest: jest.fn(),
   getChartSeries: jest.fn(),
+  loadEpisodeInsightsOverview: jest.fn(),
   listUnseenChartSnapshotsForPatient: jest.fn(),
   markChartSnapshotSeen: jest.fn(),
 }));
@@ -177,6 +179,21 @@ jest.mock('@abstrack/ui', () => {
         {loading ? <p role="status">Chart loading</p> : null}
       </div>
     ),
+    InsightsSummarySection: ({
+      summary,
+      loading,
+      error,
+    }: {
+      summary: { total_episode_count: number } | null;
+      loading: boolean;
+      error?: string | null;
+    }) => (
+      <div data-testid="insights-summary-section">
+        {loading ? <p role="status">Overview loading</p> : null}
+        {error ? <p role="alert">{error}</p> : null}
+        <p>{summary?.total_episode_count ?? 0} overview episodes</p>
+      </div>
+    ),
   };
 });
 
@@ -186,6 +203,10 @@ const getUserChartManifestMock = getUserChartManifest as jest.MockedFunction<
 const getChartSeriesMock = getChartSeries as jest.MockedFunction<
   typeof getChartSeries
 >;
+const loadEpisodeInsightsOverviewMock =
+  loadEpisodeInsightsOverview as jest.MockedFunction<
+    typeof loadEpisodeInsightsOverview
+  >;
 const listUnseenChartSnapshotsForPatientMock =
   listUnseenChartSnapshotsForPatient as jest.MockedFunction<
     typeof listUnseenChartSnapshotsForPatient
@@ -254,6 +275,23 @@ describe('InsightsClient', () => {
         },
       ],
     });
+    loadEpisodeInsightsOverviewMock.mockResolvedValue({
+      ok: true,
+      data: {
+        summary: {
+          total_episode_count: 5,
+          abs_episode_count: 1,
+          other_episode_count: 4,
+          average_episodes_per_week: 1.2,
+          longest_episode_free_streak_days: 6,
+          current_episode_free_streak_days: 2,
+          average_episode_duration_hours: 10.4,
+        },
+        weekCounts: [],
+        symptomFrequencies: [],
+        startHourDistribution: [],
+      },
+    });
     listUnseenChartSnapshotsForPatientMock.mockResolvedValue({
       ok: true,
       data: [],
@@ -283,6 +321,9 @@ describe('InsightsClient', () => {
 
     renderInsights();
 
+    expect(
+      await screen.findByTestId('insights-summary-section'),
+    ).toBeInTheDocument();
     expect(
       await screen.findByText(
         'No data to chart yet. Log some episodes or health markers to get started.',
@@ -316,7 +357,9 @@ describe('InsightsClient', () => {
         'No data to chart yet. Log some episodes or health markers to get started.',
       ),
     ).toBeInTheDocument();
-    expect(screen.queryByTestId('date-range-picker')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Select first series' }),
+    ).not.toBeInTheDocument();
     expect(getChartSeriesMock).not.toHaveBeenCalled();
   });
 
@@ -639,6 +682,17 @@ describe('InsightsClient', () => {
           p_from: SHARED_SNAPSHOT.date_from,
           p_to: SHARED_SNAPSHOT.date_to,
           p_bucket: 'week',
+          p_timezone: 'America/New_York',
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(loadEpisodeInsightsOverviewMock).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          p_from: SHARED_SNAPSHOT.date_from,
+          p_to: SHARED_SNAPSHOT.date_to,
           p_timezone: 'America/New_York',
         }),
       );

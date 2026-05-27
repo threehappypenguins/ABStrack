@@ -116,6 +116,17 @@ function ControlledPicker({
   );
 }
 
+function seriesAt(
+  row: ChartableManifestRow,
+  slotIndex: number,
+): SelectedSeries {
+  const series = createSelectedSeriesFromManifestRow(row, slotIndex);
+  if (!series) {
+    throw new Error(`Expected chartable fixture for ${row.series_id}`);
+  }
+  return series;
+}
+
 describe('InsightSeriesPicker', () => {
   it('auto-selects bp_band and hides the chart-type dropdown for blood pressure', () => {
     const onChangeSpy = vi.fn();
@@ -163,10 +174,7 @@ describe('InsightSeriesPicker', () => {
   it('omits series that would introduce a third distinct value unit from later slots', () => {
     render(
       <ControlledPicker
-        initial={[
-          createSelectedSeriesFromManifestRow(bacRow, 0)!,
-          createSelectedSeriesFromManifestRow(glucoseRow, 1)!,
-        ]}
+        initial={[seriesAt(bacRow, 0), seriesAt(glucoseRow, 1)]}
       />,
     );
 
@@ -177,17 +185,93 @@ describe('InsightSeriesPicker', () => {
     });
 
     expect(
-      within(slotThree).queryByRole('option', { name: 'Heart rate' }),
+      within(slotThree).queryByRole('option', { name: /Heart rate/i }),
     ).not.toBeInTheDocument();
     expect(
-      within(slotThree).queryByRole('option', { name: 'Brain fog' }),
+      within(slotThree).queryByRole('option', { name: /Brain fog/i }),
     ).not.toBeInTheDocument();
     expect(
-      within(slotThree).getByRole('option', { name: 'Vomiting' }),
+      within(slotThree).getByRole('option', { name: /Vomiting/i }),
     ).toBeInTheDocument();
     expect(
       within(slotThree).getByRole('option', { name: /Blood pressure/i }),
     ).toBeInTheDocument();
+  });
+
+  it('shows observation counts and observed date range in series options', () => {
+    render(<ControlledPicker />);
+
+    const option = within(
+      screen.getByLabelText('Data series 1', { selector: 'select' }),
+    ).getByRole('option', {
+      name: /Blood glucose/i,
+    });
+
+    expect(option.textContent).toContain('Blood glucose (mmol/L)');
+    expect(option.textContent).toContain('5 obs');
+    expect(option.textContent).toContain('to');
+  });
+
+  it('formats observed date ranges in the provided timezone', () => {
+    const originalDateTimeFormat = Intl.DateTimeFormat;
+    function dateTimeFormatMock(
+      this: Intl.DateTimeFormat,
+      locales?: string | string[],
+      options?: Intl.DateTimeFormatOptions,
+    ) {
+      return new originalDateTimeFormat(locales, options);
+    }
+    const dateTimeFormatSpy = vi
+      .spyOn(Intl, 'DateTimeFormat')
+      .mockImplementation(dateTimeFormatMock as typeof Intl.DateTimeFormat);
+    const timezoneManifest = [
+      {
+        ...glucoseRow,
+        first_observed_at: '2026-01-01T23:30:00Z',
+        last_observed_at: '2026-02-01T00:30:00Z',
+      },
+    ] satisfies ChartManifestRow[];
+
+    try {
+      render(
+        <InsightSeriesPicker
+          manifest={timezoneManifest}
+          value={[]}
+          onChange={vi.fn()}
+          timeZone="Pacific/Auckland"
+        />,
+      );
+
+      const option = within(
+        screen.getByLabelText('Data series 1', { selector: 'select' }),
+      ).getByRole('option', {
+        name: /Blood glucose/i,
+      });
+
+      const startLabel = new originalDateTimeFormat(undefined, {
+        month: 'short',
+        day: 'numeric',
+        timeZone: 'Pacific/Auckland',
+      }).format(new Date('2026-01-01T23:30:00Z'));
+      const endLabel = new originalDateTimeFormat(undefined, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        timeZone: 'Pacific/Auckland',
+      }).format(new Date('2026-02-01T00:30:00Z'));
+
+      expect(option.textContent).toContain(`${startLabel} to ${endLabel}`);
+      expect(
+        dateTimeFormatSpy.mock.calls.some(
+          ([, options]) =>
+            options?.timeZone === 'Pacific/Auckland' &&
+            options?.month === 'short' &&
+            options?.day === 'numeric',
+        ),
+      ).toBe(true);
+    } finally {
+      dateTimeFormatSpy.mockRestore();
+    }
   });
 
   it('hides extra slots when the parent clears value externally', () => {
@@ -536,13 +620,6 @@ describe('InsightSeriesPicker', () => {
 
   it('calls onChange on mount when the controlled value exceeds three series', () => {
     const onChange = vi.fn();
-    const seriesAt = (row: ChartableManifestRow, slotIndex: number) => {
-      const series = createSelectedSeriesFromManifestRow(row, slotIndex);
-      if (!series) {
-        throw new Error(`Expected chartable fixture for ${row.series_id}`);
-      }
-      return series;
-    };
     const oversizedValue: SelectedSeries[] = [
       seriesAt(glucoseRow, 0),
       seriesAt(severityRow, 1),
@@ -570,13 +647,6 @@ describe('InsightSeriesPicker', () => {
 
   it('clamps onChange to three series when chart type changes with an oversized value', () => {
     const onChange = vi.fn();
-    const seriesAt = (row: ChartableManifestRow, slotIndex: number) => {
-      const series = createSelectedSeriesFromManifestRow(row, slotIndex);
-      if (!series) {
-        throw new Error(`Expected chartable fixture for ${row.series_id}`);
-      }
-      return series;
-    };
     const oversizedValue: SelectedSeries[] = [
       seriesAt(glucoseRow, 0),
       seriesAt(severityRow, 1),

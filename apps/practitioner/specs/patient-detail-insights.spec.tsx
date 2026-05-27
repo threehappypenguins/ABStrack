@@ -12,6 +12,7 @@ import {
   CHART_SNAPSHOT_PRACTITIONER_NOTE_MAX_LENGTH,
   getChartSeries,
   getUserChartManifest,
+  loadEpisodeInsightsOverview,
   shareChartSnapshot,
 } from '@abstrack/supabase';
 import { PractitionerPatientDetailPage } from '../src/app/patients/[patientId]/practitioner-patient-detail-page';
@@ -67,6 +68,7 @@ jest.mock('@abstrack/supabase', () => {
       listPractitionerObservationNotesForPatient(...args),
     getUserChartManifest: jest.fn(),
     getChartSeries: jest.fn(),
+    loadEpisodeInsightsOverview: jest.fn(),
     shareChartSnapshot: jest.fn(),
   };
 });
@@ -77,6 +79,10 @@ const getUserChartManifestMock = getUserChartManifest as jest.MockedFunction<
 const getChartSeriesMock = getChartSeries as jest.MockedFunction<
   typeof getChartSeries
 >;
+const loadEpisodeInsightsOverviewMock =
+  loadEpisodeInsightsOverview as jest.MockedFunction<
+    typeof loadEpisodeInsightsOverview
+  >;
 const shareChartSnapshotMock = shareChartSnapshot as jest.MockedFunction<
   typeof shareChartSnapshot
 >;
@@ -168,6 +174,23 @@ describe('PractitionerPatientDetailPage insights tab', () => {
         },
       ],
     });
+    loadEpisodeInsightsOverviewMock.mockResolvedValue({
+      ok: true,
+      data: {
+        summary: {
+          total_episode_count: 5,
+          abs_episode_count: 1,
+          other_episode_count: 4,
+          average_episodes_per_week: 1.2,
+          longest_episode_free_streak_days: 6,
+          current_episode_free_streak_days: 2,
+          average_episode_duration_hours: 10.4,
+        },
+        weekCounts: [],
+        symptomFrequencies: [],
+        startHourDistribution: [],
+      },
+    });
     shareChartSnapshotMock.mockResolvedValue({ ok: true, data: SNAPSHOT_ID });
   });
 
@@ -176,11 +199,18 @@ describe('PractitionerPatientDetailPage insights tab', () => {
     await screen.findByText('Alex Kim');
     await openInsightsTab();
 
+    expect(
+      await screen.findByTestId('insights-summary-section'),
+    ).toBeInTheDocument();
     await waitFor(() =>
       expect(getUserChartManifestMock).toHaveBeenCalledWith(
         expect.anything(),
         PATIENT_ID,
       ),
+    );
+    expect(loadEpisodeInsightsOverviewMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ p_user_id: PATIENT_ID }),
     );
     expect(getUserChartManifestMock).not.toHaveBeenCalledWith(
       expect.anything(),
