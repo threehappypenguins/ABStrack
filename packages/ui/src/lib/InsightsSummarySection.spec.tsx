@@ -133,4 +133,44 @@ describe('InsightsSummarySection', () => {
       dateTimeFormatSpy.mockRestore();
     }
   });
+
+  it('wraps long episode calendars within the card width', () => {
+    render(
+      <InsightsSummarySection
+        dateRange={{
+          from: new Date(2025, 2, 1),
+          to: new Date(2026, 2, 31),
+        }}
+        timeZone="America/New_York"
+        summary={{
+          total_episode_count: 6,
+          abs_episode_count: 2,
+          other_episode_count: 4,
+          average_episodes_per_week: 1.4,
+          longest_episode_free_streak_days: 8,
+          current_episode_free_streak_days: 3,
+          average_episode_duration_hours: 9.1,
+        }}
+        weekCounts={[
+          {
+            week_start: '2025-03-03T05:00:00.000Z',
+            episode_type: 'Other',
+            episode_count: 1,
+          },
+          {
+            week_start: '2026-03-16T04:00:00.000Z',
+            episode_type: 'ABS',
+            episode_count: 1,
+          },
+        ]}
+        symptomFrequencies={[]}
+        startHourDistribution={[]}
+      />,
+    );
+
+    expect(
+      screen.getByTitle(/Other \/ vomiting: 1 episode in week of/i)
+        .parentElement,
+    ).toHaveClass('flex', 'max-w-full', 'flex-wrap', 'gap-1');
+  });
 });

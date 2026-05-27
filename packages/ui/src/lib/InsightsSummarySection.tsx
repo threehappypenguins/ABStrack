@@ -604,24 +604,16 @@ export function InsightsSummarySection({
               ].map((row) => (
                 <div
                   key={row.label}
-                  className="grid gap-3 sm:grid-cols-[8rem_minmax(0,1fr)] sm:items-center"
+                  className="grid gap-3 sm:grid-cols-[8rem_minmax(0,1fr)] sm:items-start"
                 >
                   <p className="text-sm font-medium text-app-ink">
                     {row.label}
                   </p>
-                  <div
-                    className="grid gap-1"
-                    style={{
-                      gridTemplateColumns: `repeat(${Math.max(
-                        row.cells.length,
-                        1,
-                      )}, minmax(14px, 1fr))`,
-                    }}
-                  >
+                  <div className="flex max-w-full flex-wrap gap-1">
                     {row.cells.map((cell) => (
                       <div
                         key={`${row.label}-${cell.weekKey}`}
-                        className="h-6 rounded-md border border-app-border/40"
+                        className="h-6 w-3.5 shrink-0 rounded-md border border-app-border/40"
                         style={heatmapCellStyle(
                           cell.count,
                           row.maxCount,
