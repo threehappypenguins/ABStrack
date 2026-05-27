@@ -59,11 +59,11 @@ export interface SymptomFrequencyRow {
   occurrence_count: number;
 }
 
-async function callInsightsRpc<TData>(
+async function callInsightsRpc<TRow>(
   client: AbstrackSupabaseClient,
   functionName: string,
   args: Record<string, unknown>,
-): Promise<PresetDataResult<TData>> {
+): Promise<PresetDataResult<TRow[]>> {
   try {
     const { data, error } = await (client as unknown as InsightsRpcClient).rpc(
       functionName,
@@ -76,7 +76,7 @@ async function callInsightsRpc<TData>(
 
     return {
       ok: true,
-      data: data as TData,
+      data: (data ?? []) as TRow[],
     };
   } catch (cause) {
     return { ok: false, error: toPresetDataError(cause) };
@@ -94,7 +94,7 @@ export async function getEpisodeSummary(
   client: AbstrackSupabaseClient,
   params: EpisodeInsightsRangeParams,
 ): Promise<PresetDataResult<EpisodeSummaryRow | null>> {
-  const result = await callInsightsRpc<unknown[]>(
+  const result = await callInsightsRpc<EpisodeSummaryRow>(
     client,
     'get_episode_summary',
     {
@@ -109,7 +109,7 @@ export async function getEpisodeSummary(
     return result;
   }
 
-  const [row] = (result.data ?? []) as EpisodeSummaryRow[];
+  const [row] = result.data;
   return { ok: true, data: row ?? null };
 }
 
@@ -124,7 +124,7 @@ export async function getEpisodeWeekCounts(
   client: AbstrackSupabaseClient,
   params: EpisodeInsightsRangeParams,
 ): Promise<PresetDataResult<EpisodeWeekCountRow[]>> {
-  return callInsightsRpc<EpisodeWeekCountRow[]>(
+  return callInsightsRpc<EpisodeWeekCountRow>(
     client,
     'get_episode_week_counts',
     {
@@ -147,7 +147,7 @@ export async function getEpisodeStartHourDistribution(
   client: AbstrackSupabaseClient,
   params: EpisodeInsightsRangeParams,
 ): Promise<PresetDataResult<EpisodeStartHourDistributionRow[]>> {
-  return callInsightsRpc<EpisodeStartHourDistributionRow[]>(
+  return callInsightsRpc<EpisodeStartHourDistributionRow>(
     client,
     'get_episode_start_hour_distribution',
     {
@@ -170,14 +170,10 @@ export async function getSymptomFrequency(
   client: AbstrackSupabaseClient,
   params: EpisodeInsightsRangeParams,
 ): Promise<PresetDataResult<SymptomFrequencyRow[]>> {
-  return callInsightsRpc<SymptomFrequencyRow[]>(
-    client,
-    'get_symptom_frequency',
-    {
-      p_user_id: params.p_user_id,
-      p_from: params.p_from,
-      p_to: params.p_to,
-      p_timezone: params.p_timezone,
-    },
-  );
+  return callInsightsRpc<SymptomFrequencyRow>(client, 'get_symptom_frequency', {
+    p_user_id: params.p_user_id,
+    p_from: params.p_from,
+    p_to: params.p_to,
+    p_timezone: params.p_timezone,
+  });
 }

@@ -117,6 +117,24 @@ describe('episode insights query wrappers', () => {
     expect(result).toEqual({ ok: true, data: rows });
   });
 
+  it('coalesces null row sets to empty arrays', async () => {
+    const client = rpcClient(null);
+
+    const weekCountsResult = await getEpisodeWeekCounts(client, RANGE_PARAMS);
+    const symptomResult = await getSymptomFrequency(client, RANGE_PARAMS);
+
+    expect(weekCountsResult).toEqual({ ok: true, data: [] });
+    expect(symptomResult).toEqual({ ok: true, data: [] });
+  });
+
+  it('returns null when get_episode_summary returns no rows', async () => {
+    const client = rpcClient(null);
+
+    const result = await getEpisodeSummary(client, RANGE_PARAMS);
+
+    expect(result).toEqual({ ok: true, data: null });
+  });
+
   it('maps rpc errors to PresetDataError', async () => {
     const client = rpcClient(null, {
       message: 'permission denied for function get_episode_summary',

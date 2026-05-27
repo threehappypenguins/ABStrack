@@ -126,7 +126,7 @@ describe('InsightsSummarySection', () => {
           ([, options]) =>
             options?.month === 'short' &&
             options?.day === 'numeric' &&
-            !('timeZone' in options),
+            options?.timeZone == null,
         ),
       ).toBe(true);
     } finally {
