@@ -15,12 +15,9 @@ import type {
 } from '@abstrack/ui';
 import {
   getChartSeries,
-  getEpisodeStartHourDistribution,
-  getEpisodeSummary,
-  getEpisodeWeekCounts,
   getUserChartManifest,
-  getSymptomFrequency,
   listUnseenChartSnapshotsForPatient,
+  loadEpisodeInsightsOverview,
   markChartSnapshotSeen,
 } from '@abstrack/supabase';
 import {
@@ -71,10 +68,7 @@ jest.mock('../../../lib/supabase/browser-client', () => ({
 jest.mock('@abstrack/supabase', () => ({
   getUserChartManifest: jest.fn(),
   getChartSeries: jest.fn(),
-  getEpisodeSummary: jest.fn(),
-  getEpisodeWeekCounts: jest.fn(),
-  getSymptomFrequency: jest.fn(),
-  getEpisodeStartHourDistribution: jest.fn(),
+  loadEpisodeInsightsOverview: jest.fn(),
   listUnseenChartSnapshotsForPatient: jest.fn(),
   markChartSnapshotSeen: jest.fn(),
 }));
@@ -209,18 +203,9 @@ const getUserChartManifestMock = getUserChartManifest as jest.MockedFunction<
 const getChartSeriesMock = getChartSeries as jest.MockedFunction<
   typeof getChartSeries
 >;
-const getEpisodeSummaryMock = getEpisodeSummary as jest.MockedFunction<
-  typeof getEpisodeSummary
->;
-const getEpisodeWeekCountsMock = getEpisodeWeekCounts as jest.MockedFunction<
-  typeof getEpisodeWeekCounts
->;
-const getSymptomFrequencyMock = getSymptomFrequency as jest.MockedFunction<
-  typeof getSymptomFrequency
->;
-const getEpisodeStartHourDistributionMock =
-  getEpisodeStartHourDistribution as jest.MockedFunction<
-    typeof getEpisodeStartHourDistribution
+const loadEpisodeInsightsOverviewMock =
+  loadEpisodeInsightsOverview as jest.MockedFunction<
+    typeof loadEpisodeInsightsOverview
   >;
 const listUnseenChartSnapshotsForPatientMock =
   listUnseenChartSnapshotsForPatient as jest.MockedFunction<
@@ -290,29 +275,22 @@ describe('InsightsClient', () => {
         },
       ],
     });
-    getEpisodeSummaryMock.mockResolvedValue({
+    loadEpisodeInsightsOverviewMock.mockResolvedValue({
       ok: true,
       data: {
-        total_episode_count: 5,
-        abs_episode_count: 1,
-        other_episode_count: 4,
-        average_episodes_per_week: 1.2,
-        longest_episode_free_streak_days: 6,
-        current_episode_free_streak_days: 2,
-        average_episode_duration_hours: 10.4,
+        summary: {
+          total_episode_count: 5,
+          abs_episode_count: 1,
+          other_episode_count: 4,
+          average_episodes_per_week: 1.2,
+          longest_episode_free_streak_days: 6,
+          current_episode_free_streak_days: 2,
+          average_episode_duration_hours: 10.4,
+        },
+        weekCounts: [],
+        symptomFrequencies: [],
+        startHourDistribution: [],
       },
-    });
-    getEpisodeWeekCountsMock.mockResolvedValue({
-      ok: true,
-      data: [],
-    });
-    getSymptomFrequencyMock.mockResolvedValue({
-      ok: true,
-      data: [],
-    });
-    getEpisodeStartHourDistributionMock.mockResolvedValue({
-      ok: true,
-      data: [],
     });
     listUnseenChartSnapshotsForPatientMock.mockResolvedValue({
       ok: true,
@@ -710,7 +688,7 @@ describe('InsightsClient', () => {
     });
 
     await waitFor(() => {
-      expect(getEpisodeSummaryMock).toHaveBeenLastCalledWith(
+      expect(loadEpisodeInsightsOverviewMock).toHaveBeenLastCalledWith(
         expect.anything(),
         expect.objectContaining({
           p_from: SHARED_SNAPSHOT.date_from,
@@ -719,30 +697,6 @@ describe('InsightsClient', () => {
         }),
       );
     });
-    expect(getEpisodeWeekCountsMock).toHaveBeenLastCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        p_from: SHARED_SNAPSHOT.date_from,
-        p_to: SHARED_SNAPSHOT.date_to,
-        p_timezone: 'America/New_York',
-      }),
-    );
-    expect(getSymptomFrequencyMock).toHaveBeenLastCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        p_from: SHARED_SNAPSHOT.date_from,
-        p_to: SHARED_SNAPSHOT.date_to,
-        p_timezone: 'America/New_York',
-      }),
-    );
-    expect(getEpisodeStartHourDistributionMock).toHaveBeenLastCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        p_from: SHARED_SNAPSHOT.date_from,
-        p_to: SHARED_SNAPSHOT.date_to,
-        p_timezone: 'America/New_York',
-      }),
-    );
 
     await waitFor(() => {
       expect(markChartSnapshotSeenMock).toHaveBeenCalledWith(

@@ -7,8 +7,10 @@ import {
   getEpisodeSummary,
   getEpisodeWeekCounts,
   getSymptomFrequency,
+  loadEpisodeInsightsOverview,
   type EpisodeInsightsRangeParams,
   type EpisodeStartHourDistributionRow,
+  type EpisodeInsightsOverviewData,
   type EpisodeSummaryRow,
   type EpisodeWeekCountRow,
   type SymptomFrequencyRow,
@@ -25,6 +27,18 @@ const RANGE_PARAMS: EpisodeInsightsRangeParams = {
 
 function rpcClient(data: unknown, error: unknown = null) {
   const rpc = vi.fn(async () => ({ data, error }));
+  return {
+    rpc,
+  } as unknown as AbstrackSupabaseClient;
+}
+
+function rpcClientByFunction(
+  responses: Record<string, { data: unknown; error?: unknown }>,
+) {
+  const rpc = vi.fn(async (fn: string) => {
+    const response = responses[fn] ?? { data: null, error: null };
+    return { data: response.data, error: response.error ?? null };
+  });
   return {
     rpc,
   } as unknown as AbstrackSupabaseClient;
@@ -133,6 +147,104 @@ describe('episode insights query wrappers', () => {
     const result = await getEpisodeSummary(client, RANGE_PARAMS);
 
     expect(result).toEqual({ ok: true, data: null });
+  });
+
+  it('loads the combined overview payload across all overview RPCs', async () => {
+    const summaryRows: EpisodeSummaryRow[] = [
+      {
+        total_episode_count: 3,
+        abs_episode_count: 1,
+        other_episode_count: 2,
+        average_episodes_per_week: 1.5,
+        longest_episode_free_streak_days: 6,
+        current_episode_free_streak_days: 4,
+        average_episode_duration_hours: 9.5,
+      },
+    ];
+    const weekCountRows: EpisodeWeekCountRow[] = [
+      {
+        week_start: '2026-01-05T05:00:00.000Z',
+        episode_type: 'Other',
+        episode_count: 2,
+      },
+    ];
+    const symptomRows: SymptomFrequencyRow[] = [
+      {
+        symptom_name: 'Nausea',
+        occurrence_count: 12,
+      },
+    ];
+    const startHourRows: EpisodeStartHourDistributionRow[] = [
+      {
+        hour_of_day: 4,
+        episode_type: 'Other',
+        episode_count: 7,
+      },
+    ];
+    const client = rpcClientByFunction({
+      get_episode_summary: { data: summaryRows },
+      get_episode_week_counts: { data: weekCountRows },
+      get_symptom_frequency: { data: symptomRows },
+      get_episode_start_hour_distribution: { data: startHourRows },
+    });
+
+    const result = await loadEpisodeInsightsOverview(client, RANGE_PARAMS);
+
+    expect(client.rpc).toHaveBeenNthCalledWith(
+      1,
+      'get_episode_summary',
+      RANGE_PARAMS,
+    );
+    expect(client.rpc).toHaveBeenNthCalledWith(
+      2,
+      'get_episode_week_counts',
+      RANGE_PARAMS,
+    );
+    expect(client.rpc).toHaveBeenNthCalledWith(
+      3,
+      'get_symptom_frequency',
+      RANGE_PARAMS,
+    );
+    expect(client.rpc).toHaveBeenNthCalledWith(
+      4,
+      'get_episode_start_hour_distribution',
+      RANGE_PARAMS,
+    );
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        summary: summaryRows[0],
+        weekCounts: weekCountRows,
+        symptomFrequencies: symptomRows,
+        startHourDistribution: startHourRows,
+      } satisfies EpisodeInsightsOverviewData,
+    });
+  });
+
+  it('returns the first overview RPC error when a combined load fails', async () => {
+    const client = rpcClientByFunction({
+      get_episode_summary: { data: [] },
+      get_episode_week_counts: {
+        data: null,
+        error: {
+          code: '42501',
+          message: 'permission denied for function get_episode_week_counts',
+        },
+      },
+      get_symptom_frequency: { data: [] },
+      get_episode_start_hour_distribution: { data: [] },
+    });
+
+    const result = await loadEpisodeInsightsOverview(client, RANGE_PARAMS);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+
+    expect(result.error).toBeInstanceOf(PresetDataError);
+    expect(result.error.code).toBe('permission_denied');
+    expect(result.error.message).toBe('You do not have permission to do that.');
   });
 
   it('maps rpc errors to PresetDataError', async () => {

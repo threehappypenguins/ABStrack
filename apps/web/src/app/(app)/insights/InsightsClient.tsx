@@ -11,12 +11,9 @@ import {
 import { chartManifestSeriesDisplayLabel } from '@abstrack/types';
 import {
   getChartSeries,
-  getEpisodeStartHourDistribution,
-  getEpisodeSummary,
-  getEpisodeWeekCounts,
   getUserChartManifest,
-  getSymptomFrequency,
   listUnseenChartSnapshotsForPatient,
+  loadEpisodeInsightsOverview,
   markChartSnapshotSeen,
   type ChartSnapshotRow,
   type EpisodeStartHourDistributionRow,
@@ -320,37 +317,12 @@ export function InsightsClient() {
     setOverviewError(null);
 
     const supabase = createBrowserClient();
-    const [
-      summaryResult,
-      weekCountsResult,
-      symptomFrequencyResult,
-      startHourDistributionResult,
-    ] = await Promise.all([
-      getEpisodeSummary(supabase, {
-        p_user_id: requestedUserId,
-        p_from,
-        p_to,
-        p_timezone: overviewTimeZone,
-      }),
-      getEpisodeWeekCounts(supabase, {
-        p_user_id: requestedUserId,
-        p_from,
-        p_to,
-        p_timezone: overviewTimeZone,
-      }),
-      getSymptomFrequency(supabase, {
-        p_user_id: requestedUserId,
-        p_from,
-        p_to,
-        p_timezone: overviewTimeZone,
-      }),
-      getEpisodeStartHourDistribution(supabase, {
-        p_user_id: requestedUserId,
-        p_from,
-        p_to,
-        p_timezone: overviewTimeZone,
-      }),
-    ]);
+    const overviewResult = await loadEpisodeInsightsOverview(supabase, {
+      p_user_id: requestedUserId,
+      p_from,
+      p_to,
+      p_timezone: overviewTimeZone,
+    });
 
     if (
       generation !== overviewLoadGenRef.current ||
@@ -361,19 +333,8 @@ export function InsightsClient() {
 
     setOverviewLoading(false);
 
-    if (
-      !summaryResult.ok ||
-      !weekCountsResult.ok ||
-      !symptomFrequencyResult.ok ||
-      !startHourDistributionResult.ok
-    ) {
-      const message =
-        (!summaryResult.ok && summaryResult.error.message) ||
-        (!weekCountsResult.ok && weekCountsResult.error.message) ||
-        (!symptomFrequencyResult.ok && symptomFrequencyResult.error.message) ||
-        (!startHourDistributionResult.ok &&
-          startHourDistributionResult.error.message) ||
-        'Unknown error.';
+    if (!overviewResult.ok) {
+      const message = overviewResult.error.message || 'Unknown error.';
       setOverviewSummary(null);
       setOverviewWeekCounts([]);
       setOverviewSymptomFrequencies([]);
@@ -385,10 +346,10 @@ export function InsightsClient() {
       return;
     }
 
-    setOverviewSummary(summaryResult.data);
-    setOverviewWeekCounts(weekCountsResult.data);
-    setOverviewSymptomFrequencies(symptomFrequencyResult.data);
-    setOverviewStartHourDistribution(startHourDistributionResult.data);
+    setOverviewSummary(overviewResult.data.summary);
+    setOverviewWeekCounts(overviewResult.data.weekCounts);
+    setOverviewSymptomFrequencies(overviewResult.data.symptomFrequencies);
+    setOverviewStartHourDistribution(overviewResult.data.startHourDistribution);
   }, [activeChartTimeZone, announce, dateRange, phiSubjectUserId]);
 
   useEffect(() => {

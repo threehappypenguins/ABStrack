@@ -59,6 +59,16 @@ export interface SymptomFrequencyRow {
   occurrence_count: number;
 }
 
+/**
+ * Combined overview payload used by patient and practitioner insights surfaces.
+ */
+export interface EpisodeInsightsOverviewData {
+  summary: EpisodeSummaryRow | null;
+  weekCounts: EpisodeWeekCountRow[];
+  symptomFrequencies: SymptomFrequencyRow[];
+  startHourDistribution: EpisodeStartHourDistributionRow[];
+}
+
 async function callInsightsRpc<TRow>(
   client: AbstrackSupabaseClient,
   functionName: string,
@@ -176,4 +186,51 @@ export async function getSymptomFrequency(
     p_to: params.p_to,
     p_timezone: params.p_timezone,
   });
+}
+
+/**
+ * Loads the complete episode insights overview payload used by the web and practitioner apps.
+ *
+ * @param client - Supabase client with the caller JWT.
+ * @param params - User, range, and IANA timezone parameters shared by the overview RPCs.
+ * @returns Overview summary, heatmap buckets, symptom frequencies, and start-hour distribution.
+ */
+export async function loadEpisodeInsightsOverview(
+  client: AbstrackSupabaseClient,
+  params: EpisodeInsightsRangeParams,
+): Promise<PresetDataResult<EpisodeInsightsOverviewData>> {
+  const [
+    summaryResult,
+    weekCountsResult,
+    symptomFrequencyResult,
+    startHourDistributionResult,
+  ] = await Promise.all([
+    getEpisodeSummary(client, params),
+    getEpisodeWeekCounts(client, params),
+    getSymptomFrequency(client, params),
+    getEpisodeStartHourDistribution(client, params),
+  ]);
+
+  if (!summaryResult.ok) {
+    return summaryResult;
+  }
+  if (!weekCountsResult.ok) {
+    return weekCountsResult;
+  }
+  if (!symptomFrequencyResult.ok) {
+    return symptomFrequencyResult;
+  }
+  if (!startHourDistributionResult.ok) {
+    return startHourDistributionResult;
+  }
+
+  return {
+    ok: true,
+    data: {
+      summary: summaryResult.data,
+      weekCounts: weekCountsResult.data,
+      symptomFrequencies: symptomFrequencyResult.data,
+      startHourDistribution: startHourDistributionResult.data,
+    },
+  };
 }

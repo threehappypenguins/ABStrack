@@ -215,6 +215,7 @@ export type {
 } from './lib/chart-series-query.js';
 export { getChartSeries } from './lib/chart-series-query.js';
 export type {
+  EpisodeInsightsOverviewData,
   EpisodeInsightsRangeParams,
   EpisodeStartHourDistributionRow,
   EpisodeSummaryRow,
@@ -226,6 +227,7 @@ export {
   getEpisodeSummary,
   getEpisodeWeekCounts,
   getSymptomFrequency,
+  loadEpisodeInsightsOverview,
 } from './lib/episode-insights-query.js';
 export type {
   ChartSnapshotRow,
