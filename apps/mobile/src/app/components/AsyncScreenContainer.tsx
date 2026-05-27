@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { MIN_TOUCH_TARGET_DP } from '@abstrack/ui/native';
 import { useAppTheme } from '../theme/AppThemeContext';
 import { nw } from '../theme/app-nativewind-classes';
+import { AppGridBackground } from './AppGridBackground';
 
 /**
  * Async UI phase for preset (and similar) screens before data is wired.
@@ -12,6 +13,8 @@ export type AsyncScreenStatus = 'loading' | 'error' | 'ready';
 export type AsyncScreenContainerProps = {
   /** Current phase; drives which subtree renders. */
   status: AsyncScreenStatus;
+  /** When false, callers render inside an existing screen background. */
+  withBackground?: boolean;
   /** Announced while loading (spinner). */
   loadingAccessibilityLabel?: string;
   /** Short heading when `status` is `error`. */
@@ -32,6 +35,7 @@ export type AsyncScreenContainerProps = {
  */
 export function AsyncScreenContainer({
   status,
+  withBackground = true,
   loadingAccessibilityLabel = 'Loading',
   errorTitle = 'Something went wrong',
   errorMessage = 'We could not load this screen. Check your connection and try again.',
@@ -39,9 +43,11 @@ export function AsyncScreenContainer({
   children,
 }: AsyncScreenContainerProps) {
   const { colors } = useAppTheme();
+  const wrapContent = (content: React.ReactNode) =>
+    withBackground ? <AppGridBackground>{content}</AppGridBackground> : content;
 
   if (status === 'loading') {
-    return (
+    return wrapContent(
       <View
         className="flex-1 items-center justify-center"
         accessibilityLabel={loadingAccessibilityLabel}
@@ -53,7 +59,7 @@ export function AsyncScreenContainer({
   }
 
   if (status === 'error') {
-    return (
+    return wrapContent(
       <View
         className="flex-1 items-center justify-center gap-3 px-6"
         accessibilityRole="alert"
@@ -90,5 +96,5 @@ export function AsyncScreenContainer({
     );
   }
 
-  return <View className="flex-1">{children}</View>;
+  return wrapContent(<View className="flex-1">{children}</View>);
 }

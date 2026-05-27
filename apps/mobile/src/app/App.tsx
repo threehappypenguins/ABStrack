@@ -25,6 +25,7 @@ import {
   isAuthSessionRecoveryFailure,
 } from '../lib/supabase-wiring';
 import { AppProviders } from './components/AppProviders';
+import { AppGridBackground } from './components/AppGridBackground';
 import { SyncHealthFooter } from './components/SyncHealthFooter';
 import { ForgotPasswordScreen } from './screens/ForgotPasswordScreen';
 import { MainTabNavigator } from './navigation/MainTabNavigator';
@@ -637,14 +638,12 @@ function AppBootstrap() {
   if (initializing) {
     return (
       <PowerSyncSessionBridge session={session}>
-        <View className={`flex-1 ${nw.screenBg}`}>
+        <AppGridBackground>
           <StatusBar style={statusBarStyle} />
-          <SafeAreaView
-            className={`flex-1 items-center justify-center ${nw.screenBg}`}
-          >
+          <SafeAreaView className="flex-1 items-center justify-center">
             <ActivityIndicator size="large" color={colors.primary} />
           </SafeAreaView>
-        </View>
+        </AppGridBackground>
       </PowerSyncSessionBridge>
     );
   }

@@ -1529,6 +1529,7 @@ export function SymptomPromptScreen() {
 
         <AsyncScreenContainer
           status={status}
+          withBackground={false}
           loadingAccessibilityLabel="Loading symptom list"
           errorTitle="Could not load symptoms"
           errorMessage={errorMessage ?? undefined}
