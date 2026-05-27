@@ -255,6 +255,7 @@ export function PractitionerPatientInsightsPanel({
         p_user_id: requestedUserId,
         p_from,
         p_to,
+        p_timezone: chartTimeZone,
       }),
       getEpisodeStartHourDistribution(supabase, {
         p_user_id: requestedUserId,
@@ -525,6 +526,7 @@ export function PractitionerPatientInsightsPanel({
                 manifest={manifest}
                 value={series}
                 onChange={handleSeriesChange}
+                timeZone={chartTimeZone}
               />
             </div>
 

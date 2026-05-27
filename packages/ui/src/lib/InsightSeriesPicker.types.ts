@@ -54,6 +54,8 @@ export interface InsightSeriesPickerProps {
   manifest: ChartManifestRow[];
   value: SelectedSeries[];
   onChange: (series: SelectedSeries[]) => void;
+  /** IANA timezone for manifest observation date labels; defaults to the viewer locale zone. */
+  timeZone?: string;
   /** Stronger borders and text for high-contrast presentation. */
   highContrast?: boolean;
 }

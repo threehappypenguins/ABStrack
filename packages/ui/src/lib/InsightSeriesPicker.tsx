@@ -133,6 +133,7 @@ function findManifestRow(
 function formatObservationRange(
   firstObservedAt: string,
   lastObservedAt: string,
+  timeZone?: string,
 ): string {
   const first = new Date(firstObservedAt);
   const last = new Date(lastObservedAt);
@@ -140,27 +141,38 @@ function formatObservationRange(
     return 'Date range unavailable';
   }
 
-  const sameYear = first.getFullYear() === last.getFullYear();
-  const start = first.toLocaleDateString(undefined, {
+  const formatOptions = (includeYear: boolean): Intl.DateTimeFormatOptions => ({
     month: 'short',
     day: 'numeric',
-    ...(sameYear ? {} : { year: 'numeric' }),
+    ...(includeYear ? { year: 'numeric' } : {}),
+    ...(timeZone ? { timeZone } : {}),
   });
-  const end = last.toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
+  const yearFormat = new Intl.DateTimeFormat(undefined, {
     year: 'numeric',
+    ...(timeZone ? { timeZone } : {}),
   });
+  const sameYear = yearFormat.format(first) === yearFormat.format(last);
+  const start = new Intl.DateTimeFormat(
+    undefined,
+    formatOptions(!sameYear),
+  ).format(first);
+  const end = new Intl.DateTimeFormat(undefined, formatOptions(true)).format(
+    last,
+  );
 
   return `${start} to ${end}`;
 }
 
-function manifestOptionLabel(row: ChartableManifestRow): string {
+function manifestOptionLabel(
+  row: ChartableManifestRow,
+  timeZone?: string,
+): string {
   const seriesLabel = row.unit ? `${row.label} (${row.unit})` : row.label;
   const observationLabel = `${row.observation_count.toLocaleString()} obs`;
   const rangeLabel = formatObservationRange(
     row.first_observed_at,
     row.last_observed_at,
+    timeZone,
   );
   return [seriesLabel, observationLabel, rangeLabel]
     .filter(Boolean)
@@ -222,6 +234,7 @@ export function InsightSeriesPicker({
   manifest,
   value,
   onChange,
+  timeZone,
   highContrast = false,
 }: InsightSeriesPickerProps) {
   const seriesValue = useMemo(() => clampSeriesValue(value), [value]);
@@ -417,7 +430,7 @@ export function InsightSeriesPicker({
                   <option value="">Select a series…</option>
                   {slotOptions.map((option) => (
                     <option key={option.series_id} value={option.series_id}>
-                      {manifestOptionLabel(option)}
+                      {manifestOptionLabel(option, timeZone)}
                     </option>
                   ))}
                 </PickerSelect>

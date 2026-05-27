@@ -92,7 +92,7 @@ describe('episode insights query wrappers', () => {
     expect(result).toEqual({ ok: true, data: rows });
   });
 
-  it('calls get_symptom_frequency without timezone and returns rows unchanged', async () => {
+  it('calls get_symptom_frequency with timezone and returns rows unchanged', async () => {
     const rows: SymptomFrequencyRow[] = [
       {
         symptom_name: 'Nausea',
@@ -105,12 +105,14 @@ describe('episode insights query wrappers', () => {
       p_user_id: RANGE_PARAMS.p_user_id,
       p_from: RANGE_PARAMS.p_from,
       p_to: RANGE_PARAMS.p_to,
+      p_timezone: RANGE_PARAMS.p_timezone,
     });
 
     expect(client.rpc).toHaveBeenCalledWith('get_symptom_frequency', {
       p_user_id: RANGE_PARAMS.p_user_id,
       p_from: RANGE_PARAMS.p_from,
       p_to: RANGE_PARAMS.p_to,
+      p_timezone: RANGE_PARAMS.p_timezone,
     });
     expect(result).toEqual({ ok: true, data: rows });
   });

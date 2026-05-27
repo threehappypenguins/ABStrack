@@ -51,11 +51,7 @@ export function InsightSeriesPicker({
   manifest,
   value,
   onChange,
-}: {
-  manifest: ChartManifestRow[];
-  value: SelectedSeries[];
-  onChange: (next: SelectedSeries[]) => void;
-}) {
+}: InsightSeriesPickerProps) {
   return (
     <div>
       <button

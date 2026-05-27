@@ -342,6 +342,7 @@ export function InsightsClient() {
         p_user_id: requestedUserId,
         p_from,
         p_to,
+        p_timezone: overviewTimeZone,
       }),
       getEpisodeStartHourDistribution(supabase, {
         p_user_id: requestedUserId,
@@ -733,6 +734,7 @@ export function InsightsClient() {
                   manifest={manifest}
                   value={series}
                   onChange={handleSeriesChange}
+                  timeZone={activeChartTimeZone}
                 />
               </div>
 

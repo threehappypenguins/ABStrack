@@ -163,12 +163,12 @@ export async function getEpisodeStartHourDistribution(
  * Loads symptom counts for episode symptoms recorded in the selected period.
  *
  * @param client - Supabase client with the caller JWT.
- * @param params - User and selected period bounds (`p_to` exclusive).
+ * @param params - User, selected period bounds (`p_to` exclusive), and IANA timezone for range validation.
  * @returns Symptom counts ordered from most to least frequent.
  */
 export async function getSymptomFrequency(
   client: AbstrackSupabaseClient,
-  params: Pick<EpisodeInsightsRangeParams, 'p_user_id' | 'p_from' | 'p_to'>,
+  params: EpisodeInsightsRangeParams,
 ): Promise<PresetDataResult<SymptomFrequencyRow[]>> {
   return callInsightsRpc<SymptomFrequencyRow[]>(
     client,
@@ -177,6 +177,7 @@ export async function getSymptomFrequency(
       p_user_id: params.p_user_id,
       p_from: params.p_from,
       p_to: params.p_to,
+      p_timezone: params.p_timezone,
     },
   );
 }

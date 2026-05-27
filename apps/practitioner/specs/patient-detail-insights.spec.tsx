@@ -238,6 +238,10 @@ describe('PractitionerPatientDetailPage insights tab', () => {
       expect.anything(),
       expect.objectContaining({ p_user_id: PATIENT_ID }),
     );
+    expect(getSymptomFrequencyMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ p_user_id: PATIENT_ID }),
+    );
     expect(getUserChartManifestMock).not.toHaveBeenCalledWith(
       expect.anything(),
       PRACTITIONER_USER_ID,

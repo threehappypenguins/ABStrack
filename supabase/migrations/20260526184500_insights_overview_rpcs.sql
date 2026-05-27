@@ -360,7 +360,8 @@ GRANT EXECUTE ON FUNCTION public.get_episode_start_hour_distribution (uuid, time
 CREATE OR REPLACE FUNCTION public.get_symptom_frequency (
   p_user_id uuid,
   p_from timestamptz,
-  p_to timestamptz
+  p_to timestamptz,
+  p_timezone text
 )
 RETURNS TABLE (
   symptom_name text,
@@ -371,7 +372,24 @@ SECURITY INVOKER
 STABLE
 SET search_path = pg_catalog, public
 AS $$
+DECLARE
+  tz text := nullif(trim(p_timezone), '');
+  range_day_count integer;
 BEGIN
+  IF tz IS NULL THEN
+    RAISE EXCEPTION 'get_symptom_frequency: p_timezone must be a non-empty IANA timezone name'
+      USING ERRCODE = '22023';
+  END IF;
+
+  PERFORM 1
+  FROM pg_timezone_names
+  WHERE name = tz;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'get_symptom_frequency: invalid IANA timezone %', tz
+      USING ERRCODE = '22023';
+  END IF;
+
   IF p_from IS NULL OR p_to IS NULL THEN
     RAISE EXCEPTION 'get_symptom_frequency: p_from and p_to must be non-null timestamps'
       USING ERRCODE = '22023';
@@ -382,7 +400,13 @@ BEGIN
       USING ERRCODE = '22023';
   END IF;
 
-  IF ((p_to::date - p_from::date))::integer > 730 THEN
+  range_day_count := (
+    ((p_to AT TIME ZONE tz) - interval '1 microsecond')::date
+    - (p_from AT TIME ZONE tz)::date
+    + 1
+  )::integer;
+
+  IF range_day_count > 730 THEN
     RAISE EXCEPTION 'get_symptom_frequency: selected range must be 730 days or fewer'
       USING ERRCODE = '22023';
   END IF;
@@ -394,7 +418,8 @@ BEGIN
       nullif(trim(es.symptom_name), '') AS symptom_label,
       CASE
         WHEN es.response_type = 'yes_no' AND es.response_boolean IS TRUE THEN 1
-        WHEN es.response_type = 'severity_scale' THEN 1
+        WHEN es.response_type = 'severity_scale'
+          AND es.response_severity IS NOT NULL THEN 1
         ELSE 0
       END AS occurrence_value
     FROM public.episode_symptoms es
@@ -414,8 +439,8 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION public.get_symptom_frequency (uuid, timestamptz, timestamptz) IS
-'Returns ranked symptom counts for the selected range. Boolean symptoms count only true responses; severity symptoms count each logged observation. SECURITY INVOKER.';
+COMMENT ON FUNCTION public.get_symptom_frequency (uuid, timestamptz, timestamptz, text) IS
+'Returns ranked symptom counts for the selected range. The 730-day cap is validated in p_timezone (IANA name) so server-side limits match the overview date picker. Boolean symptoms count only true responses; severity symptoms count each logged observation. SECURITY INVOKER.';
 
-REVOKE ALL ON FUNCTION public.get_symptom_frequency (uuid, timestamptz, timestamptz) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.get_symptom_frequency (uuid, timestamptz, timestamptz) TO authenticated;
+REVOKE ALL ON FUNCTION public.get_symptom_frequency (uuid, timestamptz, timestamptz, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_symptom_frequency (uuid, timestamptz, timestamptz, text) TO authenticated;

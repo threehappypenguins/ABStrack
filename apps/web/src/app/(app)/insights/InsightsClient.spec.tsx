@@ -727,6 +727,14 @@ describe('InsightsClient', () => {
         p_timezone: 'America/New_York',
       }),
     );
+    expect(getSymptomFrequencyMock).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        p_from: SHARED_SNAPSHOT.date_from,
+        p_to: SHARED_SNAPSHOT.date_to,
+        p_timezone: 'America/New_York',
+      }),
+    );
     expect(getEpisodeStartHourDistributionMock).toHaveBeenLastCalledWith(
       expect.anything(),
       expect.objectContaining({
