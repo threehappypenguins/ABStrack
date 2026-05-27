@@ -323,7 +323,10 @@ export function SymptomPresetEditorScreen() {
         }}
         accessibilityViewIsModal
       >
-        <SafeAreaView className="flex-1" edges={['top', 'left', 'right', 'bottom']}>
+        <SafeAreaView
+          className="flex-1"
+          edges={['top', 'left', 'right', 'bottom']}
+        >
           <AppGridBackground>
             <View
               className="flex-row items-center justify-between border-b px-4 py-3"

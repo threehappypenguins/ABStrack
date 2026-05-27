@@ -60,7 +60,13 @@ export function AppGridBackground({
       >
         <Svg width="100%" height="100%" preserveAspectRatio="none">
           <Defs>
-            <LinearGradient id="app-grid-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
+            <LinearGradient
+              id="app-grid-gradient"
+              x1="0%"
+              y1="0%"
+              x2="0%"
+              y2="100%"
+            >
               <Stop offset="0%" stopColor={tokens.gradientStart} />
               <Stop offset="45%" stopColor={tokens.gradientMiddle} />
               <Stop offset="100%" stopColor={tokens.gradientEnd} />
@@ -80,8 +86,20 @@ export function AppGridBackground({
             </Pattern>
           </Defs>
 
-          <Rect x="0" y="0" width="100%" height="100%" fill="url(#app-grid-gradient)" />
-          <Rect x="0" y="0" width="100%" height="100%" fill="url(#app-grid-pattern)" />
+          <Rect
+            x="0"
+            y="0"
+            width="100%"
+            height="100%"
+            fill="url(#app-grid-gradient)"
+          />
+          <Rect
+            x="0"
+            y="0"
+            width="100%"
+            height="100%"
+            fill="url(#app-grid-pattern)"
+          />
         </Svg>
       </View>
 

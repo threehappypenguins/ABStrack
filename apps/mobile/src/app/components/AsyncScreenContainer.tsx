@@ -54,7 +54,7 @@ export function AsyncScreenContainer({
         accessibilityRole="progressbar"
       >
         <ActivityIndicator size="large" color={colors.primary} />
-      </View>
+      </View>,
     );
   }
 
@@ -92,7 +92,7 @@ export function AsyncScreenContainer({
             </Text>
           </Pressable>
         ) : null}
-      </View>
+      </View>,
     );
   }
 
