@@ -206,35 +206,35 @@
 
 ---
 
-## Week 10: May 18-24 -- Final Polish, Report, and Presentation
+## Week 10: May 18-24 -- Final Polish, Report, and Presentation (**complete**)
 
 **Goal:** Ship a polished MVP, write the project report, and prepare the presentation for the Student Research Network celebration.
 
 **Tasks:**
 
-- [ ] Final UI polish: consistent styling, loading states, error handling, empty states
-- [ ] Accessibility review: screen reader labels, color contrast, keyboard navigation
-- [ ] Final bug fixes from end-to-end testing
-- [ ] Write final project report:
+- [x] Final UI polish: consistent styling, loading states, error handling, empty states
+- [x] Accessibility review: screen reader labels, color contrast, keyboard navigation
+- [x] Final bug fixes from end-to-end testing
+- [x] Write final project report:
   - Problem statement and motivation
   - Technical architecture and design decisions
   - Security model: RLS, grant tables, TLS, platform encryption at rest, SQLCipher on mobile, PowerSync Sync Rules aligned with RLS, practitioner MFA fail-closed, append-only audit log ([PRD](PRD.md))
   - Features implemented (with screenshots)
   - Challenges and lessons learned
   - Post-MVP roadmap
-- [ ] Prepare presentation slides:
+- [x] Prepare presentation slides:
   - Overview of ABS and why the app exists
   - Live demo walkthrough plan
   - Architecture diagram
   - Security highlights (aligned with PRD)
   - Key features showcase
-- [ ] Write and rehearse demo script:
+- [x] Write and rehearse demo script:
   - Patient sign-up and preset creation
   - Episode logging flow (show impaired-user UI)
   - Media capture
   - Caretaker logging on behalf of patient
   - Practitioner viewing data and charts
-- [ ] Ensure demo environment is stable and seeded with realistic sample data
+- [x] Ensure demo environment is stable and seeded with realistic sample data
 
 ---
 
