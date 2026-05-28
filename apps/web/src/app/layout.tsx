@@ -1,6 +1,6 @@
 import './global.css';
-import type { Metadata } from 'next';
 import { Plus_Jakarta_Sans } from 'next/font/google';
+import { buildRootSiteMetadata } from '@/lib/site-seo';
 import Script from 'next/script';
 import { ThemeProvider } from '../components/theme/ThemeProvider';
 import { THEME_INIT_SCRIPT } from '../lib/theme-init-script';
@@ -18,10 +18,7 @@ const fontSans = Plus_Jakarta_Sans({
   display: 'swap',
 });
 
-export const metadata: Metadata = {
-  title: 'ABStrack',
-  description: 'Patient management application',
-};
+export const metadata = buildRootSiteMetadata();
 
 export default async function RootLayout({
   children,
