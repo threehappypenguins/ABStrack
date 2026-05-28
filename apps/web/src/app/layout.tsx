@@ -1,7 +1,6 @@
 import './global.css';
 import { Plus_Jakarta_Sans } from 'next/font/google';
 import { buildRootSiteMetadata } from '@/lib/site-seo';
-import Script from 'next/script';
 import { ThemeProvider } from '../components/theme/ThemeProvider';
 import { THEME_INIT_SCRIPT } from '../lib/theme-init-script';
 import { WebAppShell } from '../components/app-shell/WebAppShell';
@@ -45,10 +44,10 @@ export default async function RootLayout({
 
   return (
     <html lang="en" className={fontSans.variable} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body className={`${fontSans.className} antialiased`}>
-        <Script id="abstrack-theme-init" strategy="beforeInteractive">
-          {THEME_INIT_SCRIPT}
-        </Script>
         <ThemeProvider>
           <AuthProvider initialSession={initialSession}>
             <LiveAnnouncerRoot>
