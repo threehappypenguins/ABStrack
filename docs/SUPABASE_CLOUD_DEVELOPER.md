@@ -435,6 +435,62 @@ Repository secrets are documented under **[DEV_SETUP.md → PowerSync sync confi
 
 ---
 
+## PowerSync Cloud project disabled or re-enabled (free tier)
+
+PowerSync **free-tier** projects can be **disabled** after a period of inactivity (email from PowerSync). While disabled, the mobile app may still open and show **local SQLite** data from an earlier session, but **new writes will not reach Supabase** and sync will not run. After you **re-enable** the project in the [PowerSync Dashboard](https://dashboard.powersync.com), treat the instance as **new infrastructure**: URLs and Dashboard auth settings are easy to get wrong even when app code did not change.
+
+### Typical symptoms (mobile)
+
+- Episodes or symptom answers **appear in the app** (resume / Home) but **no rows in Supabase** (or only web writes show up).
+- Sync strip shows **offline**, **not connected**, or **sync issue** while you believe you are online.
+- **First sync** never completes after re-enable; Settings replica diagnostics show no connection or repeated errors.
+- **`EXPO_PUBLIC_POWERSYNC_URL`** in `apps/mobile/.env` still points at the **old** instance hostname (very common after re-enable).
+
+### Recovery checklist (Sarah — Dashboard + env + device)
+
+Do these in order after re-enabling PowerSync Cloud:
+
+1. **Confirm the project is active** in the PowerSync Dashboard (not paused/disabled). Open the **instance** you use for ABStrack and note the current **Service URL** / sync endpoint (WebSocket + HTTP base URL).
+
+2. **Update mobile env and restart Metro**
+   - Set **`EXPO_PUBLIC_POWERSYNC_URL`** in **`apps/mobile/.env`** to the **current** instance URL from the Dashboard (copy fresh; do not reuse a bookmarked value from before disable).
+   - This variable is **inlined at bundle time**. After changing it, **stop Metro**, restart the dev server, and reload the app on the device (for a dev client, a full reload is enough; if unsure, reinstall the dev build).
+   - Same project’s Supabase keys (`EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`) must still match the **same** Supabase project PowerSync replicates.
+
+3. **Fix Client Auth (JWT) in the PowerSync Dashboard**
+
+   The mobile connector sends the **Supabase session access token** to PowerSync. PowerSync must validate that JWT on connect and during upload.
+
+   In the instance → **Client Auth** (or equivalent) section:
+   - **If “Use Supabase Auth” (legacy) is enabled:** the Dashboard may **hide** separate **JWKS** and **JWT Audience** fields and instead expect the **Supabase JWT secret** (legacy HS256 path). That is valid only if it matches the **same** Supabase project as `EXPO_PUBLIC_SUPABASE_URL`. After disable/re-enable, **re-check** that this integration is still configured and saved; do not assume old values survived.
+   - **If legacy Supabase Auth is off:** you must set **JWKS** and **JWT Audience** explicitly. For Supabase, JWKS is typically:
+     - `https://<project-ref>.supabase.co/auth/v1/.well-known/jwks.json`
+     - Audience is commonly **`authenticated`** for end-user JWTs (confirm against [PowerSync + Supabase](https://docs.powersync.com/integrations/supabase) and your project’s Auth settings).
+   - **Symptom of misconfiguration:** connect/upload failures, `hasSynced` never true, or uploads rejected while REST (web) still works on the same Supabase project.
+
+   Do **not** mix a PowerSync instance wired to one Supabase project with mobile env pointing at another.
+
+4. **Redeploy sync rules** if the instance or project id changed, or if you are unsure what Cloud last applied:
+   - Merge **`packages/powersync/sync-rules.yaml`** to **`main`** (GitHub Action **`deploy sync-config`**), or run the manual CLI block in **PowerSync Sync Streams** above.
+
+5. **GitHub Actions secrets (if instance/project ids changed)**  
+   Update **`POWERSYNC_INSTANCE_ID`** and **`POWERSYNC_PROJECT_ID`** (and optional **`POWERSYNC_ORG_ID`**) to match the Dashboard. **`POWERSYNC_ADMIN_TOKEN`** is unchanged unless you rotated it.
+
+6. **On the device: one clean online session**
+   - Sign in while **online**.
+   - Wait until **first sync** completes (sync strip should not stay on “Connecting…” indefinitely; check **Settings** sync details if needed).
+   - Optionally enable **`EXPO_PUBLIC_POWERSYNC_DEBUG=true`** in `apps/mobile/.env` and inspect Metro logs for `[PowerSyncReplicaDiag:…]` lines (see `apps/mobile/src/lib/powersync/powersync-replica-diagnostics.ts`).
+   - Then test offline episode start. Templates and episodes only replicate after a successful sync; a device that never completed first sync after re-enable will not have offline template lists.
+
+7. **Postgres / Supabase side**  
+   PowerSync replication uses the **`powersync_role`** (or equivalent) connection configured in the Dashboard. That is separate from mobile env; if replication was reset with the project, confirm the **database connection** in PowerSync still points at the linked Supabase Postgres and that **`db push`** migrations on Supabase are applied.
+
+### What did _not_ break
+
+Disabling PowerSync Cloud does **not** change Supabase schema or RLS. Web apps writing directly to PostgREST can still work while mobile sync is misconfigured. That mismatch (“web OK, mobile not in DB”) is a clue to check **PowerSync URL + Client Auth + first sync**, not only application code.
+
+---
+
 ## Cloud-only development (no Docker on your machine)
 
 **You do not need Docker** for the recommended path—only **`db push`** and **`gen types --linked`** against Supabase Cloud. **Docker** in this repo only appears **inside** certain GitHub Actions jobs, not as a requirement for your computer.
@@ -459,15 +515,19 @@ Repository secrets are documented under **[DEV_SETUP.md → PowerSync sync confi
 
 7. When **`database.types.ts`** or **`supabase/migrations/`** are involved, point to **`gen types --linked`** + Prettier (see **Recommended workflow** above) and that **[`.github/workflows/supabase-migrations.yml`](../.github/workflows/supabase-migrations.yml)** verifies on `main` after `db push`. **Do not** suggest Docker on her laptop unless she asks.
 
+8. **Mobile “not writing to the database” / PowerSync / offline sync:** Do **not** assume an app regression first. Ask Sarah to walk through **[PowerSync Cloud project disabled or re-enabled (free tier)](#powersync-cloud-project-disabled-or-re-enabled-free-tier)** — especially **`EXPO_PUBLIC_POWERSYNC_URL`** (current instance URL after any re-enable), **PowerSync Dashboard Client Auth** (JWKS + JWT Audience, or legacy **Use Supabase Auth** + Supabase JWT secret aligned with the same project), **sync-rules deploy**, and **one online first sync** on the device. Web can write to Supabase while mobile does not if only PowerSync is misconfigured.
+
 ---
 
 ## Related files
 
-| Topic                         | Location                                                                                           |
-| ----------------------------- | -------------------------------------------------------------------------------------------------- |
-| CLI install, link, secrets    | [DEV_SETUP.md §4](DEV_SETUP.md#4-supabase-database-migrations-cloud-cli-and-ci)                    |
-| Migrations + verify on `main` | [`.github/workflows/supabase-migrations.yml`](../.github/workflows/supabase-migrations.yml)        |
-| PowerSync sync YAML on `main` | [`.github/workflows/powersync-sync-config.yml`](../.github/workflows/powersync-sync-config.yml)    |
-| PR types check                | [`.github/workflows/supabase-db-types-pr.yml`](../.github/workflows/supabase-db-types-pr.yml)      |
-| App env vars                  | [`packages/supabase/README.md`](../packages/supabase/README.md), [`.env.example`](../.env.example) |
-| `chart_snapshots` dev cleanup | **Dev cleanup: `chart_snapshots`** (above); migration `20260524140000_chart_snapshots.sql`         |
+| Topic                          | Location                                                                                           |
+| ------------------------------ | -------------------------------------------------------------------------------------------------- |
+| CLI install, link, secrets     | [DEV_SETUP.md §4](DEV_SETUP.md#4-supabase-database-migrations-cloud-cli-and-ci)                    |
+| Migrations + verify on `main`  | [`.github/workflows/supabase-migrations.yml`](../.github/workflows/supabase-migrations.yml)        |
+| PowerSync sync YAML on `main`  | [`.github/workflows/powersync-sync-config.yml`](../.github/workflows/powersync-sync-config.yml)    |
+| PowerSync disabled / re-enable | **PowerSync Cloud project disabled or re-enabled (free tier)** (above)                             |
+| PR types check                 | [`.github/workflows/supabase-db-types-pr.yml`](../.github/workflows/supabase-db-types-pr.yml)      |
+| App env vars                   | [`packages/supabase/README.md`](../packages/supabase/README.md), [`.env.example`](../.env.example) |
+| Mobile PowerSync wiring        | [`apps/mobile/src/lib/powersync/README.md`](../apps/mobile/src/lib/powersync/README.md)            |
+| `chart_snapshots` dev cleanup  | **Dev cleanup: `chart_snapshots`** (above); migration `20260524140000_chart_snapshots.sql`         |

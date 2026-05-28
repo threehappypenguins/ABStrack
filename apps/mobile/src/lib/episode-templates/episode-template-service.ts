@@ -91,7 +91,7 @@ export async function fetchEpisodeTemplates(
         return scope;
       }
       if (scope.data == null) {
-        return listEpisodeTemplates(client);
+        return { ok: true, data: [] };
       }
       try {
         const data = await listEpisodeTemplatesWithPresetsFromPowerSyncDb(

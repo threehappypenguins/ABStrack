@@ -1,6 +1,9 @@
 /**
  * Routes episode-flow mutations to PowerSync SQLite when the replica is available (offline-first),
  * otherwise uses Supabase REST (same RLS) when PowerSync is not configured on this install.
+ *
+ * Destructive ops (cancel / end / delete) write local SQLite first, then mirror to Supabase when
+ * the device is online so list reloads against Postgres are not stale before PowerSync upload.
  */
 import type {
   EpisodeRow,
@@ -74,6 +77,43 @@ function powerSyncWritesEnabled(
   db: PowerSyncDatabase | null | undefined,
 ): db is PowerSyncDatabase {
   return db != null;
+}
+
+/**
+ * Cancel / end / delete: local SQLite first (offline queue), then Supabase REST when online so
+ * reloads that read Postgres are not stale before PowerSync upload completes.
+ */
+async function episodeDestructiveMutationOfflineFirst<
+  T extends { [k: string]: boolean },
+>(
+  client: AbstrackSupabaseClient,
+  powerSyncDb: PowerSyncDatabase | null | undefined,
+  outcomeKey: keyof T & string,
+  cloudFn: (c: AbstrackSupabaseClient) => Promise<PresetDataResult<T>>,
+  localFn: (db: PowerSyncDatabase) => Promise<PresetDataResult<T>>,
+): Promise<PresetDataResult<T>> {
+  if (!powerSyncWritesEnabled(powerSyncDb)) {
+    return cloudFn(client);
+  }
+  const local = await localFn(powerSyncDb);
+  const deviceOnline = await fetchMobileDeviceIsConnected();
+  if (deviceOnline === false) {
+    return local;
+  }
+  const cloud = await cloudFn(client);
+  if (!local.ok) {
+    return cloud.ok ? cloud : local;
+  }
+  if (!cloud.ok) {
+    return local;
+  }
+  return {
+    ok: true,
+    data: {
+      ...local.data,
+      [outcomeKey]: Boolean(local.data[outcomeKey] || cloud.data[outcomeKey]),
+    } as T,
+  };
 }
 
 /**
@@ -244,15 +284,14 @@ export async function endEpisodeIfStillActiveOfflineFirst(
   endedAt?: string,
   startedAt?: string,
 ): Promise<PresetDataResult<{ didEnd: boolean }>> {
-  if (powerSyncWritesEnabled(powerSyncDb)) {
-    return endEpisodeIfStillActivePowerSyncDb(
-      powerSyncDb,
-      episodeId,
-      endedAt,
-      startedAt,
-    );
-  }
-  return endEpisodeIfStillActive(client, episodeId, endedAt, startedAt);
+  return episodeDestructiveMutationOfflineFirst(
+    client,
+    powerSyncDb,
+    'didEnd',
+    (c) => endEpisodeIfStillActive(c, episodeId, endedAt, startedAt),
+    (db) =>
+      endEpisodeIfStillActivePowerSyncDb(db, episodeId, endedAt, startedAt),
+  );
 }
 
 /**
@@ -472,10 +511,13 @@ export async function cancelActiveEpisodeByIdOfflineFirst(
   powerSyncDb: PowerSyncDatabase | null | undefined,
   episodeId: Uuid,
 ): Promise<CancelActiveEpisodeByIdResult> {
-  if (powerSyncWritesEnabled(powerSyncDb)) {
-    return cancelActiveEpisodeByIdPowerSyncDb(powerSyncDb, episodeId);
-  }
-  return cancelActiveEpisodeById(client, episodeId);
+  return episodeDestructiveMutationOfflineFirst(
+    client,
+    powerSyncDb,
+    'didCancel',
+    (c) => cancelActiveEpisodeById(c, episodeId),
+    (db) => cancelActiveEpisodeByIdPowerSyncDb(db, episodeId),
+  );
 }
 
 /**
@@ -490,8 +532,11 @@ export async function deleteEpisodeByIdOfflineFirst(
   powerSyncDb: PowerSyncDatabase | null | undefined,
   episodeId: Uuid,
 ): Promise<DeleteEpisodeByIdResult> {
-  if (powerSyncWritesEnabled(powerSyncDb)) {
-    return deleteEpisodeByIdPowerSyncDb(powerSyncDb, episodeId);
-  }
-  return deleteEpisodeById(client, episodeId);
+  return episodeDestructiveMutationOfflineFirst(
+    client,
+    powerSyncDb,
+    'didDelete',
+    (c) => deleteEpisodeById(c, episodeId),
+    (db) => deleteEpisodeByIdPowerSyncDb(db, episodeId),
+  );
 }
