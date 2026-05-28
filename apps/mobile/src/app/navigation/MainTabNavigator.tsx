@@ -213,6 +213,10 @@ function InsightsTab() {
  * items. Because the strip lives *inside* the tab bar container, it never affects the layout
  * of screen content — the tab bar area simply grows/shrinks in place without causing the
  * screen body to jump.
+ *
+ * Sync/offline chrome is **tab-only by design** (not on stack screens such as episode start,
+ * prompts, Manage, or Settings). Deeper flows use local offline UX; replica status remains in
+ * Settings.
  */
 function CustomTabBar(props: BottomTabBarProps) {
   return (
@@ -250,8 +254,8 @@ export function MainTabNavigator() {
             paddingBottom: tabBarBottomPadding,
             minHeight: tabBarMinHeight,
             backgroundColor: colors.surface,
-            borderTopColor: colors.border,
-            borderTopWidth: StyleSheet.hairlineWidth,
+            // Top separator lives on SyncHealthFooter (CustomTabBar renders it above this bar).
+            borderTopWidth: 0,
           },
           tabBarItemStyle: {
             paddingVertical: 4,

@@ -339,6 +339,8 @@ export function SyncHealthFooter() {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
           borderTopWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: colors.border,
+          borderBottomWidth: StyleSheet.hairlineWidth,
         }}
       >
         <Pressable
