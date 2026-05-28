@@ -81,6 +81,15 @@ Episode-bound symptom / marker / food history for the practitioner patient detai
 
 **Do not** flag this as “must use batched `.in('episode_id', …)` + RPC/window SQL” in review: episodes are short-lived and row counts per episode are expected to be modest; **avoid regressing** to a single `.select('*').in('episode_id', …)` across many episodes **with no per-episode limit** (that would ship unbounded rows for a hot episode). If product assumptions change materially, propose changes **with Sarah’s migration workflow**—do not invent schema changes silently.
 
+## Mobile PowerSync: “not writing to the database” / offline broken
+
+If Sarah reports that the **mobile app** is not persisting episodes (or symptoms/markers) to **Supabase**, that **offline** start fails, or data exists only on-device while **web** works:
+
+1. **Do not** jump to code changes first. PowerSync **free-tier** projects can be **disabled** after inactivity; after **re-enable**, **`EXPO_PUBLIC_POWERSYNC_URL`** often changes and **Client Auth** (JWKS, JWT Audience, or legacy **Use Supabase Auth**) may need to be reconfigured in the PowerSync Dashboard.
+2. Point her to **[docs/SUPABASE_CLOUD_DEVELOPER.md → PowerSync Cloud project disabled or re-enabled](docs/SUPABASE_CLOUD_DEVELOPER.md#powersync-cloud-project-disabled-or-re-enabled-free-tier)** and have her verify Dashboard + `apps/mobile/.env` + one **online first sync** before debugging app logic.
+3. Confirm the same **Supabase project** is used for `EXPO_PUBLIC_SUPABASE_URL` / publishable key and for PowerSync’s Postgres + JWT validation.
+4. Optional: `EXPO_PUBLIC_POWERSYNC_DEBUG=true` and Metro `[PowerSyncReplicaDiag:…]` logs (`apps/mobile/src/lib/powersync/powersync-replica-diagnostics.ts`).
+
 ## MCP servers (documentation and APIs)
 
 This workspace has **MCP servers** (for example Context7 for library and framework docs, Nx, Supabase, Next.js devtools, and the in-editor browser). **Use them** to pull **current** documentation and API details instead of relying only on training data. That helps avoid **deprecated** patterns, outdated APIs, and wrong version-specific behavior.

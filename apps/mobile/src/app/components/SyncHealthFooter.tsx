@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -59,6 +65,36 @@ export function SyncHealthFooter() {
   const { requestManualResync, manualResyncBusy } = usePowerSyncManualResync();
   const [detailOpen, setDetailOpen] = useState(false);
 
+  /**
+   * True during the gap between NetInfo reporting online and PowerSync's status listener
+   * confirming it has started connecting. In that window, stale client errors would otherwise
+   * flash as "Sync issue" even though a reconnect is imminent. Cleared as soon as
+   * client.connecting or client.connected becomes true, or if the device goes offline again.
+   */
+  const [justCameOnline, setJustCameOnline] = useState(false);
+  const prevDeviceNetConnected = useRef(deviceNetConnected);
+  useEffect(() => {
+    const prev = prevDeviceNetConnected.current;
+    prevDeviceNetConnected.current = deviceNetConnected;
+    if (prev === false && deviceNetConnected === true) {
+      // Network just came back — set the flag and let PowerSync's status clear it.
+      setJustCameOnline(true);
+    }
+  }, [deviceNetConnected]);
+  useEffect(() => {
+    if (justCameOnline && (client?.connecting || client?.connected)) {
+      setJustCameOnline(false);
+    }
+    if (justCameOnline && deviceNetConnected === false) {
+      setJustCameOnline(false);
+    }
+  }, [
+    justCameOnline,
+    client?.connecting,
+    client?.connected,
+    deviceNetConnected,
+  ]);
+
   const shouldShowFooter = useMemo(() => {
     if (!psBridge.syncChromeEnabled) {
       return false;
@@ -77,6 +113,14 @@ export function SyncHealthFooter() {
     }
     const deviceOffline =
       deviceNetConnected === false && psBridge.localSqliteInitialized;
+    // While PowerSync is actively reconnecting after coming back online, suppress the footer —
+    // stale errors and the !connected state are expected during this window and would produce
+    // misleading "Sync issue" or "Not connected" messages. Only suppress when online: if the
+    // device is offline, client.connecting stays true indefinitely (PowerSync keeps retrying)
+    // and we still want to show the "Offline" strip.
+    if ((client?.connecting || justCameOnline) && !deviceOffline) {
+      return false;
+    }
     if (deviceOffline) {
       return true;
     }
@@ -97,6 +141,7 @@ export function SyncHealthFooter() {
   }, [
     client,
     deviceNetConnected,
+    justCameOnline,
     manualResyncBusy,
     psBridge.database,
     psBridge.localSqliteInitialized,
@@ -154,9 +199,21 @@ export function SyncHealthFooter() {
         detailRecommended: false,
       };
     }
-
     const deviceOffline =
       deviceNetConnected === false && psBridge.localSqliteInitialized;
+    // PowerSync is actively reconnecting after coming back online — show a neutral
+    // "Reconnecting…" rather than letting stale errors surface as "Sync issue".
+    // Only suppress when online: if offline, client.connecting stays true indefinitely and
+    // we still want to reach the "Offline — saved on device" branch below.
+    if ((client?.connecting || justCameOnline) && !deviceOffline) {
+      return {
+        line: 'Reconnecting…',
+        tone: 'ink',
+        showSpinner: true,
+        detailRecommended: false,
+      };
+    }
+
     if (deviceOffline) {
       return {
         line: 'Offline — saved on device; syncs when online',
@@ -216,6 +273,7 @@ export function SyncHealthFooter() {
   }, [
     client,
     deviceNetConnected,
+    justCameOnline,
     manualResyncBusy,
     psBridge.database,
     psBridge.firstSyncCompleted,
@@ -281,7 +339,8 @@ export function SyncHealthFooter() {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
           borderTopWidth: StyleSheet.hairlineWidth,
-          paddingBottom: Math.max(insets.bottom, 4),
+          borderBottomColor: colors.border,
+          borderBottomWidth: StyleSheet.hairlineWidth,
         }}
       >
         <Pressable

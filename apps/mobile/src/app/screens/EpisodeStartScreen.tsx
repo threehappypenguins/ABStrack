@@ -154,30 +154,28 @@ export function EpisodeStartScreen() {
 
         let activeEpisodeRow: EpisodeRow | null = null;
         let shouldQuerySupabaseForActive = true;
-        if (trustedReplicaDb) {
-          const connected = await fetchMobileDeviceIsConnected();
-          if (stale()) {
-            return;
-          }
-          if (connected === false) {
-            shouldQuerySupabaseForActive = false;
-            try {
-              activeEpisodeRow = await getActiveEpisodeRowFromPowerSyncDb(
-                trustedReplicaDb,
-                phiSubjectUserId,
+        const connected = await fetchMobileDeviceIsConnected();
+        if (stale()) {
+          return;
+        }
+        if (connected === false && replicaDbForNetworkFallback) {
+          shouldQuerySupabaseForActive = false;
+          try {
+            activeEpisodeRow = await getActiveEpisodeRowFromPowerSyncDb(
+              replicaDbForNetworkFallback,
+              phiSubjectUserId,
+            );
+          } catch (caught) {
+            if (!stale()) {
+              setErrorMessage(
+                humanizeUnexpectedScreenError(
+                  caught,
+                  ACTIVE_EPISODE_LOCAL_VERIFY_FAILED_MESSAGE,
+                ),
               );
-            } catch (caught) {
-              if (!stale()) {
-                setErrorMessage(
-                  humanizeUnexpectedScreenError(
-                    caught,
-                    ACTIVE_EPISODE_LOCAL_VERIFY_FAILED_MESSAGE,
-                  ),
-                );
-                setStatus('error');
-              }
-              return;
+              setStatus('error');
             }
+            return;
           }
         }
 

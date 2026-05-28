@@ -73,6 +73,7 @@ Background, login vs **`PS_ADMIN_TOKEN`**, and GitHub secret names: **[docs/SUPA
 - Keep **`POWERSYNC_*`** GitHub secrets configured so **`.github/workflows/powersync-sync-config.yml`** can validate every branch and deploy **`sync-rules.yaml`** on **`main`** merges.
 - Optional: manual CLI block above if you need to validate or deploy outside CI.
 - Ensure deployed JWT validation exposes `sub`, `aal`, and any claims referenced in rules (Supabase includes `aal` when MFA is enforced).
+- After PowerSync Cloud **disable/re-enable** (free tier): refresh **`EXPO_PUBLIC_POWERSYNC_URL`**, Dashboard **Client Auth** (JWKS / audience or legacy Supabase Auth), and complete mobile **first sync** — **[SUPABASE_CLOUD_DEVELOPER.md](../../docs/SUPABASE_CLOUD_DEVELOPER.md#powersync-cloud-project-disabled-or-re-enabled-free-tier)**.
 
 ## Build / test
 
