@@ -26,7 +26,6 @@ import {
 } from '../lib/supabase-wiring';
 import { AppProviders } from './components/AppProviders';
 import { AppGridBackground } from './components/AppGridBackground';
-import { SyncHealthFooter } from './components/SyncHealthFooter';
 import { ForgotPasswordScreen } from './screens/ForgotPasswordScreen';
 import { MainTabNavigator } from './navigation/MainTabNavigator';
 import type { MainStackParamList } from './navigation/types';
@@ -723,7 +722,6 @@ function AppBootstrap() {
             )}
           </NavigationContainer>
         </View>
-        {!showAuthStack ? <SyncHealthFooter /> : null}
       </View>
     </PowerSyncSessionBridge>
   );

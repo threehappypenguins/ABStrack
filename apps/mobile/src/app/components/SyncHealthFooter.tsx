@@ -281,7 +281,6 @@ export function SyncHealthFooter() {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
           borderTopWidth: StyleSheet.hairlineWidth,
-          paddingBottom: Math.max(insets.bottom, 4),
         }}
       >
         <Pressable

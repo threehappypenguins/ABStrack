@@ -1,7 +1,14 @@
 import React from 'react';
 import { StyleSheet } from 'react-native';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import {
+  createBottomTabNavigator,
+  BottomTabBar,
+} from '@react-navigation/bottom-tabs';
+import type {
+  BottomTabNavigationProp,
+  BottomTabBarProps,
+} from '@react-navigation/bottom-tabs';
+import { SyncHealthFooter } from '../components/SyncHealthFooter';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -202,6 +209,21 @@ function InsightsTab() {
 }
 
 /**
+ * Custom tab bar that renders the {@link SyncHealthFooter} strip directly above the tab bar
+ * items. Because the strip lives *inside* the tab bar container, it never affects the layout
+ * of screen content — the tab bar area simply grows/shrinks in place without causing the
+ * screen body to jump.
+ */
+function CustomTabBar(props: BottomTabBarProps) {
+  return (
+    <>
+      <SyncHealthFooter />
+      <BottomTabBar {...props} />
+    </>
+  );
+}
+
+/**
  * Primary signed-in navigation: home plus preset entry points with a bottom tab bar sized for
  * comfortable touch targets.
  *
@@ -216,6 +238,7 @@ export function MainTabNavigator() {
   return (
     <EpisodeTemplatesDraftProvider>
       <Tab.Navigator
+        tabBar={(props) => <CustomTabBar {...props} />}
         screenOptions={({ route }) => ({
           headerShown: false,
           tabBarActiveTintColor: colors.primary,
