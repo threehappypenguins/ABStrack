@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -82,7 +88,12 @@ export function SyncHealthFooter() {
     if (justCameOnline && deviceNetConnected === false) {
       setJustCameOnline(false);
     }
-  }, [justCameOnline, client?.connecting, client?.connected, deviceNetConnected]);
+  }, [
+    justCameOnline,
+    client?.connecting,
+    client?.connected,
+    deviceNetConnected,
+  ]);
 
   const shouldShowFooter = useMemo(() => {
     if (!psBridge.syncChromeEnabled) {

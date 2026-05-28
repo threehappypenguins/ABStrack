@@ -3,7 +3,8 @@
  * otherwise uses Supabase REST (same RLS) when PowerSync is not configured on this install.
  *
  * Destructive ops (cancel / end / delete) write local SQLite first, then mirror to Supabase when
- * the device is online so list reloads against Postgres are not stale before PowerSync upload.
+ * {@link fetchMobileDeviceIsConnected} is **`true`** so list reloads against Postgres are not stale
+ * before PowerSync upload.
  */
 import type {
   EpisodeRow,
@@ -80,8 +81,9 @@ function powerSyncWritesEnabled(
 }
 
 /**
- * Cancel / end / delete: local SQLite first (offline queue), then Supabase REST when online so
- * reloads that read Postgres are not stale before PowerSync upload completes.
+ * Cancel / end / delete: local SQLite first (offline queue), then Supabase REST when
+ * {@link fetchMobileDeviceIsConnected} is **`true`** so reloads that read Postgres are not stale
+ * before PowerSync upload completes. **`false`** or **`null`** (reachability unknown) skips REST.
  */
 async function episodeDestructiveMutationOfflineFirst<
   T extends { [k: string]: boolean },
@@ -97,7 +99,7 @@ async function episodeDestructiveMutationOfflineFirst<
   }
   const local = await localFn(powerSyncDb);
   const deviceOnline = await fetchMobileDeviceIsConnected();
-  if (deviceOnline === false) {
+  if (deviceOnline !== true) {
     return local;
   }
   const cloud = await cloudFn(client);

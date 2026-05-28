@@ -1,6 +1,6 @@
 # Mobile PowerSync wiring (`apps/mobile/src/lib/powersync`)
 
-**Ops:** If sync stops writing to Supabase after a long break, see **[docs/SUPABASE_CLOUD_DEVELOPER.md → PowerSync Cloud project disabled or re-enabled](../../../../docs/SUPABASE_CLOUD_DEVELOPER.md#powersync-cloud-project-disabled-or-re-enabled-free-tier)** (update **`EXPO_PUBLIC_POWERSYNC_URL`**, Dashboard **Client Auth**, first sync online).
+**Ops:** If sync stops writing to Supabase after a long break, see **[docs/SUPABASE_CLOUD_DEVELOPER.md → PowerSync Cloud project disabled or re-enabled](../../../../../docs/SUPABASE_CLOUD_DEVELOPER.md#powersync-cloud-project-disabled-or-re-enabled-free-tier)** (update **`EXPO_PUBLIC_POWERSYNC_URL`**, Dashboard **Client Auth**, first sync online).
 
 ## Lifecycle
 
