@@ -1,18 +1,27 @@
-import type { Metadata } from 'next';
-import { LandingPageClient } from './LandingPageClient';
+import { LANDING_PAGE_METADATA, buildLandingJsonLd } from '@/lib/site-seo';
+import { LandingAuthGate } from './LandingAuthGate';
+import { LandingPageStatic } from './LandingPageStatic';
 
-export const metadata: Metadata = {
-  title: 'ABStrack — ABS health tracking',
-  description:
-    'Open-source, privacy-first health tracking for Auto-Brewery Syndrome (ABS): episode logging, markers, and authorized clinician review.',
-};
+export { LANDING_PAGE_METADATA as metadata };
 
 /**
  * Public landing / marketing route at `/`. Authenticated users are redirected to the
- * dashboard from the client shell.
+ * dashboard from {@link LandingAuthGate}.
  *
- * @returns Landing page client tree.
+ * @returns Landing page with JSON-LD and server-rendered marketing copy.
  */
 export default function IndexPage() {
-  return <LandingPageClient />;
+  const jsonLd = buildLandingJsonLd();
+
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+      <LandingAuthGate>
+        <LandingPageStatic />
+      </LandingAuthGate>
+    </>
+  );
 }

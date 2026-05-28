@@ -1,6 +1,10 @@
+import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
+import { NOINDEX_ROUTE_METADATA } from '@/lib/noindex-metadata';
 import { createServerClient } from '@/lib/supabase/server-client';
+
+export const metadata: Metadata = NOINDEX_ROUTE_METADATA;
 
 /**
  * Authenticated area: shared shell, session gate (aligned with dashboard dev-only auth-error escape hatch).

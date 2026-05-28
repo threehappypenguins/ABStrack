@@ -20,6 +20,11 @@ export const metadata: Metadata = {
   title: 'ABStrack Practitioner',
   description:
     'Practitioner access for ABStrack patient support and care workflows',
+  robots: {
+    index: false,
+    follow: false,
+    googleBot: { index: false, follow: false },
+  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
