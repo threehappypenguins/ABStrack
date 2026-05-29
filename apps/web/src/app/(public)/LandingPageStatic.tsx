@@ -1,5 +1,7 @@
 import { Inter } from 'next/font/google';
+import { GITHUB_REPOSITORY_URL } from '@/lib/site-seo';
 import { LandingDashboardCharts } from './components/LandingDashboardCharts';
+import { LandingGitHubLink } from './LandingGitHubLink';
 import { LandingStoreBadges } from './LandingStoreBadges';
 
 const fontWordmark = Inter({
@@ -32,6 +34,7 @@ export function LandingPageStatic() {
               (such as BAC and glucose), optional media for symptoms, and clear
               sharing with clinicians you authorize.
             </p>
+            <LandingGitHubLink />
           </div>
           <LandingStoreBadges />
         </section>
@@ -124,6 +127,16 @@ export function LandingPageStatic() {
               </span>
               <span>.</span>
             </span>
+          </p>
+          <p className="mt-2">
+            <a
+              href={GITHUB_REPOSITORY_URL}
+              className="font-medium text-app-primary underline decoration-app-primary/40 underline-offset-2 hover:decoration-app-primary"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Open source on GitHub
+            </a>
           </p>
         </footer>
       </div>

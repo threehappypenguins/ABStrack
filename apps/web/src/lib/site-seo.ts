@@ -5,6 +5,9 @@ import { getMetadataBase, getSiteUrl } from './site-url';
 export const SITE_DESCRIPTION =
   'Open-source, privacy-first health tracking for Auto-Brewery Syndrome (ABS): episode logging, markers, and authorized clinician review.';
 
+/** Canonical GitHub repository for ABStrack (open source). */
+export const GITHUB_REPOSITORY_URL = 'https://github.com/sarahpoulin/ABStrack';
+
 /** Search-oriented phrases; used in `keywords` and on-page copy alignment. */
 export const SITE_KEYWORDS = [
   'Auto-Brewery Syndrome',
@@ -111,6 +114,8 @@ export function buildLandingJsonLd(): Record<string, unknown> {
         },
         isAccessibleForFree: true,
         keywords: SITE_KEYWORDS.join(', '),
+        codeRepository: GITHUB_REPOSITORY_URL,
+        license: 'https://opensource.org/licenses/MIT',
       },
     ],
   };
