@@ -47,6 +47,23 @@ export const PRACTITIONER_MFA_TRUST_BUNDLE_STORAGE_KEY =
   'abstrack.practitioner.mfaTrustBundle.v1';
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
+
+/** Practitioner-selected window to skip TOTP on this browser after a successful MFA sign-in. */
+export type PractitionerMfaDeviceTrustDuration = '30_days' | '1_year';
+
+/**
+ * Absolute expiry timestamp for a device-trust bundle from the chosen duration.
+ *
+ * @param duration - `30_days` or `1_year`.
+ * @returns Milliseconds since epoch when trust expires.
+ */
+export function getTrustedUntilMsForDuration(
+  duration: PractitionerMfaDeviceTrustDuration,
+): number {
+  const windowMs = duration === '1_year' ? ONE_YEAR_MS : THIRTY_DAYS_MS;
+  return Date.now() + windowMs;
+}
 
 /**
  * Whether practitioner MFA “trusted device” (localStorage token bundle) is allowed for this build.
@@ -798,6 +815,11 @@ export async function practitionerSignOut(
   }
 }
 
+/**
+ * Default trust window (30 days) for callers that do not expose duration choice.
+ *
+ * @returns Milliseconds since epoch when trust expires.
+ */
 export function getTrustedUntilMsAfterVerification(): number {
-  return Date.now() + THIRTY_DAYS_MS;
+  return getTrustedUntilMsForDuration('30_days');
 }
