@@ -6,7 +6,7 @@ import {
   tryRestoreTrustedMfaSession,
   saveMfaTrustBundle,
   clearMfaTrustBundle,
-  getTrustedUntilMsAfterVerification,
+  getTrustedUntilMsForDuration,
 } from '../src/lib/practitioner-device-trust';
 
 jest.mock('@abstrack/supabase/browser', () => ({
@@ -22,7 +22,11 @@ jest.mock('../src/lib/practitioner-device-trust', () => {
     tryRestoreTrustedMfaSession: jest.fn(),
     saveMfaTrustBundle: jest.fn(),
     clearMfaTrustBundle: jest.fn(),
-    getTrustedUntilMsAfterVerification: jest.fn(() => Date.now() + 86_400_000),
+    getTrustedUntilMsForDuration: jest.fn((duration: string) =>
+      duration === '1_year'
+        ? Date.now() + 365 * 86_400_000
+        : Date.now() + 30 * 86_400_000,
+    ),
   };
 });
 
@@ -40,7 +44,7 @@ const mockedGetClient = jest.mocked(getSupabaseBrowserClient);
 const mockedTryRestore = jest.mocked(tryRestoreTrustedMfaSession);
 const mockedSaveBundle = jest.mocked(saveMfaTrustBundle);
 const mockedClearBundle = jest.mocked(clearMfaTrustBundle);
-const mockedTrustedUntil = jest.mocked(getTrustedUntilMsAfterVerification);
+const mockedTrustedUntil = jest.mocked(getTrustedUntilMsForDuration);
 
 const USER_ID = '00000000-0000-0000-0000-000000000042';
 const FACTOR_ID = 'factor-totp-1';
@@ -184,6 +188,10 @@ function createLoginSupabaseMock(options?: {
     error: mfaSessionOpts?.error ?? null,
   };
   const getSession = jest.fn().mockResolvedValue(verifyPhaseGetSessionResult);
+  const refreshSession = jest.fn().mockResolvedValue({
+    error: null,
+    data: { session: defaultMfaSession },
+  });
   const signOut = jest.fn().mockResolvedValue({ error: null });
 
   const challenge = jest.fn().mockResolvedValue({
@@ -210,6 +218,7 @@ function createLoginSupabaseMock(options?: {
       signInWithPassword,
       getUser,
       getSession,
+      refreshSession,
       signOut,
       mfa: {
         listFactors,
@@ -322,9 +331,33 @@ describe('LoginPage MFA state machine', () => {
 
     await waitFor(() => {
       expect(mockedTryRestore).toHaveBeenCalledWith(expect.anything(), USER_ID);
+      expect(client.auth.refreshSession).toHaveBeenCalled();
       expect(mockPush).toHaveBeenCalledWith('/patients');
     });
     expect(screen.queryByLabelText(/Authenticator code/i)).toBeNull();
+  });
+
+  it('does not show MFA when trust restore succeeds but JWT aal2 never appears', async () => {
+    mockedTryRestore.mockResolvedValue({ status: 'restored' });
+    const { client } = createLoginSupabaseMock({
+      assuranceFirst: { currentLevel: 'aal1', nextLevel: 'aal2' },
+      sessionAccessToken: makeUnsignedJwtForTest({ aal: 'aal1' }),
+    });
+    mockedGetClient.mockReturnValue(client as never);
+
+    renderLogin();
+    await submitCredentials();
+
+    await waitFor(
+      () => {
+        expect(getVisibleFormError().textContent).toContain(
+          'saved device sign-in could not be confirmed',
+        );
+      },
+      { timeout: 5_000 },
+    );
+    expect(screen.queryByLabelText(/Authenticator code/i)).toBeNull();
+    expect(mockPush).not.toHaveBeenCalledWith('/patients');
   });
 
   it('navigates to /patients when session is already AAL2', async () => {
@@ -368,7 +401,7 @@ describe('LoginPage MFA state machine', () => {
     expect(mockedClearBundle).toHaveBeenCalled();
   });
 
-  it('credentials → MFA verify → /patients and saves trust bundle when remember device is checked', async () => {
+  it('credentials → MFA verify → /patients and saves trust bundle for 30 days', async () => {
     const { client, mfa } = createLoginSupabaseMock();
     mockedGetClient.mockReturnValue(client as never);
 
@@ -379,7 +412,7 @@ describe('LoginPage MFA state machine', () => {
       expect(screen.getByLabelText(/Authenticator code/i)).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByLabelText(/Trust this device for 30 days/i));
+    fireEvent.click(screen.getByLabelText(/Do not ask again for 30 days/i));
     fireEvent.change(screen.getByLabelText(/Authenticator code/i), {
       target: { value: '123456' },
     });
@@ -397,8 +430,36 @@ describe('LoginPage MFA state machine', () => {
       challengeId: 'challenge-id',
       code: '123456',
     });
+    expect(mockedTrustedUntil).toHaveBeenCalledWith('30_days');
     expect(mockedSaveBundle).toHaveBeenCalled();
     expect(mockedClearBundle).not.toHaveBeenCalled();
+  });
+
+  it('saves trust bundle for 1 year when that option is selected', async () => {
+    const { client } = createLoginSupabaseMock();
+    mockedGetClient.mockReturnValue(client as never);
+
+    renderLogin();
+    await submitCredentials();
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Authenticator code/i)).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByLabelText(/Do not ask again for 1 year/i));
+    fireEvent.change(screen.getByLabelText(/Authenticator code/i), {
+      target: { value: '123456' },
+    });
+    fireEvent.click(
+      screen.getByRole('button', { name: /Verify and continue/i }),
+    );
+
+    await waitFor(() => {
+      expect(mockPush).toHaveBeenCalledWith('/patients');
+    });
+
+    expect(mockedTrustedUntil).toHaveBeenCalledWith('1_year');
+    expect(mockedSaveBundle).toHaveBeenCalled();
   });
 
   it('credentials → MFA verify challenges the selected factor when multiple verified TOTP factors exist', async () => {

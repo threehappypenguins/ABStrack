@@ -12,6 +12,7 @@ import { useRouter } from 'next/navigation';
 import {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -19,10 +20,11 @@ import {
 } from 'react';
 import {
   clearMfaTrustBundle,
-  getTrustedUntilMsAfterVerification,
+  getTrustedUntilMsForDuration,
   isPractitionerMfaDeviceTrustEnabled,
   saveMfaTrustBundle,
   tryRestoreTrustedMfaSession,
+  type PractitionerMfaDeviceTrustDuration,
 } from '../../lib/practitioner-device-trust';
 import {
   looksLikeTotpSetupPayload,
@@ -31,6 +33,9 @@ import {
 } from '../../lib/mfa-user-messages';
 
 type LoginStep = 'credentials' | 'mfa_verify';
+
+/** Whether to skip TOTP on later sign-ins from this browser, and for how long. */
+type DeviceTrustChoice = 'none' | PractitionerMfaDeviceTrustDuration;
 
 /** Verified TOTP row from `auth.mfa.listFactors()` — `friendly_name` is optional in API payloads. */
 type ListedTotpFactor = {
@@ -60,6 +65,14 @@ function buildMfaFactorChoices(factors: ListedTotpFactor[]): Array<{
 /** Max polls when waiting for the access token JWT to include `aal: aal2` after assurance reports AAL2. */
 const JWT_AAL2_SYNC_MAX_ATTEMPTS = 8;
 const JWT_AAL2_SYNC_DELAY_MS = 75;
+/** Longer poll after trust-bundle restore — JWT `aal` can lag behind assurance. */
+const JWT_AAL2_SYNC_AFTER_RESTORE_MAX_ATTEMPTS = 32;
+const JWT_AAL2_SYNC_AFTER_RESTORE_DELAY_MS = 100;
+
+type JwtAal2SyncOptions = {
+  maxAttempts?: number;
+  delayMs?: number;
+};
 
 /**
  * Patient routes gate on JWT `aal` via `hasMfaAssuranceAal2` (see `resolvePractitionerAppGate` in
@@ -73,23 +86,26 @@ const JWT_AAL2_SYNC_DELAY_MS = 75;
  *
  * @param supabase - Browser Supabase client.
  * @param sessionHint - Optional session to parse before polling (same shape as `getSession().data.session`).
+ * @param options - Optional poll limits (defaults match post-MFA verify timing).
  * @returns The session whose `access_token` parses to AAL2, or `null` if still stale / missing.
  */
 async function waitForSessionWithJwtAal2(
   supabase: ReturnType<typeof getSupabaseBrowserClient>,
   sessionHint?: Session | null,
+  options?: JwtAal2SyncOptions,
 ): Promise<Session | null> {
+  const maxAttempts = options?.maxAttempts ?? JWT_AAL2_SYNC_MAX_ATTEMPTS;
+  const delayMs = options?.delayMs ?? JWT_AAL2_SYNC_DELAY_MS;
+
   if (sessionHint?.access_token != null) {
     const hintClaims = parseAbstrackAccessTokenClaims(sessionHint.access_token);
     if (hasMfaAssuranceAal2(hintClaims)) {
       return sessionHint;
     }
   }
-  for (let attempt = 0; attempt < JWT_AAL2_SYNC_MAX_ATTEMPTS; attempt++) {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (attempt > 0) {
-      await new Promise((resolve) =>
-        setTimeout(resolve, JWT_AAL2_SYNC_DELAY_MS),
-      );
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
     const { data, error } = await supabase.auth.getSession();
     if (error || data.session?.access_token == null) {
@@ -105,8 +121,8 @@ async function waitForSessionWithJwtAal2(
 
 /**
  * Practitioner email/password login with MFA step-up and optional device trust (browser storage).
- * Successful verification with “Trust this device” unchecked clears any stored bundle so trust
- * matches the checkbox for this sign-in. If there is no verified TOTP factor, any existing bundle
+ * Successful verification with “Remember this device” set to ask every time clears any stored
+ * bundle so trust matches the choice for this sign-in. If there is no verified TOTP factor, any existing bundle
  * is cleared before redirecting to practitioner home for TOTP enrollment so stale tokens are not kept in storage.
  * After email/password authentication succeeds, password state is cleared immediately so the secret
  * is not retained through MFA or device-trust checks.
@@ -145,6 +161,7 @@ async function waitForSessionWithJwtAal2(
  * @returns Login UI.
  */
 export default function LoginPage() {
+  const formId = useId();
   const router = useRouter();
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const deviceTrustFeatureEnabled = useMemo(
@@ -155,7 +172,8 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [verifyCode, setVerifyCode] = useState('');
-  const [rememberDevice, setRememberDevice] = useState(false);
+  const [deviceTrustChoice, setDeviceTrustChoice] =
+    useState<DeviceTrustChoice>('none');
   const [mfaFactorId, setMfaFactorId] = useState<string | null>(null);
   /** Populated when entering MFA verify so multiple enrolled TOTP factors can be chosen by label. */
   const [mfaFactorChoices, setMfaFactorChoices] = useState<
@@ -183,7 +201,7 @@ export default function LoginPage() {
    */
   useEffect(() => {
     if (!deviceTrustFeatureEnabled) {
-      setRememberDevice(false);
+      setDeviceTrustChoice('none');
     }
   }, [deviceTrustFeatureEnabled]);
 
@@ -229,7 +247,7 @@ export default function LoginPage() {
     (options?: { clearPassword?: boolean; message?: string }) => {
       setStep('credentials');
       setVerifyCode('');
-      setRememberDevice(false);
+      setDeviceTrustChoice('none');
       setMfaFactorId(null);
       setMfaFactorChoices([]);
       setStatus(null);
@@ -323,13 +341,25 @@ export default function LoginPage() {
         user.id,
       );
       if (restoreOutcome.status === 'restored') {
-        const sessionWithJwtAal2 = await waitForSessionWithJwtAal2(supabase);
+        await supabase.auth.refreshSession();
+        const sessionWithJwtAal2 = await waitForSessionWithJwtAal2(
+          supabase,
+          null,
+          {
+            maxAttempts: JWT_AAL2_SYNC_AFTER_RESTORE_MAX_ATTEMPTS,
+            delayMs: JWT_AAL2_SYNC_AFTER_RESTORE_DELAY_MS,
+          },
+        );
         if (sessionWithJwtAal2 != null) {
           router.push('/patients');
           router.refresh();
           return;
         }
-        /* Else: JWT `aal` may still lag; fall through to session/assurance checks. */
+        resetToCredentials({
+          message:
+            'Your saved device sign-in could not be confirmed on this browser. Enter your email and password, then your authenticator code if prompted.',
+        });
+        return;
       }
       if (restoreOutcome.status === 'signed_out') {
         router.refresh();
@@ -524,10 +554,10 @@ export default function LoginPage() {
           return;
         }
 
-        if (deviceTrustFeatureEnabled && rememberDevice) {
+        if (deviceTrustFeatureEnabled && deviceTrustChoice !== 'none') {
           saveMfaTrustBundle(
             sessionWithJwtAal2,
-            getTrustedUntilMsAfterVerification(),
+            getTrustedUntilMsForDuration(deviceTrustChoice),
           );
         } else {
           clearMfaTrustBundle();
@@ -727,15 +757,48 @@ export default function LoginPage() {
             </div>
 
             {deviceTrustFeatureEnabled ? (
-              <label className="flex items-start gap-2 text-sm text-app-muted">
-                <input
-                  type="checkbox"
-                  className="mt-1 h-4 w-4 rounded border-app-border text-app-primary focus:ring-app-ring"
-                  checked={rememberDevice}
-                  onChange={(event) => setRememberDevice(event.target.checked)}
-                />
-                <span>Trust this device for 30 days.</span>
-              </label>
+              <fieldset className="space-y-2 rounded-md border border-app-border/80 p-3">
+                <legend className="px-1 text-sm font-medium text-app-ink">
+                  Remember this device
+                </legend>
+                <p className="text-xs text-app-muted">
+                  Skip the authenticator code on later sign-ins from this
+                  browser. Sign out everywhere in Settings to require a code
+                  again sooner.
+                </p>
+                <div className="space-y-2 text-sm text-app-muted">
+                  <label className="flex items-start gap-2">
+                    <input
+                      type="radio"
+                      name={`${formId}-device-trust`}
+                      className="mt-1 h-4 w-4 border-app-border"
+                      checked={deviceTrustChoice === 'none'}
+                      onChange={() => setDeviceTrustChoice('none')}
+                    />
+                    <span>Ask every time I sign in on this device</span>
+                  </label>
+                  <label className="flex items-start gap-2">
+                    <input
+                      type="radio"
+                      name={`${formId}-device-trust`}
+                      className="mt-1 h-4 w-4 border-app-border"
+                      checked={deviceTrustChoice === '30_days'}
+                      onChange={() => setDeviceTrustChoice('30_days')}
+                    />
+                    <span>Do not ask again for 30 days</span>
+                  </label>
+                  <label className="flex items-start gap-2">
+                    <input
+                      type="radio"
+                      name={`${formId}-device-trust`}
+                      className="mt-1 h-4 w-4 border-app-border"
+                      checked={deviceTrustChoice === '1_year'}
+                      onChange={() => setDeviceTrustChoice('1_year')}
+                    />
+                    <span>Do not ask again for 1 year</span>
+                  </label>
+                </div>
+              </fieldset>
             ) : null}
 
             <button
