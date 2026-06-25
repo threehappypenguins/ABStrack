@@ -21,11 +21,13 @@ permissions:
 
 jobs:
   deploy-production:
+    if: false # Remove this line to re-enable deployment
     name: Deploy web to Vercel
     runs-on: ubuntu-latest
-    if: |
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
-      github.event_name == 'workflow_dispatch'
+    # ORIGINAL YML:
+    # if: |
+    #   (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+    #   github.event_name == 'workflow_dispatch'
 
     steps:
       - name: Checkout code

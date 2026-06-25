@@ -1,22 +1,66 @@
 name: Vercel Preview Deployment
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created]
 
 permissions:
   contents: read
   issues: write
+  pull-requests: read
 
 jobs:
   deploy-preview:
     name: Deploy web preview to Vercel
     runs-on: ubuntu-latest
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: |
+      github.event.issue.pull_request != null &&
+      contains(github.event.comment.body, '/preview')
 
     steps:
-      - name: Checkout code
+      - name: Verify commenter has write access
+        id: check-permission
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              username: context.actor,
+            });
+            if (!['admin', 'write'].includes(data.permission)) {
+              core.setFailed(`@${context.actor} does not have permission to trigger a preview deploy.`);
+            }
+
+      - name: React to comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'rocket',
+            });
+
+      - name: Get PR head info
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
+            core.setOutput('sha', pr.head.sha);
+            core.setOutput('repo', pr.head.repo.full_name);
+
+      - name: Checkout PR head
         uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.pr.outputs.repo }}
+          ref: ${{ steps.pr.outputs.sha }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -37,7 +81,6 @@ jobs:
         id: deploy
         uses: amondnet/vercel-action@v25
         with:
-          # Action default is vercel@25.x; Vercel’s API now requires a current CLI (≥ npm 48.x).
           vercel-version: '54.0.0'
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -47,7 +90,6 @@ jobs:
 
       - name: Comment preview URL on PR
         continue-on-error: true
-        if: github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/github-script@v7
         with:
           script: |

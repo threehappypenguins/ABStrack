@@ -8,11 +8,11 @@ This guide covers getting the ABStrack monorepo running on a new machine and onb
 
 ### All platforms
 
-| Requirement           | Notes                                                                                                                                                                               |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Git**               | For clone and version control.                                                                                                                                                      |
-| **Node.js ≥ 20.19.0** | Matches [CI](../.github/workflows/ci.yml) and `engines` in the repo root `package.json` (`@noble/*` 2.2.x). Use [nodejs.org](https://nodejs.org/) or a version manager (see below). |
-| **pnpm 10.29.2**      | Matches CI. Install via [pnpm.io/installation](https://pnpm.io/installation) or Corepack (below).                                                                                   |
+| Requirement           | Notes                                                                                                                                                            |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Git**               | For clone and version control.                                                                                                                                   |
+| **Node.js ≥ 24.16.0** | Matches [CI](../.github/workflows/ci.yml) and `engines` in the repo root `package.json`. Use [nodejs.org](https://nodejs.org/) or a version manager (see below). |
+| **pnpm 10.29.2**      | Matches CI. Install via [pnpm.io/installation](https://pnpm.io/installation) or Corepack (below).                                                                |
 
 Optional but common:
 
@@ -24,7 +24,7 @@ Optional but common:
 
 ### macOS and Linux (including Ubuntu)
 
-1. Install **Node.js 20.19 or newer** (20.x LTS line) — e.g. [nvm](https://github.com/nvm-sh/nvm) with `.nvmrc` in the repo root, [fnm](https://github.com/Schniz/fnm), [mise](https://mise.jdx.dev/), or your distro’s packages.
+1. Install **Node.js 24.16 or newer** (24.x LTS line) — e.g. [nvm](https://github.com/nvm-sh/nvm) with `.nvmrc` in the repo root, [fnm](https://github.com/Schniz/fnm), [mise](https://mise.jdx.dev/), or your distro’s packages.
 2. Enable **Corepack** (ships with Node) and activate the repo’s pnpm version:
 
    ```bash
@@ -37,13 +37,13 @@ Optional but common:
 3. Confirm versions:
 
    ```bash
-   node -v    # expect v20.19.0 or newer (see root package.json engines)
+   node -v    # expect v24.16.0 or newer (see root package.json engines)
    pnpm -v    # expect 10.29.2
    ```
 
 ### Windows
 
-1. Install **Node.js 20.19+ LTS** from [nodejs.org](https://nodejs.org/) (includes **npm**).
+1. Install **Node.js 24.16+ LTS** from [nodejs.org](https://nodejs.org/) (includes **npm**).
 2. Open **PowerShell** or **Command Prompt** as appropriate and enable Corepack, then pnpm:
 
    ```powershell
@@ -349,7 +349,7 @@ The workspace pins **React 19.1.x** to match **Expo SDK 54** and to stay aligned
 
 ## 10. Checklist
 
-- [ ] Node.js 20 and pnpm 10.29.2 installed
+- [ ] Node.js 24 and pnpm 10.29.2 installed
 - [ ] Repository cloned
 - [ ] `pnpm install --frozen-lockfile` succeeded
 - [ ] `apps/web/.env.local` and `apps/practitioner/.env.local` created from `.env.example` and filled with project credentials
