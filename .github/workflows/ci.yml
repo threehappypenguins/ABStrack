@@ -1,24 +1,77 @@
 name: CI
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
+  issue_comment:
+    types: [created]
 
 permissions:
   actions: read
   contents: read
+  issues: write
+  pull-requests: read
 
 jobs:
-  main:
+  CI:
+    name: Build and Tests
     runs-on: ubuntu-latest
-    env:
-      NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
-      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+    if: |
+      github.event.issue.pull_request != null &&
+      contains(github.event.comment.body, '/ci')
+
     steps:
+      - name: Verify commenter has write access
+        id: check-permission
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              username: context.actor,
+            });
+            const perms = data.user?.permissions;
+            const hasWriteAccess =
+              perms?.admin === true ||
+              perms?.maintain === true ||
+              perms?.push === true ||
+              ['admin', 'write'].includes(data.permission);
+            if (!hasWriteAccess) {
+              core.setFailed(`@${context.actor} does not have permission to trigger CI.`);
+              throw new Error('Permission denied');
+            }
+
+      - name: React to comment
+        uses: actions/github-script@v8
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'rocket',
+            });
+
+      - name: Get PR head info
+        id: pr
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
+            if (!pr.head.repo) {
+              core.setFailed('PR head repository is unavailable (fork may have been deleted or is inaccessible).');
+              throw new Error('PR head repo is null');
+            }
+            core.setOutput('sha', pr.head.sha);
+            core.setOutput('repo', pr.head.repo.full_name);
+
       - uses: actions/checkout@v6
         with:
+          repository: ${{ steps.pr.outputs.repo }}
+          ref: ${{ steps.pr.outputs.sha }}
           filter: tree:0
           fetch-depth: 0
 
@@ -41,6 +94,9 @@ jobs:
           cache: 'pnpm'
 
       - name: Validate required public Supabase env vars
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
         run: |
           test -n "$NEXT_PUBLIC_SUPABASE_URL" || (echo "::error::NEXT_PUBLIC_SUPABASE_URL is missing" && exit 1)
           test -n "$NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY" || (echo "::error::NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY is missing" && exit 1)
@@ -58,6 +114,8 @@ jobs:
       # Secret only for preset RLS integration tests; not visible to other actions/steps.
       - name: Packages (test @abstrack/supabase)
         env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: pnpm exec nx test @abstrack/supabase
 
@@ -65,11 +123,22 @@ jobs:
         run: pnpm exec nx run-many -t lint typecheck --exclude=@abstrack/types,@abstrack/ui,@abstrack/supabase,@abstrack/powersync
 
       - name: Apps (test)
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
         run: pnpm exec nx run-many -t test --exclude=@abstrack/supabase,@abstrack/types,@abstrack/ui,@abstrack/powersync
-      - run: pnpm exec nx run-many -t build --exclude=@abstrack/mobile
+
+      - name: Build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+        run: pnpm exec nx run-many -t build --exclude=@abstrack/mobile
 
       - name: Install Playwright (Chromium — @a11y tests run on Chromium only)
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Accessibility (axe-core via Playwright)
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
         run: pnpm a11y:e2e

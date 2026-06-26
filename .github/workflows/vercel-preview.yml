@@ -28,8 +28,15 @@ jobs:
               repo: context.repo.repo,
               username: context.actor,
             });
-            if (!['admin', 'write'].includes(data.permission)) {
+            const perms = data.user?.permissions;
+            const hasWriteAccess =
+              perms?.admin === true ||
+              perms?.maintain === true ||
+              perms?.push === true ||
+              ['admin', 'write'].includes(data.permission);
+            if (!hasWriteAccess) {
               core.setFailed(`@${context.actor} does not have permission to trigger a preview deploy.`);
+              throw new Error('Permission denied');
             }
 
       - name: React to comment
