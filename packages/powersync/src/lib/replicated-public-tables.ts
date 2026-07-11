@@ -3,8 +3,7 @@
  *
  * Must stay aligned with:
  * - `packages/powersync/sync-rules.yaml` (`FROM` / `JOIN` references)
- * - `supabase/migrations/20260430120000_powersync_replication_role_and_publication.sql`
- *   (`required_tables` + publication / grants), plus later migrations that
+ * - `supabase/migrations/*` PowerSync `required_tables` (baseline) plus later migrations that
  *   `ALTER PUBLICATION powersync ADD TABLE` (see `replicated-artifacts-alignment.spec.ts`)
  * - `apps/mobile/src/lib/powersync/abstrack-app-schema.ts` — replicated tables below **plus**
  *   {@link MOBILE_LOCAL_ONLY_POWER_SYNC_SCHEMA_TABLE_NAMES} (`localOnly` client tables not in Postgres

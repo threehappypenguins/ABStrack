@@ -82,18 +82,36 @@ function parseAlterPublicationAddTables(migrationsDir: string): string[] {
   return [...names];
 }
 
+/**
+ * Collect the PowerSync publication allowlist from migration SQL.
+ * Squashed baseline embeds `required_tables`; later migrations may also
+ * `ALTER PUBLICATION powersync ADD TABLE`.
+ */
 function publicationAllowlistFromMigrations(repoRoot: string): string[] {
   const migrationsDir = join(repoRoot, 'supabase/migrations');
-  const baseSql = readFileSync(
-    join(
-      migrationsDir,
-      '20260430120000_powersync_replication_role_and_publication.sql',
-    ),
-    'utf8',
-  );
-  const base = parseMigrationRequiredTables(baseSql);
-  const added = parseAlterPublicationAddTables(migrationsDir);
-  return [...new Set([...base, ...added])].sort();
+  const names = new Set<string>();
+  const migrationFiles = readdirSync(migrationsDir)
+    .filter((f) => f.endsWith('.sql'))
+    .sort();
+  let foundRequiredTables = false;
+  for (const file of migrationFiles) {
+    const sql = readFileSync(join(migrationsDir, file), 'utf8');
+    if (!/\bpowersync\b/i.test(sql)) continue;
+    if (!/required_tables\s+text\[\]\s*:=\s*ARRAY\[/.test(sql)) continue;
+    for (const table of parseMigrationRequiredTables(sql)) {
+      names.add(table);
+    }
+    foundRequiredTables = true;
+  }
+  if (!foundRequiredTables) {
+    throw new Error(
+      'No migration defines powersync required_tables text[] := ARRAY[...]; — cannot verify allowlist alignment.',
+    );
+  }
+  for (const table of parseAlterPublicationAddTables(migrationsDir)) {
+    names.add(table);
+  }
+  return [...names].sort();
 }
 
 describe('Replicated table allowlist alignment', () => {
@@ -106,7 +124,7 @@ describe('Replicated table allowlist alignment', () => {
     expect(referenced).toEqual(allowlistSorted);
   });
 
-  it('matches powersync publication allowlist (base migration + ADD TABLE in later files)', () => {
+  it('matches powersync publication allowlist (baseline required_tables + ADD TABLE in later files)', () => {
     const repoRoot = resolveFromSpec('../../../../');
     const fromMigrations = publicationAllowlistFromMigrations(repoRoot);
     expect(fromMigrations).toEqual(allowlistSorted);
