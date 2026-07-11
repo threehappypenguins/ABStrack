@@ -271,6 +271,9 @@ jobs:
           awk '/^export type Json/{flag=1} flag' packages/supabase/src/lib/database.types.ts > /tmp/db-types.committed.ts
           supabase gen types typescript --linked --schema public > /tmp/db-types.generated.ts
           pnpm exec prettier --config "$TYPES_PRETTIER" --write /tmp/db-types.committed.ts /tmp/db-types.generated.ts
+          # Cloud vs local/self-hosted gen types may disagree on this metadata block; strip it
+          # before comparing (same as supabase-db-types-pr.yml).
+          perl -0pi -e 's/^  \/\/ Allows to automatically instantiate createClient with right options\n  \/\/ instead of createClient<Database, \{ PostgrestVersion: '\''XX'\'' \}>\(URL, KEY\)\n  __InternalSupabase: \{\n    PostgrestVersion: "14\.1"\n  \}\n//ms' /tmp/db-types.committed.ts /tmp/db-types.generated.ts
           perl -0pi -e 's/\n+\z/\n/' /tmp/db-types.committed.ts /tmp/db-types.generated.ts
           if diff -q /tmp/db-types.committed.ts /tmp/db-types.generated.ts >/dev/null; then
             echo "Database types match linked project."
@@ -339,12 +342,15 @@ jobs:
           awk '/^export type Json/{flag=1} flag' packages/supabase/src/lib/database.types.ts > /tmp/db-types.committed.ts
           PGSSLMODE=disable supabase gen types typescript --db-url "$PROD_DB_URL" --schema public > /tmp/db-types.generated.ts
           pnpm exec prettier --config "$TYPES_PRETTIER" --write /tmp/db-types.committed.ts /tmp/db-types.generated.ts
+          # Self-hosted gen types omits __InternalSupabase; committed file (from Cloud) often has it.
+          # Strip before comparing — same as supabase-db-types-pr.yml / deploy-dev.
+          perl -0pi -e 's/^  \/\/ Allows to automatically instantiate createClient with right options\n  \/\/ instead of createClient<Database, \{ PostgrestVersion: '\''XX'\'' \}>\(URL, KEY\)\n  __InternalSupabase: \{\n    PostgrestVersion: "14\.1"\n  \}\n//ms' /tmp/db-types.committed.ts /tmp/db-types.generated.ts
           perl -0pi -e 's/\n+\z/\n/' /tmp/db-types.committed.ts /tmp/db-types.generated.ts
           if diff -q /tmp/db-types.committed.ts /tmp/db-types.generated.ts >/dev/null; then
-            echo "Database types match linked project."
+            echo "Database types match production database."
             exit 0
           fi
-          echo "::error::packages/supabase/src/lib/database.types.ts does not match the linked Supabase project after db push."
+          echo "::error::packages/supabase/src/lib/database.types.ts does not match the production database after db push."
           echo "Regenerate: pnpm dlx supabase gen types typescript --db-url <PROD_DB_URL> --schema public > packages/supabase/src/lib/database.types.ts"
           echo "Then: pnpm exec prettier --write packages/supabase/src/lib/database.types.ts"
           diff -u /tmp/db-types.committed.ts /tmp/db-types.generated.ts || true
