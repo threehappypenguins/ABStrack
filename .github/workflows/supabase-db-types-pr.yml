@@ -3,7 +3,7 @@
 #
 # Runs on pull requests that touch migration SQL (same-repo only; mirrors the migrations dry-run policy).
 # Developers typically also run db push + gen types --linked against cloud before merge (see docs/SUPABASE_CLOUD_DEVELOPER.md).
-# On main, supabase-migrations.yml checks types against --linked after db push (no bot commit).
+# On main, supabase-migrations.yml checks types against the target database (via --db-url) after db push (no bot commit).
 
 name: Supabase Database types (PR)
 

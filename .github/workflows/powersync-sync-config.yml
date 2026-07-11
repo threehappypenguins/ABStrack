@@ -1,17 +1,25 @@
-# PowerSync Sync Streams: validate on every PR and branch push; deploy sync-config on main.
-# Requires repository secrets (see docs/SUPABASE_CLOUD_DEVELOPER.md and docs/DEV_SETUP.md).
+# PowerSync Sync Streams: validate on every PR and branch push; deploy sync-config on merge.
 #
-# Uses `powersync pull instance` so the directory contains real `service.yaml` from Cloud.
-# IMPORTANT: The CLI resolves `--directory` relative to process.cwd() (join(cwd, directory)).
-# We therefore `cd` into a temp dir and pass `--directory=. ` so files land where we expect.
+# development: PowerSync Cloud, deployed via the `powersync` CLI (pull instance + deploy sync-config).
+# production:  self-hosted PowerSync (journeyapps/powersync-service). The CLI does not support
+#              deploying to self-hosted instances at all — it only links to an existing API for
+#              a subset of read-only commands (status, validate, generate schema/token). So prod
+#              deploys work differently: scp the updated sync-rules.yaml to the server over
+#              Tailscale SSH, then restart the container so it picks up the new file.
+#
+# Requires:
+# - repository secrets: POWERSYNC_ADMIN_TOKEN, POWERSYNC_INSTANCE_ID, POWERSYNC_PROJECT_ID,
+#   POWERSYNC_ORG_ID (optional) — used by validate + deploy-dev against PowerSync Cloud
+# - production environment secrets: TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET (shared with
+#   supabase-migrations.yml), PROD_SSH_HOST (server's Tailscale MagicDNS hostname)
 #
 # - pull_request (same-repo only; fork PRs skip — no secrets): validate when secrets exist
-# - push to any branch (when paths change): validate when secrets exist
-# - push to main: validate then deploy sync-config when secrets exist
-# - workflow_dispatch: validate; deploy on main only when secrets exist
+# - push to dev (when paths change): validate, then deploy sync-config to PowerSync Cloud
+# - push to main (when paths change): validate, then scp + restart self-hosted PowerSync
+# - workflow_dispatch: validate; deploy on dev/main only when applicable secrets exist
 #
 # When POWERSYNC_ADMIN_TOKEN / INSTANCE_ID / PROJECT_ID are unset (fork pushes or secrets not
-# configured yet), validate exits successfully without calling the CLI and deploy is skipped —
+# configured yet), validate exits successfully without calling the CLI and deploy-dev is skipped —
 # avoids noisy failures while keeping branch push + PR coverage once secrets are added.
 
 name: PowerSync sync config
@@ -100,12 +108,13 @@ jobs:
           if [ -n "${ORG_ID:-}" ]; then validate_args+=(--org-id="$ORG_ID"); fi
           npx --yes "powersync@${POWERSYNC_CLI_VERSION}" "${validate_args[@]}"
 
-  deploy:
+  # --- Development: PowerSync Cloud, deployed via the CLI ---
+  deploy-dev:
     needs: validate
     if: |
       needs.validate.outputs.powersync_ready == 'true' &&
       needs.validate.result == 'success' &&
-      github.ref == 'refs/heads/main' &&
+      github.ref == 'refs/heads/dev' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     env:
@@ -148,3 +157,56 @@ jobs:
           )
           if [ -n "${ORG_ID:-}" ]; then deploy_args+=(--org-id="$ORG_ID"); fi
           npx --yes "powersync@${POWERSYNC_CLI_VERSION}" "${deploy_args[@]}"
+
+  # --- Production: self-hosted PowerSync, delivered over Tailscale SSH ---
+  # No CLI deploy path exists for self-hosted, so we ship the file directly and restart the
+  # container ourselves. `docker compose restart` (not `down && up`) is deliberate: the sync-rules
+  # file is bind-mounted, so the container already sees the new content on disk — restart just
+  # needs to re-read it. `down && up` would also needlessly tear down storage-db.
+  deploy-prod:
+    needs: validate
+    if: |
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+      PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+      PROD_POWERSYNC_DIR: ${{ secrets.PROD_POWERSYNC_DIR }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
+      - name: Ship sync-rules.yaml to production server
+        run: |
+          set -euo pipefail
+          scp -o StrictHostKeyChecking=accept-new \
+            packages/powersync/sync-rules.yaml \
+            "${PROD_SSH_USER}@${PROD_SSH_HOST}:${PROD_POWERSYNC_DIR}/config/sync-rules.yaml"
+
+      - name: Restart PowerSync and verify it comes back healthy
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new "${PROD_SSH_USER}@${PROD_SSH_HOST}" \
+            "POWERSYNC_DIR='${PROD_POWERSYNC_DIR}' bash -s" <<'EOF'
+            set -euo pipefail
+            cd "$POWERSYNC_DIR"
+            docker compose restart powersync
+            for i in $(seq 1 15); do
+              if curl -fsS http://localhost:8080/probes/liveness >/dev/null 2>&1; then
+                echo "PowerSync is back up."
+                exit 0
+              fi
+              sleep 2
+            done
+            echo "::error::PowerSync did not come back healthy after restart. Recent logs:"
+            docker compose logs --tail=50 powersync
+            exit 1
+          EOF

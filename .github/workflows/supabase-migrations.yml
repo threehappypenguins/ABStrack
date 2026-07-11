@@ -1,23 +1,29 @@
-# Apply pending SQL migrations from supabase/migrations/ to the linked Supabase Cloud project.
-# Requires repository secrets (see docs/DEV_SETUP.md §4).
+# Apply pending SQL migrations from supabase/migrations/ to the linked Supabase project.
 #
-# Intended workflow (docs/SUPABASE_CLOUD_DEVELOPER.md): developers also run `db push` + `gen types --linked`
-# locally before merge so one PR can include migration + database.types.ts. This workflow still runs `db push`
-# on main as a backstop and verifies types match cloud (no auto-commit).
+# development: Supabase Cloud project, linked via SUPABASE_ACCESS_TOKEN + project-ref.
+# production:  self-hosted Supabase, reached over a Tailscale connection and pushed to
+#              directly via a Postgres connection string (no cloud "link" concept exists
+#              for self-hosted, so we skip `supabase link` entirely for prod).
 #
-# - push to main: applies migrations (supabase db push), then verifies that
-#   packages/supabase/src/lib/database.types.ts matches supabase gen types --linked (fails if not).
+# Requires environment secrets configured in GitHub:
+# - development environment: SUPABASE_ACCESS_TOKEN, SUPABASE_DB_PASSWORD, SUPABASE_PROJECT_ID
+# - production environment:  TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET, PROD_DB_URL
+#
+# Intended workflow:
 # - pull_request: dry-run only (supabase db push --dry-run) when migration files change
-# - workflow_dispatch: manual deploy (deploy job only runs on refs/heads/main so a mistaken
-#   dispatch from a feature branch cannot push unmerged migrations to the linked project).
+# - push to dev: applies migrations to development Supabase (cloud)
+# - push to main: applies migrations to production Supabase (self-hosted, via Tailscale)
+# - workflow_dispatch: manual deploy (branch determines environment)
+#
 # Concurrency: one run at a time per branch/ref so overlapping supabase db push jobs do not
-# contend on the remote migration history (especially main → cloud).
+# contend on remote migration history.
 
 name: Supabase migrations
 
 on:
   push:
     branches:
+      - dev
       - main
     paths:
       - 'supabase/migrations/**'
@@ -41,9 +47,11 @@ concurrency:
 
 jobs:
   # Validate that migrations apply cleanly without mutating the remote DB.
+  # This dry-runs against the dev Supabase Cloud project.
   dry-run:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    environment: development
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
@@ -61,13 +69,17 @@ jobs:
       - name: Dry-run migrations
         run: supabase db push --dry-run --yes
 
-  deploy:
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+  # --- Development: Supabase Cloud, linked via access token ---
+  deploy-dev:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/dev'
+    environment: development
     runs-on: ubuntu-latest
+
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+
     steps:
       - uses: actions/checkout@v6
 
@@ -90,7 +102,7 @@ jobs:
       - name: Link project (non-interactive)
         run: supabase link --project-ref "$SUPABASE_PROJECT_ID"
 
-      - name: Push migrations to Supabase Cloud
+      - name: Push migrations to Supabase
         run: supabase db push --yes
 
       - name: Verify Database types match linked project (no auto-commit)
@@ -107,6 +119,72 @@ jobs:
           fi
           echo "::error::packages/supabase/src/lib/database.types.ts does not match the linked Supabase project after db push."
           echo "Regenerate: pnpm dlx supabase gen types typescript --linked --schema public > packages/supabase/src/lib/database.types.ts"
+          echo "Then: pnpm exec prettier --write packages/supabase/src/lib/database.types.ts"
+          diff -u /tmp/db-types.committed.ts /tmp/db-types.generated.ts || true
+          exit 1
+
+  # --- Production: self-hosted Supabase, reached over Tailscale, pushed via db-url ---
+  deploy-prod:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    environment: production
+    runs-on: ubuntu-latest
+
+    env:
+      PROD_DB_URL: ${{ secrets.PROD_DB_URL }}
+      # Works around a known Supabase CLI bug where ?sslmode=disable in the db-url
+      # is silently ignored unless --debug is passed (supabase/cli#4839). Setting
+      # PGSSLMODE directly avoids the bug without needing --debug's verbose logging.
+      # Safe here since the connection already runs inside the Tailscale tunnel.
+      PGSSLMODE: disable
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.33.0
+          run_install: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: supabase/setup-cli@v2
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+
+      # Joins the self-hosted DB's tailnet so the runner can reach it privately.
+      # Ephemeral OAuth-client auth means the CI node cleans itself up after the job.
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
+      # No `supabase link` here: self-hosted has no cloud project-ref to link against.
+      # `db push` tracks migration history in the target database itself, so pushing
+      # straight at a connection string works the same way linking would.
+      - name: Push migrations to Supabase
+        run: supabase db push --db-url "$PROD_DB_URL" --yes
+
+      - name: Verify Database types match linked project (no auto-commit)
+        run: |
+          set -euo pipefail
+          TYPES_PRETTIER="$GITHUB_WORKSPACE/prettier.database-types.json"
+          awk '/^export type Json/{flag=1} flag' packages/supabase/src/lib/database.types.ts > /tmp/db-types.committed.ts
+          PGSSLMODE=disable supabase gen types typescript --db-url "$PROD_DB_URL" --schema public > /tmp/db-types.generated.ts
+          pnpm exec prettier --config "$TYPES_PRETTIER" --write /tmp/db-types.committed.ts /tmp/db-types.generated.ts
+          perl -0pi -e 's/\n+\z/\n/' /tmp/db-types.committed.ts /tmp/db-types.generated.ts
+          if diff -q /tmp/db-types.committed.ts /tmp/db-types.generated.ts >/dev/null; then
+            echo "Database types match linked project."
+            exit 0
+          fi
+          echo "::error::packages/supabase/src/lib/database.types.ts does not match the linked Supabase project after db push."
+          echo "Regenerate: pnpm dlx supabase gen types typescript --db-url <PROD_DB_URL> --schema public > packages/supabase/src/lib/database.types.ts"
           echo "Then: pnpm exec prettier --write packages/supabase/src/lib/database.types.ts"
           diff -u /tmp/db-types.committed.ts /tmp/db-types.generated.ts || true
           exit 1
