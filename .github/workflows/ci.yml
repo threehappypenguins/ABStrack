@@ -1,25 +1,43 @@
+# App CI: lint, typecheck, test, build, a11y.
+#
+# Triggers:
+# - PR comment `/ci` (exact match) on any open PR — preferred for feature → dev so pushes
+#   after the PR is open do not burn Actions minutes.
+# - pull_request targeting `main` — automatic lightweight gate for the promote-to-prod PR.
+#
+# issue_comment runs on the default branch (`dev`). Commit statuses are posted to the PR
+# head SHA so branch protection can require context `CI` (Actions does not attach
+# issue_comment runs to the PR commit the way pull_request runs do).
+
 name: CI
 
 on:
   issue_comment:
     types: [created]
+  pull_request:
+    branches:
+      - main
 
 permissions:
   actions: read
   contents: read
   issues: write
   pull-requests: read
+  statuses: write
 
 jobs:
   CI:
     name: Build and Tests
     runs-on: ubuntu-latest
     if: |
-      github.event.issue.pull_request != null &&
-      contains(github.event.comment.body, '/ci')
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request != null &&
+       trim(github.event.comment.body) == '/ci') ||
+      github.event_name == 'pull_request'
 
     steps:
       - name: Verify commenter has write access
+        if: github.event_name == 'issue_comment'
         id: check-permission
         uses: actions/github-script@v8
         with:
@@ -41,6 +59,7 @@ jobs:
             }
 
       - name: React to comment
+        if: github.event_name == 'issue_comment'
         uses: actions/github-script@v8
         with:
           script: |
@@ -56,17 +75,45 @@ jobs:
         uses: actions/github-script@v8
         with:
           script: |
-            const { data: pr } = await github.rest.pulls.get({
+            let sha;
+            let repoFullName;
+            if (context.eventName === 'issue_comment') {
+              const { data: pr } = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.issue.number,
+              });
+              if (!pr.head.repo) {
+                core.setFailed('PR head repository is unavailable (fork may have been deleted or is inaccessible).');
+                throw new Error('PR head repo is null');
+              }
+              sha = pr.head.sha;
+              repoFullName = pr.head.repo.full_name;
+            } else {
+              const pr = context.payload.pull_request;
+              if (!pr.head.repo) {
+                core.setFailed('PR head repository is unavailable.');
+                throw new Error('PR head repo is null');
+              }
+              sha = pr.head.sha;
+              repoFullName = pr.head.repo.full_name;
+            }
+            core.setOutput('sha', sha);
+            core.setOutput('repo', repoFullName);
+
+      - name: Set commit status (pending)
+        uses: actions/github-script@v8
+        with:
+          script: |
+            await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              pull_number: context.issue.number,
+              sha: '${{ steps.pr.outputs.sha }}',
+              state: 'pending',
+              context: 'CI',
+              description: 'Build and tests running…',
+              target_url: `${process.env.GITHUB_SERVER_URL}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
             });
-            if (!pr.head.repo) {
-              core.setFailed('PR head repository is unavailable (fork may have been deleted or is inaccessible).');
-              throw new Error('PR head repo is null');
-            }
-            core.setOutput('sha', pr.head.sha);
-            core.setOutput('repo', pr.head.repo.full_name);
 
       - uses: actions/checkout@v6
         with:
@@ -142,3 +189,19 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
         run: pnpm a11y:e2e
+
+      - name: Set commit status (final)
+        if: always() && steps.pr.outputs.sha != ''
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const state = '${{ job.status }}' === 'success' ? 'success' : 'failure';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: '${{ steps.pr.outputs.sha }}',
+              state,
+              context: 'CI',
+              description: state === 'success' ? 'Build and tests passed' : 'Build and tests failed',
+              target_url: `${process.env.GITHUB_SERVER_URL}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });

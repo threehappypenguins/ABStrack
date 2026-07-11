@@ -1,4 +1,4 @@
-# PowerSync Sync Streams: validate on every PR and branch push; deploy sync-config on merge.
+# PowerSync Sync Streams: comment-triggered validate on PRs into `dev`; deploy on merge.
 #
 # development: PowerSync Cloud, deployed via the `powersync` CLI (pull instance + deploy sync-config).
 # production:  self-hosted PowerSync (journeyapps/powersync-service). The CLI does not support
@@ -8,51 +8,259 @@
 #              Tailscale SSH, then restart the container so it picks up the new file.
 #
 # Requires:
-# - repository secrets: POWERSYNC_ADMIN_TOKEN, POWERSYNC_INSTANCE_ID, POWERSYNC_PROJECT_ID,
-#   POWERSYNC_ORG_ID (optional) — used by validate + deploy-dev against PowerSync Cloud
+# - development environment secrets: POWERSYNC_ADMIN_TOKEN, POWERSYNC_INSTANCE_ID,
+#   POWERSYNC_PROJECT_ID, POWERSYNC_ORG_ID (optional) — used by validate-dev + deploy-dev
+#   against PowerSync Cloud. These live under the GitHub "development" Environment (restricted
+#   to the `dev` branch), not repository-level secrets.
 # - production environment secrets: TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET (shared with
-#   supabase-migrations.yml), PROD_SSH_HOST (server's Tailscale MagicDNS hostname)
+#   supabase-migrations.yml), PROD_SSH_HOST / PROD_SSH_USER / PROD_POWERSYNC_DIR
 #
-# - pull_request (same-repo only; fork PRs skip — no secrets): validate when secrets exist
-# - push to dev (when paths change): validate, then deploy sync-config to PowerSync Cloud
-# - push to main (when paths change): validate, then scp + restart self-hosted PowerSync
-# - workflow_dispatch: validate; deploy on dev/main only when applicable secrets exist
+# Intended workflow (default branch = `dev`):
+# - PR → `dev`: comment `/infra-ci` (exact) to validate against PowerSync Cloud using the
+#   `development` environment. issue_comment runs on the default branch, so the environment's
+#   branch policy for `dev` works without allowing `refs/pull/*/merge`.
+# - Merge → `dev` (push): validate-dev + deploy-dev to PowerSync Cloud.
+# - PR → `main`: automatic notice only (rules were already validated/deployed on the way into
+#   `dev`).
+# - Merge → `main` (push): deploy-prod scp + restart self-hosted PowerSync.
+# - workflow_dispatch: validate-dev / deploy on the branch you dispatch from.
 #
-# When POWERSYNC_ADMIN_TOKEN / INSTANCE_ID / PROJECT_ID are unset (fork pushes or secrets not
-# configured yet), validate exits successfully without calling the CLI and deploy-dev is skipped —
-# avoids noisy failures while keeping branch push + PR coverage once secrets are added.
+# Commit status context for branch protection: `infra / powersync-validate`
+#
+# When POWERSYNC_ADMIN_TOKEN / INSTANCE_ID / PROJECT_ID are unset, validate exits successfully
+# without calling the CLI and deploy-dev is skipped — avoids noisy failures.
 
 name: PowerSync sync config
 
 on:
   push:
+    branches:
+      - dev
+      - main
     paths:
       - 'packages/powersync/sync-rules.yaml'
       - '.github/workflows/powersync-sync-config.yml'
   pull_request:
+    branches:
+      - main
     paths:
       - 'packages/powersync/sync-rules.yaml'
       - '.github/workflows/powersync-sync-config.yml'
+  issue_comment:
+    types: [created]
   workflow_dispatch:
 
 # Pin CLI for reproducible validate/deploy; bump when you intentionally adopt a new CLI.
 env:
   POWERSYNC_CLI_VERSION: 0.9.4
+  INFRA_STATUS_CONTEXT: infra / powersync-validate
 
 permissions:
   contents: read
+  issues: write
+  pull-requests: read
+  statuses: write
 
 concurrency:
-  group: powersync-sync-config-${{ github.workflow }}-${{ github.ref }}
+  group: powersync-sync-config-${{ github.workflow }}-${{ github.ref }}-${{ github.event.issue.number || github.event.pull_request.number || github.run_id }}
   cancel-in-progress: false
 
 jobs:
-  validate:
+  # Automatic lightweight gate for PRs into main (no secrets).
+  notice-main-pr:
     if: |
-      github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'push' ||
-      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    steps:
+      - name: Note sync-rules will deploy to production on merge
+        run: |
+          echo '::notice title=PowerSync sync config::This PR targets main. Cloud validate/deploy already happened on the way into dev. Merging will scp sync-rules.yaml and restart self-hosted PowerSync.'
+
+  # Comment-triggered CLI validate against PowerSync Cloud (PR → `dev`).
+  validate-pr:
+    if: |
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request != null &&
+      trim(github.event.comment.body) == '/infra-ci'
+    runs-on: ubuntu-latest
+    environment: development
+    env:
+      PS_ADMIN_TOKEN: ${{ secrets.POWERSYNC_ADMIN_TOKEN }}
+      INSTANCE_ID: ${{ secrets.POWERSYNC_INSTANCE_ID }}
+      PROJECT_ID: ${{ secrets.POWERSYNC_PROJECT_ID }}
+      ORG_ID: ${{ secrets.POWERSYNC_ORG_ID }}
+    steps:
+      - name: Verify commenter has write access
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              username: context.actor,
+            });
+            const perms = data.user?.permissions;
+            const hasWriteAccess =
+              perms?.admin === true ||
+              perms?.maintain === true ||
+              perms?.push === true ||
+              ['admin', 'write'].includes(data.permission);
+            if (!hasWriteAccess) {
+              core.setFailed(`@${context.actor} does not have permission to trigger /infra-ci.`);
+              throw new Error('Permission denied');
+            }
+
+      - name: React to comment
+        uses: actions/github-script@v8
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'eyes',
+            });
+
+      - name: Resolve PR and path changes
+        id: pr
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
+            if (!pr.head.repo) {
+              core.setFailed('PR head repository is unavailable.');
+              throw new Error('PR head repo is null');
+            }
+            if (pr.head.repo.full_name !== `${context.repo.owner}/${context.repo.repo}`) {
+              core.setFailed('Fork PRs cannot use /infra-ci (development secrets are not available).');
+              throw new Error('Fork PR');
+            }
+            core.setOutput('sha', pr.head.sha);
+            core.setOutput('repo', pr.head.repo.full_name);
+            core.setOutput('base', pr.base.ref);
+
+            const { data: comparison } = await github.rest.repos.compareCommitsWithBasehead({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              basehead: `${pr.base.sha}...${pr.head.sha}`,
+            });
+            const paths = [
+              'packages/powersync/sync-rules.yaml',
+              '.github/workflows/powersync-sync-config.yml',
+            ];
+            const changed = (comparison.files || []).some((f) => paths.includes(f.filename));
+            core.setOutput('changed', changed ? 'true' : 'false');
+
+      - name: Set commit status (pending)
+        uses: actions/github-script@v8
+        with:
+          script: |
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: '${{ steps.pr.outputs.sha }}',
+              state: 'pending',
+              context: process.env.INFRA_STATUS_CONTEXT,
+              description: 'PowerSync validate starting…',
+              target_url: `${process.env.GITHUB_SERVER_URL}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
+
+      - name: Check secrets and gates
+        id: gate
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.pr.outputs.base }}" != "dev" ]; then
+            echo "::notice title=PowerSync validate skipped::/infra-ci cloud validate only runs on PRs targeting dev (base was '${{ steps.pr.outputs.base }}')."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${{ steps.pr.outputs.changed }}" != "true" ]; then
+            echo "::notice title=PowerSync validate skipped::No sync-rules / workflow path changes in this PR."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -n "${PS_ADMIN_TOKEN:-}" ] && [ -n "${INSTANCE_ID:-}" ] && [ -n "${PROJECT_ID:-}" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo '::notice title=PowerSync skipped::development environment secrets POWERSYNC_ADMIN_TOKEN, POWERSYNC_INSTANCE_ID, and POWERSYNC_PROJECT_ID are not all set — validate skipped. Configure them on the "development" GitHub Environment (see docs/DEV_SETUP.md).'
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v6
+        if: steps.gate.outputs.run == 'true'
+        with:
+          repository: ${{ steps.pr.outputs.repo }}
+          ref: ${{ steps.pr.outputs.sha }}
+
+      - uses: actions/setup-node@v6
+        if: steps.gate.outputs.run == 'true'
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Pull instance, overlay Sync Streams YAML, validate
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          CONFIG_DIR=$(mktemp -d)
+          cd "$CONFIG_DIR"
+          pull_args=(
+            pull instance
+            --directory=.
+            --instance-id="$INSTANCE_ID"
+            --project-id="$PROJECT_ID"
+          )
+          if [ -n "${ORG_ID:-}" ]; then pull_args+=(--org-id="$ORG_ID"); fi
+          npx --yes "powersync@${POWERSYNC_CLI_VERSION}" "${pull_args[@]}"
+          if [ ! -f ./service.yaml ]; then
+            echo "Expected ./service.yaml after pull instance; listing $CONFIG_DIR:" >&2
+            ls -la "$CONFIG_DIR" >&2
+            exit 1
+          fi
+          cp "${GITHUB_WORKSPACE}/packages/powersync/sync-rules.yaml" ./sync-config.yaml
+          validate_args=(
+            validate
+            --directory=.
+            --instance-id="$INSTANCE_ID"
+            --project-id="$PROJECT_ID"
+          )
+          if [ -n "${ORG_ID:-}" ]; then validate_args+=(--org-id="$ORG_ID"); fi
+          npx --yes "powersync@${POWERSYNC_CLI_VERSION}" "${validate_args[@]}"
+
+      - name: Set commit status (final)
+        if: always() && steps.pr.outputs.sha != ''
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const skipped = '${{ steps.gate.outputs.run }}' !== 'true';
+            const jobOk = '${{ job.status }}' === 'success';
+            const state = jobOk ? 'success' : 'failure';
+            const description = skipped
+              ? 'Skipped (not targeting dev, no path changes, or secrets unset)'
+              : state === 'success'
+                ? 'PowerSync validate passed'
+                : 'PowerSync validate failed';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: '${{ steps.pr.outputs.sha }}',
+              state,
+              context: process.env.INFRA_STATUS_CONTEXT,
+              description,
+              target_url: `${process.env.GITHUB_SERVER_URL}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
+
+  # Real CLI validate against PowerSync Cloud on push/dispatch to `dev`.
+  validate-dev:
+    if: |
+      github.ref == 'refs/heads/dev' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    environment: development
     outputs:
       powersync_ready: ${{ steps.secrets.outputs.ready }}
     env:
@@ -67,7 +275,7 @@ jobs:
           if [ -n "${PS_ADMIN_TOKEN:-}" ] && [ -n "${INSTANCE_ID:-}" ] && [ -n "${PROJECT_ID:-}" ]; then
             echo "ready=true" >> "$GITHUB_OUTPUT"
           else
-            echo '::notice title=PowerSync skipped::Repository Actions secrets POWERSYNC_ADMIN_TOKEN, POWERSYNC_INSTANCE_ID, and POWERSYNC_PROJECT_ID are not all set — validate/deploy skipped. Configure them (see docs/DEV_SETUP.md) to run CI against PowerSync Cloud.'
+            echo '::notice title=PowerSync skipped::development environment secrets POWERSYNC_ADMIN_TOKEN, POWERSYNC_INSTANCE_ID, and POWERSYNC_PROJECT_ID are not all set — validate/deploy skipped. Configure them on the "development" GitHub Environment (see docs/DEV_SETUP.md) to run CI against PowerSync Cloud.'
             echo "ready=false" >> "$GITHUB_OUTPUT"
           fi
 
@@ -110,13 +318,14 @@ jobs:
 
   # --- Development: PowerSync Cloud, deployed via the CLI ---
   deploy-dev:
-    needs: validate
+    needs: validate-dev
     if: |
-      needs.validate.outputs.powersync_ready == 'true' &&
-      needs.validate.result == 'success' &&
+      needs.validate-dev.outputs.powersync_ready == 'true' &&
+      needs.validate-dev.result == 'success' &&
       github.ref == 'refs/heads/dev' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
+    environment: development
     env:
       PS_ADMIN_TOKEN: ${{ secrets.POWERSYNC_ADMIN_TOKEN }}
       INSTANCE_ID: ${{ secrets.POWERSYNC_INSTANCE_ID }}
@@ -164,7 +373,6 @@ jobs:
   # file is bind-mounted, so the container already sees the new content on disk — restart just
   # needs to re-read it. `down && up` would also needlessly tear down storage-db.
   deploy-prod:
-    needs: validate
     if: |
       github.ref == 'refs/heads/main' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')

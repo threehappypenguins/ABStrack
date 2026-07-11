@@ -9,11 +9,18 @@
 # - development environment: SUPABASE_ACCESS_TOKEN, SUPABASE_DB_PASSWORD, SUPABASE_PROJECT_ID
 # - production environment:  TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET, PROD_DB_URL
 #
-# Intended workflow:
-# - pull_request: dry-run only (supabase db push --dry-run) when migration files change
-# - push to dev: applies migrations to development Supabase (cloud)
-# - push to main: applies migrations to production Supabase (self-hosted, via Tailscale)
-# - workflow_dispatch: manual deploy (branch determines environment)
+# Intended workflow (default branch = `dev`):
+# - PR → `dev`: comment `/infra-ci` (exact) to dry-run against Supabase Cloud using the
+#   `development` environment. issue_comment runs on the default branch, so the environment's
+#   "Selected branches" policy for `dev` just works — no `refs/pull/*/merge` exception needed.
+# - Merge → `dev` (push): deploy-dev applies migrations to Supabase Cloud.
+# - PR → `main`: automatic notice only (schema was already validated/pushed on the way into
+#   `dev`; local types verification is in supabase-db-types-pr.yml).
+# - Merge → `main` (push): deploy-prod applies migrations to self-hosted Postgres via Tailscale.
+# - workflow_dispatch: manual deploy (branch determines environment).
+#
+# Commit status context for branch protection: `infra / supabase-dry-run`
+# (posted on the PR head SHA for `/infra-ci` runs).
 #
 # Concurrency: one run at a time per branch/ref so overlapping supabase db push jobs do not
 # contend on remote migration history.
@@ -29,27 +36,49 @@ on:
       - 'supabase/migrations/**'
       - '.github/workflows/supabase-migrations.yml'
   pull_request:
+    branches:
+      - main
     paths:
       - 'supabase/migrations/**'
       - '.github/workflows/supabase-migrations.yml'
+  issue_comment:
+    types: [created]
   workflow_dispatch:
 
 # Pin CLI for reproducible db push / dry-run; bump when you intentionally adopt a new CLI.
 env:
   SUPABASE_CLI_VERSION: 2.84.4
+  # Commit status context — keep stable; branch protection may require this name.
+  INFRA_STATUS_CONTEXT: infra / supabase-dry-run
 
 permissions:
   contents: read
+  issues: write
+  pull-requests: read
+  statuses: write
 
 concurrency:
-  group: supabase-migrations-${{ github.workflow }}-${{ github.ref }}
+  group: supabase-migrations-${{ github.workflow }}-${{ github.ref }}-${{ github.event.issue.number || github.event.pull_request.number || github.run_id }}
   cancel-in-progress: false
 
 jobs:
-  # Validate that migrations apply cleanly without mutating the remote DB.
-  # This dry-runs against the dev Supabase Cloud project.
+  # Automatic lightweight gate for PRs into main (no secrets).
+  notice-main-pr:
+    if: |
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Note migrations will deploy to production on merge
+        run: |
+          echo '::notice title=Supabase migrations::This PR targets main. Cloud dry-run already happened on the way into dev. Merging will run deploy-prod (self-hosted via Tailscale).'
+
+  # Comment-triggered dry-run against Supabase Cloud (PR → dev).
   dry-run:
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    if: |
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request != null &&
+      trim(github.event.comment.body) == '/infra-ci'
     runs-on: ubuntu-latest
     environment: development
     env:
@@ -57,21 +86,151 @@ jobs:
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
     steps:
+      - name: Verify commenter has write access
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              username: context.actor,
+            });
+            const perms = data.user?.permissions;
+            const hasWriteAccess =
+              perms?.admin === true ||
+              perms?.maintain === true ||
+              perms?.push === true ||
+              ['admin', 'write'].includes(data.permission);
+            if (!hasWriteAccess) {
+              core.setFailed(`@${context.actor} does not have permission to trigger /infra-ci.`);
+              throw new Error('Permission denied');
+            }
+
+      - name: React to comment
+        uses: actions/github-script@v8
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'rocket',
+            });
+
+      - name: Resolve PR and path changes
+        id: pr
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
+            if (!pr.head.repo) {
+              core.setFailed('PR head repository is unavailable.');
+              throw new Error('PR head repo is null');
+            }
+            if (pr.head.repo.full_name !== `${context.repo.owner}/${context.repo.repo}`) {
+              core.setFailed('Fork PRs cannot use /infra-ci (development secrets are not available).');
+              throw new Error('Fork PR');
+            }
+            core.setOutput('sha', pr.head.sha);
+            core.setOutput('repo', pr.head.repo.full_name);
+            core.setOutput('base', pr.base.ref);
+            core.setOutput('base_sha', pr.base.sha);
+
+            const { data: comparison } = await github.rest.repos.compareCommitsWithBasehead({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              basehead: `${pr.base.sha}...${pr.head.sha}`,
+            });
+            const paths = [
+              'supabase/migrations/',
+              '.github/workflows/supabase-migrations.yml',
+            ];
+            const changed = (comparison.files || []).some((f) =>
+              paths.some((p) => f.filename === p || f.filename.startsWith(p))
+            );
+            core.setOutput('changed', changed ? 'true' : 'false');
+
+      - name: Set commit status (pending)
+        uses: actions/github-script@v8
+        with:
+          script: |
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: '${{ steps.pr.outputs.sha }}',
+              state: 'pending',
+              context: process.env.INFRA_STATUS_CONTEXT,
+              description: 'Supabase dry-run starting…',
+              target_url: `${process.env.GITHUB_SERVER_URL}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
+
+      - name: Skip when PR does not target dev
+        id: gate
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.pr.outputs.base }}" != "dev" ]; then
+            echo "::notice title=Supabase dry-run skipped::/infra-ci cloud dry-run only runs on PRs targeting dev (base was '${{ steps.pr.outputs.base }}')."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${{ steps.pr.outputs.changed }}" != "true" ]; then
+            echo "::notice title=Supabase dry-run skipped::No migration / workflow path changes in this PR."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "run=true" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v6
+        if: steps.gate.outputs.run == 'true'
+        with:
+          repository: ${{ steps.pr.outputs.repo }}
+          ref: ${{ steps.pr.outputs.sha }}
 
       - uses: supabase/setup-cli@v2
+        if: steps.gate.outputs.run == 'true'
         with:
           version: ${{ env.SUPABASE_CLI_VERSION }}
 
       - name: Link project (non-interactive)
+        if: steps.gate.outputs.run == 'true'
         run: supabase link --project-ref "$SUPABASE_PROJECT_ID"
 
       - name: Dry-run migrations
+        if: steps.gate.outputs.run == 'true'
         run: supabase db push --dry-run --yes
+
+      - name: Set commit status (final)
+        if: always() && steps.pr.outputs.sha != ''
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const skipped = '${{ steps.gate.outputs.run }}' !== 'true';
+            const jobOk = '${{ job.status }}' === 'success';
+            const state = jobOk ? 'success' : 'failure';
+            const description = skipped
+              ? 'Skipped (not targeting dev, or no migration changes)'
+              : state === 'success'
+                ? 'Supabase dry-run passed'
+                : 'Supabase dry-run failed';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: '${{ steps.pr.outputs.sha }}',
+              state,
+              context: process.env.INFRA_STATUS_CONTEXT,
+              description,
+              target_url: `${process.env.GITHUB_SERVER_URL}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
 
   # --- Development: Supabase Cloud, linked via access token ---
   deploy-dev:
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/dev'
+    if: |
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      github.ref == 'refs/heads/dev'
     environment: development
     runs-on: ubuntu-latest
 
@@ -125,7 +284,9 @@ jobs:
 
   # --- Production: self-hosted Supabase, reached over Tailscale, pushed via db-url ---
   deploy-prod:
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: |
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      github.ref == 'refs/heads/main'
     environment: production
     runs-on: ubuntu-latest
 
@@ -171,7 +332,7 @@ jobs:
       - name: Push migrations to Supabase
         run: supabase db push --db-url "$PROD_DB_URL" --yes
 
-      - name: Verify Database types match linked project (no auto-commit)
+      - name: Verify Database types match production database (no auto-commit)
         run: |
           set -euo pipefail
           TYPES_PRETTIER="$GITHUB_WORKSPACE/prettier.database-types.json"
