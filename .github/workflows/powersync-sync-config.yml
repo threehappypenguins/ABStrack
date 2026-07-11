@@ -82,7 +82,7 @@ jobs:
     if: |
       github.event_name == 'issue_comment' &&
       github.event.issue.pull_request != null &&
-      trim(github.event.comment.body) == '/infra-ci'
+      github.event.comment.body == '/infra-ci'
     runs-on: ubuntu-latest
     environment: development
     env:
