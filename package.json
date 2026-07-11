@@ -59,7 +59,7 @@
     "@nx/react-native": "^22.5.4",
     "@nx/vite": "^22.5.4",
     "@nx/vitest": "22.5.4",
-    "@playwright/test": "^1.36.0",
+    "@playwright/test": "^1.61.1",
     "@swc-node/register": "~1.11.1",
     "@swc/cli": "~0.8.0",
     "@swc/core": "~1.15.5",

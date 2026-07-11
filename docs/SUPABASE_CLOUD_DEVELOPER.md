@@ -8,8 +8,8 @@ Follow **[AGENTS.md](../AGENTS.md)** (section **Correct flow for migrations and 
 
 **Recommended setup (this repo):**
 
-1. **GitHub Actions** still runs **`supabase db push`** when changes land on **`main`**—so merged code and cloud stay aligned even if you forget a manual step.
-2. **GitHub Actions** runs **`powersync validate`** on every PR and branch push when that YAML changes, and **`deploy sync-config`** only when **`main`** is updated—see **[PowerSync Sync Streams](#powersync-sync-streams-packagespowersyncsync-rulesyaml)** (secrets required).
+1. **GitHub Actions** runs **`supabase db push`** when changes land on **`dev`** (Supabase Cloud) and again on **`main`** (self-hosted via Tailscale)—so merged code and each environment stay aligned even if you forget a manual step. PR comment commands (`/ci`, `/infra-ci`, `/preview`) are listed in **[DEV_SETUP.md → PR comment commands](DEV_SETUP.md#pr-comment-commands)**.
+2. **GitHub Actions** runs **`powersync validate`** on **`/infra-ci`** (PRs into `dev`) and on merge to **`dev`**, then **`deploy sync-config`** to PowerSync Cloud on **`dev`**; merge to **`main`** deploys sync rules to self-hosted PowerSync—see **[PowerSync Sync Streams](#powersync-sync-streams-packagespowersyncsync-rulesyaml)** (secrets required).
 3. **You manually** run **`db push`** from your laptop **when needed** (usually **before merge**, on your feature branch) so cloud has the new migration **before** you run **`gen types typescript --linked`**. That lets you put **migration SQL + `database.types.ts` in one PR** without waiting for merge.
 
 **Wait to `db push` until the migration is stable (e.g. after Copilot / PR review).** Review tools often suggest edits to the same `supabase/migrations/*.sql` file. If you **`db push` too early**, cloud records that migration version as **already applied**; changing the file in git does **not** automatically re-apply it. Safer habit: keep migration work in the PR, finish review-driven SQL tweaks, **then** run **`db push`** once, **`gen types --linked`**, commit `database.types.ts`, and merge. See **[Revising a migration already pushed to cloud (development)](#revising-a-migration-already-pushed-to-cloud-development)** if you jumped the gun.
@@ -419,19 +419,21 @@ On **Linux**, the CLI often cannot use a system keychain, so it may ask: _store 
 - **`y`:** saves the token in that file on your machine (only your user account should read it). Convenient for repeat runs.
 - **`N`:** does not write the token to disk; use **`export PS_ADMIN_TOKEN='…'`** in the same terminal before **`validate`** / **`deploy`** (same as the scripted steps above). Fine if you prefer not to keep a PAT in a file.
 
-### GitHub Actions (backstop on merge)
+### GitHub Actions (validate on comment / deploy on merge)
 
 [`.github/workflows/powersync-sync-config.yml`](../.github/workflows/powersync-sync-config.yml) runs when **`packages/powersync/sync-rules.yaml`** (or that workflow file) changes:
 
-- **`pull_request`:** **`powersync validate`** (full checks: schema, connections, Cloud sync config) on same-repo branches when **`POWERSYNC_ADMIN_TOKEN`**, **`POWERSYNC_INSTANCE_ID`**, and **`POWERSYNC_PROJECT_ID`** are set; fork PRs skip the job — GitHub does not expose secrets to forks.
-- **`push` to any branch:** same **`validate`** job when those secrets exist; on **`main`**, **`deploy sync-config`** runs only after a successful validate that actually ran the CLI (**`powersync_ready`**).
-- **`workflow_dispatch`:** same behavior as **`push`** on the branch you select.
+- **PR into `dev`:** comment **`/infra-ci`** (exact) to run **`powersync validate`** against PowerSync Cloud using the **`development`** environment. Ordinary pushes to the feature branch do **not** auto-run this (saves Actions minutes). See **[DEV_SETUP.md → PR comment commands](DEV_SETUP.md#pr-comment-commands)**.
+- **`push` to `dev`:** **`validate`** then **`deploy sync-config`** to PowerSync Cloud when secrets exist (**`powersync_ready`**).
+- **PR into `main`:** lightweight notice only (Cloud validate/deploy already happened on the way into `dev`).
+- **`push` to `main`:** scp `sync-rules.yaml` to the self-hosted VM over Tailscale and restart PowerSync.
+- **`workflow_dispatch`:** same deploy path as **`push`** on the branch you select.
 
-If any of the three secrets above is unset (e.g. fork **`push`**, or upstream repo before secrets are configured), **`validate`** completes with a **notice** and skips checkout/CLI so CI stays green; **`deploy`** does not run.
+If any of **`POWERSYNC_ADMIN_TOKEN`**, **`POWERSYNC_INSTANCE_ID`**, or **`POWERSYNC_PROJECT_ID`** is unset, **`validate`** completes with a **notice** and skips checkout/CLI so CI stays green; **`deploy-dev`** does not run.
 
-**How CI gets a real connection:** the workflow runs **`powersync pull instance`** using **`POWERSYNC_*`** secrets. The CLI joins **`--directory`** with **`process.cwd()`**, so the job **`cd`s into a temp directory** and passes **`--directory=.`** (same pattern you should use locally). That downloads Cloud’s **`service.yaml`**, then copies **`packages/powersync/sync-rules.yaml`** over **`sync-config.yaml`** and runs **`validate`** / **`deploy sync-config`**.
+**How CI gets a real connection:** the workflow runs **`powersync pull instance`** using **`POWERSYNC_*`** secrets on the **`development`** environment. The CLI joins **`--directory`** with **`process.cwd()`**, so the job **`cd`s into a temp directory** and passes **`--directory=.`** (same pattern you should use locally). That downloads Cloud’s **`service.yaml`**, then copies **`packages/powersync/sync-rules.yaml`** over **`sync-config.yaml`** and runs **`validate`** / **`deploy sync-config`**.
 
-Repository secrets are documented under **[DEV_SETUP.md → PowerSync sync config (GitHub Actions)](DEV_SETUP.md#powersync-sync-config-github-actions)** (`POWERSYNC_ADMIN_TOKEN`, `POWERSYNC_INSTANCE_ID`, `POWERSYNC_PROJECT_ID`, optional `POWERSYNC_ORG_ID`).
+Secrets are documented under **[DEV_SETUP.md → PowerSync sync config (GitHub Actions)](DEV_SETUP.md#powersync-sync-config-github-actions)** (`POWERSYNC_ADMIN_TOKEN`, `POWERSYNC_INSTANCE_ID`, `POWERSYNC_PROJECT_ID`, optional `POWERSYNC_ORG_ID`).
 
 ---
 

@@ -39,7 +39,10 @@ export default defineConfig({
     ? {}
     : {
         webServer: {
-          command: 'pnpm exec nx run @abstrack/web:dev',
+          // Pass --port on the CLI (same pattern as practitioner-e2e). Relying only on
+          // PORT via env is fine for Next, but if a stray `next` already holds :3000,
+          // an unflagged `nx run …:dev` can prompt/hang under Playwright with no output.
+          command: `pnpm exec nx run @abstrack/web:dev -- --port ${localWebPort}`,
           url: localBaseURL,
           reuseExistingServer: !process.env.CI,
           cwd: workspaceRoot,

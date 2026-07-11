@@ -200,9 +200,9 @@ describe.skipIf(!presetIntegrationReady)(
     describe.sequential(
       'symptom preset — create, edit, delete, reorder',
       () => {
-        let presetId: string | undefined;
-        let line1Id: string | undefined;
-        let line2Id: string | undefined;
+        let presetId: string;
+        let line1Id: string;
+        let line2Id: string;
 
         beforeAll(async () => {
           const createPreset = await createSymptomPreset(clientA, {
@@ -244,19 +244,16 @@ describe.skipIf(!presetIntegrationReady)(
         });
 
         afterAll(async () => {
-          if (presetId === undefined) {
-            return;
-          }
           await deleteSymptomPreset(clientA, presetId);
         });
 
         it('updates header and a line', async () => {
-          const up = await updateSymptomPreset(clientA, presetId!, {
+          const up = await updateSymptomPreset(clientA, presetId, {
             name: `RLS symptom updated ${suffix}`,
           });
           expect(up.ok).toBe(true);
 
-          const lineUp = await updatePresetSymptom(clientA, line1Id!, {
+          const lineUp = await updatePresetSymptom(clientA, line1Id, {
             symptom_name: 'Nausea (edited)',
           });
           expect(lineUp.ok).toBe(true);
@@ -266,31 +263,31 @@ describe.skipIf(!presetIntegrationReady)(
           const { data, error } = await admin
             .from('symptom_presets')
             .select('name')
-            .eq('id', presetId!)
+            .eq('id', presetId)
             .single();
           expect(error).toBeNull();
           expect(data?.name).toContain('RLS symptom updated');
         });
 
         it('reorders lines via RPC', async () => {
-          const re = await reorderPresetSymptoms(clientA, presetId!, [
-            line2Id!,
-            line1Id!,
+          const re = await reorderPresetSymptoms(clientA, presetId, [
+            line2Id,
+            line1Id,
           ]);
           expect(re.ok).toBe(true);
-          const list = await listPresetSymptomsForPreset(clientA, presetId!);
+          const list = await listPresetSymptomsForPreset(clientA, presetId);
           if (!list.ok) {
             throw new Error(
               `listPresetSymptomsForPreset: ${list.error.message}`,
             );
           }
-          expect(list.data.map((r) => r.id)).toEqual([line2Id!, line1Id!]);
+          expect(list.data.map((r) => r.id)).toEqual([line2Id, line1Id]);
         });
 
         it('deletes one line then the preset (cascade removes remaining lines)', async () => {
-          const delLine = await deletePresetSymptom(clientA, line2Id!);
+          const delLine = await deletePresetSymptom(clientA, line2Id);
           expect(delLine.ok).toBe(true);
-          const delPreset = await deleteSymptomPreset(clientA, presetId!);
+          const delPreset = await deleteSymptomPreset(clientA, presetId);
           expect(delPreset.ok).toBe(true);
         });
       },
@@ -378,9 +375,9 @@ describe.skipIf(!presetIntegrationReady)(
     describe.sequential(
       'health marker preset — create, edit, delete, reorder',
       () => {
-        let hPresetId: string | undefined;
-        let hm1: string | undefined;
-        let hm2: string | undefined;
+        let hPresetId: string;
+        let hm1: string;
+        let hm2: string;
 
         beforeAll(async () => {
           const createPreset = await createHealthMarkerPreset(clientA, {
@@ -420,19 +417,16 @@ describe.skipIf(!presetIntegrationReady)(
         });
 
         afterAll(async () => {
-          if (hPresetId === undefined) {
-            return;
-          }
           await deleteHealthMarkerPreset(clientA, hPresetId);
         });
 
         it('updates header and a line', async () => {
-          const up = await updateHealthMarkerPreset(clientA, hPresetId!, {
+          const up = await updateHealthMarkerPreset(clientA, hPresetId, {
             name: `RLS markers updated ${suffix}`,
           });
           expect(up.ok).toBe(true);
 
-          const lineUp = await updatePresetHealthMarker(clientA, hm1!, {
+          const lineUp = await updatePresetHealthMarker(clientA, hm1, {
             marker_kind: 'custom',
             custom_name: 'Steps',
             custom_unit: 'count',
@@ -444,34 +438,34 @@ describe.skipIf(!presetIntegrationReady)(
           const { data, error } = await admin
             .from('health_marker_presets')
             .select('name')
-            .eq('id', hPresetId!)
+            .eq('id', hPresetId)
             .single();
           expect(error).toBeNull();
           expect(data?.name).toContain('RLS markers updated');
         });
 
         it('reorders lines via RPC', async () => {
-          const re = await reorderPresetHealthMarkers(clientA, hPresetId!, [
-            hm2!,
-            hm1!,
+          const re = await reorderPresetHealthMarkers(clientA, hPresetId, [
+            hm2,
+            hm1,
           ]);
           expect(re.ok).toBe(true);
           const list = await listPresetHealthMarkersForPreset(
             clientA,
-            hPresetId!,
+            hPresetId,
           );
           if (!list.ok) {
             throw new Error(
               `listPresetHealthMarkersForPreset: ${list.error.message}`,
             );
           }
-          expect(list.data.map((r) => r.id)).toEqual([hm2!, hm1!]);
+          expect(list.data.map((r) => r.id)).toEqual([hm2, hm1]);
         });
 
         it('deletes one line then the preset', async () => {
-          const delLine = await deletePresetHealthMarker(clientA, hm2!);
+          const delLine = await deletePresetHealthMarker(clientA, hm2);
           expect(delLine.ok).toBe(true);
-          const delPreset = await deleteHealthMarkerPreset(clientA, hPresetId!);
+          const delPreset = await deleteHealthMarkerPreset(clientA, hPresetId);
           expect(delPreset.ok).toBe(true);
         });
       },
@@ -538,9 +532,9 @@ describe.skipIf(!presetIntegrationReady)(
     });
 
     describe.sequential('episode templates — CRUD and cross-user', () => {
-      let etSymptomId: string | undefined;
-      let etHmId: string | undefined;
-      let etTemplateId: string | undefined;
+      let etSymptomId: string;
+      let etHmId: string;
+      let etTemplateId: string;
 
       beforeAll(async () => {
         const sp = await createSymptomPreset(clientA, {
@@ -566,8 +560,8 @@ describe.skipIf(!presetIntegrationReady)(
         const created = await createEpisodeTemplate(clientA, {
           user_id: userAId,
           name: `ABS Episode ${suffix}`,
-          symptom_preset_id: etSymptomId!,
-          health_marker_preset_id: etHmId!,
+          symptom_preset_id: etSymptomId,
+          health_marker_preset_id: etHmId,
         });
         expect(created.ok).toBe(true);
         if (!created.ok) {
@@ -582,14 +576,14 @@ describe.skipIf(!presetIntegrationReady)(
         if (!list.ok) {
           return;
         }
-        const found = list.data.find((r) => r.id === etTemplateId!);
+        const found = list.data.find((r) => r.id === etTemplateId);
         expect(found).toBeDefined();
         expect(found?.symptom_preset.name).toContain(`ET sym ${suffix}`);
         expect(found?.health_marker_preset.name).toContain(`ET hm ${suffix}`);
       });
 
       it('updates episode template', async () => {
-        const up = await updateEpisodeTemplate(clientA, etTemplateId!, {
+        const up = await updateEpisodeTemplate(clientA, etTemplateId, {
           name: `Renamed ${suffix}`,
         });
         expect(up.ok).toBe(true);
@@ -600,7 +594,7 @@ describe.skipIf(!presetIntegrationReady)(
       });
 
       it('hides other user template from get by id', async () => {
-        const got = await getEpisodeTemplateById(clientB, etTemplateId!);
+        const got = await getEpisodeTemplateById(clientB, etTemplateId);
         expect(got.ok).toBe(true);
         if (!got.ok) {
           return;
@@ -609,17 +603,13 @@ describe.skipIf(!presetIntegrationReady)(
       });
 
       it('deletes episode template', async () => {
-        const del = await deleteEpisodeTemplate(clientA, etTemplateId!);
+        const del = await deleteEpisodeTemplate(clientA, etTemplateId);
         expect(del.ok).toBe(true);
       });
 
       afterAll(async () => {
-        if (etSymptomId !== undefined) {
-          await deleteSymptomPreset(clientA, etSymptomId);
-        }
-        if (etHmId !== undefined) {
-          await deleteHealthMarkerPreset(clientA, etHmId);
-        }
+        await deleteSymptomPreset(clientA, etSymptomId);
+        await deleteHealthMarkerPreset(clientA, etHmId);
       });
     });
   },

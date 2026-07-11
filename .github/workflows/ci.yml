@@ -1,26 +1,58 @@
+# App CI: lint, typecheck, test, build, a11y.
+#
+# Triggers:
+# - PR comment `/ci` (exact match) on any open PR — preferred for feature → `dev` so pushes
+#   after the PR is open do not burn Actions minutes.
+# - pull_request targeting `main` — automatic gate for the promote-to-prod PR.
+#
+# Environments (required — matches the Cloud vs self-hosted split):
+# - PR base `dev`  → GitHub Environment `development` (Supabase Cloud URL + publishable key)
+# - PR base `main` → GitHub Environment `production`  (self-hosted URL + publishable key;
+#   joins Tailscale so MagicDNS / private API hosts are reachable from the runner)
+#
+# issue_comment runs on the default branch (`dev`). Commit statuses are posted to the PR
+# head SHA so branch protection can require context `CI`.
+#
+# Branch-policy gotchas (Settings → Environments → Deployment branches):
+# - `development`: allow `dev` (covers `/ci` / `/infra-ci` comments; workflow ref is refs/heads/dev).
+# - `production`: allow `main` (deploys) AND `refs/pull/*/merge` (CI on PRs into main). Without
+#   the pull-request pattern, a `pull_request` job with `environment: production` fails the
+#   environment gate before any step runs.
+
 name: CI
 
 on:
   issue_comment:
     types: [created]
+  pull_request:
+    branches:
+      - main
 
 permissions:
   actions: read
   contents: read
   issues: write
   pull-requests: read
+  statuses: write
 
 jobs:
-  CI:
-    name: Build and Tests
+  resolve:
+    name: Resolve PR target environment
     runs-on: ubuntu-latest
     if: |
-      github.event.issue.pull_request != null &&
-      contains(github.event.comment.body, '/ci')
-
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request != null &&
+       github.event.comment.body == '/ci') ||
+      github.event_name == 'pull_request'
+    outputs:
+      sha: ${{ steps.pr.outputs.sha }}
+      repo: ${{ steps.pr.outputs.repo }}
+      base: ${{ steps.pr.outputs.base }}
+      github_environment: ${{ steps.pr.outputs.github_environment }}
+      use_tailscale: ${{ steps.pr.outputs.use_tailscale }}
     steps:
       - name: Verify commenter has write access
-        id: check-permission
+        if: github.event_name == 'issue_comment'
         uses: actions/github-script@v8
         with:
           script: |
@@ -41,6 +73,7 @@ jobs:
             }
 
       - name: React to comment
+        if: github.event_name == 'issue_comment'
         uses: actions/github-script@v8
         with:
           script: |
@@ -51,27 +84,93 @@ jobs:
               content: 'rocket',
             });
 
-      - name: Get PR head info
+      - name: Resolve PR head and target environment
         id: pr
         uses: actions/github-script@v8
         with:
           script: |
-            const { data: pr } = await github.rest.pulls.get({
+            let sha;
+            let repoFullName;
+            let baseRef;
+            if (context.eventName === 'issue_comment') {
+              const { data: pr } = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.issue.number,
+              });
+              if (!pr.head.repo) {
+                core.setFailed('PR head repository is unavailable (fork may have been deleted or is inaccessible).');
+                throw new Error('PR head repo is null');
+              }
+              sha = pr.head.sha;
+              repoFullName = pr.head.repo.full_name;
+              baseRef = pr.base.ref;
+            } else {
+              const pr = context.payload.pull_request;
+              if (!pr.head.repo) {
+                core.setFailed('PR head repository is unavailable.');
+                throw new Error('PR head repo is null');
+              }
+              sha = pr.head.sha;
+              repoFullName = pr.head.repo.full_name;
+              baseRef = pr.base.ref;
+            }
+
+            let githubEnvironment;
+            let useTailscale;
+            if (baseRef === 'main') {
+              githubEnvironment = 'production';
+              useTailscale = 'true';
+            } else if (baseRef === 'dev') {
+              githubEnvironment = 'development';
+              useTailscale = 'false';
+            } else {
+              core.setFailed(
+                `CI only supports PRs targeting dev (development) or main (production); base was '${baseRef}'.`
+              );
+              throw new Error('Unsupported PR base');
+            }
+
+            core.setOutput('sha', sha);
+            core.setOutput('repo', repoFullName);
+            core.setOutput('base', baseRef);
+            core.setOutput('github_environment', githubEnvironment);
+            core.setOutput('use_tailscale', useTailscale);
+            core.info(`PR base=${baseRef} → environment=${githubEnvironment} tailscale=${useTailscale}`);
+
+  CI:
+    name: Build and Tests
+    needs: resolve
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve.outputs.github_environment }}
+    steps:
+      - name: Set commit status (pending)
+        uses: actions/github-script@v8
+        with:
+          script: |
+            await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              pull_number: context.issue.number,
+              sha: '${{ needs.resolve.outputs.sha }}',
+              state: 'pending',
+              context: 'CI',
+              description: 'Build and tests running…',
+              target_url: `${process.env.GITHUB_SERVER_URL}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
             });
-            if (!pr.head.repo) {
-              core.setFailed('PR head repository is unavailable (fork may have been deleted or is inaccessible).');
-              throw new Error('PR head repo is null');
-            }
-            core.setOutput('sha', pr.head.sha);
-            core.setOutput('repo', pr.head.repo.full_name);
+
+      # Production (self-hosted) API is on the tailnet; Cloud development does not need this.
+      - name: Connect to Tailscale
+        if: needs.resolve.outputs.use_tailscale == 'true'
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
 
       - uses: actions/checkout@v6
         with:
-          repository: ${{ steps.pr.outputs.repo }}
-          ref: ${{ steps.pr.outputs.sha }}
+          repository: ${{ needs.resolve.outputs.repo }}
+          ref: ${{ needs.resolve.outputs.sha }}
           filter: tree:0
           fetch-depth: 0
 
@@ -97,9 +196,11 @@ jobs:
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+          GITHUB_ENVIRONMENT: ${{ needs.resolve.outputs.github_environment }}
         run: |
-          test -n "$NEXT_PUBLIC_SUPABASE_URL" || (echo "::error::NEXT_PUBLIC_SUPABASE_URL is missing" && exit 1)
-          test -n "$NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY" || (echo "::error::NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY is missing" && exit 1)
+          test -n "$NEXT_PUBLIC_SUPABASE_URL" || (echo "::error::NEXT_PUBLIC_SUPABASE_URL is missing on the '${GITHUB_ENVIRONMENT}' GitHub Environment (Variables)." && exit 1)
+          test -n "$NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY" || (echo "::error::NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY is missing on the '${GITHUB_ENVIRONMENT}' GitHub Environment (Variables)." && exit 1)
+          echo "Using ${GITHUB_ENVIRONMENT}: NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}"
 
       - run: pnpm install --frozen-lockfile
 
@@ -142,3 +243,19 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
         run: pnpm a11y:e2e
+
+      - name: Set commit status (final)
+        if: always() && needs.resolve.outputs.sha != ''
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const state = '${{ job.status }}' === 'success' ? 'success' : 'failure';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: '${{ needs.resolve.outputs.sha }}',
+              state,
+              context: 'CI',
+              description: state === 'success' ? 'Build and tests passed' : 'Build and tests failed',
+              target_url: `${process.env.GITHUB_SERVER_URL}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });

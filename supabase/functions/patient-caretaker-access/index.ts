@@ -373,7 +373,8 @@ async function caretakerAccessInsert23505PairRefetch(
  *
  * The stamp runs via **`rpc('stamp_caretaker_invite_pre_send', …)`** (`public.stamp_caretaker_invite_pre_send`
  * in migrations): a single **`UPDATE`** with **`consumed_at IS NULL`** and an **atomic resend window** on
- * **`last_invite_sent_at`** (`NULL` or older than **`CARETAKER_INVITE_MIN_RESEND_INTERVAL_MS`**) so two
+ * **`last_invite_sent_at`** (`NULL` or at/before the throttle cutoff — inclusive **`<=`**, matching Edge
+ * **`elapsed >= CARETAKER_INVITE_MIN_RESEND_INTERVAL_MS`**) so two
  * concurrent callers cannot both pass a non-atomic throttle read and send duplicate Auth emails. This
  * avoids PostgREST-only quirks on the same row update; **`service_role`** must **`EXECUTE`** the RPC.
  *
