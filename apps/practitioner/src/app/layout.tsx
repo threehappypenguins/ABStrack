@@ -1,5 +1,4 @@
 import './global.css';
-import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { Plus_Jakarta_Sans } from 'next/font/google';
 import Script from 'next/script';
@@ -8,6 +7,7 @@ import { PractitionerPublicTopNav } from '../components/app-shell/PractitionerPu
 import { LiveAnnouncerRoot } from '../components/a11y/LiveAnnouncerRoot';
 import { ThemeProvider } from '../components/theme/ThemeProvider';
 import { AuthProvider } from '../lib/auth-provider';
+import { buildRootPractitionerMetadata } from '../lib/site-seo';
 import { THEME_INIT_SCRIPT } from '../lib/theme-init-script';
 
 const fontSans = Plus_Jakarta_Sans({
@@ -16,16 +16,7 @@ const fontSans = Plus_Jakarta_Sans({
   display: 'swap',
 });
 
-export const metadata: Metadata = {
-  title: 'ABStrack Practitioner',
-  description:
-    'Practitioner access for ABStrack patient support and care workflows',
-  robots: {
-    index: false,
-    follow: false,
-    googleBot: { index: false, follow: false },
-  },
-};
+export const metadata = buildRootPractitionerMetadata();
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (

@@ -1,8 +1,8 @@
 {
   "name": "ABStrack Practitioner",
   "short_name": "ABStrack",
-  "description": "Practitioner access for ABStrack patient support and care workflows",
-  "start_url": "/",
+  "description": "Invite-only clinician access for ABStrack patient support and care workflows",
+  "start_url": "/patients",
   "display": "browser",
   "icons": [
     {

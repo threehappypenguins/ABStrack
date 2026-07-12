@@ -126,7 +126,7 @@ describe('practitioner proxy', () => {
     );
   });
 
-  it('does not redirect signed-in root away from MFA home', async () => {
+  it('redirects signed-in root to /patients', async () => {
     createServerClientMock.mockReturnValue({
       auth: {
         getUser: jest.fn(async () => ({
@@ -138,6 +138,31 @@ describe('practitioner proxy', () => {
 
     const result = await proxy(makeRequest('/'));
 
-    expect(result).toEqual(expect.objectContaining({ type: 'next' }));
+    expect(result).toEqual(
+      expect.objectContaining({
+        type: 'redirect',
+        location: 'https://practitioner.example.com/patients',
+      }),
+    );
+  });
+
+  it('redirects signed-in /login to /patients', async () => {
+    createServerClientMock.mockReturnValue({
+      auth: {
+        getUser: jest.fn(async () => ({
+          data: { user: { id: 'user-1' } },
+          error: null,
+        })),
+      },
+    } as unknown as ServerClient);
+
+    const result = await proxy(makeRequest('/login'));
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        type: 'redirect',
+        location: 'https://practitioner.example.com/patients',
+      }),
+    );
   });
 });
