@@ -1,0 +1,315 @@
+# Edge Functions: comment-triggered smoke check on PRs into `dev`; deploy on merge.
+#
+# development: Supabase Cloud — `supabase functions deploy` with project-ref (Management API).
+# production:  self-hosted Docker — rsync `supabase/functions/` into volumes/functions over
+#              Tailscale SSH, then `docker compose restart functions`. There is no
+#              `functions deploy --db-url`; code is bind-mounted like PowerSync sync-rules.
+#
+# Requires:
+# - development environment: SUPABASE_ACCESS_TOKEN, SUPABASE_PROJECT_ID (same as migrations)
+# - production environment: TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET (shared with migrations /
+#   PowerSync), PROD_SSH_HOST, PROD_SSH_USER, PROD_SUPABASE_DIR (directory that contains
+#   docker-compose.yml and volumes/functions/, e.g. /home/sarah/supabase-project)
+#
+# Invite redirect secrets (ABSTRACK_*_INVITE_*) stay on the VM / Cloud Dashboard — CI does
+# not ship them.
+#
+# Intended workflow (default branch = `dev`):
+# - PR → `dev`: comment `/infra-ci` (exact) to smoke-check Cloud API access when function
+#   paths changed (no dry-run deploy exists for Edge Functions).
+# - Merge → `dev` (push): deploy-dev to Supabase Cloud.
+# - PR → `main`: automatic notice only (already deployed to Cloud on the way into `dev`).
+# - Merge → `main` (push): deploy-prod rsync + restart self-hosted functions.
+# - workflow_dispatch: deploy for the branch you dispatch from.
+#
+# Commit status context for branch protection: `infra / edge-functions`
+
+name: Supabase Edge Functions
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - 'supabase/functions/**'
+      - 'supabase/config.toml'
+      - '.github/workflows/supabase-edge-functions.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'supabase/functions/**'
+      - 'supabase/config.toml'
+      - '.github/workflows/supabase-edge-functions.yml'
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+
+env:
+  SUPABASE_CLI_VERSION: 2.84.4
+  INFRA_STATUS_CONTEXT: infra / edge-functions
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  group: supabase-edge-functions-${{ github.workflow }}-${{ github.ref }}-${{ github.event.issue.number || github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  notice-main-pr:
+    if: |
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Note Edge Functions will deploy to production on merge
+        run: |
+          echo '::notice title=Supabase Edge Functions::This PR targets main. Cloud deploy already happened on the way into dev. Merging will rsync supabase/functions to the self-hosted volumes/functions directory and restart the functions container.'
+
+  # Comment-triggered smoke check against Supabase Cloud (PR → `dev`).
+  check-pr:
+    if: |
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request != null &&
+      github.event.comment.body == '/infra-ci'
+    runs-on: ubuntu-latest
+    environment: development
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+    steps:
+      - name: Verify commenter has write access
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              username: context.actor,
+            });
+            const perms = data.user?.permissions;
+            const hasWriteAccess =
+              perms?.admin === true ||
+              perms?.maintain === true ||
+              perms?.push === true ||
+              ['admin', 'write'].includes(data.permission);
+            if (!hasWriteAccess) {
+              core.setFailed(`@${context.actor} does not have permission to trigger /infra-ci.`);
+              throw new Error('Permission denied');
+            }
+
+      - name: React to comment
+        uses: actions/github-script@v8
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'eyes',
+            });
+
+      - name: Resolve PR and path changes
+        id: pr
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
+            if (!pr.head.repo) {
+              core.setFailed('PR head repository is unavailable.');
+              throw new Error('PR head repo is null');
+            }
+            if (pr.head.repo.full_name !== `${context.repo.owner}/${context.repo.repo}`) {
+              core.setFailed('Fork PRs cannot use /infra-ci (development secrets are not available).');
+              throw new Error('Fork PR');
+            }
+            core.setOutput('sha', pr.head.sha);
+            core.setOutput('repo', pr.head.repo.full_name);
+            core.setOutput('base', pr.base.ref);
+
+            const { data: comparison } = await github.rest.repos.compareCommitsWithBasehead({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              basehead: `${pr.base.sha}...${pr.head.sha}`,
+            });
+            const prefix = 'supabase/functions/';
+            const extra = [
+              'supabase/config.toml',
+              '.github/workflows/supabase-edge-functions.yml',
+            ];
+            const changed = (comparison.files || []).some(
+              (f) =>
+                f.filename.startsWith(prefix) ||
+                extra.includes(f.filename),
+            );
+            core.setOutput('changed', changed ? 'true' : 'false');
+
+      - name: Set commit status (pending)
+        uses: actions/github-script@v8
+        with:
+          script: |
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: '${{ steps.pr.outputs.sha }}',
+              state: 'pending',
+              context: process.env.INFRA_STATUS_CONTEXT,
+              description: 'Edge Functions check starting…',
+              target_url: `${process.env.GITHUB_SERVER_URL}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
+
+      - name: Check secrets and gates
+        id: gate
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.pr.outputs.base }}" != "dev" ]; then
+            echo "::notice title=Edge Functions skipped::/infra-ci Cloud check only runs on PRs targeting dev (base was '${{ steps.pr.outputs.base }}')."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${{ steps.pr.outputs.changed }}" != "true" ]; then
+            echo "::notice title=Edge Functions skipped::No supabase/functions / config.toml / workflow path changes in this PR."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -n "${SUPABASE_ACCESS_TOKEN:-}" ] && [ -n "${SUPABASE_PROJECT_ID:-}" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo '::notice title=Edge Functions skipped::development environment secrets SUPABASE_ACCESS_TOKEN and SUPABASE_PROJECT_ID are not both set — check skipped.'
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v6
+        if: steps.gate.outputs.run == 'true'
+        with:
+          repository: ${{ steps.pr.outputs.repo }}
+          ref: ${{ steps.pr.outputs.sha }}
+
+      - uses: supabase/setup-cli@v2
+        if: steps.gate.outputs.run == 'true'
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+
+      # No dry-run for functions deploy; list confirms token + project-ref work.
+      - name: List Edge Functions on Cloud (smoke)
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          supabase functions list --project-ref "$SUPABASE_PROJECT_ID"
+          echo '::notice title=Edge Functions::Cloud list OK. Merge to dev will run supabase functions deploy. Merge to main will rsync to self-hosted volumes/functions.'
+
+      - name: Set commit status (final)
+        if: always() && steps.pr.outputs.sha != ''
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const skipped = '${{ steps.gate.outputs.run }}' !== 'true';
+            const jobOk = '${{ job.status }}' === 'success';
+            const state = jobOk ? 'success' : 'failure';
+            const description = skipped
+              ? 'Skipped (not targeting dev, or no function path changes)'
+              : state === 'success'
+                ? 'Edge Functions Cloud check passed'
+                : 'Edge Functions Cloud check failed';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: '${{ steps.pr.outputs.sha }}',
+              state,
+              context: process.env.INFRA_STATUS_CONTEXT,
+              description,
+              target_url: `${process.env.GITHUB_SERVER_URL}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
+
+  # --- Development: Supabase Cloud ---
+  deploy-dev:
+    if: |
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      github.ref == 'refs/heads/dev'
+    environment: development
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: supabase/setup-cli@v2
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+
+      - name: Deploy Edge Functions to Supabase Cloud
+        run: |
+          set -euo pipefail
+          # --use-api: bundle on Supabase (no Docker on the runner).
+          # verify_jwt per-function comes from supabase/config.toml.
+          supabase functions deploy \
+            --project-ref "$SUPABASE_PROJECT_ID" \
+            --use-api
+
+  # --- Production: self-hosted Docker volumes over Tailscale ---
+  deploy-prod:
+    if: |
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      github.ref == 'refs/heads/main'
+    environment: production
+    runs-on: ubuntu-latest
+    env:
+      PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+      PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+      PROD_SUPABASE_DIR: ${{ secrets.PROD_SUPABASE_DIR }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
+      - name: Rsync Edge Functions to production volumes/functions
+        run: |
+          set -euo pipefail
+          if [ -z "${PROD_SSH_HOST:-}" ] || [ -z "${PROD_SSH_USER:-}" ] || [ -z "${PROD_SUPABASE_DIR:-}" ]; then
+            echo '::error::production secrets PROD_SSH_HOST, PROD_SSH_USER, and PROD_SUPABASE_DIR must all be set.'
+            exit 1
+          fi
+          DEST="${PROD_SSH_USER}@${PROD_SSH_HOST}:${PROD_SUPABASE_DIR}/volumes/functions/"
+          # Exclude self-hosted-only router (`main`) and example `hello` so --delete does not
+          # remove them. Repo function dirs (including _shared) are synced and pruned.
+          rsync -avz --delete \
+            -e 'ssh -o StrictHostKeyChecking=accept-new' \
+            --exclude 'main/' \
+            --exclude 'hello/' \
+            supabase/functions/ \
+            "$DEST"
+
+      - name: Restart functions container
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new "${PROD_SSH_USER}@${PROD_SSH_HOST}" \
+            "SUPABASE_DIR='${PROD_SUPABASE_DIR}' bash -s" <<'EOF'
+            set -euo pipefail
+            cd "$SUPABASE_DIR"
+            docker compose restart functions --no-deps
+            for i in $(seq 1 20); do
+              if docker compose ps functions 2>/dev/null | grep -qiE 'running|up'; then
+                echo "functions service is up."
+                exit 0
+              fi
+              sleep 2
+            done
+            echo "::error::functions service did not look healthy after restart. Recent logs:"
+            docker compose logs --tail=50 functions || true
+            exit 1
+          EOF

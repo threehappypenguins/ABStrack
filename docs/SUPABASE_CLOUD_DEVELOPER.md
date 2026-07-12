@@ -10,7 +10,8 @@ Follow **[AGENTS.md](../AGENTS.md)** (section **Correct flow for migrations and 
 
 1. **GitHub Actions** runs **`supabase db push`** when changes land on **`dev`** (Supabase Cloud) and again on **`main`** (self-hosted via Tailscale)—so merged code and each environment stay aligned even if you forget a manual step. PR comment commands (`/ci`, `/infra-ci`, `/preview`) are listed in **[DEV_SETUP.md → PR comment commands](DEV_SETUP.md#pr-comment-commands)**.
 2. **GitHub Actions** runs **`powersync validate`** on **`/infra-ci`** (PRs into `dev`) and on merge to **`dev`**, then **`deploy sync-config`** to PowerSync Cloud on **`dev`**; merge to **`main`** deploys sync rules to self-hosted PowerSync—see **[PowerSync Sync Streams](#powersync-sync-streams-packagespowersyncsync-rulesyaml)** (secrets required).
-3. **You manually** run **`db push`** from your laptop **when needed** (usually **before merge**, on your feature branch) so cloud has the new migration **before** you run **`gen types typescript --linked`**. That lets you put **migration SQL + `database.types.ts` in one PR** without waiting for merge.
+3. **GitHub Actions** deploys Edge Functions when **`supabase/functions/**`** (or related `config.toml` / workflow) changes: Cloud **`functions deploy`** on merge to **`dev`**, Tailscale **rsync** + **`docker compose restart functions`** on merge to **`main`**—see [`.github/workflows/supabase-edge-functions.yml`](../.github/workflows/supabase-edge-functions.yml) and **[DEV_SETUP.md → Supabase Edge Functions](DEV_SETUP.md#supabase-edge-functions-github-actions)**.
+4. **You manually** run **`db push`** from your laptop **when needed** (usually **before merge**, on your feature branch) so cloud has the new migration **before** you run **`gen types typescript --linked`**. That lets you put **migration SQL + `database.types.ts` in one PR** without waiting for merge.
 
 **Wait to `db push` until the migration is stable (e.g. after Copilot / PR review).** Review tools often suggest edits to the same `supabase/migrations/*.sql` file. If you **`db push` too early**, cloud records that migration version as **already applied**; changing the file in git does **not** automatically re-apply it. Safer habit: keep migration work in the PR, finish review-driven SQL tweaks, **then** run **`db push`** once, **`gen types --linked`**, commit `database.types.ts`, and merge. See **[Revising a migration already pushed to cloud (development)](#revising-a-migration-already-pushed-to-cloud-development)** if you jumped the gun.
 
@@ -523,13 +524,14 @@ Disabling PowerSync Cloud does **not** change Supabase schema or RLS. Web apps w
 
 ## Related files
 
-| Topic                          | Location                                                                                           |
-| ------------------------------ | -------------------------------------------------------------------------------------------------- |
-| CLI install, link, secrets     | [DEV_SETUP.md §4](DEV_SETUP.md#4-supabase-database-migrations-cloud-cli-and-ci)                    |
-| Migrations + verify on `main`  | [`.github/workflows/supabase-migrations.yml`](../.github/workflows/supabase-migrations.yml)        |
-| PowerSync sync YAML on `main`  | [`.github/workflows/powersync-sync-config.yml`](../.github/workflows/powersync-sync-config.yml)    |
-| PowerSync disabled / re-enable | **PowerSync Cloud project disabled or re-enabled (free tier)** (above)                             |
-| PR types check                 | [`.github/workflows/supabase-db-types-pr.yml`](../.github/workflows/supabase-db-types-pr.yml)      |
-| App env vars                   | [`packages/supabase/README.md`](../packages/supabase/README.md), [`.env.example`](../.env.example) |
-| Mobile PowerSync wiring        | [`apps/mobile/src/lib/powersync/README.md`](../apps/mobile/src/lib/powersync/README.md)            |
-| `chart_snapshots` dev cleanup  | **Dev cleanup: `chart_snapshots`** (above); migration `20260524140000_chart_snapshots.sql`         |
+| Topic                          | Location                                                                                            |
+| ------------------------------ | --------------------------------------------------------------------------------------------------- |
+| CLI install, link, secrets     | [DEV_SETUP.md §4](DEV_SETUP.md#4-supabase-database-migrations-cloud-cli-and-ci)                     |
+| Migrations + verify on `main`  | [`.github/workflows/supabase-migrations.yml`](../.github/workflows/supabase-migrations.yml)         |
+| PowerSync sync YAML on `main`  | [`.github/workflows/powersync-sync-config.yml`](../.github/workflows/powersync-sync-config.yml)     |
+| Edge Functions on `dev`/`main` | [`.github/workflows/supabase-edge-functions.yml`](../.github/workflows/supabase-edge-functions.yml) |
+| PowerSync disabled / re-enable | **PowerSync Cloud project disabled or re-enabled (free tier)** (above)                              |
+| PR types check                 | [`.github/workflows/supabase-db-types-pr.yml`](../.github/workflows/supabase-db-types-pr.yml)       |
+| App env vars                   | [`packages/supabase/README.md`](../packages/supabase/README.md), [`.env.example`](../.env.example)  |
+| Mobile PowerSync wiring        | [`apps/mobile/src/lib/powersync/README.md`](../apps/mobile/src/lib/powersync/README.md)             |
+| `chart_snapshots` dev cleanup  | **Dev cleanup: `chart_snapshots`** (above); migration `20260524140000_chart_snapshots.sql`          |
