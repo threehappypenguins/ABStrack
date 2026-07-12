@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { LiveAnnouncerProvider } from '@abstrack/ui/a11y-web';
-import Page from '../src/app/page';
+import Page from '../src/app/mfa/page';
 import type { PractitionerSupabaseProfilesRow } from '../src/lib/supabase-wiring';
 import { useAuth } from '../src/lib/auth-provider';
 import type { Session } from '@abstrack/supabase';
@@ -59,11 +59,11 @@ const patientProfileRow: PractitionerSupabaseProfilesRow = {
   updated_at: '2020-01-01T00:00:00.000Z',
 };
 
-/** Home page calls `getSupabaseBrowserClient()` on mount; env-public throws without URL + key. */
+/** MFA enrollment page calls `getSupabaseBrowserClient()` on mount; env-public throws without URL + key. */
 const JEST_SUPABASE_URL = 'https://test.supabase.co';
 const JEST_SUPABASE_KEY = 'sb_publishable_test_jest_placeholder';
 
-describe('Page', () => {
+describe('MfaEnrollmentPage', () => {
   let prevUrl: string | undefined;
   let prevKey: string | undefined;
 

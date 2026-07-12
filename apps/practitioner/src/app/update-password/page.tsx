@@ -182,7 +182,7 @@ export default function PractitionerUpdatePasswordPage() {
           'Password saved. Taking you to two-factor authentication setup…',
         );
         redirectTimeoutRef.current = setTimeout(() => {
-          router.replace('/');
+          router.replace('/mfa');
         }, 800);
         return;
       }

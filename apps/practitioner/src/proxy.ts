@@ -31,8 +31,9 @@ function withSupabaseCookies(
 /**
  * Next.js 16 **proxy** (replaces `middleware.ts`): session refresh, auth-route redirects, and the
  * Supabase implicit-auth rewrite for `/auth/callback` (same pattern as `apps/web/src/proxy.ts`).
- * Signed-out visits to `/` redirect to `/login`. Patient routes (`/patients` and below) stay on the
- * requested URL when signed out so the client gate component can render the in-app sign-in UI.
+ * Signed-out visits to `/` redirect to `/login`. Signed-in visits to `/` or `/login` redirect to
+ * `/patients` (patient workspace). Patient routes stay on the requested URL when signed out so the
+ * client gate can render the in-app sign-in UI. TOTP enrollment lives at `/mfa`.
  */
 export default async function proxy(req: NextRequest) {
   const { pathname, searchParams } = req.nextUrl;
@@ -80,7 +81,7 @@ export default async function proxy(req: NextRequest) {
 
   if (isAuthRoute && user) {
     return withSupabaseCookies(
-      NextResponse.redirect(new URL('/', req.url)),
+      NextResponse.redirect(new URL('/patients', req.url)),
       supabaseResponse,
     );
   }
@@ -88,6 +89,13 @@ export default async function proxy(req: NextRequest) {
   if (!user && pathname === '/') {
     return withSupabaseCookies(
       NextResponse.redirect(new URL('/login', req.url)),
+      supabaseResponse,
+    );
+  }
+
+  if (user && pathname === '/') {
+    return withSupabaseCookies(
+      NextResponse.redirect(new URL('/patients', req.url)),
       supabaseResponse,
     );
   }

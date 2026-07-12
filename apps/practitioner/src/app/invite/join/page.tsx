@@ -236,7 +236,7 @@ export default function PractitionerInviteJoinPage() {
         <div className="flex flex-col gap-3">
           {donePasswordSet ? (
             <Link
-              href="/"
+              href="/mfa"
               className="min-h-[44px] rounded-full bg-app-primary-solid px-5 py-3 text-center text-sm font-semibold text-app-on-primary-solid focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-ring focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg"
             >
               Set up two-factor authentication
