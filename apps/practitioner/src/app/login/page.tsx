@@ -123,7 +123,7 @@ async function waitForSessionWithJwtAal2(
  * Practitioner email/password login with MFA step-up and optional device trust (browser storage).
  * Successful verification with “Remember this device” set to ask every time clears any stored
  * bundle so trust matches the choice for this sign-in. If there is no verified TOTP factor, any existing bundle
- * is cleared before redirecting to practitioner home for TOTP enrollment so stale tokens are not kept in storage.
+ * is cleared before redirecting to `/mfa` for TOTP enrollment so stale tokens are not kept in storage.
  * After email/password authentication succeeds, password state is cleared immediately so the secret
  * is not retained through MFA or device-trust checks.
  * If `getUser` does not return a user id after a successful password sign-in, the client signs out
@@ -331,7 +331,7 @@ export default function LoginPage() {
         const message =
           'No verified TOTP factor yet. Redirecting so you can enroll an authenticator.';
         announce(message, { politeness: 'assertive' });
-        router.push('/');
+        router.push('/mfa');
         router.refresh();
         return;
       }

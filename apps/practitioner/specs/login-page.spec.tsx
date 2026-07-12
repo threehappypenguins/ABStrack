@@ -396,7 +396,7 @@ describe('LoginPage MFA state machine', () => {
     await submitCredentials();
 
     await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith('/');
+      expect(mockPush).toHaveBeenCalledWith('/mfa');
     });
     expect(mockedClearBundle).toHaveBeenCalled();
   });
