@@ -1,6 +1,6 @@
 /**
  * Client-safe Supabase URL and **publishable** key resolution.
- * Documented names: `packages/supabase/README.md`, `.env.example`, `docs/DEV_SETUP.md`.
+ * Documented names: `packages/supabase/README.md`, per-app `apps/<app>/.env.example`, `docs/DEV_SETUP.md`.
  *
  * **Static `process.env.NEXT_PUBLIC_*` / `EXPO_PUBLIC_*` reads only** — Next.js and Expo
  * inline these at build time only when the property access is statically analyzable.

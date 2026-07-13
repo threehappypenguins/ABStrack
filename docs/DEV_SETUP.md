@@ -100,58 +100,56 @@ pnpm install --frozen-lockfile
 
 ## 3. Environment variables (Supabase and apps)
 
-Secrets must **never** be committed. The repo root [`.env.example`](../.env.example) is the **template only** (safe to commit). Each runtime loads env files from **inside the app folder**, not from the monorepo root.
+Secrets must **never** be committed. Each app has its own template under `apps/<app>/.env.example` (safe to commit). The repo root [`.env.example`](../.env.example) is an **index only** — it has no variables. Each runtime loads env files from **inside the app folder**, not from the monorepo root.
 
 ### What each app reads
 
-| App                                    | File (create locally)          | Purpose                                              |
-| -------------------------------------- | ------------------------------ | ---------------------------------------------------- |
-| User web (`apps/web`)                  | `apps/web/.env.local`          | Next.js: URL + publishable key (`sb_publishable_…`). |
-| Practitioner web (`apps/practitioner`) | `apps/practitioner/.env.local` | Same pattern as `web`.                               |
-| Mobile (`apps/mobile`)                 | `apps/mobile/.env`             | Expo / Metro: `EXPO_PUBLIC_*` variables.             |
+| App                                    | Template                         | File (create locally)          | Purpose                                              |
+| -------------------------------------- | -------------------------------- | ------------------------------ | ---------------------------------------------------- |
+| User web (`apps/web`)                  | `apps/web/.env.example`          | `apps/web/.env.local`          | Next.js: URL + publishable key (`sb_publishable_…`). |
+| Practitioner web (`apps/practitioner`) | `apps/practitioner/.env.example` | `apps/practitioner/.env.local` | Same pattern as `web`.                               |
+| Mobile (`apps/mobile`)                 | `apps/mobile/.env.example`       | `apps/mobile/.env`             | Expo / Metro: `EXPO_PUBLIC_*` variables only.        |
 
 Next.js documents `.env.local` in each app directory. Expo picks up `.env` under `apps/mobile/`. See also [`packages/supabase/README.md`](../packages/supabase/README.md) for dashboard ↔ variable mapping.
 
-### Create the three files from the template
+### Create the three files from the templates
 
 Run these from the **repository root** (`ABStrack/`), after clone.
 
 #### macOS / Linux (bash)
 
 ```bash
-cp .env.example apps/web/.env.local
-cp .env.example apps/practitioner/.env.local
-cp .env.example apps/mobile/.env
+cp apps/web/.env.example apps/web/.env.local
+cp apps/practitioner/.env.example apps/practitioner/.env.local
+cp apps/mobile/.env.example apps/mobile/.env
 ```
 
 #### Windows (PowerShell)
 
 ```powershell
-Copy-Item .env.example apps/web/.env.local
-Copy-Item .env.example apps/practitioner/.env.local
-Copy-Item .env.example apps/mobile/.env
+Copy-Item apps/web/.env.example apps/web/.env.local
+Copy-Item apps/practitioner/.env.example apps/practitioner/.env.local
+Copy-Item apps/mobile/.env.example apps/mobile/.env
 ```
 
 #### Windows (Command Prompt)
 
 ```cmd
-copy .env.example apps\web\.env.local
-copy .env.example apps\practitioner\.env.local
-copy .env.example apps\mobile\.env
+copy apps\web\.env.example apps\web\.env.local
+copy apps\practitioner\.env.example apps\practitioner\.env.local
+copy apps\mobile\.env.example apps\mobile\.env
 ```
 
-### Mobile: only `EXPO_PUBLIC_*` matters
+### Mobile uses `EXPO_PUBLIC_*` only
 
-If you copied the full `.env.example` into `apps/mobile/.env`, that file also contains `NEXT_PUBLIC_*` variables meant for Next.js. **Expo does not load those into your app** the way Next does — only names starting with `EXPO_PUBLIC_` are embedded in the Metro bundle ([Expo env docs](https://docs.expo.dev/guides/environment-variables/)).
-
-**What to do:** Open `apps/mobile/.env` and **delete the `NEXT_PUBLIC_*` lines** (and any Next-only comments you do not need). Keep **`EXPO_PUBLIC_SUPABASE_URL`** and **`EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`** with the **same values** you use on web — only the prefix changes. Leaving `NEXT_PUBLIC_*` in place does not break Metro, but it confuses the Expo CLI log (`env: export NEXT_PUBLIC_...`) and makes it look like the mobile app uses those variables.
+Expo embeds only names starting with `EXPO_PUBLIC_` into the Metro bundle ([Expo env docs](https://docs.expo.dev/guides/environment-variables/)). The mobile template already lists those variables — use the **same** Supabase URL and publishable key as web, with the `EXPO_PUBLIC_` prefix. Do not add `NEXT_PUBLIC_*` to `apps/mobile/.env`.
 
 ### Fill in real values
 
 1. Open each of the three new files in an editor.
 2. Remove or comment out variables you do not use yet; **uncomment and set** at minimum:
    - **Next apps:** `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
-   - **Mobile:** only the **`EXPO_PUBLIC_*`** pair above (after trimming any copied `NEXT_PUBLIC_*` lines — see previous subsection).
+   - **Mobile:** `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (and `EXPO_PUBLIC_POWERSYNC_URL` for offline replication).
 3. Optional server-only **`SUPABASE_SECRET_KEY`** (`sb_secret_...`) belongs only in **server** contexts (e.g. Next Route Handlers), never in `EXPO_PUBLIC_*` or client bundles. `@abstrack/supabase/admin` does not use legacy JWT `service_role` env vars. In the [Supabase dashboard](https://supabase.com/dashboard), the secret key is listed under **Settings → API Keys** (secret key, not publishable).
 
 Get URLs and publishable keys from the [Supabase dashboard](https://supabase.com/dashboard): **Settings → API Keys**, or **Integrations → Data API** for the API URL. For Email/password auth (PRD), enable **Authentication → Providers → Email**.
@@ -159,7 +157,7 @@ Get URLs and publishable keys from the [Supabase dashboard](https://supabase.com
 ### Sanity check
 
 - `.gitignore` already excludes `.env`, `.env.local`, and `.env.*.local`; your copies should not appear in `git status` as new tracked files (if Git proposes adding them, stop and check paths).
-- The template contains comments; it is normal for `web` and `practitioner` to include the same `NEXT_PUBLIC_*` values, and `mobile` the same logical values under `EXPO_PUBLIC_*`.
+- The per-app templates contain comments; it is normal for `web` and `practitioner` to include the same `NEXT_PUBLIC_*` values, and `mobile` the same logical values under `EXPO_PUBLIC_*`.
 
 ---
 
@@ -415,8 +413,8 @@ The workspace pins **React 19.1.x** to match **Expo SDK 54** and to stay aligned
 - [ ] Node.js 24 and pnpm 10.29.2 installed
 - [ ] Repository cloned
 - [ ] `pnpm install --frozen-lockfile` succeeded
-- [ ] `apps/web/.env.local` and `apps/practitioner/.env.local` created from `.env.example` and filled with project credentials
-- [ ] `apps/mobile/.env` created from `.env.example`, **trimmed** to `EXPO_PUBLIC_*` only, and filled with real values
+- [ ] `apps/web/.env.local` and `apps/practitioner/.env.local` created from each app’s `.env.example` and filled with project credentials
+- [ ] `apps/mobile/.env` created from `apps/mobile/.env.example` and filled with real values
 - [ ] Supabase CLI: `login`, `link`, and for migration PRs **`db push` + `gen types --linked`** + Prettier before merge ([§4](#4-supabase-database-migrations-cloud-cli-and-ci), [SUPABASE_CLOUD_DEVELOPER.md](SUPABASE_CLOUD_DEVELOPER.md))
 - [ ] If using GitHub Actions for migrations: repository secrets set (`SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_ID`, `SUPABASE_DB_PASSWORD`) per [§4](#4-supabase-database-migrations-cloud-cli-and-ci)
 - [ ] If using GitHub Actions for PowerSync: `POWERSYNC_ADMIN_TOKEN`, `POWERSYNC_INSTANCE_ID`, `POWERSYNC_PROJECT_ID` (and `POWERSYNC_ORG_ID` if needed) per [PowerSync sync config](#powersync-sync-config-github-actions)

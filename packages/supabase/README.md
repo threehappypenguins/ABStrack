@@ -24,7 +24,7 @@ Pass **URL + publishable key** into browser, SSR, and mobile clients. Use **`SUP
 | `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | `apps/mobile/.env`                                                |
 | `SUPABASE_SECRET_KEY`                                              | Same app’s `.env.local` when Next server code runs, or CI secrets |
 
-Full template: [`.env.example`](../../.env.example).
+Per-app templates: [`apps/web/.env.example`](../../apps/web/.env.example), [`apps/practitioner/.env.example`](../../apps/practitioner/.env.example), [`apps/mobile/.env.example`](../../apps/mobile/.env.example). Index: [`.env.example`](../../.env.example).
 
 ## Package entrypoints
 
