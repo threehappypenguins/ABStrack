@@ -343,7 +343,7 @@ pnpm exec nx test @abstrack/supabase
 
 (You can paste the three lines into a **gitignored** file such as a personal `~/abstrack-test.env` and run `set -a && source ~/abstrack-test.env && set +a` before the command if you prefer not to type them each time.)
 
-`.env.example` documents `SUPABASE_SECRET_KEY` for server-only use; there is **no** requirement to create a dedicated `.env` inside `packages/supabase/`.
+App env templates (`apps/web`, `apps/practitioner`) document `SUPABASE_SECRET_KEY` for server-only use; there is **no** requirement to create a dedicated `.env` inside `packages/supabase/`.
 
 **How to tell it ran:** In the Vitest output, `preset-flows.integration.spec.ts` should show **passed** tests (not “skipped”). If the suite is **skipped**, the integration env was incomplete—`ABSTRACK_PRESET_INTEGRATION_LOG=1` on the same command prints a short reason. The suite **creates two Auth users and deletes them in `afterAll`**, so they usually disappear in seconds; refreshing **Authentication → Users** during the run will often show **nothing** because deletion already ran. **Do not** rely on the dashboard alone—use the terminal output and the `console.info` lines that list the disposable user emails.
 
@@ -524,14 +524,14 @@ Disabling PowerSync Cloud does **not** change Supabase schema or RLS. Web apps w
 
 ## Related files
 
-| Topic                          | Location                                                                                            |
-| ------------------------------ | --------------------------------------------------------------------------------------------------- |
-| CLI install, link, secrets     | [DEV_SETUP.md §4](DEV_SETUP.md#4-supabase-database-migrations-cloud-cli-and-ci)                     |
-| Migrations + verify on `main`  | [`.github/workflows/supabase-migrations.yml`](../.github/workflows/supabase-migrations.yml)         |
-| PowerSync sync YAML on `main`  | [`.github/workflows/powersync-sync-config.yml`](../.github/workflows/powersync-sync-config.yml)     |
-| Edge Functions on `dev`/`main` | [`.github/workflows/supabase-edge-functions.yml`](../.github/workflows/supabase-edge-functions.yml) |
-| PowerSync disabled / re-enable | **PowerSync Cloud project disabled or re-enabled (free tier)** (above)                              |
-| PR types check                 | [`.github/workflows/supabase-db-types-pr.yml`](../.github/workflows/supabase-db-types-pr.yml)       |
-| App env vars                   | [`packages/supabase/README.md`](../packages/supabase/README.md), [`.env.example`](../.env.example)  |
-| Mobile PowerSync wiring        | [`apps/mobile/src/lib/powersync/README.md`](../apps/mobile/src/lib/powersync/README.md)             |
-| `chart_snapshots` dev cleanup  | **Dev cleanup: `chart_snapshots`** (above); migration `20260524140000_chart_snapshots.sql`          |
+| Topic                          | Location                                                                                                                                      |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| CLI install, link, secrets     | [DEV_SETUP.md §4](DEV_SETUP.md#4-supabase-database-migrations-cloud-cli-and-ci)                                                               |
+| Migrations + verify on `main`  | [`.github/workflows/supabase-migrations.yml`](../.github/workflows/supabase-migrations.yml)                                                   |
+| PowerSync sync YAML on `main`  | [`.github/workflows/powersync-sync-config.yml`](../.github/workflows/powersync-sync-config.yml)                                               |
+| Edge Functions on `dev`/`main` | [`.github/workflows/supabase-edge-functions.yml`](../.github/workflows/supabase-edge-functions.yml)                                           |
+| PowerSync disabled / re-enable | **PowerSync Cloud project disabled or re-enabled (free tier)** (above)                                                                        |
+| PR types check                 | [`.github/workflows/supabase-db-types-pr.yml`](../.github/workflows/supabase-db-types-pr.yml)                                                 |
+| App env vars                   | [`packages/supabase/README.md`](../packages/supabase/README.md), root [`.env.example`](../.env.example) index + per-app `apps/*/.env.example` |
+| Mobile PowerSync wiring        | [`apps/mobile/src/lib/powersync/README.md`](../apps/mobile/src/lib/powersync/README.md)                                                       |
+| `chart_snapshots` dev cleanup  | **Dev cleanup: `chart_snapshots`** (above); migration `20260524140000_chart_snapshots.sql`                                                    |

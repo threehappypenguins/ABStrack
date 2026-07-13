@@ -49,13 +49,15 @@ ABStrack/
 pnpm install --frozen-lockfile
 ```
 
-2. Create local env files from the template and fill in real values:
+2. Create local env files from each app template and fill in real values:
 
 ```bash
-cp .env.example apps/web/.env.local
-cp .env.example apps/practitioner/.env.local
-cp .env.example apps/mobile/.env
+cp apps/web/.env.example apps/web/.env.local
+cp apps/practitioner/.env.example apps/practitioner/.env.local
+cp apps/mobile/.env.example apps/mobile/.env
 ```
+
+(See the root [`.env.example`](.env.example) for an index of which template belongs to which app.)
 
 3. Start the apps you need:
 
